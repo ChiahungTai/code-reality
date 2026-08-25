@@ -34,6 +34,7 @@ fn route(argv: &[&str]) -> code_reality::ToolOutput {
         Some(&"graph_csv") => code_reality::graph_csv::run(argv),
         Some(&"hub_refs") => code_reality::hub_refs::run(argv),
         Some(&"tour_manifest") => code_reality::tour_manifest::run(argv),
+        Some(&"chain_tour") => code_reality::chain_tour::run(argv),
         Some(&"boundary") => code_reality::boundary::run(argv),
         Some(&"boundary_build") => code_reality::boundary_build::run(argv),
         Some(&"runtime_edges") => code_reality::runtime_edges::run(argv),
@@ -55,4 +56,4 @@ fn route(argv: &[&str]) -> code_reality::ToolOutput {
     }
 }
 
-const SUBCOMMANDS: [&str; 12] = ["scip_refs", "snapshot", "transition", "graph_audit", "graph_csv", "hub_refs", "boundary", "boundary_build", "tour_manifest", "tour_validate", "tour_upgrade", "runtime_edges"];
+const SUBCOMMANDS: [&str; 13] = ["scip_refs", "snapshot", "transition", "graph_audit", "graph_csv", "hub_refs", "boundary", "boundary_build", "chain_tour", "tour_manifest", "tour_validate", "tour_upgrade", "runtime_edges"];

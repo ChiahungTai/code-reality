@@ -131,7 +131,6 @@ pub fn make_crg_db(path: &Path, spec: &CrgDbSpec) -> rusqlite::Result<()> {
 }
 
 /// CRG qualified-name convention: `<abs-path>::<symbol>`.
-#[allow(dead_code)] // compiled per test target; not every target uses it
 #[allow(dead_code)] // per-target helper
 pub fn qualified(repo_root: &Path, rel_path: &str, symbol: &str) -> String {
     format!("{}::{}", repo_root.join(rel_path).display(), symbol)
