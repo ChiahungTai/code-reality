@@ -52,6 +52,8 @@ pub fn msg_line(tag: &str, message: &str) -> String {
 }
 
 pub mod argparse;
+pub mod boundary;
+pub mod boundary_build;
 pub mod cache;
 pub mod callers;
 pub mod cli;

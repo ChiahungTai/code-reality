@@ -15,7 +15,7 @@ tempfile = "3"
 toml = "0.9"
 libc = "0.2"
 regex = "1"
-serde = "1"
+serde = { version = "1", features = ["derive"] }
 glob = "0.3"
 ruff_python_parser = "0.0.10"
 ruff_python_ast = "0.0.10"

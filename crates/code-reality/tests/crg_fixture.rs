@@ -5,6 +5,7 @@
 use rusqlite::Connection;
 use std::path::Path;
 
+#[allow(dead_code)] // compiled per test target; not every target uses it
 #[derive(Default)]
 pub struct NodeSeed {
     pub name: String,
@@ -14,6 +15,7 @@ pub struct NodeSeed {
 }
 
 /// `node_attrs` patch: (kind, language, is_test, community_id).
+#[allow(dead_code)] // per-target helper
 pub struct NodeAttr {
     pub kind: &'static str,
     pub language: &'static str,
@@ -21,6 +23,7 @@ pub struct NodeAttr {
     pub community_id: Option<i64>,
 }
 
+#[allow(dead_code)] // per-target helper
 #[derive(Default)]
 pub struct CrgDbSpec {
     /// (kind, source_qualified, target_qualified)
@@ -36,6 +39,7 @@ pub struct CrgDbSpec {
 
 /// Build a CRG-compatible synthetic db at `path` (schema verbatim from
 /// the Python fixture; `updated_at` filler values are non-null only).
+#[allow(dead_code)] // per-target helper
 pub fn make_crg_db(path: &Path, spec: &CrgDbSpec) -> rusqlite::Result<()> {
     let conn = Connection::open(path)?;
     conn.execute_batch(
@@ -128,6 +132,7 @@ pub fn make_crg_db(path: &Path, spec: &CrgDbSpec) -> rusqlite::Result<()> {
 
 /// CRG qualified-name convention: `<abs-path>::<symbol>`.
 #[allow(dead_code)] // compiled per test target; not every target uses it
+#[allow(dead_code)] // per-target helper
 pub fn qualified(repo_root: &Path, rel_path: &str, symbol: &str) -> String {
     format!("{}::{}", repo_root.join(rel_path).display(), symbol)
 }
