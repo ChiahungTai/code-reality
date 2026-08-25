@@ -222,6 +222,8 @@ NT `graph_audit --json` `cmp` 位元組相同（430/233/861 為 NT 機器參考�
 
 → 衍生子 EP：`ai-analysis/execution-plans/ep-rust-r5-families.md`
 
+> **✅ R5 已完成（2026-08-26，`ep-rust-r5-families.md`）**：tour 治理三件（`1ddd26e`）＋runtime_edges（`9ddaf6a`）＋boundary 家族（`5b2e322`）＋chain_tour（`38c7619`）＋delta_tour（`f147031`）。cargo 198；parity 29（R5 面以 help-face token 等價＋共享 fixture 鏡像承載——boundary/chain/delta 的完整 CLI parity 需真 git corpus，走 cargo synthetic-repo 套件）。fancy-regex 承接 lookaround（TOUR_REF lookahead、SCREAMING_SNAKE lookbehind）。
+
 ---
 
 ## 段 R6：MCP server（單一 HTTP、多 repo）

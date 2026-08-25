@@ -491,8 +491,15 @@ class TestHelpFaces:
         rs_out, _, rs_code = run_rust(sub, ["-h"])
         assert py_code == rs_code == 0
         # prog prefix normalization: argparse embeds the invocation form
+        # prog token appears as "python -m code_reality.X" or ".py" script
+        # form depending on invocation; normalize both to the bare name
         import re as _re
-        py_norm = _re.sub(r"python\d* -m code_reality\." + module + r"\b", module, py_out, count=1)
+        py_norm = _re.sub(
+            r"(python\d* -m code_reality\." + module + r"\b|" + module + r"\.py\b)",
+            module,
+            py_out,
+            count=1,
+        )
         # usage block: token-sequence compare (alignment is prog-length
         # relative); description body: byte-exact
         # usage block: flattened token sequence (wrap position is
@@ -504,6 +511,46 @@ class TestHelpFaces:
         )
         assert py_body == rs_body, (
             f"{module} -h body differs\npy:\n{py_norm}\nrs:\n{rs_out}"
+        )
+
+
+class TestHelpFacesR5:
+    """R5 families: -h faces (token-sequence usage + byte-exact body).
+
+    The tour/boundary families share the argparse conventions; full CLI
+    byte parity for chain_tour/delta_tour needs real git corpora — the
+    committed cargo suites cover the semantics on synthetic repos, and
+    the boundary/runtime tools get synthetic-fixture parity via the
+    s5_* test suites (shared-shape mirrors).
+    """
+
+    @pytest.mark.parametrize(
+        ("module", "sub"),
+        [("tour_manifest", "tour_manifest"), ("tour_validate", "tour_validate"),
+         ("tour_upgrade", "tour_upgrade"), ("runtime_edges", "runtime_edges"),
+         ("boundary", "boundary"), ("boundary_build", "boundary_build"),
+         ("chain_tour", "chain_tour"), ("delta_tour", "delta_tour")],
+    )
+    def test_help_faces(self, module, sub):
+        py_out, _, py_code = run_python(module, ["-h"])
+        rs_out, _, rs_code = run_rust(sub, ["-h"])
+        assert py_code == rs_code == 0
+        # argparse wraps at prog-length-dependent columns — compare the
+        # flattened token sequence of the whole help (catches missing or
+        # differing text; wrapping is layout, not content)
+        # prog token appears as "python -m code_reality.X" or ".py" script
+        # form depending on invocation; normalize both to the bare name
+        import re as _re
+        py_norm = _re.sub(
+            r"(python\d* -m code_reality\." + module + r"\b|" + module + r"\.py\b)",
+            module,
+            py_out,
+            count=1,
+        )
+        # whitespace-free join: argparse can break long tokens across
+        # wrap boundaries without adding characters
+        assert ''.join(py_norm.split()) == ''.join(rs_out.split()), (
+            f"{module} -h face differs\npy:\n{py_norm}\nrs:\n{rs_out}"
         )
 
 

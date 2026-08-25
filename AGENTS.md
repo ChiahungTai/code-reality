@@ -46,7 +46,7 @@ per-repo SCIP index slots under `scip/<repo-basename>/`
 | Symbol truth query (refs/defs, trait disambiguation) | `python -m code_reality.scip_refs <symbol> --repo <repo>`; Rust carrier: `cargo run -p code-reality -- scip_refs ...` (byte-parity gated) | ✅ |
 | Completeness governance (audit + `[SRC]` provenance) | `scip_refs --audit --repo` + `graph_audit --json`; Rust carrier: `code-reality scip_refs --audit ...` / `code-reality graph_audit ...` (byte-parity gated, `--audit` first pass in-process) | ✅ |
 | Deletability safety net (hub_refs/hazard) | `hub_refs <symbol> --repo <repo> --hazard`；Rust carrier: `code-reality hub_refs ...`（byte-parity gated——AST face via ruff_python_parser, differential-verified） | ✅ |
-| Boundary / export / narrative tool family | snapshot / transition / boundary family / tour family / runtime_edges / graph_csv; Rust carrier for snapshot / transition / graph_csv / graph_audit: `code-reality <sub> ...` (byte-parity gated; boundary/tour/runtime_edges stay R5) | ✅ |
+| Boundary / export / narrative tool family | snapshot / transition / boundary family / tour family / runtime_edges / graph_csv; Rust carrier for all: `code-reality <sub> ...` (byte-parity gated — graph family via parity harness; R5 families via help-face parity + shared-shape cargo suites) | ✅ |
 | Caller-edge query (callers/closure) | Rust carrier: `code-reality scip_refs <symbol> --callers/--closure [--depth N] --repo <repo>` (`--depth` 1-10000, default 2; item-level refs = refs not enclosed by any fn — refs are not call counts) | ✅ (Rust-native; Python carrier never built — R3 superseded it) |
 | Unified MCP interface | `python -m code_reality.mcp_server` | 📋 (EP R6) |
 
