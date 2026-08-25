@@ -1,0 +1,30 @@
+[project]
+name = "code-reality"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["protobuf>=7.35.1"]  # runtime for scip_refs vendored scip_pb2 (the only third-party dep)
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["code_reality"]
+
+[dependency-groups]
+dev = [
+    "ruff==0.16.3",  # pinned to the ai-rules lock version: avoid new-rule churn on migrated code
+    "pytest>=8.4",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: real-boundary tests (sidecars / graph.db / tour artifacts outside this repo)",
+]
+
+[tool.ruff]
+target-version = "py312"
+extend-exclude = [
+    "*.md",  # no lint/format inside md code blocks
+    "code_reality/scip_pb2.py",  # protobuf gencode: neither lint nor format
+]

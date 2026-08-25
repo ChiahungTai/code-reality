@@ -1,0 +1,16 @@
+# Python bytecode / build artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Virtualenv
+.venv/
+
+# Instruction-init scan artifact (regenerable via scan-project)
+.project-snapshot.json
+
+# CRG graph build artifact (code-reality's own dogfood graph)
+.code-review-graph/
+
+# Local scratch (agent tooling)
+.agent-tmp/
