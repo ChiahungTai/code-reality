@@ -295,7 +295,7 @@ fn naive_local_to_epoch(y: i64, m: u32, d: u32, hh: i64, mi: i64, ss: i64) -> i6
 }
 
 /// Hinnant inverse of `civil_from_days` (days → y/m/d is in engine.rs).
-fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
+pub fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
     let y = if m <= 2 { y - 1 } else { y };
     let era = if y >= 0 { y } else { y - 399 } / 400;
     let yoe = y - era * 400;
