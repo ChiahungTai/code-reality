@@ -28,3 +28,9 @@ extend-exclude = [
     "*.md",  # no lint/format inside md code blocks
     "code_reality/scip_pb2.py",  # protobuf gencode: neither lint nor format
 ]
+
+[tool.ruff.lint]
+ignore = [
+    "BLE001",  # frozen migrated code: best-effort wide catch, error printed then loud exit (parity with ai-rules config)
+    "ISC004",  # frozen migrated code: multi-line f-string implicit concat is existing style (parity with ai-rules config)
+]

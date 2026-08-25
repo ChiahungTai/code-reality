@@ -1,0 +1,9 @@
+[package]
+name = "poc-rust-deps-probe"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rmcp = { version = "*", features = ["server"] }
+ruff_python_parser = "*"
+rusqlite = { version = "*", features = ["bundled"] }

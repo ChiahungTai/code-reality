@@ -1,0 +1,9 @@
+[package]
+name = "poc-r2-byte-identical"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+scip = "*"
+protobuf = "*"
+serde_json = "1"

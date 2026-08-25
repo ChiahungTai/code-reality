@@ -3,7 +3,10 @@
 Meta-layer tooling living *above* repositories: structural facts, governance
 audits, and narrative artifacts consumed by AI coding sessions. Migrated
 big-bang from `ai-rules` (2026-08-25; migration EP lives in ai-rules at
-`ai-analysis/execution-plans/ep-code-reality-repo-mcp.md`).
+`ai-analysis/execution-plans/ep-code-reality-repo-mcp.md`). Current route EP
+— Rust-based migration with coexistence-then-delete, superseding the
+ai-rules EP's S2-S4 — lives in this repo at
+`ai-analysis/execution-plans/ep-rust-migration.md`.
 
 **Repo facts belong to each repo** — the scanned repo's `.code-reality.toml`
 profile owns module/exclusion/registry knowledge; the tool layer embeds no
@@ -41,8 +44,8 @@ per-repo SCIP index slots under `scip/<repo-basename>/`
 | Completeness governance (audit + `[SRC]` provenance) | `scip_refs --audit --repo` + `graph_audit --json` | ✅ |
 | Deletability safety net (hub_refs/hazard) | `hub_refs <symbol> --repo <repo> --hazard` | ✅ |
 | Boundary / export / narrative tool family | snapshot / transition / boundary family / tour family / runtime_edges / graph_csv | ✅ |
-| Caller-edge query (callers/closure) | scip_refs `--callers` / `--closure` | 📋 (EP S2) |
-| Unified MCP interface | `python -m code_reality.mcp_server` | 📋 (EP S3) |
+| Caller-edge query (callers/closure) | scip_refs `--callers` / `--closure` | 📋 (EP R3) |
+| Unified MCP interface | `python -m code_reality.mcp_server` | 📋 (EP R6) |
 
 ## Tests
 
