@@ -14,8 +14,34 @@ packages = ["code_reality"]
 [dependency-groups]
 dev = [
     "ruff==0.16.3",  # pinned to the ai-rules lock version: avoid new-rule churn on migrated code
+    "mypy==2.3.1",  # pinned alongside ruff: gate reproducibility for the frozen-oracle repo
     "pytest>=8.4",
 ]
+
+[tool.mypy]
+exclude = '(scip_pb2|delegation_driver)\.py$'  # protobuf gencode (same rationale as ruff) + the viztracer tracing target (imports external repos by design)
+
+[[tool.mypy.overrides]]
+module = "code_reality.scip_pb2"
+follow_imports = "skip"  # dynamic gencode classes are invisible statically; importers see Any
+
+[[tool.mypy.overrides]]
+# frozen migrated oracle tests (coexistence zero-change constraint): pre-existing patterns
+# (unguarded re.Match, tuple fixtures)
+module = ["test_graph_audit", "test_transition"]
+disable_error_code = ["union-attr", "list-item"]
+
+[[tool.mypy.overrides]]
+# frozen oracle tests, same constraint, additional pre-existing patterns (append-as-
+# expression, Optional str in-tests, dict invariance, un-annotated collections)
+module = "test_scip_refs"
+disable_error_code = ["union-attr", "func-returns-value", "operator", "arg-type", "var-annotated"]
+
+[[tool.mypy.overrides]]
+# frozen parity oracle package: None-guarded dict/Path unions are runtime-ordered by
+# control flow; zero-change constraint during coexistence
+module = "code_reality.scip_refs"
+disable_error_code = ["union-attr"]
 
 [tool.pytest.ini_options]
 markers = [
