@@ -142,9 +142,11 @@ Rust crate 佈局＝一個 lib（domain 純函數＋query 編排＋adapter：rus
 
 ---
 
-## 段 R1：Rust workspace 落地（repo 結構調整）
+## 段 R1：Rust workspace 落地（repo 結構調整）——✅ 已被 R2 子 EP 吸收執行
 
-### Context
+> 本段全部交付項由 [ep-rust-r2-scip-family.md](ep-rust-r2-scip-family.md) 段 1 執行（2026-08-25 build 完成：workspace/toolchain/deny/`Result<ToolOutput>`/umbrella bin/`.gitignore` `/target`；Python 測試零干擾驗證——實測 388 passed〔=遷移時點基準，EP 原文 381 為舊 EP 時點計數，差額為 parity-era 前置測試成長〕）。
+
+### Context（原始規格，供對照）
 AD-1 結構決策落地：root `Cargo.toml`（`[workspace] members=["crates/*"]`、`resolver="2"`）＋`crates/code-reality`（lib 骨架：domain/use-case/adapter 分層目錄，空實作）＋umbrella CLI bin 骨架（clap；子命令名=現行模組名原樣，僅 `--help` exit 0）＋`rust-toolchain.toml` 釘版＋`rustfmt.toml`/`clippy.toml` 最小＋`deny.toml`（cargo-deny 授權稽核——MIT repo 無 copyleft 鏈維持，對齊 spec 授權結論）＋`.gitignore` += `/target`。**Python 側零改動**。
 
 依賴：無前置。語義約束：與全部段落共享「Python 原位凍結」；與 R7 共享「子命令名=模組名原樣」（relay 最小 diff）。**lib API 形狀釘死（AD-2 前提）**：lib 函數回傳 `Result<ToolOutput, ToolError>`（`ToolOutput = {stdout, stderr, exit_code}` 資料形態）——lib 不 print、不 `std::process::exit`；兩個 bin 擁有打印與 exit。這是「drift 編譯期不可能」與 per-request `Result` 邊界的成立前提。
@@ -152,7 +154,7 @@ AD-1 結構決策落地：root `Cargo.toml`（`[workspace] members=["crates/*"]`
 ### 吸收範圍與驗收
 不改任何行為。驗收＝`cargo build`/`cargo test`（骨架級）綠＋`cargo clippy --deny warnings` 綠＋**Python 381 tests 仍綠**（零干擾證明）＋dogfood snapshot smoke 仍綠＋`cargo deny check` 授權面無新引入。
 
-→ 衍生子 EP：`ai-analysis/execution-plans/ep-rust-r1-workspace.md`
+（原衍生子 EP 指針 `ep-rust-r1-workspace.md` 已廢——由 R2 子 EP 吸收執行。）
 
 ---
 
@@ -263,7 +265,7 @@ NT 三面 byte-identical（新路徑）＋**exit codes 0/1/2 一致**；mosaic h
 
 ## v1+ 展望（另行 EP）
 
-Rust 化使既有 v1+ 項目全部更便宜但時點不變：S5 B1/B2 圖引擎研究→user 裁決（Rust 自有 rusqlite 圖層 vs CRG 注入——B 案對比在此收斂）；SCIP 邊注入 graph.db（NT 861 缺差→0）；CRG MCP 退役；lsp_mcp home 遷移（D4 維持進程分離）；UC-7 發佈（cargo crate/binaries＋plugin market——umbrella binary 一條命令天然滿足）。**新增候選**：Rust 化後索引生成自有化評估（ra SCIP 產出環節的自動化——`--refresh` 一條龍從「可選小卡」升格）。
+Rust 化使既有 v1+ 項目全部更便宜但時點不變：S5 B1/B2 圖引擎研究→user 裁決（**2026-08-25 user 方向表態：漸進演化、端局純 Rust 引擎——NT 模式**〔Python 全程活著服務消費端、Rust 逐塊取代、最後才刪，同 AD-1〕——R2 三表 cache＋R3 fn_defs sidecar 即自建圖層種子；路線＝逐段把圖能力收進 Rust，CRG 的最後角色〔Python indexer、communities 計算〕有 Rust 替代時退役；正式 D5 裁決仍走 v1+ 研究報告＋單向門）；SCIP 邊注入 graph.db（NT 861 缺差→0）；CRG MCP 退役；lsp_mcp home 遷移（D4 維持進程分離）；UC-7 發佈（cargo crate/binaries＋plugin market——umbrella binary 一條命令天然滿足）。**新增候選**：Rust 化後索引生成自有化評估（ra SCIP 產出環節的自動化——`--refresh` 一條龍從「可選小卡」升格）。
 
 ## 收尾步驟（各段 build 階段 5 執行）
 

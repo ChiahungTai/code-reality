@@ -20,6 +20,7 @@ dev = [
 [tool.pytest.ini_options]
 markers = [
     "integration: real-boundary tests (sidecars / graph.db / tour artifacts outside this repo)",
+    "parity: cross-language byte-parity (frozen Python vs Rust scip_refs; fixture + read-only NT)",
 ]
 
 [tool.ruff]

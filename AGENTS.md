@@ -31,6 +31,9 @@ per-repo SCIP index slots under `scip/<repo-basename>/`
 
 ## Module guide
 
+- [crates/AGENTS.md](crates/AGENTS.md) — Rust carrier (coexistence with the
+  frozen Python until the R7 relay): lib layering, byte-parity contract,
+  schema interop rules
 - [code_reality/AGENTS.md](code_reality/AGENTS.md) — the tool package:
   foundation modules, tool families, sidecar conventions, internal layering
 - [tests/AGENTS.md](tests/AGENTS.md) — unit vs integration split, fixture
@@ -40,7 +43,7 @@ per-repo SCIP index slots under `scip/<repo-basename>/`
 
 | Capability | Entry | Status |
 |---|---|---|
-| Symbol truth query (refs/defs, trait disambiguation) | `python -m code_reality.scip_refs <symbol> --repo <repo>` | ✅ |
+| Symbol truth query (refs/defs, trait disambiguation) | `python -m code_reality.scip_refs <symbol> --repo <repo>`; Rust carrier: `cargo run -p code-reality -- scip_refs ...` (byte-parity gated) | ✅ |
 | Completeness governance (audit + `[SRC]` provenance) | `scip_refs --audit --repo` + `graph_audit --json` | ✅ |
 | Deletability safety net (hub_refs/hazard) | `hub_refs <symbol> --repo <repo> --hazard` | ✅ |
 | Boundary / export / narrative tool family | snapshot / transition / boundary family / tour family / runtime_edges / graph_csv | ✅ |

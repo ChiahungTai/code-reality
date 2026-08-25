@@ -1,0 +1,12 @@
+# License audit: this repo is MIT with a no-copyleft dependency chain
+# (rust-analyzer SCIP indexes are consumed as data, not linked).
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+]

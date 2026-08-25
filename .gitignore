@@ -14,3 +14,6 @@ __pycache__/
 
 # Local scratch (agent tooling)
 .agent-tmp/
+
+# Rust build artifacts
+/target/

@@ -208,3 +208,19 @@ master AD-5 落地：`tests/parity/test_scip_refs_parity.py`（pytest 編排，`
 | 驗收 | 🔴P2 第二 NT 案例未釘死（空虛通過風險）→ 釘 `default_backend_opener`（1 ref 基準已驗）；P3：make_fixture 覆蓋對齊 `rich_index()` 底稿（非縮水版）、git-fail 測試組落點、corrupt-index/sqlite-error/empty-query 案、cargo fixture 供給（commit 產物）、S5 缺索引案 wording（文案屬 stderr 非 cmp 面） |
 
 **不採納 0 項**。
+
+## Build Agent Review Record（2026-08-25 /implement 階段 4）
+
+三視角獨立審查（clean／UC-anchored／Correctness——Correctness 軸含實證對抗探測）。**P1×1＋P2×6 全數採納修入＋回歸釘住**；P3 修 12 項、3 項記錄性豁免。Loop 一輪收斂。
+
+| 視角 | 關鍵 findings（已修） |
+|------|---------------------|
+| clean | P1 `--repo .` stamp 模式 `file_name().unwrap()` panic（Python 答 exit 0）→ lossy+default；P2 engine 錯誤字串預帶 `[FAIL]` 造成雙前綴 → 裸訊息＋邊界統一上標；P2 靜默空 helper → Result 傳播（見 Correctness 同項）；P3：死碼（ToolError/load_stderr/Stats 中繼）移除、`*` 版號釘下限、cargo-deny 自家 crate 補 `license="MIT"` |
+| UC-anchored | P2 同 stamp panic；P2 同靜默空 helper；P3：`idx_sha=""` truthiness（Python falsy→未 stamp WARN 分支）、`expand_home` HOME unwrap、`default_index_path("")`、`stamped_at` 型別強制、meta_path/sqlite_path `file_name()` panic 面、`modified()` fail-open→stat 失敗 |
+| Correctness | P2 `short()` 位元組切片 panic（短/多位元組 head）→ `chars().take()`；P2 `stamped_at` 型別強制差異 → `py_str_coerced`（None/True/False/數字）；P2 dash 前綴 positional（`-`/`--` 後）被丟 → argparse 模擬；P2 clap 邊界四型（負數 positional/縮寫/重複 flag/額外 positional）→ **拆除 clap：raw-argv 直通＋lib 端 argparse 模擬**（同時消滅雙 parse shim）；P3 `$` 行尾 `\n` 語意、stamp payload JSON 逃逸（serde pretty）、fresh-path `open_ro` 失敗→protobuf 回退 |
+
+**回歸釘住**：parity harness 增 `TestArgparseEdge` 五案例（`-`/`-5`/`-- -weird`/`--ind` 縮寫/額外 positional）——23/23 全綠。
+
+**記錄性偏差（文件化，不修）**：①`--help` 位元組與 argparse 文案不同（契約僅存在性述語 exit 0）；②`git_head` 無 30s timeout（std 無機制；rev-parse 實務即時）——三 WARN 文案已補；③stamp payload 檔案位元組與 Python `ensure_ascii` 不同（非 gate 面，JSON 合法可互通）。**Post-build 補注（2026-08-25 dual-context 收尾鏈）**：fresh-eyes＋primed 雙審查者 18 findings（17 採納修入＋1 記錄豁免），衝突項（`-5.5.5` 負數判定）以本機 oracle 實測裁決＝**Python 3.14 prefix matcher**（`-5.`/`-5x`/`-5.5.5` 皆 positional、`-.` 非）——已按實測語意編碼並以 parity 案例釘住（總數 29）。其餘修正：option-like flag 值拒絕、`--h` 縮寫 help、bool flag `=value` 拒絕、缺席 `stamped_at` 鍵→無日期段（顯式 null→`（None）`）、重建路徑 WARN 保全、build_db 單一交易（NT 規模效能）、stamp 鍵序 preserve_order、互動測試 stderr 斷言（schema 分歧不被 fallback 遮蔽）、`Parsed` enum 重構。
+
+**行為偏差（明示）**：corrupt-but-meta-intact db／fresh-path open_ro 失敗——Python uncaught traceback exit 1，Rust WARN＋protobuf 回覆正確答案（嚴格更好，共存期無消費端觸碰，R4/R7 前維持）。

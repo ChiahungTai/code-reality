@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+
+[workspace.dependencies]
+scip = "0.9"
+protobuf = "3"
+rusqlite = { version = "0.40", features = ["bundled"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+tempfile = "3"
+
+[profile.release]
+# Query tooling: prefer fast index decode (the 275MB NT index parses in ~0.7s in release).
+debug = false
