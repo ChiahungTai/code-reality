@@ -143,11 +143,13 @@ class TestBuildTour:
         assert tour["steps"][0]["title"].startswith("弧總覽")
         assert any("＋新檔 new_mod.py" in t for t in titles)
         assert any(t.startswith("M修改 mod_a.py") for t in titles)
-        assert any("−刪檔 gone.py" in t for t in titles)
+        assert any("−刪檔" in t for t in titles)
         i_new = next(i for i, t in enumerate(titles) if "＋新檔" in t)
         i_mod = next(i for i, t in enumerate(titles) if t.startswith("M修改"))
         i_gone = next(i for i, t in enumerate(titles) if "−刪檔" in t)
         assert 0 < i_new < i_mod < i_gone
+        # Deletions collapse (mosaic dogfood bug 2) — names live in description.
+        assert "gone.py" in tour["steps"][i_gone]["description"]
 
     def test_modified_step_anchored_at_first_hunk(self, tmp_path: Path) -> None:
         repo, a, b = make_repo(tmp_path)
@@ -348,6 +350,182 @@ class TestCleanupExpired:
 
     def test_missing_dir_noop(self, tmp_path: Path) -> None:
         assert cleanup_expired(tmp_path / "nope") == 0
+
+
+class TestRangeTruthSteps:
+    """B2 fix (mosaic dogfood 2026-08-25) — step set single-sourced from the
+    claimed git range: snapshot-pair file drift cannot pollute steps;
+    deletions collapse to one summary step; renames are walkable."""
+
+    def test_snapshot_gone_pollution_not_in_steps(self, tmp_path: Path) -> None:
+        """Bug 2 core: gone_files polluted by out-of-range snapshot drift
+        (older-commit deletions) must not become steps."""
+        repo, a, b = make_repo(tmp_path)
+        data = trans_data(
+            a,
+            b,
+            gone_files=["ai-analysis/_archive/old.md", "mosaic_alpha/old/gone.py"],
+        )
+        tour = build_tour(data, repo)
+        assert "_archive" not in json.dumps(tour, ensure_ascii=False)
+        assert any("−刪檔" in s["title"] for s in tour["steps"])  # real deletion stays
+
+    def test_deletions_collapsed_single_step(self, tmp_path: Path) -> None:
+        """Unjumpable deletions do not expand into dead steps — one summary."""
+        repo = tmp_path / "repo_del2"
+        (repo / "mosaic_alpha" / "old").mkdir(parents=True)
+        write_mosaic_profile(repo)
+        _git(repo, "init", "-q")
+        for n in ("a.py", "b.py"):
+            (repo / "mosaic_alpha" / "old" / n).write_text("x\n")
+        (repo / "mosaic_alpha" / "keep.py").write_text("l1\nl2\n")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", "A")
+        sha_a = _git(repo, "rev-parse", "HEAD")
+        (repo / "mosaic_alpha" / "old" / "a.py").unlink()
+        (repo / "mosaic_alpha" / "old" / "b.py").unlink()
+        (repo / "mosaic_alpha" / "keep.py").write_text("l1\nCHANGED\n")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", "B")
+        sha_b = _git(repo, "rev-parse", "HEAD")
+        data = trans_data(
+            sha_a,
+            sha_b,
+            new_files=[],
+            gone_files=["mosaic_alpha/old/a.py", "mosaic_alpha/old/b.py"],
+        )
+        tour = build_tour(data, repo)
+        gone_steps = [s for s in tour["steps"] if "−刪檔" in s["title"]]
+        assert len(gone_steps) == 1
+        desc = gone_steps[0]["description"]
+        assert "old/a.py" in desc and "old/b.py" in desc
+        assert "無法跳轉" in desc
+        assert "pattern" not in gone_steps[0]
+
+    def test_rename_step_anchors_new_path(self, tmp_path: Path) -> None:
+        """Renames (invisible under the old AM filter) become walkable steps
+        anchored on the new path's first declaration."""
+        repo = tmp_path / "repo_rn"
+        (repo / "mosaic_alpha").mkdir(parents=True)
+        write_mosaic_profile(repo)
+        _git(repo, "init", "-q")
+        (repo / "mosaic_alpha" / "orig.py").write_text(
+            "l1\n# Copyright (c) 2026\nl3\ndef main():\n    pass\n"
+        )
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", "A")
+        sha_a = _git(repo, "rev-parse", "HEAD")
+        _git(repo, "mv", "mosaic_alpha/orig.py", "mosaic_alpha/renamed.py")
+        _git(repo, "commit", "-qm", "B")
+        sha_b = _git(repo, "rev-parse", "HEAD")
+        tour = build_tour(trans_data(sha_a, sha_b, new_files=[], gone_files=[]), repo)
+        # title-based selection: the overview step is anchored to the first
+        # added file too (line 1) — file-based next() would grab it instead
+        rn = next(s for s in tour["steps"] if "→改名" in s["title"])
+        assert rn["line"] == 4  # first declaration, not the copyright header
+        assert "orig.py" in rn["description"]
+
+    def test_overview_counts_match_steps(self, tmp_path: Path) -> None:
+        """Counts are derived from the same sets as steps (by construction
+        consistent — kills the old 3-vs-5 new-file mismatch)."""
+        repo, a, b = make_repo(tmp_path)
+        tour = build_tour(trans_data(a, b), repo)
+        desc = tour["steps"][0]["description"]
+        titles = [s["title"] for s in tour["steps"]]
+        assert sum("＋新檔" in t for t in titles) == 1 and "1 新檔" in desc
+        assert sum(t.startswith("M修改") for t in titles) == 1 and "1 修改" in desc
+        assert sum("−刪檔" in t for t in titles) == 1 and "1 刪檔" in desc
+
+
+class TestClaimsThreeState:
+    """B1 fix — claims three-state: ⚠ only in the compared state. Extraction
+    failure (no profile / no mention / zero-hit guard) degrades to
+    not-compared instead of mass "EP didn't mention this" accusations."""
+
+    @staticmethod
+    def _claims_data(tmp_path: Path, **over: object) -> tuple[Path, dict[str, Any]]:
+        repo, a, b = make_repo(tmp_path)
+        base: dict[str, Any] = {
+            "claims": [],
+            "claims_none": True,
+            "claimed_and_changed": [],
+            "changed_not_claimed": [
+                "mosaic_alpha/domain",
+                "mosaic_alpha/newpkg",
+                "mosaic_alpha/old",
+            ],
+            "claimed_not_changed": [],
+        }
+        base.update(over)
+        return repo, trans_data(a, b, ep_claims=base)
+
+    def test_claims_none_state_no_false_warning(self, tmp_path: Path) -> None:
+        repo, data = self._claims_data(tmp_path)
+        tour = build_tour(data, repo)
+        assert not any("⚠" in s["title"] for s in tour["steps"])
+        assert not any("✓宣稱命中" in s["title"] for s in tour["steps"])
+        assert "未比對" in tour["steps"][0]["description"]
+
+    def test_zero_hit_degrades_to_not_compared(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        repo, data = self._claims_data(
+            tmp_path, claims_none=False, claims=["mosaic_alpha/ghost"]
+        )
+        tour = build_tour(data, repo)
+        assert not any("⚠" in s["title"] for s in tour["steps"])
+        assert "未比對" in tour["steps"][0]["description"]
+        assert "WARN" in capsys.readouterr().err
+
+    def test_partial_hit_still_compares(self, tmp_path: Path) -> None:
+        repo, data = self._claims_data(
+            tmp_path,
+            claims_none=False,
+            claims=["mosaic_alpha/domain", "mosaic_alpha/ghost"],
+            claimed_and_changed=["mosaic_alpha/domain"],
+        )
+        tour = build_tour(data, repo)
+        assert any("✓宣稱命中" in s["title"] for s in tour["steps"])
+        assert any("⚠EP沒提卻變了" in s["title"] for s in tour["steps"])
+
+
+class TestNewFileDeclAnchor:
+    """B3 fix — new-file anchors land on the first declaration line, not the
+    copyright header."""
+
+    def test_code_file_anchors_first_decl(self, tmp_path: Path) -> None:
+        repo = tmp_path / "repo_decl"
+        (repo / "mosaic_alpha").mkdir(parents=True)
+        write_mosaic_profile(repo)
+        _git(repo, "init", "-q")
+        (repo / "mosaic_alpha" / "s.py").write_text("l1\n")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", "A")
+        sha_a = _git(repo, "rev-parse", "HEAD")
+        (repo / "mosaic_alpha" / "n.py").write_text(
+            "# Copyright (c) 2026 MIT\n# see LICENSE\n\ndef main():\n    pass\n"
+        )
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", "B")
+        sha_b = _git(repo, "rev-parse", "HEAD")
+        tour = build_tour(
+            trans_data(sha_a, sha_b, new_files=["mosaic_alpha/n.py"], gone_files=[]),
+            repo,
+        )
+        new = next(s for s in tour["steps"] if "＋新檔 n.py" in s["title"])
+        assert new["line"] == 4
+        assert new["pattern"] == anchor_pattern("def main():")
+
+
+class TestDescriptionSemantics:
+    """B3 fix — descriptions carry the range commit subject as the cheapest
+    mechanical 'why'."""
+
+    def test_modified_step_carries_commit_subject(self, tmp_path: Path) -> None:
+        repo, a, b = make_repo(tmp_path)  # commit subjects "A" / "B"
+        tour = build_tour(trans_data(a, b), repo)
+        mod = next(s for s in tour["steps"] if s["title"].startswith("M修改"))
+        assert "commit: B" in mod["description"]
 
 
 class TestCli:

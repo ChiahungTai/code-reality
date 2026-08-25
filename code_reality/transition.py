@@ -97,15 +97,57 @@ def summarize(
     )
 
 
-def extract_ep_claims(ep_path: Path, profile: Profile | None) -> set[str]:
-    """EP markdown 內 ``<prefix>/<mod>`` 路徑 mentions（保守 heuristic：
-    抽不到如實 NONE，不腦補）。claims regex 由 profile ``[[module]]``
-    prefixes 衍生——無 profile／無規則 → 恆 NONE（generic repo 無前綴
-    知識，by design）。"""
+_FILE_TOKEN_RE = re.compile(r"[A-Za-z0-9_][\w./+-]*\.[A-Za-z0-9]+")
+
+
+def _path_token_claims(text: str, profile: Profile, repo_root: Path) -> set[str]:
+    """File-path tokens → module claims, normalized across prefix forms.
+
+    EP prose mixes ``<prefix>/pkg/f.py`` (tables) and repo-relative
+    ``pkg/f.py`` (pseudo code blocks) — claims_re only sees the former
+    (mosaic dogfood 2026-08-25: relative-only EPs scored 0 hits → mass false
+    "changed but not claimed"). Relative tokens are resolved against each
+    module prefix and verified as real directories under repo_root — a
+    grounded mapping, no guessing.
+    """
+    claims: set[str] = set()
+    for tok in _FILE_TOKEN_RE.findall(text):
+        if "/" not in tok:
+            continue  # bare filenames cannot be mapped to a module
+        resolved: str | None = None
+        for rule in profile.modules:
+            if tok.startswith(rule.prefix):
+                resolved = tok
+                break
+        if resolved is None:
+            seg = tok.split("/", 1)[0]
+            for rule in profile.modules:
+                if (repo_root / rule.prefix / seg).is_dir():
+                    resolved = f"{rule.prefix}{tok}"
+                    break
+        if resolved is not None:
+            mod = module_of(resolved, profile)
+            if mod:
+                claims.add(mod)
+    return claims
+
+
+def extract_ep_claims(
+    ep_path: Path, profile: Profile | None, repo_root: Path | None = None
+) -> set[str]:
+    """EP markdown 內 module 路徑 mentions（保守 heuristic：抽不到如實
+    NONE，不腦補）。claims regex 由 profile ``[[module]]`` prefixes 衍生——
+    無 profile／無規則 → 恆 NONE（generic repo 無前綴知識，by design）。
+    ``repo_root``（可選）啟用相對路徑正規化：相對形式 mention 經存在性
+    驗證對齊 prefix module（見 ``_path_token_claims``）。"""
     assert ep_path.is_file(), (
         f"EP 檔不存在或非檔案：{ep_path}（SM-12——NONE 是檔在但無 mention）"
     )
-    return set(claims_re(profile).findall(ep_path.read_text()))
+    text = ep_path.read_text()
+    claims = set(claims_re(profile).findall(text))
+    if repo_root is not None and profile is not None:
+        claims |= _path_token_claims(text, profile, repo_root)
+    return claims
 
 
 def extract_baseline(ep_path: Path) -> str | None:
@@ -300,7 +342,9 @@ def main() -> None:
             "[WARN] claims 恆 NONE——--repo 未指到含 .code-reality.toml 的 repo，"
             "宣稱對照不生效（--repo 預設 cwd）"
         )
-    claims = extract_ep_claims(args.ep, profile) if args.ep else None
+    claims = (
+        extract_ep_claims(args.ep, profile, repo_root=args.repo) if args.ep else None
+    )
     a8, b8 = sa.meta.get("commit", "?")[:8], sb.meta.get("commit", "?")[:8]
 
     prefix = args.output_prefix or Path(f"transition-{a8}..{b8}")

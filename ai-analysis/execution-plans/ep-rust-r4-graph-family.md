@@ -3,7 +3,7 @@
 > **ep_type**: implementation
 > **parent**: [ep-rust-migration.md](ep-rust-migration.md)（段 R4 **兩段式之①**；繼承 AD-1〜AD-5／雙凍結紀律）
 > **分段宣告（master sizing 條款）**：**hub_refs×hazard 整體歸②**——hub_refs 的 callers 方向恆觸發 hazard stage（`hub_refs.py:352`），兩者不可分割交付；hazard 的 AST 差動測試負擔獨立成段。②另衍生 `ep-rust-r4b-hazard-hubrefs.md`（本 EP 不含 hub_refs/hazard 規則引擎任何實作；**profile 的 `hazard_registry` 鍵解析屬①地基面**——S1 必須建模，否則 Python 合法 profile 在 Rust 端 unknown-key crash，見 F7）。master R4 驗收中的「mosaic `hub_refs --hazard` 輸出 cmp＋hazard 差動測試」隨②結案。
-> **spec 鏈**: 凍結 Python 即規格（`code_reality/{common,profile,exclusions,snapshot,transition,graph_audit,graph_csv}.py`——逐檔錨點見段落 0）；既有 pytest 套（fd64449＝404 collected）為語意 oracle、`tests/parity/` 為跨語言位元組 oracle（AD-5）——**vacuous 防護／exit 家族／截斷／csv quoting 邊界／git-root assert 等面在既有套無 oracle**，Rust 端新增案例以凍結源碼直讀釘位元組（各段驗證策略標注）
+> **spec 鏈**: 凍結 Python 即規格（`code_reality/{common,profile,exclusions,snapshot,transition,graph_audit,graph_csv}.py`——逐檔錨點見段落 0）；既有 pytest 套（fd64449＝404 collected）為語意 oracle、`tests/parity/` 為跨語言位元組 oracle（AD-5）——**vacuous 防護／exit 家族／截斷／csv quoting 邊界／git-root assert 等面在既有套無 oracle**，Rust 端新增案例以凍結源碼直讀釘位元組（各段驗證策略標注）。**Oracle sync（2026-08-25 深夜）**：`transition.py`/`delta_tour.py`＋對應測試已自 canonical ai-rules `281e07e` 同步（delta_tour 三 bug 修復——mosaic 走讀驗收 1.83→3.17）。「共存期 Python 零改動」的 **sanctioned 偏差**：oracle 必須跟隨 canonical 消費端修復移動，否則 S3 移植的是已知錯誤行為（claims 假指控）、R5 需重工。吸收面＝四檔；兩個 `*_integration.py` 不吸收（自足政策面）。吸收後基線＝**416 passed**
 > **parity 面宣告**: 本 EP 全部工具已有 Python 現役實作——**stdout 位元組＋exit codes 為 gate**（stderr 管理面不 gate）；工具間 exit 語意**不統一**（見 S1 決策 D3——逐工具釘死）
 > baseline: `fd64449`（＝a88e392＋tests 自足化；crates/ 面兩者等價）
 
@@ -77,7 +77,7 @@ root AGENTS.md Capabilities（UC-4 完整度治理／UC-6 hub_refs——本 EP �
 | R4-D | snapshot 空集合 | 0 邊 | `[WARN] snapshot 空集合（0 files，db raw N 邊）...` | 無 | UC-4 |
 | R4-E | transition 邊反轉 | (X,Y)→(Y,X) | reversed＝added 方向（B1）；added/removed 照常含完整三元組 | 無 | UC-4 |
 | R4-F | transition 無變化 | 同 snapshot | `## 無結構變化` | 無 | UC-4 |
-| R4-G | claims 對照 | `--ep` 有/無 profile | 無 profile→`[WARN] claims 恆 NONE`；EP 缺檔→crash exit 1 | 無 | UC-4 |
+| R4-G | claims 對照 | `--ep` 有/無 profile；repo_root 有/無 | 無 profile→`[WARN] claims 恆 NONE`；EP 缺檔→crash exit 1；有 profile＋repo_root→相對路徑 mention 經 prefix 下目錄存在性驗證計入 claims（sync 281e07e） | 無 | UC-4 |
 | R4-H | graph_audit 缺差 | DB 少於 rust-analyzer | exit 1＋`[WARN] DB 缺差 N 項...`（或 `--json`） | 無 | UC-4 |
 | R4-I | graph_audit 環境錯 | rust-analyzer 未裝／db 缺／全零符號 | `[FAIL]` stderr＋**exit 2**（假乾淨防護：`audited and total_ra==0`） | 無 | UC-4 |
 | R4-J | graph_audit `--json` | NT 治理鉤子 | 四鍵（risk_files/audited_files/missing/errors）、`ensure_ascii=False, indent=1`、**stdout**——位元組 gate | 無 | UC-4 |
@@ -108,7 +108,8 @@ root AGENTS.md Capabilities（UC-4 完整度治理／UC-6 hub_refs——本 EP �
 | `detect_stale` 三級 | `snapshot.py:110-141` | sha 直比→`last_updated`（**naive local tz 假設**）→db_mtime |
 | `Snapshot.write` | `snapshot.py:196-211` | 檔名 `<repo>-<sha8>.json`（**8** 與 scip `[SRC]` 的 7 不同源）；`json.dumps(indent=1)` |
 | `diff_edges`（B1） | `transition.py:72-86` | tuple 集合差；reversed＝added 方向（pair 投影） |
-| `render_report`/`render_json` | `transition.py:155-271` | md 結構（截斷 20＋`- ... +N more`）；json 鍵集＋indent=1 |
+| `extract_ep_claims`＋`_path_token_claims` | `transition.py:103-151`（sync 281e07e） | claims＝regex findall **∪** 相對路徑 token 正規化（`_FILE_TOKEN_RE` token：prefix 直中，或首段經 `repo_root/prefix/<seg>` 目錄存在驗證解析——grounded 非猜測）；`repo_root: Path | None` 可選參數，main 傳 `args.repo`；無 repo_root＝regex only |
+| `render_report`/`render_json` | `transition.py:197-313` | md 結構（截斷 20＋`- ... +N more`——helpers 在 :184-195）；json 鍵集＋indent=1 |
 | D1 狀態機＋regex | `graph_audit.py:55-118` | per-block 去重計數；impl 閉合＝同縮排 `}`；IMPL_RE/FN_RE 直譯（regex crate） |
 | D2 `ra_symbols`＋雙層 vacuous 防護 | `graph_audit.py:134-161` | rust-analyzer `symbols` stdin bytes、`check=False`、逾時 None；`file_path` 用 **resolved 絕對路徑** |
 | `--json` 四鍵＋exit 家族 | `graph_audit.py:216-297` | R4-J/I；`json.dumps(ensure_ascii=False, indent=1)` 印 stdout |
@@ -214,12 +215,12 @@ cargo：synthetic db（S1 helper）跑 export 斷言；stale 三級注入（meta
 
 ### 核心實作要點
 1. `load_snapshot`（json parse＋三元組 assert 訊息）；`diff_edges`（tuple 差＋reversed added-direction＋kind 變化非 reversed）；`changed_modules`（邊拓撲∪檔案增刪所屬模組）
-2. `extract_ep_claims`（claims_regex findall；檔缺→crash「NONE 是檔在但無 mention」）；`extract_baseline`（regex＝`\*\*baseline\*\*:\s*([0-9a-f]{7,40})`——**含粗體 literal**，漏了會多匹配純文字 baseline 寫法；`transition.py:28` 原文）；`compare_claims` 三桶
+2. `extract_ep_claims`（**sync 281e07e 後 spec**：`claims_re` findall ∪ `_path_token_claims`——`_FILE_TOKEN_RE`（`[A-Za-z0-9_][\w./+-]*\.[A-Za-z0-9]+`，含 `/` 才處理）對每條 module rule 做 prefix 直中或「`repo_root/rule.prefix/<首段>` 目錄存在」解析，再 `module_of` 映射；簽名 `(ep_path, profile, repo_root: Option<Path>)`，CLI 傳 `args.repo`；檔缺→crash「NONE 是檔在但無 mention」）；`extract_baseline`（regex＝`\*\*baseline\*\*:\s*([0-9a-f]{7,40})`——**含粗體 literal**，漏了會多匹配純文字 baseline 寫法；`transition.py:28` 原文）；`compare_claims` 三桶
 3. `render_report`（H1/無結構變化/各節/截斷 20/rename 註記逐字）；`render_json`（鍵序）
 4. CLI：位置參數×2＋三 flag；stdout `[OK] transition ...`＋baseline `[LOG]`＋尾 `[LOG]`
 
 ### 驗證策略
-cargo：`test_transition.py` 案例直譯（reversed B1、kind 變化、claims 三桶、無變化）；**截斷無既有 oracle**（baseline 測試無 `+N more` 案例）——新增 >20 邊案例逐字驗 `- ... +{N} more`（`transition.py:140-152`）；snapshot 差集用 S2 寫出的真檔（自產自銷）。已知未覆蓋：非 ASCII 模組名排序邊界（D4 記錄）。
+cargo：`test_transition.py` 案例直譯（reversed B1、kind 變化、claims 三桶、無變化＋**sync 281e07e 三案例**：relative-path claim 經 repo 存在性驗證計入、未知目錄不計、無 repo_root＝regex only）；**截斷無既有 oracle**（測試無 `+N more` 案例）——新增 >20 邊案例逐字驗 `- ... +{N} more`（helpers `transition.py:184-195`）；snapshot 差集用 S2 寫出的真檔（自產自銷）。已知未覆蓋：非 ASCII 模組名排序邊界（D4 記錄）。
 
 ## 段 4：graph_audit＋scip_refs --audit
 

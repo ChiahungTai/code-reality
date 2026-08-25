@@ -213,6 +213,8 @@ NT `graph_audit --json` `cmp` 位元組相同（430/233/861 為 NT 機器參考�
 
 吸收範圍：`boundary*.py`/`chain_tour.py`/`delta_tour.py`/`tour_*.py`/`runtime_edges.py`。依賴：R4（delta_tour 消費 transition；chain_tour 消費 graph.db face）。
 
+> **delta_tour canonical 已同步（2026-08-25）**：mosaic dogfood 三 bug 修復落地 ai-rules `281e07e`（步驟集 git range 單源／claims 三態防呆／語義注入——mosaic 走讀 1.83→3.17、假指控/死步歸零），本 repo 凍結面已吸收同版（416 passed 基線）。R5 子 EP 的 delta_tour 規格＝**吸收後凍結面**（行為規格三決策見 ai-rules 281e07e commit message）。mosaic 端後續回報（R5 子 EP 盤點輸入）：總覽計數口徑標註、test 檔錨偏好 `def test_*`、range 凍結 pattern 對前進 HEAD 失效（文檔化）；敘事層 backlog——EP 文本語義抽取（commit subject）＞import graph 拓撲排序＞空白錨偏移＞重要性分層＞步 1 重複。
+
 ### 驗收（parity gate）
 各族 synthetic fixtures cmp（incident regression 全攜帶——boundary_build 7 個 regression 案、delta_tour 步序、chain_tour 錨三態）；NT 邊界掃描整合（`test_boundary_integration` 形態）對齊；`.tours` 語料治理工具在本 repo dogfood 上驗證。
 

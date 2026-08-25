@@ -198,3 +198,32 @@ class TestReportRendering:
         assert out["changed_modules"] == ["mosaic_alpha/conditions"]
         assert out["ep_claims"]["claimed_and_changed"] == ["mosaic_alpha/conditions"]
         assert out["ep_claims"]["claimed_not_changed"] == []
+
+
+class TestEpClaimsRelativePaths:
+    """B1 fix (mosaic dogfood 2026-08-25) — repo_root normalization: relative
+    path mentions resolve against module prefixes with an existence check;
+    without repo_root the regex-only behavior is unchanged (backwards compat)."""
+
+    def test_relative_path_claim_verified_against_repo(self, tmp_path: Path) -> None:
+        (tmp_path / "mosaic_alpha" / "adapters").mkdir(parents=True)
+        ep = tmp_path / "ep.md"
+        ep.write_text(
+            "touched `adapters/sj/connection.py` and "
+            "`mosaic_alpha/domain/mod.py` per pseudo code\n"
+        )
+        assert extract_ep_claims(ep, MOSAIC_PROFILE, repo_root=tmp_path) == {
+            "mosaic_alpha/adapters",
+            "mosaic_alpha/domain",
+        }
+
+    def test_relative_unknown_dir_not_claimed(self, tmp_path: Path) -> None:
+        (tmp_path / "mosaic_alpha").mkdir(parents=True)  # adapters/ NOT created
+        ep = tmp_path / "ep.md"
+        ep.write_text("see `adapters/sj/connection.py`")
+        assert extract_ep_claims(ep, MOSAIC_PROFILE, repo_root=tmp_path) == set()
+
+    def test_without_repo_root_regex_only(self, tmp_path: Path) -> None:
+        ep = tmp_path / "ep.md"
+        ep.write_text("see `adapters/sj/connection.py`")
+        assert extract_ep_claims(ep, MOSAIC_PROFILE) == set()
