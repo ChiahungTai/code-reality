@@ -195,7 +195,7 @@ rusqlite 讀 CRG graph.db（`connect_ro` WAL 語意＋torn-read guard 的 Rust �
 
 吸收範圍：`snapshot.py`/`transition.py`/`hub_refs.py`/`hazard.py`/`graph_audit.py`/`graph_csv.py`＋`profile.py`/`common.py`/`exclusions.py` 慣例層（toml profile 載入＋crash-only 驗證＋`module_of`/`claims_re`/`scan_roots`；EDGE_KINDS 白名單；`anchor_pattern`）。UC-4/UC-6 載體換軌。
 
-> **①已完成（2026-08-25，`ep-rust-r4-graph-family.md`——歸檔 `_done/`）**：foundation（common/profile/argparse）＋snapshot/transition/graph_audit/graph_csv＋`scip_refs --audit` in-process 兩遍式全部落地（parity 20 案例位元組等價＋跨語言互通 R4-N＋cargo 137）。**②（hazard×hub_refs）→ 衍生 `ep-rust-r4b-hazard-hubrefs.md`（待衍生）**。
+> **①已完成（2026-08-25，`ep-rust-r4-graph-family.md`——歸檔 `_done/`）**：foundation（common/profile/argparse）＋snapshot/transition/graph_audit/graph_csv＋`scip_refs --audit` in-process 兩遍式全部落地（parity 20 案例位元組等價＋跨語言互通 R4-N＋cargo 137）。**②完成（2026-08-26，`ep-rust-r4b-hazard-hubrefs.md`）**：hazard 六規則（ruff_python_parser 0.0.10——AST 差動七案例全等）＋hub_refs 全面（nodes 解析/聚合/觸發式 stage/`--json`）；mosaic dogfood：`--json` resident 面＋ambiguous FAIL 面位元組全等；force 全規則面發現凍結工具自身 evidence[:5] 的 rg 並行序非確定性（counts 穩定——記錄為已知面）。
 
 依賴：R1；（`scip_refs --audit` 的兩遍式組裝若 R2 延後，本段補——並進本段驗收）。**子 EP 兩段式**：①foundation＋graph 家族、②hazard（差動測試負擔獨立成段；sizing 需要時 hazard 可獨立衍生子 EP，不重編本 EP 段號）。語義約束：sidecar 慣例凍結；dogfood 本段起可用 Rust 工具掃自己。
 

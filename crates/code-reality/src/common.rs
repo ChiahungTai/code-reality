@@ -186,6 +186,53 @@ pub fn to_json_indent1(v: &Value) -> String {
     String::from_utf8(buf).expect("serde_json writes valid UTF-8")
 }
 
+/// Python `json.dumps(v, ensure_ascii=False)` with default (no-indent)
+/// separators: `", "` after commas, `": "` after colons — serde's compact
+/// writer omits those spaces, so this custom formatter restores them
+/// (hub_refs `--json` byte face).
+pub fn to_json_py_compact(v: &Value) -> String {
+    use serde_json::ser::Formatter;
+    struct PyCompact;
+    impl Formatter for PyCompact {
+        fn begin_array_value<W: ?Sized + std::io::Write>(
+            &mut self,
+            writer: &mut W,
+            first: bool,
+        ) -> std::io::Result<()> {
+            // begin_array already wrote "["; separators only between items
+            if first {
+                Ok(())
+            } else {
+                writer.write_all(b", ")
+            }
+        }
+
+        fn begin_object_key<W: ?Sized + std::io::Write>(
+            &mut self,
+            writer: &mut W,
+            first: bool,
+        ) -> std::io::Result<()> {
+            if first {
+                Ok(())
+            } else {
+                writer.write_all(b", ")
+            }
+        }
+
+        fn begin_object_value<W: ?Sized + std::io::Write>(
+            &mut self,
+            writer: &mut W,
+        ) -> std::io::Result<()> {
+            writer.write_all(b": ")
+        }
+    }
+    let mut buf = Vec::new();
+    let mut ser = serde_json::Serializer::with_formatter(&mut buf, PyCompact);
+    use serde::Serialize;
+    v.serialize(&mut ser).expect("in-memory JSON write");
+    String::from_utf8(buf).expect("serde_json writes valid UTF-8")
+}
+
 // ---------- D2: time foundation ----------
 
 /// `datetime.now(UTC).isoformat()` (`common.py:112`): microseconds at

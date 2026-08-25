@@ -14,6 +14,8 @@ libc = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
 glob = { workspace = true }
+ruff_python_parser = { workspace = true }
+ruff_python_ast = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

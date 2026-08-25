@@ -9,4 +9,8 @@ allow = [
     "ISC",
     "Unicode-3.0",
     "Zlib",
+    # ruff_python_parser transitive: permissive, LLVM exception grants
+    # patent rights; Unicode-DFS-2016 is the older Unicode license
+    "Apache-2.0 WITH LLVM-exception",
+    "Unicode-DFS-2016",
 ]

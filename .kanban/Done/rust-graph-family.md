@@ -13,5 +13,8 @@ foundation（common/profile/exclusions）＋graph 家族（snapshot/transition/g
 ## 驗收標準
 S6 gate：synthetic 雙跑全綠（六工具 stdout/exit cmp＋`-h` usage 面＋CSV 檔案位元組）＋跨語言互通（Rust snapshot→Python transition）＋全量回歸零改動；dogfood＝實機手動步驟（graph.db gitignore 面，非 gate）。
 
+## ②完成（2026-08-26）
+hazard×hub_refs 全落地（cargo 164／mosaic dogfood 位元組等價）；詳見 `ai-analysis/execution-plans/_done/` 兩份 R4 EP。
+
 ## 備註
 共存期 Python 零改動；graph.db 只讀（connect_ro）；`--json` 四鍵是治理鉤子契約面（消費端驗證隨 open-source 測試政策改道——見 tests/AGENTS.md）。
