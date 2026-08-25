@@ -52,5 +52,6 @@ per-repo SCIP index slots under `scip/<repo-basename>/`
 
 ## Tests
 
-`uv run pytest` (tests marked `integration` consume real repos and sidecar
-artifacts outside this repo).
+`uv run pytest` — self-contained (synthetic fixtures + tmp-dir state
+only; zero environment dependence — open-source test policy in
+[tests/AGENTS.md](tests/AGENTS.md)).

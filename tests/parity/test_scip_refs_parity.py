@@ -1,11 +1,11 @@
 """Cross-language parity harness: frozen Python scip_refs vs Rust `code-reality scip_refs`.
 
 Runs both implementations on identical inputs and compares stdout bytes +
-exit codes (the NT contract surface; stderr is management-only and not gated).
+exit codes (the contract surface; stderr is management-only and not gated).
 All mutating drills (touch mtime, meta head rewrite, corrupt bytes, db builds)
-run on fixture COPIES in per-side tempdirs — the NT real-index cases are
-strictly read-only (skip if the slot db is stale — a rebuild would write into
-the live sidecar home).
+run on fixture COPIES in per-side tempdirs — the suite is fully self-contained
+(open-source test policy; legacy NT real-index cases removed with it, history
+in the archived R2/R3 EPs).
 
 EP: ai-analysis/execution-plans/ep-rust-r2-scip-family.md S5 (master R2 gate).
 """
@@ -21,8 +21,6 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "rich.scip"
-NT_REPO = Path.home() / "Github" / "nautilus_trader"
-NT_INDEX = Path.home() / ".mosaic/code-reality/scip/nautilus_trader/index.scip"
 
 pytestmark = pytest.mark.parity
 
@@ -245,18 +243,6 @@ class TestCrossLanguageDbInterop:
         )
 
 
-@pytest.fixture(scope="module")
-def nt_fresh():
-    """Read-only guard: skip if the slot or its fresh db is absent (a stale db
-    would trigger an auto-rebuild = sidecar mutation)."""
-    db = NT_INDEX.with_name("index.scip.db")
-    if not NT_INDEX.exists() or not db.exists():
-        pytest.skip("NT real index slot absent")
-    if db.stat().st_mtime < NT_INDEX.stat().st_mtime:
-        pytest.skip("NT slot db stale — read-only policy forbids the auto-rebuild")
-    return NT_INDEX
-
-
 class TestArgparseEdge:
     """argparse-mimicking parse edge cases (agent-review adversarial probes)."""
 
@@ -349,27 +335,12 @@ class TestArgparseEdge:
             )
 
 
-class TestNtRealIndex:
-    def test_type_method_18_refs(self, nt_fresh):
-        parity(
-            ["EventStoreLifecycle.open", "--repo", str(NT_REPO)],
-            ["EventStoreLifecycle.open", "--repo", str(NT_REPO)],
-            Path("/nonexistent"),  # no tmp normalization needed (shared slot)
-        )
-
-    def test_bare_name_default_backend_opener(self, nt_fresh):
-        parity(
-            ["default_backend_opener", "--repo", str(NT_REPO)],
-            ["default_backend_opener", "--repo", str(NT_REPO)],
-            Path("/nonexistent"),
-        )
-
-    def test_no_slot_repo_exit_2(self, tmp):
-        # SM-4: repo without a slot index → loud exit 2 (uses a unique tmp name)
-        fake = tmp / "no_such_repo_xyz"
-        fake.mkdir()
-        parity(
-            ["q", "--repo", str(fake)],
-            ["q", "--repo", str(fake)],
-            tmp,
-        )
+def test_no_slot_repo_exit_2(tmp):
+    # SM-4: repo without a slot index → loud exit 2 (uses a unique tmp name)
+    fake = tmp / "no_such_repo_xyz"
+    fake.mkdir()
+    parity(
+        ["q", "--repo", str(fake)],
+        ["q", "--repo", str(fake)],
+        tmp,
+    )

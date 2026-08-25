@@ -1,9 +1,32 @@
 # tests — test suite
 
-Unit tests run on synthetic fixtures only (no network, no real repos).
-Integration tests carry the pytest `integration` marker (registered in
-`pyproject.toml`), consume real repos and sidecar artifacts outside this
-repo, and **skip** — not fail — when those are absent.
+Self-contained (open-source policy below): every test runs on committed
+synthetic fixtures or tmp-dir state — a fresh clone with only the dev
+deps passes `uv run pytest` with zero skips and zero environment
+dependence. The pytest `integration` marker (registered in
+`pyproject.toml`) is reserved for future tmp-repo / fs-git drills.
+
+## Open-source test policy (2026-08-25)
+
+Follows the established pattern of comparable tools (code-review-graph,
+scip-callgraph): **the suite is self-contained** — a fresh clone with
+only the dev deps passes; no personal paths, no private corpora, no
+live external-repo gates.
+
+- Committed synthetic fixtures reproduce corpus *shapes* (enc arity,
+  symbol morphology, tie structures, graph.db schemas); tmp-dir repos
+  for git/fs integration. No vendored third-party-derived fixtures
+  (license provenance; stale-fixture rot).
+- Real-corpus evaluation, if ever wanted, is a separate harness run
+  against public repos with results committed as artifacts — not a
+  test gate (CRG `eval/` precedent).
+- How consumers verify the tools against their own repos is the
+  consumers' business — docs show usage, nothing more.
+- Migration state: the legacy external-consumer tests were removed on
+  2026-08-25 under this policy (chain_tour pins, NT scip parity L4 +
+  callers pins + SM-9 drill + LSP oracle fixture, and the mosaic
+  graph.db integration set incl. the delegation_driver tracing target);
+  their historical adjudications stay recorded in the archived EPs.
 
 Run: `uv run pytest` (everything) or `uv run pytest -m "not integration"`
 (unit only).
@@ -30,6 +53,3 @@ Run: `uv run pytest` (everything) or `uv run pytest -m "not integration"`
 - `crg_db` — temp CRG-shaped graph.db generator
 - `profile_repo` — writes synthetic `.code-reality.toml` into temp repos
 - `make_trace` — synthetic viztracer trace JSON
-- `delegation_driver` — viztracer tracing target, executed via subprocess
-  (its golden delegation edge is asserted by
-  `test_runtime_edges_integration`)
