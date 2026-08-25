@@ -182,7 +182,7 @@ UC-2（舊 S2 的能力規格全繼承、載體改 Rust）：DEF-enc containment
 吸收範圍：新能力（Python 版從未存在——無 parity 對象，驗收走**三源一致**而非 cmp）。依賴：R2 結構化存取器。語義約束：與 R6 共享「callers/closure 上 MCP 工具面」。**fn_defs 落位（SM-13）**：closure sqlite 路徑需要的 fn span 表住**獨立 Rust-owned sidecar**——Python 三表 db 與其 `SCHEMA_VERSION` 守衛（`scip_refs.py:89,443-445` 實證）不動，防互毀重建 ping-pong；schema 合併只在不早於 R7 評估。
 
 ### 驗收
-`EventStoreLifecycle.open` → **17 callers**＝LSP `incomingCalls`（curl 127.0.0.1:8000/mcp 對帳）＝closure 起點（三源一致，spec 成功條件②）；closure 秒級（sqlite 路徑）；單元測試釘 tie/single-span/item-level 語意（舊 EP S2 測試計畫繼承、語言改寫）。
+`EventStoreLifecycle.open` → **16 callers／18 sites**（2026-08-25 機械重計裁決：上游「17 callers（1 impl＋16 tests）」與證據檔 18 refs 算術矛盾——`_e2e_rerun.out` 逐行複數＝1 impl＋15 test fn；裁決記錄見 R3 子 EP）＝LSP `incomingCalls`（curl 127.0.0.1:8000/mcp 對帳——**名單重取結案**，PENDING 阻斷）＝closure 起點（三源一致，spec 成功條件②）；closure 秒級（sqlite 路徑——tempdir 演練硬 gate）；單元測試釘 tie/single-span/item-level 語意（舊 EP S2 測試計畫繼承、語言改寫）。
 
 → 衍生子 EP：`ai-analysis/execution-plans/ep-rust-r3-caller-edges.md`
 
@@ -228,7 +228,7 @@ AD-2/AD-3 落地：`rmcp`（官方 SDK、Tier 1）streamable-http 常駐 `127.0.
 吸收範圍：新 frontend（取代舊 S3 的 `mcp_server.py` 規格——Python 版永不建）。依賴：**R2+R3**（audit 面=R2 組裝或 R4 `graph_audit`——可與 R4/R5 平行展開）。**sync-in-tokio**：rusqlite 阻塞 I/O 在 handler 內走 `spawn_blocking`（或明示接受單人負載容忍，子 EP 釘）；**跨請求零共享 mutable cache**（未來引入 repo 鍵快取須明示＋測試）。
 
 ### 驗收
-V1-V7 形態（CRG 閉環）：tools/list 四工具；refs 18 refs＋callers 17 callers 與 CLI 同輸出；缺 repo_root loud；SM-14 毒化隔離（Err 與 panic 兩案）；audit `[STDERR]` WARN 可見；SM-10：改碼→`cargo install --path`→`launchctl kickstart`→下一呼叫反映新版本（kickstart 版 V4）；KeepAlive 自起；跨 session 新 session 工具可見（L6 user 抽查）。
+V1-V7 形態（CRG 閉環）：tools/list 四工具；refs 18 refs＋callers 16 callers 與 CLI 同輸出（數字隨 R3 gate 裁決——見段 R3）；缺 repo_root loud；SM-14 毒化隔離（Err 與 panic 兩案）；audit `[STDERR]` WARN 可見；SM-10：改碼→`cargo install --path`→`launchctl kickstart`→下一呼叫反映新版本（kickstart 版 V4）；KeepAlive 自起；跨 session 新 session 工具可見（L6 user 抽查）。
 
 → 衍生子 EP：`ai-analysis/execution-plans/ep-rust-r6-mcp-server.md`
 
