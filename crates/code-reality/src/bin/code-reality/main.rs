@@ -33,6 +33,9 @@ fn route(argv: &[&str]) -> code_reality::ToolOutput {
         Some(&"graph_audit") => code_reality::graph_audit::run(argv),
         Some(&"graph_csv") => code_reality::graph_csv::run(argv),
         Some(&"hub_refs") => code_reality::hub_refs::run(argv),
+        Some(&"tour_manifest") => code_reality::tour_manifest::run(argv),
+        Some(&"tour_validate") => code_reality::tour_validate::run(argv),
+        Some(&"tour_upgrade") => code_reality::tour_upgrade::run(argv),
         Some(&"--help") | Some(&"-h") | Some(&"--version") => ToolOutput {
             stdout: format!(
                 "code-reality — toolchain umbrella ({})\n",
@@ -49,4 +52,4 @@ fn route(argv: &[&str]) -> code_reality::ToolOutput {
     }
 }
 
-const SUBCOMMANDS: [&str; 6] = ["scip_refs", "snapshot", "transition", "graph_audit", "graph_csv", "hub_refs"];
+const SUBCOMMANDS: [&str; 9] = ["scip_refs", "snapshot", "transition", "graph_audit", "graph_csv", "hub_refs", "tour_manifest", "tour_validate", "tour_upgrade"];

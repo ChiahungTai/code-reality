@@ -19,6 +19,7 @@ serde = "1"
 glob = "0.3"
 ruff_python_parser = "0.0.10"
 ruff_python_ast = "0.0.10"
+fancy-regex = "0.14"
 
 [profile.release]
 # Query tooling: prefer fast index decode (the 275MB NT index parses in ~0.7s in release).
