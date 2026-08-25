@@ -9,7 +9,7 @@
 //! ("derived face is an accelerator, not a dependency" — scip_refs.py:459).
 
 use crate::engine::{
-    self, fn_tail_name, load_index, load_meta, loc_line, matches_query, tail, Query,
+    self, fn_tail_name, load_index, loc_line, matches_query, stamped_head, tail, Query,
 };
 use rusqlite::{Connection, OpenFlags};
 use scip::types::Index;
@@ -133,10 +133,7 @@ pub fn build_db(index: &Index, db_path: &Path, sidecar_head: &str) -> Result<Sta
 }
 
 fn sidecar_head(index_path: &Path) -> String {
-    load_meta(index_path)
-        .0
-        .and_then(|m| m["head"].as_str().map(str::to_string))
-        .unwrap_or_default()
+    stamped_head(index_path)
 }
 
 // rusqlite 0.40 removed Connection::query_map — helpers go through prepare().
@@ -179,7 +176,7 @@ fn query_text_pairs(conn: &Connection, sql: &str) -> rusqlite::Result<Vec<(Strin
     rows.collect()
 }
 
-/// Four staleness signals (scip_refs.py:422-449): db older than index,
+/// Five staleness signals (scip_refs.py:422-449): db older than index,
 /// stat failure, corrupt db (not sqlite / no meta table), schema mismatch,
 /// sidecar-head drift. A corrupt db counts as stale — rebuild cures it.
 pub fn stale_reason(index_path: &Path, db_path: &Path) -> Option<String> {
@@ -346,7 +343,7 @@ pub fn sqlite_refs(
             conn,
             "SELECT rel_path, line FROM occurrences \
              WHERE symbol = ? AND is_def = 0 ORDER BY seq",
-            &[symbol],
+            &[&symbol],
         )?;
         out.insert(
             symbol.clone(),
@@ -354,6 +351,49 @@ pub fn sqlite_refs(
         );
     }
     Ok(out)
+}
+
+/// Flat non-DEF rows (symbol, rel_path, line) in seq order — the global
+/// scan order across symbols that caller first-site ordering depends on
+/// (structured counterpart of sqlite_refs; R3 callers input). Error strings
+/// are truncated: a failed `IN (...)` prepare embeds the whole generated
+/// SQL (one placeholder per symbol — kilobytes at hub scale), which only
+/// bloats the WARN line the fallback prints.
+pub fn sqlite_refs_rows(
+    conn: &Connection,
+    symbols: &BTreeSet<String>,
+) -> Result<Vec<(String, String, i64)>, String> {
+    if symbols.is_empty() {
+        return Ok(Vec::new());
+    }
+    let placeholders = vec!["?"; symbols.len()].join(", ");
+    let sql = format!(
+        "SELECT symbol, rel_path, line FROM occurrences \
+         WHERE symbol IN ({}) AND is_def = 0 ORDER BY seq",
+        placeholders
+    );
+    let params: Vec<&dyn rusqlite::ToSql> =
+        symbols.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
+    let mut stmt = conn.prepare(&sql).map_err(|e| truncate_err(&e.to_string()))?;
+    let rows = stmt
+        .query_map(params.as_slice(), |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+            ))
+        })
+        .map_err(|e| truncate_err(&e.to_string()))?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| truncate_err(&e.to_string()))
+}
+
+/// Char-safe truncation for error strings that may embed generated SQL.
+fn truncate_err(e: &str) -> String {
+    match e.char_indices().nth(160) {
+        Some((i, _)) => format!("{}…", &e[..i]),
+        None => e.to_string(),
+    }
 }
 
 impl Face {
@@ -370,6 +410,18 @@ impl Face {
         match self {
             Face::Protobuf { index } => Ok(engine::find_refs(index, symbols)),
             Face::Sqlite(conn) => sqlite_refs(conn, symbols),
+        }
+    }
+
+    /// Flat structured non-DEF rows via the active face, global scan order
+    /// (R3 callers input; protobuf scan order = sqlite seq insertion order).
+    pub fn refs_rows(
+        &self,
+        symbols: &BTreeSet<String>,
+    ) -> Result<Vec<(String, String, i64)>, String> {
+        match self {
+            Face::Protobuf { index } => Ok(engine::refs_rows(index, symbols)),
+            Face::Sqlite(conn) => sqlite_refs_rows(conn, symbols),
         }
     }
 }

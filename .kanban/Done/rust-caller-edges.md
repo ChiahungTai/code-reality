@@ -7,7 +7,7 @@
 
 ## 相關
 - 父 EP：`ai-analysis/execution-plans/ep-rust-migration.md` 段 R3
-- 研究背景：ai-rules 研究報告 §2（17 callers LSP 交叉驗證）
+- 研究背景：ai-rules 研究報告 §2（16 callers LSP 交叉驗證——上游 prose「17」為謄寫錯，R3 EP 裁決記錄）
 
 ## 驗收標準
 `EventStoreLifecycle.open` callers=16／18 sites（2026-08-25 機械重計——上游「17」與證據檔算術矛盾，LSP 名單 build 時重取結案）＝LSP `incomingCalls`＝closure 起點（三源一致）；closure 秒級。

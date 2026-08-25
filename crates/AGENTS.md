@@ -10,9 +10,15 @@ it; every Rust tool must reproduce Python stdout bytes + exit codes exactly
 - **lib layering**: `engine` (domain/use case — SCIP parsing via the `scip`
   crate [rust-protobuf form, types at `scip::types::*`], symbol predicates
   [hand-rolled — the `regex` crate has no look-around], scan, `[SRC]`
-  assembly) / `cache` (adapter — derived sqlite three-table cache with
-  cross-language schema interop, stale guards, face selection with
-  protobuf fallback) / `cli` (assembly — argv surface, mode routing).
+  assembly, structured caller-edge accessors [`FnSpan`/`fn_spans` from DEF
+  `enclosing_range`, flat `refs_rows`]) / `callers` (domain — DEF-enc
+  containment attribution with the `(width, seq)` innermost tie, closure
+  BFS, mode output assembly; imports neither cli/cache/fndefs) / `cache`
+  (adapter — derived sqlite three-table cache with cross-language schema
+  interop, stale guards, face selection with protobuf fallback) / `fndefs`
+  (adapter — fn-span sidecar `*.fndefs.db`, the sqlite carrier for
+  callers/closure spans; ladder mirrors cache) / `cli` (assembly — argv
+  surface, mode routing incl. `--callers`/`--closure`/`--depth` 1-10000).
 - **lib API contract**: functions return `ToolOutput {stdout, stderr,
   exit_code}` data — the lib never prints and never exits; the bin owns
   printing/exiting (compile-time premise of CLI/MCP single-backend

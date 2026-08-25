@@ -47,7 +47,7 @@ per-repo SCIP index slots under `scip/<repo-basename>/`
 | Completeness governance (audit + `[SRC]` provenance) | `scip_refs --audit --repo` + `graph_audit --json` | ✅ |
 | Deletability safety net (hub_refs/hazard) | `hub_refs <symbol> --repo <repo> --hazard` | ✅ |
 | Boundary / export / narrative tool family | snapshot / transition / boundary family / tour family / runtime_edges / graph_csv | ✅ |
-| Caller-edge query (callers/closure) | scip_refs `--callers` / `--closure` | 📋 (EP R3) |
+| Caller-edge query (callers/closure) | Rust carrier: `code-reality scip_refs <symbol> --callers/--closure [--depth N] --repo <repo>` (`--depth` 1-10000, default 2; item-level refs = refs not enclosed by any fn — refs are not call counts) | ✅ (Rust-native; Python carrier never built — R3 superseded it) |
 | Unified MCP interface | `python -m code_reality.mcp_server` | 📋 (EP R6) |
 
 ## Tests

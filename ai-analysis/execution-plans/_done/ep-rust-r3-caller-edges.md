@@ -55,7 +55,7 @@ ai-rules `skills/` 目前 `--callers`/`--closure`/`call_edges` **零出現**（r
 | SM-9 | hub symbol closure 效能 | 195KB 級 refs | 秒級（sqlite 路徑——tempdir 演練硬 gate）＋按檔聚合 | 無 | UC-2 |
 | R3-A | 符號未命中 | `--callers` 無 DEF 查詢 | `[WARN] 查無 DEF：{query}` exit 1（家族語意） | 無 | UC-2 |
 | R3-B | 非 fn 形態符號查 callers | 型別/常數查詢 | **兩面一致**：`查無 DEF` exit 1——共用 matcher 宇宙＝`{name}().` 後綴形態（fn-shaped；`engine.rs:29-36` name_pat_match 兩形態皆要求），R2 凍結語意，無面分歧 | 無 | UC-2 |
-| R3-C | depth 邊界 | `--depth 0`／負數／非整數 | `[FAIL]` exit 2（需正整數） | 無 | UC-2 |
+| R3-C | depth 邊界 | `--depth 0`／負數／非整數／**超過上限** | `[FAIL]` exit 2（需正整數 1-10000——**build 期新設計決策**：closure 無空-frontier 早退〔穩定形狀承諾〕，無上限＝user-reachable 無界迴圈；對抗審查實證） | 無 | UC-2 |
 | R3-D | closure 環 | A↔B 互呼 | visited 環偵測不死循環，報告 cycle 重入數 | visited set | UC-2 |
 | R3-E | sidecar 過期 | index 重生成後 mtime 漂移 | stderr WARN＋自動重建；stdout 不變 | 無 | UC-2 |
 | R3-F | sidecar 損壞 | 壞 bytes／非 db 檔 | 視同過期→重建；重建失敗→stderr WARN＋protobuf spans 照常答（加速器非依賴） | 無 | UC-2 |
@@ -260,8 +260,8 @@ master R3 gate 裁決。UC 引用：UC-2 驗收。依賴：S1-S3。語義約束�
 ### 核心實作要點
 1. **fixture 擴充**（`tests/parity/make_fixture.py` 產 `rich_callers.scip`，commit 進 repo；cargo 測試讀同檔）：巢狀 fn（innermost）、同寬 tie 對、巨集 single-line span（3 元素 enc）、跨 fn 多 site caller（2 sites）、item-level ref（span 外）、closure 環對（A↔B）、外部符號 ref（`github.com/rust-lang` 前綴——歸屬自然行為文檔化）
 2. **fixture 雙面等價**：protobuf 面（無 db/sidecar）與 `--build-cache` 後 sqlite 面各跑 `--callers` 與 `--closure`——**stdout 逐位元組相等**（面選擇 ladder/排序路徑的等價裁決）
-3. **NT L4（唯讀，Rust-only 案例）**：`--callers EventStoreLifecycle.open --repo <NT>` → **16 callers／18 sites**；**名單級 pin**（測試內嵌全列，不引用 ai-rules 臨時檔）：1 impl variant（`impl#[EventStoreLifecycle][KernelEventStore]open().`）＋15 test fn（symbol 含 `kernel/tests/` 段——**mod tests 內 fn，非獨立 test 檔**）＋18 個 site 行號逐筆（1356/1742/1791/2461/2470/2514/2526/2798/2870/2937/3050/3075/3119/3166/3211/3293/3373/3474）；雙 site fn 兩顆（2461/2470、2514/2526 各屬同 caller）；item-level=0。**pin 隨 NT 索引世代漂移＝顯式再裁決**（非靜默——R2 18-refs NT live pin 同型前例）；`--closure --depth 2` depth-1 集合＝callers 集（三源第三源：closure 起點一致）＋環偵測正常；**查詢前後 sidecar 存在性與 mtime 快照不變**斷言（R3-J）；`nt_fresh` guard 擴 sidecar 預存 skip
-4. **三源對帳（LSP，源 2）**：整合測試 probe `127.0.0.1:8000/mcp`——在場→兩步 call hierarchy（`prepareCallHierarchy` @ kernel.rs:544:12→`incomingCalls`）與 CLI 輸出**名單級比對**（fn 名集合相等——LSP 列 item 起始行、SCIP 列呼叫點行，行不可比）；**原始 JSON 回應存檔進本 repo**（`tests/parity/fixtures/lsp_incomingcalls_*.json`——oracle 不依賴 server 常駐）；缺席→顯式 skip＋build 報告記錄——**PENDING 為阻斷結案狀態（gate 不因 PENDING 滿足；補測後結案）**。對帳結果記錄 16/17 裁決（風險表 row 1 結案）
+3. **NT L4（唯讀，Rust-only 案例）**：`--callers EventStoreLifecycle.open --repo <NT>` → **16 callers／18 sites**；**名單級 pin**（測試內嵌全列，不引用 ai-rules 臨時檔）：1 impl variant（`impl#[EventStoreLifecycle][KernelEventStore]open().`）＋15 test fn（symbol 含 `kernel/tests/` 段——**mod tests 內 fn，非獨立 test 檔**）＋18 個 site 行號逐筆（1356/1742/1791/2461/2470/2514/2526/2798/2870/2937/3050/3075/3119/3166/3211/3293/3373/3474）；雙 site fn 兩顆（2461/2470、2514/2526 各屬同 caller）；item-level=0。**pin 隨 NT 索引世代漂移＝顯式再裁決**（非靜默——R2 18-refs NT live pin 同型前例）；`--closure --depth 2` **起點語意（build 期精確化）：depth-1 新發現集＝callers 集扣除 query 解析的 seed 符號**（多 DEF seed 下，兼具 seed 與 caller 身分的符號〔如 NT 的 trait impl〕計為 cycle 重入——NT＝15 new＋1 cycle）＋環偵測正常；**查詢前後 sidecar 存在性與 mtime 快照不變**斷言（R3-J）；`nt_fresh` guard 擴 sidecar 預存 skip
+4. **三源對帳（LSP，源 2）**：build 期執行 curl `127.0.0.1:8000/mcp` 兩步 call hierarchy（`prepareCallHierarchy` @ kernel.rs:544:12→`incomingCalls`），與 CLI 輸出**名單級比對**（fn 名集合相等——LSP 列 item 起始行、SCIP 列呼叫點行，行不可比）；**原始 JSON 回應存檔進本 repo**（`tests/parity/fixtures/lsp_incomingcalls_eventstore.json`——oracle 不依賴 server 常駐）；測試層 presence probe（skip-when-absent）比對持久化 oracle（live 重取＝build 期一次性）
 5. **SM-9 硬 gate（sqlite 路徑——tempdir 演練）**：copy NT `index.scip`→tempdir→`--build-cache`（建三表＋sidecar；**量測建置耗時＝風險 row 4 著落**）→sqlite 路徑 `--closure --depth 2`→**wall-clock 斷言 ≤10s**（研究：sqlite refs 查詢次秒級、protobuf 全量 parse 0.9s——10s 為量級界線非緊繃值；CI 環境差異允許本地 heavy 斷言＋記錄分級，但「秒級」必須有數字構成 gate）
 6. **回歸**：既有 parity 29 案例全綠（R2 輸出面零改動的機械證明）＋`uv run pytest` 全綠＋`cargo test`/`clippy -D warnings`/`cargo deny` 全綠
 7. 收尾：root AGENTS.md UC-2 行 📋→✅（Rust 載體：`code-reality scip_refs --callers/--closure`）＋口徑 clause（refs vs callers——本 repo 文檔）；`crates/AGENTS.md` 補 `callers`/`fndefs` 模組導航；kanban `rust-caller-edges` In-Progress→Done＋master 追蹤卡 R3✅；**ai-rules 零編輯**（消費面凍結條款——R7 relay 才動）；master EP R3 gate 行 16-callers 修正隨本 EP（上游研究報告為歷史文件不改——分歧記錄在本 EP 段落 0）
@@ -304,3 +304,34 @@ NT 名單級 pin 全過＋LSP 對帳完成（**PENDING 阻斷結案**——skip 
 **不採納 0 項**（驗收軌「17 全對上」核對項非建議，屬裁決推翻对象，不計 finding）。
 
 **裁決記錄（2026-08-25，機械重計）**：`_e2e_rerun.out:7-24` 逐行 18 refs——distinct callers＝16（impl 1＋test fn 15；2461/2470 與 2514/2526 兩顆雙 site）。研究報告 §2.4 prose「17 callers（1 impl＋16 tests）」與其自身證據檔算術矛盾（17＋兩雙 site ⇒ ≥19 refs ≠ 18）；上游 spec/master EP 同染。**本 EP 以證據檔為準（16）**；LSP 側名單從未落盤——源 2 於 S4 build 重取結案（16→謄寫錯結案；17→實質缺口的個案調查）。master EP R3 gate 行隨本 EP 修正；上游研究報告為歷史文件不改。
+
+## Build Agent Review Record（2026-08-25 /implement 階段 4）
+
+三視角獨立審查（clean／UC-anchored／Correctness——Correctness 軸全程對抗實測：構造 SCIP 注入 tie/arity/守衛/CLI 邊界，NT 活體加測）。**🔴×1＋🟡×7＋🟢 批——judge 後 18 項採納修入**；fix-delta re-review（第四 agent）驗證 7/7 修對＋3 🟡＋1 🔵 再修入——**loop 兩輪收斂**（第二輪無新 🔴/🟡-major）。
+
+| 視角 | 關鍵 findings（已修） |
+|------|---------------------|
+| clean | 🟡 **`--depth` 無上限**（與 Correctness 🔴 會師）→ gate 1-10000＋文案＋測試；🟡 make_fixture docstring 殘 `[out-path]`→修；🟢：`head_of` 重複→`engine::stamped_head`、DEFAULT_CLOSURE_DEPTH const、WARN 動詞分歧註解（刻意：僅 spans 降級）、`no_def_output` 抽 `engine::no_def_lines`（report 凍結面不動）、FnSpan docstring 過度宣稱改精確、`build_sidecar` file_name char-safe、測試衛生批（mid-file use／死變數／魔術數字出處／catch_unwind 註解）、mypy pin 補理由 |
+| UC-anchored | 🟡 **S2 ladder 三測試空虛**（rich.scip 無 enc→span map 比較零次）→改用 rich_callers.scip＋非空斷言；🟡 mypy 變更混入 R3 diff→拆獨立 commit（commit 時執行）；🟡 harness 落點偏差（新檔 `test_callers_r3.py` 而非釘死的併入 `test_scip_refs_parity.py`）＋LSP probe 形態偏差（presence-gated oracle 比對）→記錄；🟢：sidecar seq flatten 重編→**改存原始掃描序**（re-review 再補 doc 序≠排序序的鑑別 fixture：z.rs 先）；s4_cli 潛在壞測試修法核實＋**R2「cargo 30 綠」對該案例失真記錄**；--help usage 擴新旗標（Rust 原生面）記錄 |
+| Correctness | 🔴 **closure 無空-frontier 早退——`--depth 18446744073709551615` 實效無限循環**（實測重現：10s 殺不掉、1e6 depth＝27MB stdout/88MB RSS）→depth 上限解（早退方案否決——與穩定形狀承諾衝突）；🟡 **WARN 內嵌完整 SQL**（33000 符號場景 99KB stderr）→`truncate_err` 160-char char-safe；🟢 F3 closure level-1≠callers 集＝**釘死語意**（seed 兼 caller 計 cycle）→EP S4 措辭精確化；已實測通過面：tie 三軸／inclusive 邊界／arity 家族／守衛四注入／混合面 byte-equal／CLI 對抗族／IN-clause 上限（32766 世代；33000→WARN+fallback byte-equal）／NT 活體（16 callers/0.90s/sidecar 不存在） |
+
+**fix-delta re-review**：7 項修正全數驗證修對（實測：depth 10000＝10005 行輸出 0.53s；seq 實拆 sidecar 核對；no-DEF 三路徑 diff 全空）；3 🟡（seq 鑑別缺口→補 z.rs-先 fixture 已修；cli.rs 殘留 head 萃取→delegate 已修；no_def_lines docstring→已修）＋1 🔵（`--build-cache`×corrupt index 文案轉裸訊息＝**parity 改善**——Python oracle 同形；補 parity 案例釘住已修）。
+
+### 偏差記錄（EP 是收斂方向；實作層裁量）
+
+1. **enc len 0＝合法缺席→靜默跳過**（EP 原文「其他元素數→WARN」精確化：僅非空異常 arity 警告；rust-analyzer fn DEF 100% 帶 enc，len-0 屬 enc-less indexer 面）＋專屬測試
+2. **RowsOracle 抽象**（face/protobuf-fallback 正規化；EP pseudo 為 per-symbol map refs_rows——實作改 flat 掃描序 rows＋oracle enum，支撐 first-site 全域排序與 load-once）
+3. closure 簽名泛型化 `FnMut` by-value；`Caller{def_path}` 結構化（by_file 聚合所需）；`spans_source(Option<&Index>)` load-once 防二次 decode；mid-BFS face 錯誤 WARN-once＋跳過（EP 外新防禦）
+4. **S1 弱 RED**（測試後於實作撰寫；RED 首輪抓到的兩失敗均為測試自身資料錯）——補償：對抗審查實測＋NT 名單級 pin
+5. closure 起點語意精確化（見 S4）；harness 落點改新檔；LSP 源 2 形態＝build 期 live fetch＋oracle 持久化（測試 presence-gated）
+6. `--build-cache` 擴充之 sidecar 失敗＝exit 2（explicit-build 語意同三表；EP 未明說）
+7. mypy toolchain 變更（user 同日授權的獨立任務）與本 EP 分別 commit
+8. 已知未覆蓋：外部符號 ref fixture（外部符號無 DEF 不入 span 候選——低風險記錄）；`--callers=` inline 空值文案與 argparse 微差（無 oracle 面）
+
+### 環境漂移記錄（非 R3 回歸，機械證明）
+
+`tests/test_chain_tour_integration.py::test_real_chain_tours` 於 build 末段失敗（same 87<90）：外部 mosaic checkout（`mosaic_alpha_offline_backtesting`）於 19:23 前進至 `e39fe439`＋graph.db 同刻重建，tour pins 為 08-23 快照時代數字。R3 diff 零觸 tour 家族（`git diff --name-only` 無命中）＋`code_reality/` diff 空。**pin 更新屬維護 pass，不在本 EP 內靜默處理**——留用戶裁決（設計面：exact-count pin 於不受控外部輸入且無 drift guard——已向 user 提案 `nt_fresh` 型對版守衛，待裁決）。
+
+### Post-Build dual-context 收尾鏈（2026-08-25）
+
+fresh-eyes＋primed 雙審查者：**0🔴／2🟡／14🟢**——judge 採納 8 項修入、4 項記錄不修。修正：`saturating_sub`（敵造-but-fresh sidecar 反向 span 的 debug-overflow tie key 面）；closure mid-BFS WARN 改「跳過 N 符號（首例）」計數形態；「Four→Five staleness signals」docstring（cache 家族同 quirk 一併修）；**LSP probe 移除**（無證據力——比較對象恆為兩份 committed 產物，任意 process 佔 port 只翻 skip 不改斷言；重構為純資料一致性檢查，oracle `_meta.count` 自洽斷言加入）；attribute 線性掃描 bound 與 sites 無上限（＝邊集即產品）的設計註解；kanban Done 卡「相關」段 17→16 殘行同步。記錄不修：rows fallback 雙 parse（罕見路徑效能 ~0.9s——load-once slot 生命週期跨模組 threading 不成比例）；IN-clause >32766 fallback 未機械釘住（對抗手測證據＋33000 符號 fixture 成本不成比例）；`test_scip_refs_parity.py` 三個 format-only hunk（ruff format 通過——逐行核對語意中性）；`cache.rs` `&[&symbol]` cosmetic coercion。SM-13 斷言形態精確化：斷言的是**隔離 `build_sidecar` 前後三表 bytes 不變**（非 `--build-cache` 兩階段間快照）——組合覆蓋 EP 意圖（`build_db` 輸出另有 parity 位元組釘住；sidecar 建置是唯一其他寫入者）。

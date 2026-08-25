@@ -168,6 +168,85 @@ pub fn find_refs(index: &Index, symbols: &BTreeSet<String>) -> HashMap<String, V
     refs
 }
 
+// ---------- caller-edge accessors (R3) ----------
+
+/// A fn DEF's enclosing span, 1-based inclusive lines. `seq` is the DEF's
+/// scan order — the same-width tie-break basis (first-seen wins). Only the
+/// per-file relative order matters to the tie rule; both faces preserve it
+/// (protobuf scan order; sqlite `ORDER BY seq` insertion order).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FnSpan {
+    pub symbol: String,
+    pub rel_path: String,
+    pub start_line: i64,
+    pub end_line: i64,
+    pub seq: usize,
+}
+
+/// fn DEF spans from `enclosing_range` (the fn's full item span — NOT the
+/// DEF occurrence's own `range`, which is the name line; NOT a ref's enc,
+/// which is a callee echo). 4-element enc `[sl,sc,el,ec]` → `(sl+1, el+1)`;
+/// 3-element single-line enc `[sl,sc,ec]` → `(sl+1, sl+1)` (SM-6, ≥35
+/// macro-generated fns in NT). An unset enc (len 0) is a legal "no
+/// enclosing data" state — skipped silently (rust-analyzer covers fn DEFs
+/// 100%, so this only fires on enc-less indexers; refs fall to item-level).
+/// Any other non-empty arity is skipped with a WARN line (fail-loud
+/// defensive face — unseen in research data).
+pub fn fn_spans(index: &Index) -> (BTreeMap<String, Vec<FnSpan>>, Vec<String>) {
+    let mut spans: BTreeMap<String, Vec<FnSpan>> = BTreeMap::new();
+    let mut warns: Vec<String> = Vec::new();
+    let mut seq = 0usize;
+    for d in &index.documents {
+        for occ in &d.occurrences {
+            if occ.symbol_roles & 1 == 0 || fn_tail_name(&occ.symbol).is_none() {
+                continue;
+            }
+            let enc = &occ.enclosing_range;
+            let (start_line, end_line) = match enc.len() {
+                0 => continue, // legal absent enc — no span, no warn
+                4 => (enc[0] as i64 + 1, enc[2] as i64 + 1),
+                3 => (enc[0] as i64 + 1, enc[0] as i64 + 1),
+                n => {
+                    warns.push(format!(
+                        "[WARN] fn span enc 元素數 {}（預期 4 或 3）——跳過：{}\n",
+                        n, occ.symbol
+                    ));
+                    continue;
+                }
+            };
+            spans.entry(d.relative_path.clone()).or_default().push(FnSpan {
+                symbol: occ.symbol.clone(),
+                rel_path: d.relative_path.clone(),
+                start_line,
+                end_line,
+                seq,
+            });
+            seq += 1;
+        }
+    }
+    (spans, warns)
+}
+
+/// Structured non-DEF rows for the given symbols, flat in global scan order
+/// (the interleaved order across symbols that caller-first-site ordering and
+/// per-caller site ordering depend on). Row = (symbol, rel_path, 1-based
+/// line). Structured data, never parsed back from display strings.
+pub fn refs_rows(index: &Index, symbols: &BTreeSet<String>) -> Vec<(String, String, i64)> {
+    let mut rows: Vec<(String, String, i64)> = Vec::new();
+    for d in &index.documents {
+        for occ in &d.occurrences {
+            if occ.symbol_roles & 1 == 0 && symbols.contains(&occ.symbol) {
+                rows.push((
+                    occ.symbol.clone(),
+                    d.relative_path.clone(),
+                    ln(occ),
+                ));
+            }
+        }
+    }
+    rows
+}
+
 /// Byte-identical query report (report(), scip_refs.py:182). Returns
 /// (stdout, exit_code); defs empty → `[WARN] 查無 DEF` + exit 1.
 pub fn report(
@@ -306,6 +385,32 @@ pub fn load_meta(index_path: &Path) -> (Option<serde_json::Value>, Vec<String>) 
 /// Live repo HEAD via `git rev-parse` (:611); Err carries the verbatim WARN
 /// line (git missing / rev-parse failure — timeout is a documented deviation:
 /// std Command has no timeout, rev-parse returns instantly in practice).
+fn sidecar_head_of(index_path: &Path) -> String {
+    load_meta(index_path)
+        .0
+        .and_then(|m| m["head"].as_str().map(str::to_string))
+        .unwrap_or_default()
+}
+
+/// Stamped meta head of an index ("" when absent) — shared by both derived
+/// artifacts' staleness guards.
+pub fn stamped_head(index_path: &Path) -> String {
+    sidecar_head_of(index_path)
+}
+
+/// No-DEF report fragment (frozen family text): `[SRC]` first when present,
+/// then `[WARN] 查無 DEF` with exit 1 (byte-identical to report()'s no-DEF
+/// branch; used by the R3 modes).
+pub fn no_def_lines(src_line: Option<&str>, query: &str) -> (String, i32) {
+    let mut out = String::new();
+    if let Some(line) = src_line {
+        out.push_str(line);
+        out.push('\n');
+    }
+    out.push_str(&format!("[WARN] 查無 DEF：{}\n", query));
+    (out, 1)
+}
+
 pub fn git_head(repo: &Path) -> Result<String, String> {
     let out = Command::new("git")
         .arg("-C")

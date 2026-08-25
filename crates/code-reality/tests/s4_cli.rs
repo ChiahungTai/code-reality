@@ -155,7 +155,16 @@ fn stamp_meta_git_failure_is_exit_2() {
     let repo_s = tmp.path().to_string_lossy().to_string();
     let out = run(&argv(&["--stamp-meta", "--repo", &repo_s, "--index", &idx_s]));
     assert_eq!(out.exit_code, 2);
-    assert_eq!(out.stderr, "[FAIL] 取不到 repo HEAD——meta 未 stamp\n");
+    // The git-failure WARN line is prepended before the FAIL (Python parity:
+    // scip_refs.py prints the WARN first). Its tail embeds git's own stderr,
+    // which varies — assert prefix/suffix, not full equality. (Latent broken
+    // assertion on f388b5d: exact-equality contradicted the committed code.)
+    assert!(
+        out.stderr.starts_with("[WARN] git rev-parse 失敗"),
+        "unexpected stderr: {}",
+        out.stderr
+    );
+    assert!(out.stderr.ends_with("[FAIL] 取不到 repo HEAD——meta 未 stamp\n"));
 }
 
 #[test]

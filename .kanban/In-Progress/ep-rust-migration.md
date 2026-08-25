@@ -17,4 +17,4 @@ v0 Python 凍結為 parity oracle；Rust workspace 逐工具族遷移（byte-ide
 ## 備註
 baseline `2eafd8a`；共存期雙凍結（兩份 Python 零改動）；舊 EP S2/S3 Python 版永不建、S4 吸收進 R7。
 
-**進度**：R1 ✅（被 R2 子 EP 吸收執行）；R2 ✅（2026-08-25 build 完成——parity 23/23＋NT L4 byte-identical＋pytest 411 全綠；audit 面 R4 接手）。
+**進度**：R1 ✅（被 R2 子 EP 吸收執行）；R2 ✅（2026-08-25 build 完成——parity 23/23＋NT L4 byte-identical＋pytest 411 全綠；audit 面 R4 接手）；R3 ✅（2026-08-25 build 完成——callers/closure Rust 原生：cargo 60＋pytest 422 族＋NT 16 callers 名單級三源一致〔LSP oracle 存檔 fixtures〕＋SM-9 tempdir 硬 gate；子 EP 歸檔 `_done/`）。

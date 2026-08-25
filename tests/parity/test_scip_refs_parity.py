@@ -105,11 +105,19 @@ class TestFixtureQueries:
 
     def test_dash_query_non_identifier_path(self, tmp):
         py_idx, rs_idx = side_copy(tmp, "py"), side_copy(tmp, "rs")
-        parity(["my-open", "--index", str(py_idx)], ["my-open", "--index", str(rs_idx)], tmp)
+        parity(
+            ["my-open", "--index", str(py_idx)],
+            ["my-open", "--index", str(rs_idx)],
+            tmp,
+        )
 
     def test_no_def_exit_1(self, tmp):
         py_idx, rs_idx = side_copy(tmp, "py"), side_copy(tmp, "rs")
-        parity(["Nothing.here", "--index", str(py_idx)], ["Nothing.here", "--index", str(rs_idx)], tmp)
+        parity(
+            ["Nothing.here", "--index", str(py_idx)],
+            ["Nothing.here", "--index", str(rs_idx)],
+            tmp,
+        )
 
     def test_empty_query_final_guard_exit_2(self, tmp):
         py_idx, rs_idx = side_copy(tmp, "py"), side_copy(tmp, "rs")
@@ -130,6 +138,20 @@ class TestFixtureQueries:
         parity(
             ["q", "--index", str(tmp / "py/index.scip")],
             ["q", "--index", str(tmp / "rs/index.scip")],
+            tmp,
+        )
+
+    def test_corrupt_index_build_cache_exit_2(self, tmp):
+        # Python load_index exits 2 with the bare parse message before
+        # build_cache_mode is reached; Rust (R3 build) propagates the same
+        # bare FAIL — pinned so this unprompted face cannot drift again.
+        for name in ("py", "rs"):
+            p = tmp / name / "index.scip"
+            p.parent.mkdir(parents=True)
+            p.write_bytes(b"garbage not protobuf")
+        parity(
+            ["--build-cache", "--index", str(tmp / "py/index.scip")],
+            ["--build-cache", "--index", str(tmp / "rs/index.scip")],
             tmp,
         )
 
@@ -309,7 +331,7 @@ class TestArgparseEdge:
 
     def test_sidecar_without_stamped_at_omits_date_part(self, tmp):
         """Absent key → no （date） suffix; explicit null → （None） (both sides)."""
-        for value in ('', 'null'):
+        for value in ("", "null"):
             py_idx, rs_idx = side_copy(tmp, "py"), side_copy(tmp, "rs")
             for idx in (py_idx, rs_idx):
                 extra = f'"stamped_at": {value}, ' if value else ""
