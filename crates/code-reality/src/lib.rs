@@ -29,6 +29,18 @@ impl ToolOutput {
             exit_code: 2,
         }
     }
+
+    /// Uncaught-Python crash face (D3): empty stdout, exit 1, `[FAIL]` on
+    /// stderr (best-effort — Python prints a traceback). Callers that
+    /// already accumulated gated stdout (e.g. transition's WARN-before-
+    /// crash) keep it by building the struct directly.
+    pub fn crash(stderr_msg: impl Into<String>) -> Self {
+        Self {
+            stdout: String::new(),
+            stderr: msg_line("FAIL", &stderr_msg.into()),
+            exit_code: 1,
+        }
+    }
 }
 
 // Catastrophic ToolError was folded into ToolOutput (env failures are exit 2,
@@ -39,8 +51,15 @@ pub fn msg_line(tag: &str, message: &str) -> String {
     format!("[{}] {}\n", tag, message)
 }
 
+pub mod argparse;
 pub mod cache;
 pub mod callers;
 pub mod cli;
+pub mod common;
 pub mod engine;
 pub mod fndefs;
+pub mod graph_audit;
+pub mod graph_csv;
+pub mod profile;
+pub mod snapshot;
+pub mod transition;

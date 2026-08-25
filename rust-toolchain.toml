@@ -1,2 +1,5 @@
 [toolchain]
 channel = "1.96.0"
+# graph_audit's reconciliation source — the zero-skip test policy's minimal
+# carve-out (rustup environments auto-install; tests/AGENTS.md records it)
+components = ["rust-analyzer"]

@@ -1,10 +1,16 @@
-//! `code-reality` — umbrella CLI. Subcommand names mirror the frozen Python
-//! module names verbatim (relay minimal-diff contract). The bin owns printing
-//! and exiting; all behavior comes from the lib as [`code_reality::ToolOutput`].
+//! `code-reality` — umbrella CLI. Subcommand names mirror the frozen
+//! Python module names verbatim (relay minimal-diff contract). The bin
+//! owns printing and exiting; all behavior comes from the lib as
+//! [`code_reality::ToolOutput`].
 //!
 //! No clap: the frozen Python surface is argparse semantics (abbreviations,
-//! negative-number positionals, `--` separator, last-wins repeats) that clap
-//! rejects — argv passes through raw and `cli::run` mimics argparse exactly.
+//! negative-number positionals, `--` separator, last-wins repeats) that
+//! clap rejects — argv passes through raw and each tool module mimics
+//! argparse exactly.
+//!
+//! Umbrella routing note (R4): this bin is NOT a Python parity face —
+//! `--help`/usage texts follow the carrier as subcommands land (the
+//! frozen Python has no umbrella at all; per-tool surfaces are the gate).
 
 fn main() {
     let argv: Vec<String> = std::env::args_os()
@@ -12,19 +18,34 @@ fn main() {
         .map(|a| a.to_string_lossy().into_owned())
         .collect();
     let refs: Vec<&str> = argv.iter().map(String::as_str).collect();
-    match refs.first() {
-        Some(&"scip_refs") => {}
-        Some(&"--help") | Some(&"-h") | Some(&"--version") => {
-            println!("code-reality — toolchain umbrella (scip_refs)");
-            std::process::exit(0);
-        }
-        _ => {
-            eprintln!("usage: code-reality <scip_refs> [args]");
-            std::process::exit(2);
-        }
-    }
-    let output = code_reality::cli::run(&refs);
+    let output = route(&refs);
     print!("{}", output.stdout);
     eprint!("{}", output.stderr);
     std::process::exit(output.exit_code);
 }
+
+fn route(argv: &[&str]) -> code_reality::ToolOutput {
+    use code_reality::ToolOutput;
+    match argv.first() {
+        Some(&"scip_refs") => code_reality::cli::run(argv),
+        Some(&"snapshot") => code_reality::snapshot::run(argv),
+        Some(&"transition") => code_reality::transition::run(argv),
+        Some(&"graph_audit") => code_reality::graph_audit::run(argv),
+        Some(&"graph_csv") => code_reality::graph_csv::run(argv),
+        Some(&"--help") | Some(&"-h") | Some(&"--version") => ToolOutput {
+            stdout: format!(
+                "code-reality — toolchain umbrella ({})\n",
+                SUBCOMMANDS.join(", ")
+            ),
+            stderr: String::new(),
+            exit_code: 0,
+        },
+        _ => ToolOutput {
+            stdout: String::new(),
+            stderr: format!("usage: code-reality <{}> [args]\n", SUBCOMMANDS.join("|")),
+            exit_code: 2,
+        },
+    }
+}
+
+const SUBCOMMANDS: [&str; 5] = ["scip_refs", "snapshot", "transition", "graph_audit", "graph_csv"];

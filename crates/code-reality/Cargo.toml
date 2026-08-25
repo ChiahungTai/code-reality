@@ -9,6 +9,11 @@ scip = { workspace = true }
 protobuf = { workspace = true }
 rusqlite = { workspace = true }
 serde_json = { workspace = true }
+toml = { workspace = true }
+libc = { workspace = true }
+regex = { workspace = true }
+serde = { workspace = true }
+glob = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

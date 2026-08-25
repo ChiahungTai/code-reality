@@ -45,8 +45,13 @@ Run: `uv run pytest` (everything) or `uv run pytest -m "not integration"`
   contracts
 - `test_scip_refs` uses a duck-typed fake index — the query-matching
   suite needs no protobuf install
-- `<tool>_integration.py` files are the integration counterparts of the
-  `<tool>` unit tests
+- `test_delta_tour` / `<tool>_integration.py` files are the integration
+  counterparts of the `<tool>` unit tests
+- rust-analyzer is the one declared carve-out to "zero environment
+  dependence": `rust-toolchain.toml` pins it as a toolchain component
+  (rustup environments auto-install). When it is absent, graph_audit
+  parity cases still pass as fail-loud equivalence (both sides exit 2
+  with empty stdout) — never a skip
 
 ## fixtures/ (test helpers, not a package)
 

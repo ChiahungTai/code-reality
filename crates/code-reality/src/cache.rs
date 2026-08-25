@@ -228,6 +228,36 @@ pub enum Face {
     Sqlite(Connection),
 }
 
+/// Module-level audit-target attribution (`scip_refs.py:203-222`): DEF
+/// occurrences → {symbol → (defining file, method name)}. Double-key
+/// (file, method) attribution — file-only filtering unions in same-file
+/// neighbor refs (216→138, 78 false positives, empirically).
+pub fn audit_targets(
+    index: &Index,
+    files_by_name: &HashMap<String, BTreeSet<String>>,
+) -> BTreeMap<String, (String, String)> {
+    let mut out = BTreeMap::new();
+    for d in &index.documents {
+        for occ in &d.occurrences {
+            if occ.symbol_roles & 1 == 0 {
+                continue;
+            }
+            let Some(name) = crate::engine::fn_tail_name(&occ.symbol) else {
+                continue;
+            };
+            if let Some(paths) = files_by_name.get(name) {
+                if paths.contains(d.relative_path.as_str()) {
+                    out.insert(
+                        occ.symbol.clone(),
+                        (d.relative_path.clone(), name.to_string()),
+                    );
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Face selection (open_face, scip_refs.py:456): no db → protobuf (never
 /// build on miss); fresh → sqlite; stale → auto-rebuild; rebuild failure →
 /// WARN + protobuf fallback (index parsed once, reused). open_ro failure on
@@ -410,6 +440,54 @@ impl Face {
         match self {
             Face::Protobuf { index } => Ok(engine::find_refs(index, symbols)),
             Face::Sqlite(conn) => sqlite_refs(conn, symbols),
+        }
+    }
+
+    /// Audit targets via the active face (`scip_refs.py:495/:550`). The
+    /// sqlite path narrows with `symbol_tails.method IN (...)` + `ORDER BY
+    /// seq` (insertion-order guarantee), then re-checks FN_TAIL and the
+    /// double-key membership — SQL never grows its own matching semantics.
+    pub fn audit_targets(
+        &self,
+        files_by_name: &HashMap<String, BTreeSet<String>>,
+    ) -> Result<BTreeMap<String, (String, String)>, String> {
+        match self {
+            Face::Protobuf { index } => Ok(audit_targets(index, files_by_name)),
+            Face::Sqlite(conn) => {
+                let names: Vec<&String> = files_by_name.keys().collect();
+                if names.is_empty() {
+                    return Ok(BTreeMap::new());
+                }
+                let ph = vec!["?"; names.len()].join(",");
+                let sql = format!(
+                    "SELECT symbol, rel_path FROM occurrences \
+                     WHERE is_def = 1 AND symbol IN \
+                     (SELECT symbol FROM symbol_tails WHERE method IN ({ph})) \
+                     ORDER BY seq"
+                );
+                let mut stmt = conn
+                    .prepare(&sql)
+                    .map_err(|e| format!("audit_targets 查詢失敗：{}", e))?;
+                let rows = stmt
+                    .query_map(rusqlite::params_from_iter(names.iter()), |r| {
+                        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+                    })
+                    .map_err(|e| format!("audit_targets 查詢失敗：{}", e))?;
+                let mut out = BTreeMap::new();
+                for row in rows {
+                    let (symbol, rel_path) =
+                        row.map_err(|e| format!("audit_targets 讀取失敗：{}", e))?;
+                    let Some(name) = fn_tail_name(&symbol).map(str::to_string) else {
+                        continue; // re-check — meta-table data ≠ semantic source
+                    };
+                    if let Some(paths) = files_by_name.get(&name) {
+                        if paths.contains(rel_path.as_str()) {
+                            out.insert(symbol, (rel_path, name));
+                        }
+                    }
+                }
+                Ok(out)
+            }
         }
     }
 

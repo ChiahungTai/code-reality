@@ -2,16 +2,17 @@
 //! thin print-and-exit shim over [`run`].
 //!
 //! Check/route order mirrors the frozen Python main() exactly
-//! (scip_refs.py:764-831): mutex family → stamp needs --repo → index/slot
-//! resolution → index existence check (with legacy-slot migration hint) →
-//! mode routing (stamp → build-cache → query final guard). `--audit` is not
-//! wired (R4 scope); the mutex and final-guard texts still carry the
-//! verbatim Python strings (transient divergence documented in the EP).
+//! (scip_refs.py:764-831): mutex family → audit guards (before index
+//! resolution) → index/slot resolution → index existence check (with
+//! legacy-slot migration hint) → mode routing (stamp → build-cache →
+//! audit/query final guard). `--audit` runs the graph_audit first pass
+//! in-process (D7) and reconciles the missing list against SCIP refs.
 //!
 //! Arg parsing mimics argparse (allow_abbrev / negative-number positionals /
 //! `--` separator / last-wins repeats / lone `-` positional) — the frozen
 //! CLI contract the R7 relay will inherit.
 
+use crate::argparse::looks_like_option;
 use crate::cache::{open_face, Face};
 use crate::engine::{
     default_index_path, expand_home, git_head, load_index, meta_path, source_line, utc_now_iso,
@@ -28,7 +29,7 @@ type QueryResults = (
     HashMap<String, Vec<String>>,
 );
 
-const FLAGS: [&str; 8] = [
+const FLAGS: [&str; 9] = [
     "--index",
     "--repo",
     "--stamp-meta",
@@ -37,29 +38,8 @@ const FLAGS: [&str; 8] = [
     "--callers",
     "--closure",
     "--depth",
+    "--audit",
 ];
-
-/// Python 3.14 argparse negative-number test (empirically pinned against the
-/// local oracle): `-` alone is positional; a `-`-prefixed token whose next
-/// char is an optional `.` then an ASCII digit is a negative number (prefix
-/// match — `-5x` and `-5.5.5` count); space-containing tokens are positional.
-fn is_negative_numberish(tok: &str) -> bool {
-    if tok == "-" || tok.contains(' ') {
-        return true;
-    }
-    let Some(rest) = tok.strip_prefix('-') else {
-        return false;
-    };
-    let rest = rest.strip_prefix('.').unwrap_or(rest);
-    rest.starts_with(|c: char| c.is_ascii_digit())
-}
-
-/// Option-looking token (for flag-value refusal): `-`-prefixed, longer than
-/// `-`, and not a negative number. Python refuses these as flag values
-/// (`argument X: expected one argument`), including exactly `--`.
-fn looks_like_option(tok: &str) -> bool {
-    tok.starts_with('-') && tok != "-" && !is_negative_numberish(tok)
-}
 
 struct Args {
     query: Option<String>,
@@ -70,6 +50,7 @@ struct Args {
     callers: bool,
     closure: bool,
     depth: Option<String>,
+    audit: bool,
 }
 
 /// argparse-style parse of the tokens AFTER the subcommand.
@@ -89,6 +70,7 @@ fn parse_tokens(toks: &[&str]) -> Parsed {
         callers: false,
         closure: false,
         depth: None,
+        audit: false,
     };
     let mut positional_only = false;
     let mut i = 0usize;
@@ -179,6 +161,13 @@ fn parse_tokens(toks: &[&str]) -> Parsed {
                 args.closure = true;
                 i += 1;
             }
+            "--audit" => {
+                if let Some(v) = inline_val {
+                    fail!(format!("ignored explicit argument '{}'", v));
+                }
+                args.audit = true;
+                i += 1;
+            }
             name => {
                 // --index / --repo / --depth: value inline or next token
                 // (last wins); option-looking next tokens are refused
@@ -228,19 +217,25 @@ pub fn run(argv: &[&str]) -> ToolOutput {
     };
     let mut stderr = String::new();
 
-    // Mutex family (Python order; audit rules belong to R4). The R3 query
-    // modes join the existing conditions — `--build-cache --callers` with no
-    // positional must fail loudly, not silently swallow the flag.
+    // Mutex family (Python order, scip_refs.py:764-790). The R3 query modes
+    // join the existing conditions; the audit guards run BEFORE index
+    // resolution (:785-790 — do not break the mirror order).
     if args.build_cache
-        && (args.stamp_meta || args.query.is_some() || args.callers || args.closure)
+        && (args.stamp_meta || args.audit || args.query.is_some() || args.callers || args.closure)
     {
         return ToolOutput::fail("--build-cache 與 --stamp-meta/--audit/查詢互斥");
     }
-    if args.stamp_meta && (args.query.is_some() || args.callers || args.closure) {
+    if args.stamp_meta && (args.audit || args.query.is_some() || args.callers || args.closure) {
         return ToolOutput::fail("--stamp-meta 與 --audit/查詢互斥");
     }
     if args.stamp_meta && args.repo.is_none() {
         return ToolOutput::fail("--stamp-meta 需 --repo");
+    }
+    if args.audit && args.query.is_some() {
+        return ToolOutput::fail("--audit 與查詢字串互斥");
+    }
+    if args.audit && args.repo.is_none() {
+        return ToolOutput::fail("--audit 需 --repo（graph_audit 目標）");
     }
     // R3 mode guards
     if args.callers && args.closure {
@@ -312,16 +307,28 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         return build_cache_mode(&index_path, &mut stderr);
     }
 
-    // Query final guard: `is None or empty` (Python truthiness at :825 — an
-    // empty-string query bypasses the mutex checks and lands here)
-    let query = match args.query.as_deref() {
-        None | Some("") => {
-            return ToolOutput::fail("需提供查詢或 --audit");
+    // Final guard (Python :825 truthiness — an empty-string query bypasses
+    // the mutex checks and lands here; audit satisfies the requirement)
+    if !args.audit {
+        match args.query.as_deref() {
+            None | Some("") => {
+                return ToolOutput::fail("需提供查詢或 --audit");
+            }
+            Some(_) => {}
         }
-        Some(q) => q,
-    };
+    }
 
     let repo = args.repo.as_deref().map(Path::new);
+
+    if args.audit {
+        // src_line precedes the mode branch (Python :828)
+        let (src_line, src_warns) = source_line(&index_path, repo);
+        stderr.push_str(&src_warns.concat());
+        let repo = repo.expect("audit guard guarantees --repo");
+        return audit_mode(&index_path, repo, src_line, &mut stderr);
+    }
+
+    let query = args.query.as_deref().unwrap_or("");
 
     if args.callers {
         return callers_mode(&index_path, repo, query, &mut stderr);
@@ -686,5 +693,122 @@ fn closure_mode(
         stdout,
         stderr: std::mem::take(stderr),
         exit_code,
+    }
+}
+
+// ---------- R4 audit mode ----------
+
+/// `--audit` two-pass mode (scip_refs.py:254-316), first pass in-process
+/// (D7): the Python subprocess shell was its frozen implementation detail;
+/// the 600s total budget and empty-stdout/JSON guards were subprocess-
+/// boundary artifacts (accepted deviation — env gates and the vacuous
+/// all-zero guard survive, per-file 60s ra timeouts remain).
+fn audit_mode(
+    index_path: &Path,
+    repo: &Path,
+    src_line: Option<String>,
+    stderr: &mut String,
+) -> ToolOutput {
+    let repo = crate::common::resolve(repo);
+    let graph = crate::common::graph_db_path(&repo);
+    // graph_audit main()'s env gates, surfaced through the wrapper's
+    // "環境錯誤" face (Python: stderr passthrough, exit 2); the inner
+    // texts are the shared gate constants (single source, no string copy)
+    let gates = crate::graph_audit::env_gate_messages();
+    if crate::graph_audit::which("rust-analyzer").is_none() {
+        return ToolOutput::fail(format!("graph_audit 環境錯誤：[FAIL] {}", gates[0]));
+    }
+    if !graph.exists() {
+        return ToolOutput::fail(format!(
+            "graph_audit 環境錯誤：[FAIL] {}",
+            gates[1].replace("{graph}", &graph.display().to_string())
+        ));
+    }
+    let (_risk, audited, missing, errors, total_ra, _warns) =
+        match crate::graph_audit::audit(&repo, &graph, false, None) {
+            Ok(v) => v,
+            Err(e) => {
+                // Python: graph_audit crash (exit 1, empty stdout) surfaces
+                // as 異常退出 exit 2 here
+                return ToolOutput::fail(format!("graph_audit 異常退出：{e}"));
+            }
+        };
+    if audited > 0 && total_ra == 0 {
+        return ToolOutput::fail(format!("graph_audit 環境錯誤：[FAIL] {}", gates[2]));
+    }
+    for e in &errors {
+        stderr.push_str(&format!("[WARN] {e}\n"));
+    }
+
+    let mut stdout = String::new();
+    if let Some(src) = &src_line {
+        stdout.push_str(src);
+        stdout.push('\n');
+    }
+    stdout.push_str(&format!(
+        "[OK] graph_audit 缺差 {} 項 → 逐項 SCIP refs 對照：\n",
+        missing.len()
+    ));
+    let (face, face_stderr) = match open_face(index_path) {
+        Ok(v) => v,
+        Err(msg) => return ToolOutput::fail(msg),
+    };
+    stderr.push_str(&face_stderr.concat());
+
+    // files_by_name (name → defining rel paths); repo-external paths warn
+    // loudly — a false "0 refs" must never mix in silently
+    let mut files_by_name: HashMap<String, BTreeSet<String>> = HashMap::new();
+    let mut rels: Vec<(String, crate::graph_audit::MissingItem)> = Vec::new();
+    for m in &missing {
+        let p = Path::new(&m.file);
+        let rel = match p.strip_prefix(&repo) {
+            Ok(r) => r.to_string_lossy().into_owned(),
+            Err(_) => {
+                stderr.push_str(&format!(
+                    "[WARN] 缺差項路徑不在 repo 下（歸屬失敗，refs 將報 0）：{}\n",
+                    p.display()
+                ));
+                p.to_string_lossy().replace('\\', "/")
+            }
+        };
+        files_by_name
+            .entry(m.symbol.clone())
+            .or_default()
+            .insert(rel.clone());
+        rels.push((rel, m.clone()));
+    }
+    let target_symbols = match face.audit_targets(&files_by_name) {
+        Ok(t) => t,
+        Err(e) => return ToolOutput::fail(e),
+    };
+    let keys: BTreeSet<String> = target_symbols.keys().cloned().collect();
+    let refs_count = match face.refs(&keys) {
+        Ok(r) => r,
+        Err(e) => return ToolOutput::fail(e),
+    };
+    let mut with_refs = 0usize;
+    for (rel, m) in &rels {
+        let n: usize = target_symbols
+            .iter()
+            .filter(|(_, (d_file, d_name))| d_file == rel && d_name == &m.symbol)
+            .map(|(sym, _)| refs_count.get(sym).map(|v| v.len()).unwrap_or(0))
+            .sum();
+        if n > 0 {
+            with_refs += 1;
+        }
+        stdout.push_str(&format!(
+            "  {}: {}({}/{}) → SCIP refs {}\n",
+            rel, m.symbol, m.db_count, m.ra_count, n
+        ));
+    }
+    stdout.push_str(&format!(
+        "[OK] {}/{} 項在 SCIP 有 refs（非零 callers）\n",
+        with_refs,
+        missing.len()
+    ));
+    ToolOutput {
+        stdout,
+        stderr: std::mem::take(stderr),
+        exit_code: 0,
     }
 }

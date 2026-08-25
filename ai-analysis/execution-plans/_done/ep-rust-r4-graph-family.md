@@ -294,3 +294,33 @@ synthetic 雙跑全綠（含 `-h` usage 面、CSV 檔案位元組）＋跨語言
 3. instruction 檔：`crates/AGENTS.md` 補六模組導航（foundation/graph 家族層次＋D3 exit 語意表）；順手修正該檔陳述過時的 NT skip-on-stale 行（相對 tests/AGENTS.md 政策）
 4. ②子 EP 指針：master R4 段補「①完成，②→ ep-rust-r4b-hazard-hubrefs.md」
 5. /audit-test（手動指定 crates/tests 新檔——vacuous 檢查：parity 雙跑真的兩端都跑）
+
+## Build Record（2026-08-25，deep-work 自主弧）
+
+**閘門**：cargo **137** passed／clippy 0 warnings／deny ok；pytest **436** passed（416 基線＋parity 20）／ruff＋mypy clean。parity 20 案例＝六工具 stdout/exit cmp＋`-h` 面＋CSV 檔案位元組＋跨語言互通（R4-N）＋`scip_refs --audit`。
+
+**實作偏差記錄**（EP 是收斂方向，以下為 build 現場發現）：
+1. `argparse.rs` 共用模組——EP pseudo code 未定位解析器歸屬；抽出 argparse 模擬核心（R2 cli.rs 的負數/選項判定上抽為單一源，四工具＋cli 共用）
+2. 新依賴超出手 D6 清單：`regex`（S4 明文；亦用於 claims/anchor/baseline）、`serde`（D1 serializer trait import）、`glob`（scan_files 對齊 pathlib——`require_literal_leading_dot=false`）；D2 POC 定案＝`libc`（四時間戳跨季節與 Python `astimezone()` 逐一相等，測試 `d2_time_oracle_pinned` 釘住）
+3. `-h` parity 形態：prog 前綴正規化＋usage 塊扁平 token 比較（換行位置是 prog 長度函數）；Rust 端文字在 cargo 測試 byte-pin
+4. RA 缺席＝有效等價框架：graph_audit parity 案例在 rust-analyzer 缺席環境以兩端同 exit 2 通過（零 skip 政策不破）
+5. `--json` stdout 尾換行＝`print()` 對齊（parity 抓到後補）
+6. snapshot/parity fixtures 需 canonical 路徑（macOS `/var` symlink——`repo_relative` 對 resolved root 的凍結語意；pytest tmp_path 同姿態）
+7. `graph_audit::audit()` 回傳 warns 緩衝而非中途 print（lib 無 print 紀律；Python 直接印 stderr——管線差異非行為差異）
+8. `render_report` no-change 早退在 claims 區塊之前（凍結行為，測試對齯後釘住）
+
+## Build Agent Review Record（2026-08-25，三視角＋fix-delta）
+
+三視角（clean／UC 錨定／Correctness——獨立 read-only agent）計 **46 findings**；判讀：實質破口 4＋特定輸入類 3＋品質項全採納、R4-5 不採納（EP「逾時 None」描述逾時結果語意，正確）。修正全數落地後複驗：cargo **138**／pytest **437**（parity 21）／clippy 0／ruff＋mypy clean。
+
+| 共識破口 | 修正 |
+|---|---|
+| `risk_scan` overlap 未排序（`--json` 位元組面，多元素非字母序分歧——三軌中兩軌獨立抓到） | `overlap.sort()`＋cargo/parity 雙釘（`risk_scan_overlap_sorted_not_first_seen`＋RISK_RS zebra 案例） |
+| transition WARN-後-crash 面丟 stdout（Python＝exit 1＋stdout 含 WARN 行） | crash 改 macro 保留累積 stdout＋parity `test_warn_survives_crash_when_profileless` |
+| `--out-dir` 使用者值被 `expand_home`（Python `type=Path` 不展開——stdout 內嵌路徑破位元組） | 僅 default 常數展開，使用者值直通 |
+| `scan_files` 吞 profile 錯誤（Python crash-only——靜默退化 generic 掃描正是 profile assert 要防的失效） | `scan_files` 回 `Result`，`audit()` 傳播，CLI 映射 crash exit 1 |
+| `parse_iso_to_epoch` 無欄位驗證（壞 metadata → bogus epoch → stale 判定翻轉） | mo/d/hh/mi/ss 範圍守衛，超界 None（Python ValueError → None 對齊） |
+| graph_csv NULL/空 file_path 語意（Python `or ""`/`if fp:` truthiness） | Option 讀取＋`proj` 空字串視為缺席落 base 分支 |
+| `--graph ""` exit 分歧（Python `Path("")`＝`"."`） | 空值改 `.`，失敗落 connect crash（exit 1） |
+
+品質批：`ToolOutput::crash` ctor（消 6 處手寫）、`env_gate_messages()` 三訊息單源、`common::git_rev_parse_head`／`py_list_repr` 上抽、`is_excluded` borrow、render_json 的 changed 單次計算、測試殘留清理（`TempDir::keep()` 等）、argparse 遷移條件與已知邊界註記。**不採納**：parse_route 樣板上抽（churn＞收益，記錄）；R4-5（EP 文字正確）。
