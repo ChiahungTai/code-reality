@@ -17,6 +17,12 @@ glob = { workspace = true }
 ruff_python_parser = { workspace = true }
 ruff_python_ast = { workspace = true }
 fancy-regex = { workspace = true }
+rmcp = { version = "3.1.4", features = ["server", "transport-streamable-http-server", "transport-streamable-http-client-reqwest", "client"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "macros"] }
+tokio-util = { workspace = true }
+hyper-util = { workspace = true }
+axum = { workspace = true }
+schemars = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

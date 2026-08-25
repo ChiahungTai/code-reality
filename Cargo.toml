@@ -20,6 +20,11 @@ glob = "0.3"
 ruff_python_parser = "0.0.10"
 ruff_python_ast = "0.0.10"
 fancy-regex = "0.14"
+tokio = "1"
+tokio-util = { version = "0.7", features = ["compat"] }
+hyper-util = { version = "0.1", features = ["tokio", "server-auto"] }
+axum = "0.8"
+schemars = "1.2.2"
 
 [profile.release]
 # Query tooling: prefer fast index decode (the 275MB NT index parses in ~0.7s in release).

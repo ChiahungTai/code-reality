@@ -30,7 +30,9 @@ it; every Rust tool must reproduce Python stdout bytes + exit codes exactly
   `*.fndefs.db`, the sqlite carrier for callers/closure spans; ladder
   mirrors cache) / `snapshot` / `transition` / `graph_audit` / `graph_csv`
   (graph family — one module per frozen Python tool; byte-parity gated
-  by `tests/parity/test_graph_family_parity.py`) / `cli` (assembly —
+  by `tests/parity/test_graph_family_parity.py`) / `mcp_server` (frontend adapter — rmcp streamable-http on 8200, tools
+  thin-wrap `cli::run` in-process with spawn_blocking + catch_unwind
+  per-request isolation [SM-14]; bin `code-reality-mcp`) / `cli` (assembly —
   argv surface, mode routing incl. `--callers`/`--closure`/`--depth`
   1-10000, and the in-process `--audit` two-pass).
 - **lib API contract**: functions return `ToolOutput {stdout, stderr,

@@ -48,7 +48,7 @@ per-repo SCIP index slots under `scip/<repo-basename>/`
 | Deletability safety net (hub_refs/hazard) | `hub_refs <symbol> --repo <repo> --hazard`；Rust carrier: `code-reality hub_refs ...`（byte-parity gated——AST face via ruff_python_parser, differential-verified） | ✅ |
 | Boundary / export / narrative tool family | snapshot / transition / boundary family / tour family / runtime_edges / graph_csv; Rust carrier for all: `code-reality <sub> ...` (byte-parity gated — graph family via parity harness; R5 families via help-face parity + shared-shape cargo suites) | ✅ |
 | Caller-edge query (callers/closure) | Rust carrier: `code-reality scip_refs <symbol> --callers/--closure [--depth N] --repo <repo>` (`--depth` 1-10000, default 2; item-level refs = refs not enclosed by any fn — refs are not call counts) | ✅ (Rust-native; Python carrier never built — R3 superseded it) |
-| Unified MCP interface | `python -m code_reality.mcp_server` | 📋 (EP R6) |
+| Unified MCP interface | `code-reality-mcp`（Rust rmcp 3.1.4 streamable-http `127.0.0.1:8200/mcp`；tools: refs/callers/closure/audit × per-call `repo_root`；launchd plist in `launchd/`） | ✅ |
 
 ## Tests
 

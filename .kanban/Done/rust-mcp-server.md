@@ -14,3 +14,6 @@ V1-V7 閉環（tools/list／17 callers 同 CLI／缺 repo_root loud／毒化隔�
 
 ## 備註
 Python FastMCP 版永不建（舊 EP S3 由 R6 取代）；v0 工具面=SCIP 家族四件（snapshot/tour 族維持 CLI，YAGNI）。
+
+## 驗收
+✅ 2026-08-26 完成（R6 吸收執行）。

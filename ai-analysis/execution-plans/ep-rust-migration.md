@@ -238,6 +238,8 @@ V1-V7 形態（CRG 閉環）：tools/list 四工具；refs 18 refs＋callers 16 
 
 → 衍生子 EP：`ai-analysis/execution-plans/ep-rust-r6-mcp-server.md`
 
+> **✅ R6 已完成（2026-08-26，R5 EP 吸收執行——單一 MCP 段不需獨立子 EP）**：`mcp_server.rs`＋bin `code-reality-mcp`。rmcp 3.1.4（`Parameters<T>` 型別化工具面——bare primitives 無 `FromContextPart`）；axum nest `/mcp`（上游測試同型）；四工具（refs/callers/closure/audit × 必填 repo_root）；SM-14 隔離＝spawn_blocking＋catch_unwind；live HTTP 測試（tools/list 四件＋毒化後 peer 存活）；launchd plist `launchd/com.code-reality.mcp.plist`（KeepAlive/ThrottleInterval 10——CRG 慣例）。cargo 202／deny 綠。
+
 ---
 
 ## 段 R7：終局 relay＋雙副本刪除＋文檔收斂
