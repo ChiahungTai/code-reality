@@ -64,6 +64,7 @@ pub mod hazard;
 pub mod hub_refs;
 pub mod profile;
 pub mod snapshot;
+pub mod runtime_edges;
 pub mod tour_manifest;
 pub mod tour_validate;
 pub mod tour_upgrade;
