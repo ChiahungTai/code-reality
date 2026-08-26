@@ -2,7 +2,12 @@
 
 > Status: **active**（已入庫 `711d6e8`；S1 邊面形態裁決＝**(A) sidecar**——原 (a)
 > 寫入之「下游立即受益」動機經雙審查否證，judge 委任改判 2026-08-26，user 可推翻；
-> S3 裁決門未開；S5 Python producer 段新增）
+> S3 裁決完成＋user 門①②③全採納（2026-08-26）；**deep-work 全弧終結（同日）**：
+> 引擎 parity 子 EP（`_done/ep-v1plus-engine-parity.md`）S1-S10 全落地——含 S10
+> Leiden、S5-mapper union 整合（NT impact +2,544）、LSP document_symbols 面；
+> **S4 評估完成**＝引擎層退役 READY（`ai-analysis/reports/s4-crg-retirement-readiness.md`；
+> 剩 tree-sitter producer＋deferred embeddings＋ai-rules 消費端 cutover）；
+> S5 剩餘＝Python producer POC（scip-python）未做）
 > **EP Review（2026-08-26，雙獨立審查＋judge 覆核）**：🔴×1＋🟡×10 已回寫＋第二
 > 審查補遺 5 項入表（rows 12-16）；REFERENCES 語義 gate 已結（S1 裁決塊）；
 > verdict＝**可執行**（S1 邊面 sidecar／S2 節點面照舊／S3/S5 不變）。
@@ -173,11 +178,41 @@ marker——「CRG 寫入後重跑注入」慣例同時恢復 marker 與資料�
 殘餘清單在 `graph_audit --json` missing 面永久可查）。另：backup 改 `VACUUM
 INTO`（`fs::copy` 對 WAL-mode db 不健全——實測裸拷開不了 readonly）。
 
-### S3 — B1/B2 圖引擎裁決報告（研究段，不改碼）
+### S3 — B1/B2 圖引擎裁決報告（研究段，不改碼）— **完成（2026-08-26）**
 - communities：Rust 生態評估（community-detection crate / Leiden port）vs 沿用 CRG Python 計算
 - impact radius／flows：自建 BFS on（聯集）邊集的成本（邊集已在 Rust 手上）
 - semantic search：embeddings 面缺口（最大未覆蓋項，明確標記）
 - 產出：裁決報告＋user 單向門（哪些收進 Rust、哪些永久留 CRG/Python）
+
+**S3 結算（2026-08-26）**：報告＝`ai-analysis/reports/s3-graph-engine-adjudication.md`
+（English，數字全帶 index 版本標籤）。**重框事實**：MCP server 是 base install（uvx，
+無 extras）→ igraph／sentence-transformers 從未在場——live communities＝directory
+fallback（NT 42 個全是 "Directory-based community" 指紋、33.5k 巨型社區無法分裂）、
+semantic search＝FTS keyword fallback（embeddings 0 行）。「Leiden／embeddings 遷移」
+實為「採納 CRG 只以 optional extras 形式供貨的功能」。**委任終裁（user 可推翻，報告 §5）**：
+①impact／flows／hub／bridge→Rust 自建（純演算法移植，POC2 current-index 重跑 349ms/8ms/1ms
+背書；flows 對拍＝NT 10,359 條 exact-match）；②communities→兩層：Tier 0 directory 對拍
+（零 crate、exact-match）＋Tier 1 seeded Leiden（single-clustering 優先：BSD-3＋bit-for-bit
+seed；leiden-rs 備選；對拍＝modularity≥igraph 參考−ε＋ARI/NMI 門檻，igraph 走一次性 venv）；
+③semantic search 拆面——keyword 面 Rust 即刻對拍（live 實況就是 FTS）、embeddings 面
+**明確 defer**（本機零使用；cloud-HTTP 為未來廉價路徑）。**閘門**：聯集邊消費全體
+（impact/flows/communities-union）依賴 S5 qname 映射；邊集語義留在 S4 所有權翻轉門後
+（S1 裁決延續）。**S4 含義**：Doors ①-③ 採納後，CRG 僅餘 graph.db producer（tree-sitter
+多語言）＋deferred embeddings——引擎層可退役，S4 範圍＝「引擎退役＋graph.db 所有權翻轉」
+而非全面移除。
+
+**User 單向門裁決（2026-08-26）**：「你就至少做到 CRG 的功能」＝**門①②③採納，parity
+為底線**（Tier 1 Leiden 與聯集邊升級＝其上增量）。Parity 範圍＝**10 個 live 消費 MCP
+操作**（§2 對拍表）；CRG 未被消費的面（visualization/wiki/daemon/refactor/exports）
+默認 out of scope。**後續排序**（S4 不是下一步，是最後一關）：
+1. **引擎 parity build**（新 session＋子 EP——本 EP 是裁決弧，build 走 execution-plan
+   流程）：impact_radius／flows（NT 10,359 exact-match）／hub／bridge／communities
+   Tier 0（42 社區 exact-match）＋Tier 1（single-clustering）／keyword search
+   （nodes_fts read-only）＋MCP 工具面。**parity 段不依賴 S5**——graph.db-only
+   邊原生 qname，無映射需求。
+2. **S5**（qname mapper 解鎖聯集邊消費＝超越 CRG 的增量；scip-python POC）。
+3. **S4**（parity 落地後）：消費端切換（ai-rules crg-query 等）→ CRG MCP 下線 →
+   graph.db 所有權翻轉（REFERENCES 邊語義歸自有 engine）。
 
 ### S4 — CRG MCP 退役評估（S1-S3 後；條件式）
 僅當 S3 裁決「CRG 獨有面已無消費者或已有替代」才啟動；否則維持分層互賴現況。

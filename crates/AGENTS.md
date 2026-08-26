@@ -39,7 +39,15 @@ it; every Rust tool must reproduce Python stdout bytes + exit codes exactly
   reconciliation → graph.db nodes; THE only graph.db writer in the
   family: `extra {"tier":"SCIP"}` marker rollback, `VACUUM INTO`
   first-inject backup, UNIQUE-collision skip + structural-residual
-  reporting) / `mcp_server` (frontend adapter — rmcp streamable-http on 8200, tools
+  reporting) / `graph_engine` (v1+ engine parity — the ten live CRG
+  MCP ops re-implemented read-only over graph.db: loaders with rowid
+  ordering parity, hub/bridge (sampled Brandes, own LCG — statistical
+  parity above 5k nodes), flows family, impact relaxation, communities
+  Tier 0 (directory grouping — igraph never present in base CRG), risk
+  six-factor, FTS5→LIKE search, compositions; `py_round` for Python
+  `round()` decimal parity; CLI umbrella `graph_query <op>` (incl. `--union`
+  sidecar join + `--leiden` tier + `symbols` outline) and the 12
+  MCP tools share the argv path) / `mcp_server` (frontend adapter — rmcp streamable-http on 8200, tools
   thin-wrap `cli::run` in-process with spawn_blocking + catch_unwind
   per-request isolation [SM-14]; bin `code-reality-mcp`) / `cli` (assembly —
   argv surface, mode routing incl. `--callers`/`--closure`/`--depth`

@@ -235,3 +235,151 @@ fn cli_faces() {
     assert_eq!(out2.exit_code, 1);
     assert!(out2.stderr.contains("--primary 越界"), "{}", out2.stderr);
 }
+
+// ---------- duplicate-family guard + pattern freshness (mosaic relay 2026-08-26) ----------
+
+use code_reality::chain_tour::dup_family_decision;
+use code_reality::tour_manifest::{upsert, Manifest};
+
+fn manifest_with_alias_family() -> Manifest {
+    let mut m = Manifest::default();
+    upsert(
+        &mut m,
+        "arch/01-alpha-chain/01.tour",
+        "chain_tour",
+        &["chain.md".into()],
+        "c0",
+    );
+    m
+}
+
+#[test]
+fn dup_family_decision_redirect_semantics() {
+    let m = manifest_with_alias_family();
+    // default out-dir (not explicit) targeting a different family -> redirect
+    let d = dup_family_decision(&m, "arch/chain", "chain.md", false).unwrap();
+    assert!(d.redirect);
+    // numbered family name preserved verbatim (no rename)
+    assert_eq!(d.fam, "arch/01-alpha-chain");
+    // explicit --out-dir wins -> warn-only
+    let d = dup_family_decision(&m, "arch/chain", "chain.md", true).unwrap();
+    assert!(!d.redirect);
+    // same family -> no decision
+    assert!(dup_family_decision(&m, "arch/01-alpha-chain", "chain.md", false).is_none());
+    // different source -> no decision
+    assert!(dup_family_decision(&m, "arch/chain", "other.md", false).is_none());
+}
+
+#[test]
+fn regen_explicit_out_dir_dup_warns_both_families() {
+    let (repo, chain) = repo_fixture("dup-explicit");
+    let alias = repo.join(".tours/arch/alias-family");
+    let run1 = code_reality::chain_tour::run(&[
+        "chain_tour",
+        &chain.to_string_lossy(),
+        "--repo",
+        &repo.to_string_lossy(),
+        "--out-dir",
+        &alias.to_string_lossy(),
+    ]);
+    assert_eq!(run1.exit_code, 0, "{}{}", run1.stdout, run1.stderr);
+    let stem = repo.join(".tours/arch/chain");
+    let run2 = code_reality::chain_tour::run(&[
+        "chain_tour",
+        &chain.to_string_lossy(),
+        "--repo",
+        &repo.to_string_lossy(),
+        "--out-dir",
+        &stem.to_string_lossy(),
+    ]);
+    assert_eq!(run2.exit_code, 0, "{}{}", run2.stdout, run2.stderr);
+    assert!(
+        run2.stdout.contains("duplicate-family") && run2.stdout.contains("alias-family"),
+        "{}",
+        run2.stdout
+    );
+    // both families exist (explicit wins — rename-migration path)
+    assert!(alias.join("01.tour").exists());
+    assert!(stem.join("01.tour").exists());
+}
+
+#[test]
+fn regen_orphan_source_family_warns() {
+    let (repo, chain) = repo_fixture("orphan");
+    let alias = repo.join(".tours/arch/alias-family");
+    let run1 = code_reality::chain_tour::run(&[
+        "chain_tour",
+        &chain.to_string_lossy(),
+        "--repo",
+        &repo.to_string_lossy(),
+        "--out-dir",
+        &alias.to_string_lossy(),
+    ]);
+    assert_eq!(run1.exit_code, 0, "{}{}", run1.stdout, run1.stderr);
+    // plant a family sourced from a nonexistent md (rename leftover)
+    std::fs::create_dir_all(repo.join(".tours/arch/ghost-family")).unwrap();
+    std::fs::write(
+        repo.join(".tours/manifest.toml"),
+        "version = 1\n\n[tour.\"arch/ghost-family/01.tour\"]\ngenerator = \"chain_tour\"\nsources = [\"chain-gone.md\"]\nanchored_commit = \"c0\"\n",
+    )
+    .unwrap();
+    let run2 = code_reality::chain_tour::run(&[
+        "chain_tour",
+        &chain.to_string_lossy(),
+        "--repo",
+        &repo.to_string_lossy(),
+        "--out-dir",
+        &alias.to_string_lossy(),
+    ]);
+    assert_eq!(run2.exit_code, 0, "{}{}", run2.stdout, run2.stderr);
+    assert!(
+        run2.stdout.contains("source md 已不存在") && run2.stdout.contains("ghost-family"),
+        "{}",
+        run2.stdout
+    );
+}
+
+#[test]
+fn regen_refreshes_pattern_when_same_line_content_changes() {
+    let (repo, chain) = repo_fixture("pattern-fresh");
+    let out_dir = repo.join(".tours/arch/chain");
+    let run1 = code_reality::chain_tour::run(&[
+        "chain_tour",
+        &chain.to_string_lossy(),
+        "--repo",
+        &repo.to_string_lossy(),
+        "--out-dir",
+        &out_dir.to_string_lossy(),
+    ]);
+    assert_eq!(run1.exit_code, 0, "{}{}", run1.stdout, run1.stderr);
+    let p1: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out_dir.join("01.tour")).unwrap()).unwrap();
+    let pat1 = p1["steps"][0]["pattern"].as_str().unwrap();
+    assert!(pat1.contains("kernel\\("), "{pat1}");
+    // signature change WITHOUT line movement (the mosaic 8e92d957 shape)
+    std::fs::write(
+        repo.join("pkg/a.py"),
+        "def kernel(x):\n    pass\n\n\ndef boot():\n    load_config()\n\n\ndef solo_frame():\n    pass\n",
+    )
+    .unwrap();
+    let run2 = code_reality::chain_tour::run(&[
+        "chain_tour",
+        &chain.to_string_lossy(),
+        "--repo",
+        &repo.to_string_lossy(),
+        "--out-dir",
+        &out_dir.to_string_lossy(),
+    ]);
+    assert_eq!(run2.exit_code, 0, "{}{}", run2.stdout, run2.stderr);
+    let p2: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out_dir.join("01.tour")).unwrap()).unwrap();
+    let pat2 = p2["steps"][0]["pattern"].as_str().unwrap();
+    assert!(
+        pat2.contains("kernel\\(x\\)"),
+        "pattern must refresh from source: {pat2}"
+    );
+    assert!(
+        !pat2.contains("kernel\\()"),
+        "stale shape must be gone: {pat2}"
+    );
+}

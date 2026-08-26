@@ -72,6 +72,14 @@ fn bin_help_face() {
 
 // ---------- live HTTP smoke (V1-V3 subset) ----------
 
+fn repo_root_for_engine() -> String {
+    let tmp = tempfile::tempdir().unwrap();
+    let kept = std::fs::canonicalize(tmp.path()).unwrap();
+    // leak the path (test process lifetime) — tempdir cleaned on drop
+    std::mem::forget(tmp);
+    kept.display().to_string()
+}
+
 #[tokio::test]
 async fn http_server_serves_initialize_and_tools_list() {
     use rmcp::transport::StreamableHttpClientTransport;
@@ -88,13 +96,30 @@ async fn http_server_serves_initialize_and_tools_list() {
 
     let transport = StreamableHttpClientTransport::from_uri(format!("http://127.0.0.1:{port}/mcp"));
     let client = ().serve(transport).await.unwrap();
-    // tools/list: exactly the four SCIP-family tools
+    // tools/list: four SCIP-family tools + the engine parity family
     let tools = client.list_all_tools().await.unwrap();
     let mut names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
     names.sort();
     assert_eq!(
         names,
-        vec!["audit", "callers", "closure", "refs"],
+        vec![
+            "affected_flows",
+            "architecture_overview",
+            "audit",
+            "bridge_nodes",
+            "callers",
+            "closure",
+            "detect_changes",
+            "document_symbols",
+            "get_minimal_context",
+            "get_review_context",
+            "hub_nodes",
+            "impact_radius",
+            "list_communities",
+            "list_flows",
+            "refs",
+            "semantic_search"
+        ],
         "{names:?}"
     );
     let refs_tool = tools.iter().find(|t| t.name == "refs").unwrap();
@@ -120,8 +145,27 @@ async fn http_server_serves_initialize_and_tools_list() {
         Err(e) => assert!(!format!("{e}").is_empty()),
         Ok(r) => assert!(r.is_error.unwrap_or(false)),
     }
+    // engine-family tool over the real transport: graph.db read face
+    // against the dogfood corpus is env-dependent; here a repo WITHOUT
+    // .code-review-graph must fail loud (per-request error, client alive)
+    let engine_result = client
+        .call_tool(
+            rmcp::model::CallToolRequestParams::new("hub_nodes").with_arguments(
+                serde_json::json!({"repo_root": repo_root_for_engine()})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+        )
+        .await;
+    match engine_result {
+        // exit!=0 maps to a per-request McpError (SM-14); the transport
+        // itself must survive — asserted by the tools2 list below
+        Err(e) => assert!(format!("{e}").contains("graph.db")),
+        Ok(r) => assert!(r.is_error.unwrap_or(false)),
+    }
     let tools2 = client.list_all_tools().await.unwrap();
-    assert_eq!(tools2.len(), 4);
+    assert_eq!(tools2.len(), 16);
     client.cancel().await.unwrap();
     server.abort();
 }

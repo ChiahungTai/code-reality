@@ -37,6 +37,13 @@ pub struct CrgDbSpec {
     pub communities: Vec<(i64, String, i64, String, String)>,
     pub node_attrs: Vec<(String, NodeAttr)>,
     pub node_lines: Vec<(String, i64)>,
+    /// (qname, line_start, line_end) full-span patch
+    pub node_spans: Vec<(String, i64, i64)>,
+    /// (flow_id, node_id) memberships; flows table rows are created per
+    /// distinct flow_id (criticality from flow_crits).
+    pub flow_members: Vec<(i64, i64)>,
+    /// flow_id -> criticality
+    pub flow_crits: Vec<(i64, f64)>,
 }
 
 /// Build a CRG-compatible synthetic db at `path` (schema verbatim from
@@ -122,6 +129,48 @@ pub fn make_crg_db(path: &Path, spec: &CrgDbSpec) -> rusqlite::Result<()> {
             (line_start, qname),
         )?;
         assert_eq!(n, 1, "node_lines qname 未命中任何節點：{qname}");
+    }
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS flows (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            entry_point_id INTEGER NOT NULL,
+            depth INTEGER NOT NULL,
+            node_count INTEGER NOT NULL,
+            file_count INTEGER NOT NULL,
+            criticality REAL NOT NULL DEFAULT 0.0,
+            path_json TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT 'test',
+            updated_at TEXT NOT NULL DEFAULT 'test'
+        );
+        CREATE TABLE IF NOT EXISTS flow_memberships (
+            flow_id INTEGER NOT NULL,
+            node_id INTEGER NOT NULL,
+            position INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (flow_id, node_id)
+        );",
+    )?;
+    for (fid, crit) in &spec.flow_crits {
+        conn.execute(
+            "INSERT INTO flows (id, name, entry_point_id, depth, node_count, \
+             file_count, criticality, path_json) \
+             VALUES (?1, 'f', 0, 1, 1, 1, ?2, '[]')",
+            (fid, crit),
+        )?;
+    }
+    for (fid, nid) in &spec.flow_members {
+        conn.execute(
+            "INSERT OR IGNORE INTO flow_memberships (flow_id, node_id)
+             VALUES (?1, ?2)",
+            (fid, nid),
+        )?;
+    }
+    for (qname, ls, le) in &spec.node_spans {
+        let n = conn.execute(
+            "UPDATE nodes SET line_start=?1, line_end=?2 WHERE qualified_name=?3",
+            (ls, le, qname),
+        )?;
+        assert_eq!(n, 1, "node_spans qname 未命中任何節點：{qname}");
     }
     for (kind, src, dst) in &spec.edges {
         conn.execute(

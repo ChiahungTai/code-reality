@@ -39,6 +39,86 @@ pub struct AuditParams {
     pub repo_root: String,
 }
 
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct GqRepoParams {
+    pub repo_root: String,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct GqFilesOnlyParams {
+    pub repo_root: String,
+    #[serde(default)]
+    pub files: Vec<String>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct GqFilesParams {
+    pub repo_root: String,
+    #[serde(default)]
+    pub files: Vec<String>,
+    #[serde(default)]
+    pub max_depth: Option<usize>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct GqLimitParams {
+    pub repo_root: String,
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct GqCommunitiesParams {
+    pub repo_root: String,
+    #[serde(default)]
+    pub algorithm: Option<String>,
+    #[serde(default)]
+    pub use_union: Option<bool>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct GqUnionParams {
+    pub repo_root: String,
+    #[serde(default)]
+    pub files: Vec<String>,
+    #[serde(default)]
+    pub max_depth: Option<usize>,
+    #[serde(default)]
+    pub use_union: Option<bool>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct GqUnionLimitParams {
+    pub repo_root: String,
+    #[serde(default)]
+    pub limit: Option<usize>,
+    #[serde(default)]
+    pub use_union: Option<bool>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct GqDocumentSymbolsParams {
+    pub repo_root: String,
+    pub file: String,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct GqSearchParams {
+    pub repo_root: String,
+    pub query: String,
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct GqTaskParams {
+    pub repo_root: String,
+    #[serde(default)]
+    pub task: String,
+    #[serde(default)]
+    pub files: Vec<String>,
+}
+
 #[derive(Clone, Default)]
 pub struct CodeRealityServer {
     tool_router: ToolRouter<CodeRealityServer>,
@@ -91,6 +171,27 @@ impl CodeRealityServer {
             .with_route((Self::callers_tool_attr(), Self::callers))
             .with_route((Self::closure_tool_attr(), Self::closure))
             .with_route((Self::audit_tool_attr(), Self::audit))
+            .with_route((Self::impact_radius_tool_attr(), Self::impact_radius))
+            .with_route((Self::detect_changes_tool_attr(), Self::detect_changes))
+            .with_route((Self::hub_nodes_tool_attr(), Self::hub_nodes))
+            .with_route((Self::bridge_nodes_tool_attr(), Self::bridge_nodes))
+            .with_route((Self::list_communities_tool_attr(), Self::list_communities))
+            .with_route((
+                Self::architecture_overview_tool_attr(),
+                Self::architecture_overview,
+            ))
+            .with_route((Self::list_flows_tool_attr(), Self::list_flows))
+            .with_route((Self::affected_flows_tool_attr(), Self::affected_flows))
+            .with_route((
+                Self::get_minimal_context_tool_attr(),
+                Self::get_minimal_context,
+            ))
+            .with_route((
+                Self::get_review_context_tool_attr(),
+                Self::get_review_context,
+            ))
+            .with_route((Self::semantic_search_tool_attr(), Self::semantic_search))
+            .with_route((Self::document_symbols_tool_attr(), Self::document_symbols))
     }
 
     async fn run_refs_like(&self, args: Vec<String>) -> Result<CallToolResult, McpError> {
@@ -207,6 +308,341 @@ impl CodeRealityServer {
             repo_root,
         ];
         self.run_refs_like(args).await
+    }
+
+    fn reject_comma_files(files: &[String]) -> Result<(), McpError> {
+        if let Some(bad) = files.iter().find(|f| f.contains(',')) {
+            return Err(McpError::new(
+                ErrorCode::INVALID_PARAMS,
+                format!("files 元素含逗號（comma-join argv 編碼限制）：{bad}"),
+                None,
+            ));
+        }
+        Ok(())
+    }
+
+    async fn gq(&self, args: Vec<String>) -> Result<CallToolResult, McpError> {
+        let out = tokio::task::spawn_blocking(move || {
+            let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                crate::graph_engine::run(&refs)
+            }))
+        })
+        .await
+        .map_err(|e| {
+            McpError::new(
+                ErrorCode::INTERNAL_ERROR,
+                format!("任務 join 失敗：{e}"),
+                None,
+            )
+        })?
+        .map_err(|payload| {
+            let msg = payload
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .or_else(|| payload.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "non-string panic payload".into());
+            McpError::new(
+                ErrorCode::INTERNAL_ERROR,
+                format!("lib panic：{msg}——已隔離為單請求錯誤"),
+                None,
+            )
+        })?;
+        map_tool_output(out)
+    }
+
+    #[tool(
+        description = "Blast radius of changed files: impacted nodes/files with best-path impact scores"
+    )]
+    pub async fn impact_radius(
+        &self,
+        Parameters(GqUnionParams {
+            repo_root,
+            files,
+            max_depth,
+            use_union,
+        }): Parameters<GqUnionParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut args = vec![
+            "graph_query".into(),
+            "impact_radius".into(),
+            "--repo".into(),
+            repo_root,
+        ];
+        if use_union.unwrap_or(false) {
+            args.push("--union".into());
+        }
+        if !files.is_empty() {
+            Self::reject_comma_files(&files)?;
+            args.push("--files".into());
+            args.push(files.join(","));
+        }
+        if let Some(d) = max_depth {
+            args.push("--depth".into());
+            args.push(d.to_string());
+        }
+        self.gq(args).await
+    }
+
+    #[tool(
+        description = "Risk-scored review guidance from changed files: changed functions, test gaps, priorities"
+    )]
+    pub async fn detect_changes(
+        &self,
+        Parameters(GqFilesOnlyParams { repo_root, files }): Parameters<GqFilesOnlyParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut args = vec![
+            "graph_query".into(),
+            "detect_changes".into(),
+            "--repo".into(),
+            repo_root,
+        ];
+        if !files.is_empty() {
+            Self::reject_comma_files(&files)?;
+            args.push("--files".into());
+            args.push(files.join(","));
+        }
+        self.gq(args).await
+    }
+
+    #[tool(description = "Most connected nodes (in+out degree, all edge kinds)")]
+    pub async fn hub_nodes(
+        &self,
+        Parameters(GqUnionLimitParams {
+            repo_root,
+            limit,
+            use_union,
+        }): Parameters<GqUnionLimitParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut args = vec![
+            "graph_query".into(),
+            "hub".into(),
+            "--repo".into(),
+            repo_root,
+            "--limit".into(),
+            limit.unwrap_or(10).to_string(),
+        ];
+        if use_union.unwrap_or(false) {
+            args.push("--union".into());
+        }
+        self.gq(args).await
+    }
+
+    #[tool(description = "Architectural chokepoints by (sampled) betweenness centrality")]
+    pub async fn bridge_nodes(
+        &self,
+        Parameters(GqUnionLimitParams {
+            repo_root,
+            limit,
+            use_union,
+        }): Parameters<GqUnionLimitParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut args = vec![
+            "graph_query".into(),
+            "bridge".into(),
+            "--repo".into(),
+            repo_root,
+            "--limit".into(),
+            limit.unwrap_or(10).to_string(),
+        ];
+        if use_union.unwrap_or(false) {
+            args.push("--union".into());
+        }
+        self.gq(args).await
+    }
+
+    #[tool(
+        description = "Communities: directory (CRG Tier-0 parity) or seeded Leiden; optional union edge plane"
+    )]
+    pub async fn list_communities(
+        &self,
+        Parameters(GqCommunitiesParams {
+            repo_root,
+            algorithm,
+            use_union,
+        }): Parameters<GqCommunitiesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut args = vec![
+            "graph_query".into(),
+            "communities".into(),
+            "--repo".into(),
+            repo_root,
+        ];
+        match algorithm.as_deref() {
+            None | Some("directory") => {}
+            Some("leiden") => {
+                if use_union.unwrap_or(false) {
+                    return Err(McpError::new(
+                        ErrorCode::INVALID_PARAMS,
+                        "leiden + union 組合未支援（Leiden 走 graph.db 邊集）",
+                        None,
+                    ));
+                }
+                args.push("--leiden".into());
+            }
+            Some(other) => {
+                return Err(McpError::new(
+                    ErrorCode::INVALID_PARAMS,
+                    format!("algorithm 須為 directory|leiden，收到：{other}"),
+                    None,
+                ));
+            }
+        }
+        if use_union.unwrap_or(false) {
+            args.push("--union".into());
+        }
+        self.gq(args).await
+    }
+
+    #[tool(description = "Communities + cross-community edges + high-coupling warnings")]
+    pub async fn architecture_overview(
+        &self,
+        Parameters(GqLimitParams { repo_root, limit }): Parameters<GqLimitParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut args = vec![
+            "graph_query".into(),
+            "arch_overview".into(),
+            "--repo".into(),
+            repo_root,
+        ];
+        if let Some(l) = limit {
+            args.push("--max-results".into());
+            args.push(l.to_string());
+        }
+        self.gq(args).await
+    }
+
+    #[tool(
+        description = "Execution flows from entry points (forward BFS over CALLS, criticality-sorted)"
+    )]
+    pub async fn list_flows(
+        &self,
+        Parameters(GqRepoParams { repo_root }): Parameters<GqRepoParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.gq(vec![
+            "graph_query".into(),
+            "flows".into(),
+            "--repo".into(),
+            repo_root,
+        ])
+        .await
+    }
+
+    #[tool(description = "Flows whose path touches the changed files")]
+    pub async fn affected_flows(
+        &self,
+        Parameters(GqFilesOnlyParams { repo_root, files }): Parameters<GqFilesOnlyParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut args = vec![
+            "graph_query".into(),
+            "affected_flows".into(),
+            "--repo".into(),
+            repo_root,
+        ];
+        if !files.is_empty() {
+            Self::reject_comma_files(&files)?;
+            args.push("--files".into());
+            args.push(files.join(","));
+        }
+        self.gq(args).await
+    }
+
+    #[tool(
+        description = "Ultra-compact entry context: stats, risk band, top communities/flows, next-tool suggestions"
+    )]
+    pub async fn get_minimal_context(
+        &self,
+        Parameters(GqTaskParams {
+            repo_root,
+            task,
+            files,
+        }): Parameters<GqTaskParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut args = vec![
+            "graph_query".into(),
+            "minimal_context".into(),
+            "--repo".into(),
+            repo_root,
+        ];
+        if !task.is_empty() {
+            args.push("--task".into());
+            args.push(task);
+        }
+        if !files.is_empty() {
+            Self::reject_comma_files(&files)?;
+            args.push("--files".into());
+            args.push(files.join(","));
+        }
+        self.gq(args).await
+    }
+
+    #[tool(description = "Focused review context: impact + source snippets + guidance")]
+    pub async fn get_review_context(
+        &self,
+        Parameters(GqFilesParams {
+            repo_root,
+            files,
+            max_depth,
+        }): Parameters<GqFilesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut args = vec![
+            "graph_query".into(),
+            "review_context".into(),
+            "--repo".into(),
+            repo_root,
+        ];
+        if !files.is_empty() {
+            Self::reject_comma_files(&files)?;
+            args.push("--files".into());
+            args.push(files.join(","));
+        }
+        if let Some(d) = max_depth {
+            args.push("--depth".into());
+            args.push(d.to_string());
+        }
+        self.gq(args).await
+    }
+
+    #[tool(description = "Keyword search (FTS5 with LIKE fallback; embeddings face not adopted)")]
+    pub async fn semantic_search(
+        &self,
+        Parameters(GqSearchParams {
+            repo_root,
+            query,
+            limit,
+        }): Parameters<GqSearchParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.gq(vec![
+            "graph_query".into(),
+            "search".into(),
+            "--repo".into(),
+            repo_root,
+            "--query".into(),
+            query,
+            "--limit".into(),
+            limit.unwrap_or(20).to_string(),
+        ])
+        .await
+    }
+
+    #[tool(
+        description = "File outline from SCIP defining occurrences (documentSymbol-alike; hover/signatures stay LSP-only)"
+    )]
+    pub async fn document_symbols(
+        &self,
+        Parameters(GqDocumentSymbolsParams { repo_root, file }): Parameters<
+            GqDocumentSymbolsParams,
+        >,
+    ) -> Result<CallToolResult, McpError> {
+        self.gq(vec![
+            "graph_query".into(),
+            "symbols".into(),
+            "--repo".into(),
+            repo_root,
+            "--query".into(),
+            file,
+        ])
+        .await
     }
 }
 

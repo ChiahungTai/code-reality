@@ -1,5 +1,14 @@
 # License audit: this repo is MIT with a no-copyleft dependency chain
 # (rust-analyzer SCIP indexes are consumed as data, not linked).
+[advisories]
+ignore = [
+    # `paste` unmaintained (informational): transitive via
+    # single-clustering -> nalgebra-sparse -> nalgebra -> simba; no
+    # vulnerability, no upstream replacement route — re-evaluate on
+    # single-clustering updates.
+    "RUSTSEC-2024-0436",
+]
+
 [licenses]
 allow = [
     "MIT",

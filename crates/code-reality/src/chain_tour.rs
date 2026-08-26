@@ -788,7 +788,8 @@ pub fn run(argv: &[&str]) -> ToolOutput {
             }
         }
     };
-    let out_dir = values
+    let explicit_out_dir = values.get("--out-dir").and_then(|v| v.clone()).is_some();
+    let mut out_dir = values
         .get("--out-dir")
         .and_then(|v| v.clone())
         .map(PathBuf::from)
@@ -799,6 +800,45 @@ pub fn run(argv: &[&str]) -> ToolOutput {
                 .unwrap_or_default();
             PathBuf::from(".tours").join("arch").join(stem)
         });
+    // Duplicate-family guard (mosaic relay 2026-08-26, 204->219 incident):
+    // a regen whose source md already feeds a DIFFERENT family in the
+    // manifest must upsert that family instead of silently creating a
+    // stem duplicate whose old tours keep stale patterns. Explicit
+    // --out-dir wins (rename migration uses it) but still warns.
+    let repo_abs = crate::common::resolve(&repo);
+    let chain_abs = crate::common::resolve(&chain_md);
+    let src_rel = chain_abs
+        .strip_prefix(&repo_abs)
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_else(|_| chain_abs.to_string_lossy().into_owned());
+    let guard_root = crate::tour_manifest::tours_root_of(&crate::common::resolve(&out_dir));
+    if guard_root
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .as_deref()
+        == Some(".tours")
+    {
+        let mpre =
+            crate::tour_manifest::load(&guard_root.join("manifest.toml")).unwrap_or_default();
+        let cur_fam = crate::common::resolve(&out_dir)
+            .strip_prefix(&guard_root)
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_default();
+        if let Some(decision) = dup_family_decision(&mpre, &cur_fam, &src_rel, explicit_out_dir) {
+            if decision.redirect {
+                stdout.push_str(&format!(
+                    "[WARN] duplicate-family 防護：source {src_rel} 已有族 {}——重產改寫入既有族，不建 stem 重複\n",
+                    decision.fam
+                ));
+                out_dir = guard_root.join(&decision.fam);
+            } else {
+                stdout.push_str(&format!(
+                    "[WARN] duplicate-family：source {src_rel} 已有族 {}，而 --out-dir 指定 {cur_fam}——兩族將並存（確認是否改名遷移；舊族 pattern 會 stale）\n",
+                    decision.fam
+                ));
+            }
+        }
+    }
     let primary_s = values
         .get("--primary")
         .and_then(|v| v.clone())
@@ -853,12 +893,6 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         if mdata.version.is_none() {
             mdata.version = Some(toml::Value::Integer(1));
         }
-        let chain_abs = crate::common::resolve(&chain_md);
-        let repo_abs = crate::common::resolve(&repo);
-        let src_rel = chain_abs
-            .strip_prefix(&repo_abs)
-            .map(|p| p.to_string_lossy().replace('\\', "/"))
-            .unwrap_or_else(|_| chain_abs.to_string_lossy().into_owned());
         let (commit, _w) = crate::tour_manifest::git_head(&repo);
         for p in &paths {
             let rel = crate::common::resolve(p)
@@ -881,6 +915,42 @@ pub fn run(argv: &[&str]) -> ToolOutput {
             mpath.display(),
             paths.len()
         ));
+        // Orphan-family sweep: families whose every source md is gone from
+        // disk (renamed/deleted chain md) keep stale-pattern tours in the
+        // corpus and fail tour_validate — loud warning, no auto-delete
+        // (the corpus is user data; deletion is their call).
+        let mut orphan_fams: Vec<String> = Vec::new();
+        let mut seen_fams = std::collections::BTreeSet::new();
+        for (rel, row) in &mdata.tour {
+            let Some(fam) = ::std::path::Path::new(rel)
+                .parent()
+                .map(|p| p.to_string_lossy().replace('\\', "/"))
+            else {
+                continue;
+            };
+            if !seen_fams.insert(fam.clone()) {
+                continue;
+            }
+            let sources = row
+                .get("sources")
+                .and_then(|s| s.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            if !sources.is_empty() && sources.iter().all(|s| !repo_abs.join(s).exists()) {
+                orphan_fams.push(fam);
+            }
+        }
+        if !orphan_fams.is_empty() {
+            stdout.push_str(&format!(
+                "[WARN] manifest 有 {} 個族的 source md 已不存在（疑似改名/刪除）：{:?}——舊族 tour 留在 corpus 且 pattern 會 stale（tour_validate 會 fail）；確認後刪族目錄＋重產或清 manifest 列\n",
+                orphan_fams.len(),
+                orphan_fams
+            ));
+        }
     }
     stdout.push_str(&format!(
         "[OK] chain tours: {} 場景 / {} 幀 / {} 步 / skipped {}\n",
@@ -895,4 +965,49 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         stderr: String::new(),
         exit_code: 0,
     }
+}
+
+/// Duplicate-family decision (pure half of the run() guard):
+/// `redirect` = regen should write into the existing family (default
+/// out-dir case); `redirect = false` = explicit --out-dir wins, warn
+/// only. The existing family's name is returned verbatim — numbered
+/// stems (e.g. `01-xxx`) are never renamed.
+pub struct DupFamilyDecision {
+    pub fam: String,
+    pub redirect: bool,
+}
+
+pub fn dup_family_decision(
+    m: &crate::tour_manifest::Manifest,
+    cur_fam: &str,
+    src_rel: &str,
+    explicit_out_dir: bool,
+) -> Option<DupFamilyDecision> {
+    for (rel, row) in &m.tour {
+        let Some(fam) = ::std::path::Path::new(rel)
+            .parent()
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+        else {
+            continue;
+        };
+        if fam == cur_fam {
+            continue;
+        }
+        let sources = row
+            .get("sources")
+            .and_then(|s| s.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        if sources.iter().any(|s| *s == src_rel) {
+            return Some(DupFamilyDecision {
+                fam,
+                redirect: !explicit_out_dir,
+            });
+        }
+    }
+    None
 }

@@ -64,6 +64,7 @@ pub mod engine;
 pub mod fndefs;
 pub mod graph_audit;
 pub mod graph_csv;
+pub mod graph_engine;
 pub mod hazard;
 pub mod hub_refs;
 pub mod mcp_server;

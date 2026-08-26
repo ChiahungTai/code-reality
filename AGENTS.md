@@ -51,6 +51,10 @@ Installed via `cargo install --path ~/Github/code-reality/crates/code-reality`
 | Unified MCP interface | stdio `code-reality-mcp --stdio` (default face: ZCode/Claude plugin in `plugin/`; repo-root `marketplace.json` = installable market) + streamable-http `127.0.0.1:8200/mcp` (launchd plist in `launchd/`, multi-harness sharing) | ✅ |
 | SCIP reference-edge export + union sidecar injection | `code-reality scip_edges --repo <repo> [--inject [--dry-run\|--json]]` (edge plane lands in the index-sibling `index.union.db`, never CRG graph.db) | ✅ |
 | graph_audit missing → graph.db node injection | `code-reality scip_nodes --repo <repo> [--dry-run] [--rollback] [--json]` (the sole graph.db write face; `extra {"tier":"SCIP"}` marker rollback + `VACUUM INTO` backup) | ✅ |
+| Graph-engine parity family (CRG's 10 live MCP ops, read-only graph.db) | `code-reality graph_query <impact_radius\|detect_changes\|hub\|bridge\|communities\|arch_overview\|flows\|affected_flows\|review_context\|minimal_context\|search\|symbols> --repo <repo> [--union] [--leiden] [--seed N]` + 12 MCP tools (CRG consumer names + `document_symbols`; NT parity: flows 10,359/10,359 exact, communities 42/42 exact, impact scores exact) | ✅ (embeddings face deferred by S3 adjudication) |
+| Union edge plane (SCIP REFERENCES into engine queries) | `graph_query <impact_radius\|hub\|bridge\|communities> --union` — sidecar edges joined via (file, name) double-key; NT 179,704/181,591 mapped, impact reach +2,544 | ✅ |
+| Leiden communities tier (seeded deterministic) | `graph_query communities --leiden [--seed N]` — single-clustering 0.7; NT: 1,270 communities, largest 23.4% (Tier-0 41.7% giant dissolved), modularity 0.9158 | ✅ |
+| CRG retirement readiness | engine layer READY — `ai-analysis/reports/s4-crg-retirement-readiness.md` (remainder: tree-sitter producer, deferred embeddings, consumer cutover) | ✅ |
 
 ## Tests
 
