@@ -2,8 +2,8 @@
   "mcpServers": {
     "code-reality": {
       "type": "stdio",
-      "command": "code-reality-mcp",
-      "args": ["--stdio"],
+      "command": "/bin/sh",
+      "args": ["-c", "exec \"${HOME}/.cargo/bin/code-reality-mcp\" --stdio || exec code-reality-mcp --stdio"],
       "timeoutMs": 60000
     }
   }
