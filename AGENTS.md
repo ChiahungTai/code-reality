@@ -1,12 +1,13 @@
 # code-reality
 
 Meta-layer tooling living *above* repositories: structural facts, governance
-audits, and narrative artifacts consumed by AI coding sessions. Migrated
-big-bang from `ai-rules` (2026-08-25; migration EP lives in ai-rules at
-`ai-analysis/execution-plans/ep-code-reality-repo-mcp.md`). Current route EP
-— Rust-based migration with coexistence-then-delete, superseding the
-ai-rules EP's S2-S4 — lives in this repo at
-`ai-analysis/execution-plans/ep-rust-migration.md`.
+audits, and narrative artifacts consumed by AI coding sessions. Rust carrier
+end state (R7, 2026-08-26): the frozen-Python parity oracle and both Python
+copies retired after byte-identical acceptance on real corpora (NT
+query/graph_audit `--json`/`--audit`, mosaic `hub_refs --json` — gate
+record in `ai-analysis/execution-plans/_done/`). Migration history:
+`ai-analysis/execution-plans/ep-rust-migration.md` + per-segment child EPs
+in `_done/`.
 
 **Repo facts belong to each repo** — the scanned repo's `.code-reality.toml`
 profile owns module/exclusion/registry knowledge; the tool layer embeds no
@@ -16,42 +17,40 @@ harnesses).
 
 This repo is public-facing (open source, remote GitHub) — **all authored
 content is English**: code comments, docstrings, README, AGENTS.md, commit
-messages. Migrated code keeps its original docstrings (zero-change migration
-constraint).
+messages. (Chinese OUTPUT strings are the frozen CLI byte-parity face,
+preserved verbatim.)
 
 ## Usage (from any repo cwd)
 
 ```
-uv run --project ~/Github/code-reality python -m code_reality.<tool> --repo <repo-root> [args]
+code-reality <tool> --repo <repo-root> [args]
 ```
 
-Sidecar home (frozen at migration): `~/.mosaic/code-reality/` — including
-per-repo SCIP index slots under `scip/<repo-basename>/`
+Installed via `cargo install --path ~/Github/code-reality/crates/code-reality`
+(→ `~/.cargo/bin/code-reality` + `code-reality-mcp`). Sidecar home:
+`~/.mosaic/code-reality/` — per-repo SCIP index slots under `scip/<repo-basename>/`
 (generate → `--stamp-meta` → `--build-cache` ordering).
 
 ## Module guide
 
-- [crates/AGENTS.md](crates/AGENTS.md) — Rust carrier (coexistence with the
-  frozen Python until the R7 relay): lib layering, byte-parity contract,
-  schema interop rules
-- [code_reality/AGENTS.md](code_reality/AGENTS.md) — the tool package:
-  foundation modules, tool families, sidecar conventions, internal layering
-- [tests/AGENTS.md](tests/AGENTS.md) — unit vs integration split, fixture
-  helpers, test conventions
+- [crates/AGENTS.md](crates/AGENTS.md) — the Rust carrier: lib layering
+  (engine/callers/cache/fndefs/common/profile/argparse + graph/tour/boundary/
+  hazard families + mcp_server), exit-semantics table, parity history
+- Tool semantics: ai-rules `skills/code-reality/SKILL.md` (the cross-repo
+  truth source — this repo no longer duplicates it)
 
 ## Capabilities
 
 | Capability | Entry | Status |
 |---|---|---|
-| Symbol truth query (refs/defs, trait disambiguation) | `python -m code_reality.scip_refs <symbol> --repo <repo>`; Rust carrier: `cargo run -p code-reality -- scip_refs ...` (byte-parity gated) | ✅ |
-| Completeness governance (audit + `[SRC]` provenance) | `scip_refs --audit --repo` + `graph_audit --json`; Rust carrier: `code-reality scip_refs --audit ...` / `code-reality graph_audit ...` (byte-parity gated, `--audit` first pass in-process) | ✅ |
-| Deletability safety net (hub_refs/hazard) | `hub_refs <symbol> --repo <repo> --hazard`；Rust carrier: `code-reality hub_refs ...`（byte-parity gated——AST face via ruff_python_parser, differential-verified） | ✅ |
-| Boundary / export / narrative tool family | snapshot / transition / boundary family / tour family / runtime_edges / graph_csv; Rust carrier for all: `code-reality <sub> ...` (byte-parity gated — graph family via parity harness; R5 families via help-face parity + shared-shape cargo suites) | ✅ |
-| Caller-edge query (callers/closure) | Rust carrier: `code-reality scip_refs <symbol> --callers/--closure [--depth N] --repo <repo>` (`--depth` 1-10000, default 2; item-level refs = refs not enclosed by any fn — refs are not call counts) | ✅ (Rust-native; Python carrier never built — R3 superseded it) |
-| Unified MCP interface | `code-reality-mcp`（Rust rmcp 3.1.4 streamable-http `127.0.0.1:8200/mcp`；tools: refs/callers/closure/audit × per-call `repo_root`；launchd plist in `launchd/`） | ✅ |
+| Symbol truth query (refs/defs, trait disambiguation) | `code-reality scip_refs <symbol> --repo <repo>` | ✅ |
+| Caller-edge query (callers/closure) | `code-reality scip_refs <symbol> --callers/--closure [--depth N] --repo <repo>` | ✅ |
+| Completeness governance (audit + `[SRC]` provenance) | `code-reality scip_refs --audit --repo` + `code-reality graph_audit --json` | ✅ |
+| Deletability safety net (hub_refs/hazard) | `code-reality hub_refs <symbol> --repo <repo> --hazard` | ✅ |
+| Boundary / export / narrative tool family | `code-reality <snapshot\|transition\|graph_csv\|boundary\|boundary_build\|chain_tour\|delta_tour\|tour_manifest\|tour_validate\|tour_upgrade\|runtime_edges> ...` | ✅ |
+| Unified MCP interface | `code-reality-mcp`（rmcp streamable-http `127.0.0.1:8200/mcp`；launchd plist in `launchd/`） | ✅ |
 
 ## Tests
 
-`uv run pytest` — self-contained (synthetic fixtures + tmp-dir state
-only; zero environment dependence — open-source test policy in
-[tests/AGENTS.md](tests/AGENTS.md)).
+`cargo test`（Rust suites are the sole test face post-R7 — the Python
+parity harness retired with the oracle; history in the archived EPs）.

@@ -10,7 +10,7 @@ repo-specific special cases.
 ## Usage (from any repo cwd)
 
 ```
-uv run --project ~/Github/code-reality python -m code_reality.<tool> --repo <repo-root> [args]
+code-reality <tool> --repo <repo-root> [args]
 ```
 
 Tools: `snapshot` `transition` `hub_refs` `runtime_edges` `boundary_build`
@@ -23,7 +23,7 @@ per-repo SCIP index slots under `scip/<repo-basename>/`.
 ## Tests
 
 ```
-uv run --project ~/Github/code-reality pytest
+cargo test --workspace
 ```
 
 Tests marked `integration` consume real repos and sidecar artifacts outside

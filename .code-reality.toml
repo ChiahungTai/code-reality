@@ -1,6 +1,6 @@
 # Self profile — dogfood: this repo is scanned by its own toolchain.
-exclude = ["tests/fixtures/", ".venv/"]
+exclude = [".venv/", ".agent-tmp/"]
 
 [[module]]
-prefix = "code_reality/"
-depth = 1
+prefix = "crates/"
+depth = 2

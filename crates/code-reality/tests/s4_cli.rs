@@ -11,7 +11,7 @@ fn fixture_copy(tmp: &tempfile::TempDir) -> PathBuf {
 }
 
 fn fixture_src() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/parity/fixtures/rich.scip")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/rich.scip")
 }
 
 fn argv<'a>(parts: &[&'a str]) -> Vec<&'a str> {

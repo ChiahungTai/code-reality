@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-const FIXTURE: &str = "../../tests/parity/fixtures/rich.scip";
+const FIXTURE: &str = "tests/fixtures/rich.scip";
 
 fn fixture_copy(tmp: &tempfile::TempDir) -> PathBuf {
     let dst = tmp.path().join("index.scip");

@@ -254,6 +254,8 @@ NT 三面 byte-identical（新路徑）＋**exit codes 0/1/2 一致**；mosaic h
 
 → 衍生子 EP：`ai-analysis/execution-plans/ep-rust-r7-relay-deletion.md`
 
+> **✅ R7 已完成（2026-08-26，R5 EP 吸收執行——relay/deletion 直接落地）**：gate 證據——NT query/graph_audit `--json`/`--audit`＋mosaic `hub_refs --json` 舊新路徑 byte-identical（exit codes 同步）。Relay：ai-rules skills `da2f19d`（6 檔 invocation 形態＋存在性述語 Rust 滿足）、mosaic `691a0a6f`、NT `fd4880319d`。雙刪：ai-rules `f8c043b`（code_reality/＋25 測試檔＋pyproject 清理）；本 repo 本 commit（Python 全刪＋parity harness 隨退＋scip.proto 搬 `crates/code-reality/schema/`＋`.code-reality.toml` prefix 改 crates＋AGENTS.md Rust 端局）。MCP launchd 掛接留手動（plist 已備）。**回退清單**：本 repo 刪除 commit＋ai-rules f8c043b/da2f19d＋mosaic 691a0a6f＋NT fd4880319d 的 git revert。
+
 ---
 
 ## 整合策略

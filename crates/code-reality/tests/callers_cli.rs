@@ -7,7 +7,7 @@
 use code_reality::cli::run;
 use std::path::{Path, PathBuf};
 
-const FIXTURE: &str = "../../tests/parity/fixtures/rich_callers.scip";
+const FIXTURE: &str = "tests/fixtures/rich_callers.scip";
 
 fn fixture_copy(tmp: &tempfile::TempDir) -> PathBuf {
     let dst = tmp.path().join("index.scip");

@@ -12,10 +12,10 @@ use code_reality::fndefs::{
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-const FIXTURE: &str = "../../tests/parity/fixtures/rich.scip";
+const FIXTURE: &str = "tests/fixtures/rich.scip";
 // enc-bearing fixture (R3): rich.scip predates enclosing_range data, so
 // span-content assertions against it are vacuous (empty span map).
-const CALLERS_FIXTURE: &str = "../../tests/parity/fixtures/rich_callers.scip";
+const CALLERS_FIXTURE: &str = "tests/fixtures/rich_callers.scip";
 
 fn fixture_copy(tmp: &tempfile::TempDir) -> PathBuf {
     let dst = tmp.path().join("index.scip");
