@@ -17,8 +17,8 @@ cargo install --path ~/Github/code-reality/crates/code-reality
 ## Install
 
 The repo root doubles as the plugin marketplace (see
-`marketplace.json`): Settings → Plugins → Create → Add plugin
-marketplace → this repo's local path or GitHub URL. The plugin
+`marketplace.json`): Settings → Plugin Management → Discover → `+` →
+this repo's local path, Git URL, or GitHub URL. The plugin
 appears under Personal → install. The MCP server mounts as
 `plugin:code-reality:code-reality`; the skill auto-loads.
 

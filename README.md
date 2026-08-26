@@ -27,8 +27,9 @@ cargo install --path crates/code-reality        # code-reality + code-reality-mc
 ```
 
 **ZCode / Claude Code plugin** (stdio MCP + usage skill, zero daemon):
-add this repo as a plugin marketplace (Settings → Plugins → Add
-marketplace → local path or GitHub URL — the repo root carries
+add this repo as a plugin marketplace (Settings → Plugin
+Management → Discover → `+` → local path, Git URL, or GitHub URL —
+the repo root carries
 `marketplace.json`), install `code-reality`. The MCP server mounts as
 `plugin:code-reality:code-reality` and spawns per session.
 
@@ -37,6 +38,10 @@ marketplace → local path or GitHub URL — the repo root carries
 ```json
 {"type": "stdio", "command": "code-reality-mcp", "args": ["--stdio"]}
 ```
+
+GUI-launched harnesses may lack `~/.cargo/bin` on PATH — give the
+absolute path to `code-reality-mcp` there (or reuse the `/bin/sh -c`
+wrapper from `plugin/.mcp.json`).
 
 An HTTP resident mode also exists (`code-reality-mcp`, port 8200,
 launchd plist in `launchd/`) for multi-harness sharing on one machine —
@@ -52,8 +57,9 @@ and, for audits, a CRG graph (`uvx code-review-graph build`).
 cargo test --workspace
 ```
 
-Tests marked `integration` consume real repos and sidecar artifacts outside
-this repo.
+The Rust suites are self-sufficient — fixtures live under
+`crates/code-reality/tests/fixtures/`; no external repos or sidecar
+artifacts are required to run them.
 
 ## References & credits
 
@@ -79,7 +85,7 @@ This project is licensed under the **MIT License** (see [LICENSE](LICENSE)).
 Dependency chain (verified 2026-08-25, no copyleft):
 
 - `rust-analyzer` (MIT/Apache-2.0) — produces the SCIP indexes consumed by `scip_refs`
-- `scip.proto` (Apache-2.0, [sourcegraph/scip](https://github.com/sourcegraph/scip)) — vendored at `code_reality/scip.proto`
+- `scip.proto` (Apache-2.0, [sourcegraph/scip](https://github.com/sourcegraph/scip)) — vendored at `crates/code-reality/schema/scip.proto`
 - `protobuf` (BSD-3) — runtime for the vendored generated bindings
 - `code-review-graph` (MIT, Copyright Tirth Kanani) — graph.db producer audited by `graph_audit`
 

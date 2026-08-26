@@ -6,7 +6,7 @@
 
 #[tokio::main]
 async fn main() {
-    let stdio = std::env::args().any(|a| a == "--stdio");
+    let stdio = std::env::args_os().any(|a| a.to_string_lossy() == "--stdio");
     let result = if stdio {
         code_reality::mcp_server::serve_stdio().await
     } else {

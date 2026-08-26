@@ -36,8 +36,8 @@ Responses embed `[SRC]` provenance lines (index version/commit) and a
 ## CLI surface (broader)
 
 The MCP face covers the SCIP family. The same binary carries the full
-toolchain: `code-reality <snapshot|transition|graph_audit|graph_csv|
-hub_refs|hazard|boundary|boundary_build|chain_tour|delta_tour|
+toolchain: `code-reality <scip_refs|snapshot|transition|graph_audit|graph_csv|
+hub_refs|boundary|boundary_build|chain_tour|delta_tour|
 tour_manifest|tour_validate|tour_upgrade|runtime_edges> --repo <root>`.
 
 Install/upgrade: `cargo install --path <this-repo>/crates/code-reality`.
