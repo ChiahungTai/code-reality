@@ -222,11 +222,28 @@ Python repo（mosaic/ai-rules）符號真相目前只有 LSP/pyright——本段
 消費面全共用。內部合約是 row 三元組（defs/occurrences/fn-spans）而非 SCIP
 protobuf 本身；SCIP 只是 rust-analyzer 的序列化形態，換 producer 不換管線。
 
-- **P1 主路徑：scip-python**——Sourcegraph fork of pyright emitting SCIP
+- **P1 主路徑：scip-python——已實證死局（2026-08-26 深夜 POC）**：PyPI 無此包
+  （simple/ 404）＋git checkout 非 Python 專案佈局（repo 封存/重構）→ 落 P2 備援
   （pyright 級解析＋SCIP 輸出＝既有引擎零改動；倉庫未封存，維護節奏未驗）。
   POC：index ai-rules → 引擎解析 → refs 抽查對拍 pyright LSP（R2-R7 parity
   oracle 方法論重演）
-- **P2 備援：通用 LSP-harvest adapter**——ty（astral，Rust 原生，已支援
+- **P2 備援：通用 LSP-harvest adapter——✅ POC 成立（2026-08-26 深夜）**：
+  `pyright-langserver`（本機 1.1.410）→ harvest 腳本（`.agent-tmp/poc-lsp-harvest/harvest.py`：
+  Content-Length framing＋read-exact、documentSymbol **雙形態**〔pyright 回
+  SymbolInformation `location.range` 非 hierarchical〕、references includeDeclaration）
+  → cache 三表 db（symbol 字串 `lsp python <rel> <name>().`＝引擎 `name_pat_match`/
+  `fn_tail_name` 可解析形態；meta schema=1＋head＋stamp 三層 staleness 契約：
+  index→meta.json→db touch 順序）→ **引擎 `scip_refs --repo` 直接吃**。**Pass-bar
+  20/20 data-level exact**（LSP sites ≡ 引擎 refs；1 個顯示面截斷差＝frozen face
+  的 site cap，count 面一致）；source 抽查 285/417 行命中。**結論：Python 符號
+  真相管線打通——換 producer 不換管線成立**；
+- **B4-b 自有建庫（2026-08-26 深夜，同弧）**：`scip_nodes --bootstrap --repo`——
+  cache index（**任何 producer**）→ 新建 CRG 相容 schema graph.db（nodes，唯一
+  graph.db 寫入面延伸至「建庫」；同名碰撞 ON CONFLICT skip）＋refs 歸屬
+  （同檔最近前置 def）→ **union sidecar**（BOOTSTRAP provenance；graph.db 邊面
+  維持零寫入＝S1 (A) 不變）。ai-rules L4：**405 節點／20 邊／0 item-level**，
+  bootstrapped Python graph 上 `graph_query hub --union`／impact_radius／flows
+  全部可跑——**Python repo 的 CRG-free 運作閉環**；原 ty（astral，Rust 原生，已支援
   workspace-wide `textDocument/references`/rename）或 pyright-langserver，
   協議同形、adapter 一份
 - **P3 結構邊：ruff_python_parser 原生 indexer**（已在 Cargo workspace

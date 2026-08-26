@@ -54,7 +54,9 @@ Installed via `cargo install --path ~/Github/code-reality/crates/code-reality`
 | Graph-engine parity family (CRG's 10 live MCP ops, read-only graph.db) | `code-reality graph_query <impact_radius\|detect_changes\|hub\|bridge\|communities\|arch_overview\|flows\|affected_flows\|review_context\|minimal_context\|search\|symbols> --repo <repo> [--union] [--leiden] [--seed N]` + 12 MCP tools (CRG consumer names + `document_symbols`; NT parity: flows 10,359/10,359 exact, communities 42/42 exact, impact scores exact) | ✅ (embeddings face deferred by S3 adjudication) |
 | Union edge plane (SCIP REFERENCES into engine queries) | `graph_query <impact_radius\|hub\|bridge\|communities> --union` — sidecar edges joined via (file, name) double-key; NT 179,704/181,591 mapped, impact reach +2,544 | ✅ |
 | Leiden communities tier (seeded deterministic) | `graph_query communities --leiden [--seed N]` — single-clustering 0.7; NT: 1,270 communities, largest 23.4% (Tier-0 41.7% giant dissolved), modularity 0.9158 | ✅ |
-| CRG retirement readiness | engine layer READY — `ai-analysis/reports/s4-crg-retirement-readiness.md` (remainder: tree-sitter producer, deferred embeddings, consumer cutover) | ✅ |
+| CRG retirement readiness | engine layer READY — `ai-analysis/reports/s4-crg-retirement-readiness.md`; **consumer cutover DONE 2026-08-26** (ai-rules crg-query/smell-detector switched, com.user.crg-mcp booted out — plist retained for rollback) | ✅ |
+| Graph bootstrap from any producer cache | `code-reality scip_nodes --bootstrap --repo <repo>` (nodes→new graph.db, refs→union sidecar; producer-agnostic — SCIP or LSP harvest) | ✅ |
+| Python symbol truth via LSP harvest | `scripts/lsp_harvest.py` (pyright-langserver → cache three-table db; POC pass-bar 20/20 data-level exact vs LSP) | ✅ (productization follow-up) |
 
 ## Tests
 

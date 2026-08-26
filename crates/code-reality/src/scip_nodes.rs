@@ -286,6 +286,11 @@ const SPEC: ToolSpec = ToolSpec {
             kind: Kind::StoreTrue,
         },
         FlagSpec {
+            long: "--bootstrap",
+            short: None,
+            kind: Kind::StoreTrue,
+        },
+        FlagSpec {
             long: "--json",
             short: None,
             kind: Kind::StoreTrue,
@@ -310,6 +315,208 @@ const HELP: &str = concat!(
     "  --rollback            回滾：刪除所有 extra 標記節點（僅需 --graph；與 --dry-run/--json 互斥）\n",
     "  --json                報告 JSON 面\n",
 );
+
+/// v1+ deep-work B4-b: create a code-reality-owned graph.db from the
+/// cache index (works for ANY producer — rust-analyzer SCIP or the
+/// S5-P2 LSP harvest). Nodes land in a fresh graph.db (this family's
+/// sole graph.db write face, extended to creation); reference edges
+/// land in the union sidecar (S1 (A) — graph.db stays edge-free).
+/// Attribution: same-file nearest-preceding def (the occurrence+
+/// containment grain, producer-agnostic).
+pub struct BootstrapReport {
+    pub nodes: usize,
+    pub edges: usize,
+    pub item_level_refs: usize,
+}
+
+pub fn bootstrap(repo: &Path) -> Result<BootstrapReport, String> {
+    let repo_abs = resolve(repo);
+    let index = crate::engine::default_index_path(repo)?;
+    let cache_db = crate::cache::sqlite_path(&index);
+    if !cache_db.exists() {
+        return Err(format!(
+            "SCIP cache 不在：{}（rust-analyzer 走 --build-cache；Python 走 LSP-harvest adapter）",
+            cache_db.display()
+        ));
+    }
+    let graph = graph_db_path(repo);
+    if graph.exists() {
+        return Err(format!(
+            "graph.db 已存在：{}——bootstrap 只建新庫（既有庫走 scip_nodes --inject）",
+            graph.display()
+        ));
+    }
+    let sidecar = crate::scip_edges::union_db_path(&index);
+    let conn = crate::common::connect_ro(&cache_db)?;
+    // defs: (rel, line, symbol) ordered per file for attribution
+    let mut defs: Vec<(String, i64, String)> = Vec::new();
+    {
+        let mut stmt = conn
+            .prepare("SELECT rel_path, line, symbol FROM occurrences WHERE is_def = 1 ORDER BY rel_path, line")
+            .map_err(|e| format!("defs 查詢失敗：{e}"))?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
+            })
+            .map_err(|e| format!("defs 查詢失敗：{e}"))?;
+        for row in rows {
+            defs.push(row.map_err(|e| format!("defs 讀取失敗：{e}"))?);
+        }
+    }
+    let mut refs_rows: Vec<(String, i64, String)> = Vec::new();
+    {
+        let mut stmt = conn
+            .prepare("SELECT rel_path, line, symbol FROM occurrences WHERE is_def = 0 ORDER BY rel_path, line")
+            .map_err(|e| format!("refs 查詢失敗：{e}"))?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
+            })
+            .map_err(|e| format!("refs 查詢失敗：{e}"))?;
+        for row in rows {
+            refs_rows.push(row.map_err(|e| format!("refs 讀取失敗：{e}"))?);
+        }
+    }
+    // graph.db (CRG-compatible schema) — production DDL mirrors the
+    // family fixture, which was verified against live NT graph.db
+    std::fs::create_dir_all(graph.parent().unwrap_or(Path::new(".")))
+        .map_err(|e| format!("目錄建立失敗：{e}"))?;
+    let g = Connection::open(&graph).map_err(|e| format!("graph.db 建立失敗：{e}"))?;
+    g.execute_batch(
+        "CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT);
+         CREATE TABLE nodes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            kind TEXT NOT NULL, name TEXT NOT NULL,
+            qualified_name TEXT NOT NULL UNIQUE,
+            file_path TEXT NOT NULL, line_start INTEGER, line_end INTEGER,
+            language TEXT, parent_name TEXT, is_test INTEGER DEFAULT 0,
+            extra TEXT DEFAULT '{}', updated_at REAL NOT NULL,
+            community_id INTEGER);
+         CREATE TABLE edges (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            kind TEXT NOT NULL, source_qualified TEXT NOT NULL,
+            target_qualified TEXT NOT NULL, file_path TEXT NOT NULL,
+            line INTEGER DEFAULT 0, extra TEXT DEFAULT '{}',
+            confidence REAL DEFAULT 1.0, confidence_tier TEXT DEFAULT 'EXTRACTED',
+            updated_at REAL NOT NULL);
+         CREATE TABLE communities (
+            id INTEGER PRIMARY KEY, name TEXT NOT NULL,
+            level INTEGER NOT NULL DEFAULT 0, parent_id INTEGER,
+            cohesion REAL DEFAULT 0.0, size INTEGER DEFAULT 0,
+            dominant_language TEXT, description TEXT,
+            created_at TEXT NOT NULL DEFAULT 'bootstrap');
+         CREATE TABLE flows (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
+            entry_point_id INTEGER NOT NULL, depth INTEGER NOT NULL,
+            node_count INTEGER NOT NULL, file_count INTEGER NOT NULL,
+            criticality REAL NOT NULL DEFAULT 0.0, path_json TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT 'bootstrap',
+            updated_at TEXT NOT NULL DEFAULT 'bootstrap');
+         CREATE TABLE flow_memberships (
+            flow_id INTEGER NOT NULL, node_id INTEGER NOT NULL,
+            position INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (flow_id, node_id));",
+    )
+    .map_err(|e| format!("graph.db schema 建立失敗：{e}"))?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs_f64();
+    let mut nodes = 0usize;
+    for (rel, line, symbol) in &defs {
+        let Some(name) = crate::engine::fn_tail_name(symbol) else {
+            continue;
+        };
+        let file_abs = repo_abs.join(rel);
+        let n = g
+            .execute(
+                "INSERT INTO nodes (kind, name, qualified_name, file_path, \
+                 line_start, line_end, language, extra, updated_at, is_test) \
+                 VALUES ('Function', ?1, ?2, ?3, ?4, ?4, 'Python', ?5, ?6, 0) \
+                 ON CONFLICT(qualified_name) DO NOTHING",
+                rusqlite::params![
+                    name,
+                    format!("{}::{}", resolve(&file_abs).display(), name),
+                    resolve(&file_abs).display().to_string(),
+                    line,
+                    "{\"producer\":\"bootstrap\"}",
+                    now
+                ],
+            )
+            .map_err(|e| format!("節點寫入失敗：{e}"))?;
+        nodes += n;
+    }
+    // edges: refs attributed to same-file nearest-preceding def ->
+    // union sidecar (aggregated sites per (caller, callee))
+    let mut edge_sites: std::collections::BTreeMap<(String, String), i64> =
+        std::collections::BTreeMap::new();
+    let mut item_level = 0usize;
+    let mut by_file: std::collections::HashMap<&str, Vec<(i64, &str)>> =
+        std::collections::HashMap::new();
+    for (rel, line, symbol) in &defs {
+        by_file
+            .entry(rel.as_str())
+            .or_default()
+            .push((*line, symbol.as_str()));
+    }
+    for v in by_file.values_mut() {
+        v.sort();
+    }
+    for (rel, line, symbol) in &refs_rows {
+        let Some(defs_in_file) = by_file.get(rel.as_str()) else {
+            item_level += 1;
+            continue;
+        };
+        let caller = defs_in_file
+            .iter()
+            .rev()
+            .find(|(dl, _)| *dl <= *line)
+            .map(|(_, s)| s.to_string());
+        match caller {
+            Some(c) => {
+                if &c != symbol {
+                    *edge_sites.entry((c, symbol.clone())).or_insert(0) += 1;
+                }
+            }
+            None => item_level += 1,
+        }
+    }
+    std::fs::create_dir_all(sidecar.parent().unwrap_or(Path::new(".")))
+        .map_err(|e| format!("sidecar 目錄建立失敗：{e}"))?;
+    let sdb = Connection::open(&sidecar).map_err(|e| format!("sidecar 開啟失敗：{e}"))?;
+    sdb.execute_batch(
+        "CREATE TABLE IF NOT EXISTS edges (
+            caller_symbol TEXT NOT NULL, callee_symbol TEXT NOT NULL,
+            sites INTEGER NOT NULL, kind TEXT NOT NULL DEFAULT 'REFERENCES',
+            provenance TEXT NOT NULL DEFAULT 'SCIP', updated_at REAL NOT NULL,
+            PRIMARY KEY (caller_symbol, callee_symbol));",
+    )
+    .map_err(|e| format!("sidecar schema 失敗：{e}"))?;
+    let mut edges = 0usize;
+    for ((caller, callee), sites) in &edge_sites {
+        edges += sdb
+            .execute(
+                "INSERT OR REPLACE INTO edges \
+                 (caller_symbol, callee_symbol, sites, kind, provenance, updated_at) \
+                 VALUES (?1, ?2, ?3, 'REFERENCES', 'BOOTSTRAP', ?4)",
+                rusqlite::params![caller, callee, sites, now],
+            )
+            .map_err(|e| format!("sidecar 邊寫入失敗：{e}"))?;
+    }
+    Ok(BootstrapReport {
+        nodes,
+        edges,
+        item_level_refs: item_level,
+    })
+}
 
 pub fn run(argv: &[&str]) -> ToolOutput {
     let Some((&_sub, toks)) = argv.split_first() else {
@@ -345,6 +552,36 @@ pub fn run(argv: &[&str]) -> ToolOutput {
             None => return ToolOutput::fail("需 --repo（或 --graph 覆寫——rollback 僅需 graph）"),
         },
     };
+    if values.contains_key("--bootstrap") {
+        let Some(repo_s) = repo_s.clone() else {
+            return ToolOutput::fail("--bootstrap 需 --repo");
+        };
+        return match bootstrap(Path::new(&repo_s)) {
+            Ok(r) => {
+                if json {
+                    let v = serde_json::json!({
+                        "nodes": r.nodes, "edges": r.edges,
+                        "item_level_refs": r.item_level_refs,
+                    });
+                    ToolOutput {
+                        stdout: crate::common::to_json_indent1(&v),
+                        stderr: String::new(),
+                        exit_code: 0,
+                    }
+                } else {
+                    ToolOutput {
+                        stdout: format!(
+                            "[OK] scip_nodes bootstrap：{} 節點 / {} 邊（sidecar REFERENCES） / {} item-level refs 略過\n",
+                            r.nodes, r.edges, r.item_level_refs
+                        ),
+                        stderr: String::new(),
+                        exit_code: 0,
+                    }
+                }
+            }
+            Err(e) => ToolOutput::fail(e),
+        };
+    }
     if !graph.exists() {
         return ToolOutput::fail(format!("graph.db 不存在：{}", graph.display()));
     }
