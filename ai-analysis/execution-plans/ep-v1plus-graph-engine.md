@@ -1,7 +1,32 @@
 # EP — v1+ 圖引擎裁決弧（B1/B2）：SCIP×CRG 邊集互補、注入與引擎評估
 
-> Status: **draft**（POC 證據已入，未 commit；**S1 注入形態已裁決＝(a) 寫入**（user 2026-08-26，
-> 「跟 CRG 目前最像，一開始先參考 CRG 跟 scip-callgraph 作法」）；S3 裁決門未開）
+> Status: **active**（已入庫 `711d6e8`；S1 邊面形態裁決＝**(A) sidecar**——原 (a)
+> 寫入之「下游立即受益」動機經雙審查否證，judge 委任改判 2026-08-26，user 可推翻；
+> S3 裁決門未開；S5 Python producer 段新增）
+> **EP Review（2026-08-26，雙獨立審查＋judge 覆核）**：🔴×1＋🟡×10 已回寫＋第二
+> 審查補遺 5 項入表（rows 12-16）；REFERENCES 語義 gate 已結（S1 裁決塊）；
+> verdict＝**可執行**（S1 邊面 sidecar／S2 節點面照舊／S3/S5 不變）。
+
+## EP Review Findings
+
+| ID | 嚴重度 | EP 段落 | 問題 | 建議 | 狀態 |
+|----|--------|---------|------|------|------|
+| 1 | 🔴 必須修正 | S1 | 「全部下游立即受益」vs「對現有讀者隱形」矛盾：code-reality 讀面只認三 kind（common.rs:17）＝隱形且零受益；CRG engine 讀 REFERENCES（constants.py:62 權重 0.6、refactor.py:531 dead-code、communities.py:815,1042 全 kind）＝不隱形且語義漂移未裁決 | **已裁決＝(A) sidecar**（judge 委任裁決 2026-08-26，user 可推翻；S1 裁決塊） | implemented |
+| 2 | 🟡 建議 | S1 | 注入執行器本體未指定 | `scip_edges --inject [--dry-run]` 唯一寫入面＋CLI 註冊＋模組清單 | implemented |
+| 3 | 🟡 建議 | S1 | qname 映射契約缺失（SCIP scheme ↔ CRG 絕對路徑 qname 不相交；communities qn_to_idx drop 原樣符號） | S1 補映射契約工作項 | implemented |
+| 4 | 🟡 建議 | S2 | nodes 表無 provenance 欄位（schema 實查）→ 節點回滾僅剩 backup | extra 塞 {"tier":"SCIP"} 標記 | implemented |
+| 5 | 🟡 建議 | S2 | qualified_name UNIQUE 碰撞策略未定 | 存在即 skip＋碰撞計數報告 | implemented |
+| 6 | 🟡 建議 | S1 | 排序契約漏增量面（CRG incremental 按檔 DELETE 刪 SCIP 行） | 契約擴至任何 CRG 寫入後重跑注入 | implemented |
+| 7 | 🟡 建議 | 證據段 | 描述漂移（example 已入庫、a1 TSV 已刪、compare.py 需 gunzip） | 同步現況 | implemented |
+| 8 | 🟡 建議 | 全域 | AGENTS.md Capabilities 同步＋kanban 卡缺失 | 補收尾步驟段 | implemented |
+| 9 | 🟡 建議 | S1 | 無測試計畫（冪等/回滾/過濾/匯出） | 列最小不變項測試 | implemented |
+| 10 | 🟡 建議 | 全域 | Scenario Matrix 缺席（含實質寫入步驟） | S1 補最小場景表 | implemented |
+| 11 | 🟡 建議 | S5 | POC 無量化 pass bar；ai-rules 無 CRG graph 未註明 | 補判準量化要求＋語料註記 | implemented |
+| 12 | 🔴（二審） | S1 | upsert 鍵碰撞：edges 無 UNIQUE 約束（原生 5-tuple 重複 15 組）、CRG `upsert_edge` 比對鍵不含 tier（graph.py:235-266）→ 沿用則同鍵改寫原生行 tier、tier-DELETE 回滾誤刪原生邊 | (A) 裁決下 sidecar 自有 schema 自訂 UNIQUE 鍵（雙名並存：SCIP symbol＋qname） | implemented |
+| 13 | 🟡（二審） | S1 | 前置條件缺：SCIP sidecar 在場＋index 新鮮度（實測 index 8/24 比 graph.db 8/25 舊）＋邊界（graph.db 缺失走 protobuf 面等） | S1 護欄補前置清單 | implemented |
+| 14 | 🟡（二審） | S1 | 邊面驗收無數字（外部符號過濾後注入量未知） | sidecar 邊數對帳（COUNT＝匯出面行數＋過濾率） | implemented |
+| 15 | ℹ️（二審） | S1 | 「updated_at 掃除＝對齊 CRG 慣例」歸因不精確——CRG 是 file-scoped DELETE＋重插（graph.py:267-270） | 措辭修正為自有設計 | implemented |
+| 16 | ℹ️（二審） | S2 | CRG rebuild/incremental 對已注入節點的命運未寫（file-scoped remove 可能清除） | 補「任何 CRG 寫入後重跑節點注入」 | implemented |
 > Source route: `ep-rust-migration.md` v1+ 條款（B1/B2 圖引擎研究→user 裁決；SCIP 邊注入
 > graph.db NT 861 缺差→0；CRG MCP 退役）。User 2026-08-26 定調端局設想：
 > 「高度整合 rust+python 的 rust 強化版 CRG，利用 CRG＋scip-callgraph」。
@@ -15,9 +40,11 @@
 
 ## POC 證據（2026-08-26，NT 語料）
 
-產物：`.agent-tmp/poc-scip-injection/`（example：`crates/code-reality/examples/scip_edge_poc.rs`，
-未 commit；compare.py＋三個 TSV）。SCIP 面＝`callers::attribute` 真實歸屬邏輯全量跑
-（is_def=0 occurrence×span containment）。
+產物：`crates/code-reality/examples/scip_edge_poc.rs`＋`scip_engine_poc.rs`（**已入庫
+`711d6e8`**）＋`.agent-tmp/poc-scip-injection/`（現況＝`compare.py`＋
+`crg_calls.tsv.gz`〔注入前純淨基線〕＋run.stderr；a1_*.tsv 已刪——example 重生約
+一分鐘；`compare.py` 讀未壓縮 `crg_calls.tsv`，重跑前先 `gunzip`）。SCIP 面＝
+`callers::attribute` 真實歸屬邏輯全量跑（is_def=0 occurrence×span containment）。
 
 | 面 | 數值 |
 |---|---|
@@ -50,25 +77,82 @@ reentries 1／depth2=0，逐項命中）。兩個 S3 設計註記：closure 種�
 
 ## 段落
 
-### S1 — SCIP 邊注入 graph.db（**已裁決：(a) 寫入**）
-> User 2026-08-26：「(a) 寫入 graph.db 是不是跟 CRG 目前最像，可能一開始先參考 CRG
-> 跟 scip graph 作法」——是：(a) 即 CRG 既有架構形態（單一物化圖、全部下游立即受益）。
-> 參考源：CRG 的 upsert 模式（`confidence_tier`/`updated_at` 欄位即為多源寫入設計）、
-> scip-callgraph 的邊推導（occurrence＋containment——與本載體已同構，POC 已驗）。
+### S1 — SCIP 邊注入（形態裁決：(a) → **(A) sidecar**；REFERENCES gate 已結）
+> **審查修正（🔴 finding 1）**：原句「(a) 即 CRG 既有架構形態（單一物化圖、全部下游
+> 立即受益）」不再成立——兩類讀者實況（全數實查）：
+> - **code-reality 讀面**：只認 IMPORTS_FROM/CALLS/INHERITS（`common.rs:17`；
+>   snapshot/graph_csv 以 kind 過濾、hub_refs/hazard/chain_tour 只查 nodes）——
+>   REFERENCES 注入行**隱形＝零受益**（直至聯集引擎面上線）。
+> - **CRG engine**：**不隱形**——impact 權重 REFERENCES=0.6（constants.py:62）、
+>   dead-code 判決讀 REFERENCES（refactor.py:531；其 REFERENCES 語義＝
+>   function-as-value，與 SCIP 全引用面 grain 不匹配）、communities
+>   `get_all_edges()` 全 kind 消費（communities.py:815,1042）——全量注入必改變
+>   CRG 查詢結果。
+>
+> **裁決（2026-08-26，judge 委任裁決——user 可推翻；原 ⚠️ 單向門結案）＝(A) 邊面
+> 走自有 sidecar**。依據：(a) 動機「全部下游立即受益」雙向否證（零受益＋未裁決
+> 漂移）；CRG 查詢無 tier 過濾（實查：`confidence_tier` 全包僅 DDL/寫入/序列化）
+> ＝tier 護欄救不了 CRG 讀面；50x 體量（REFERENCES 7,833→~40 萬）＋rebuild 抹除
+> ＝CRG 輸出變「有沒有跑注入」的狀態函數＋雙寫者維運稅。(B) 不採——漂移量化是
+> 為寫入別人擁有的 db 蒐集污染證據，無現行受益者。已排除：「CRG 不消費的 kind」
+> 不存在（communities 全 kind）。**統一 graph.db 端局不變**——移到 S4 所有權翻轉
+> 門後（code-reality 擁有 db 時，REFERENCES 語義由自有 engine 設計決定）。
 
-1. example 轉正式工具（`scip_edges` 匯出：caller/callee/站點 TSV 或 sqlite）
-2. 注入設計三護欄：
-   - **可逆 tier 標記**：SCIP 邊以專屬 `confidence_tier='SCIP'`（或 `kind='SCIP_CALLS'`）
-     寫入——回滾＝`DELETE WHERE tier='SCIP'`，不動 CRG 原生邊
-   - **先 backup graph.db**（1.6GB；首次注入前完整複製一份）
-   - **冪等 upsert＋過期清理**：index 重生後複注入以複合鍵 upsert；離開 index 的舊
-     SCIP 邊以 `updated_at` 掃除（對齊 CRG 既有 staleness 慣例）
-3. 驗收：注入後 NT `graph_audit --json` missing 861→0（節點面同步補，與 S2 同批）；
-   CRG-only 92,785 清單歸檔明示（不在注入範圍）
+1. example 轉正式工具（`scip_edges` 匯出：caller/callee/站點 TSV 或 sqlite）。
+   **寫入面＝`scip_edges --inject [--dry-run]` 唯一入口**（umbrella 路由＋cli.rs
+   FLAGS 註冊；新模組 `crates/code-reality/src/scip_edges.rs`；寫入目標＝**sidecar
+   union-edge db**（(A) 裁決）——common.rs 讀面恆 `SQLITE_OPEN_READ_ONLY` 不變，
+   寫入面與 graph.db 讀面分離＝分層邊界聲明；graph.db 邊面零寫入）
+2. **qname 映射契約（最大未列工作項，審查 🟡 補）**：SCIP scheme
+   （`rust-analyzer cargo ...`）↔ CRG qname（絕對路徑 `.../file.rs::fn` 形態）——
+   原樣注入則 communities `qn_to_idx` 全 drop（隱形成真、受益歸零）；映射器
+   雙向（注入用＋聯集查詢用），為 S5 共用面具體化
+3. 注入設計護欄（(A) sidecar 形態；graph.db 邊面零寫入）：
+   - **sidecar schema 自主**：union-edge db 放 sidecar home（`~/.mosaic/code-reality/
+     scip/<repo>/`，cache/fndefs 機制現成）；自有 UNIQUE 鍵（二審 🔴：CRG edges 無
+     UNIQUE 約束、`upsert_edge` 比對鍵不含 tier〔graph.py:235-266〕——自有 schema
+     不遷就 CRG upsert 語義）；行存**雙名並存**（SCIP symbol＋映射 qname——映射
+     壓力從「必須無損」降為「查詢便利」）＋`kind='REFERENCES'`（語義軸）＋
+     `provenance='SCIP'`
+   - 全量注入（非 delta-only）：聯集查詢（S3 引擎／MCP）自取全量
+   - 外部符號過濾：兩端點皆 workspace 可解析才注入（std/core 留匯出面——POC2
+     hub 榜首全是 std 符號）
+   - 冪等 upsert＋`updated_at` 過期掃除（自有設計；CRG 慣例是 file-scoped DELETE
+     ＋重插，不沿用）
+   - **前置（二審補）**：SCIP sidecar 在場＋新鮮度 gate（沿用 scip_refs WARN 語義；
+     實測 index 8/24 比 graph.db 8/25 舊）；邊界情況（graph.db 缺失／cache 缺失）
+     沿用讀面失敗模式
+   - 排序契約隨邊面消失（sidecar 單寫入者、免 1.6GB backup）；S2 節點面自守
+     CRG 寫入後重跑（見 S2）
+4. **S1 場景表（最小）**：
+   | 場景 | 觸發 → 預期 |
+   |---|---|
+   | 首次注入 | `--dry-run` 報行數 → 實注冪等鍵落地 |
+   | 複注入 | 零淨增（upsert 冪等） |
+   | index 重生 | stale-sweep 掃除離開 index 的舊 SCIP 邊 |
+   | 回滾 | 刪 sidecar 檔即回滾——graph.db 全程不受影響 |
+   | 注入後 graph_audit | 計數穩定（missing 走 S2，不受邊注入影響） |
+5. **測試（最小不變項）**：冪等複注入零增長；刪 sidecar 重注冪等；外部符號過濾
+   （std/core 排除率）；`scip_edges` 匯出正確性（對拍 example 產物）
+6. 驗收：NT `graph_audit --json` missing 861→0（節點面走 S2，同批結算）；sidecar
+   邊數對帳（COUNT＝匯出面行數，外部符號過濾率進報告）；CRG-only 92,785 清單
+   歸檔明示（不在注入範圍）
 
 ### S2 — 節點面 861 收斂
 graph_audit missing 名單 → SCIP 符號 → graph.db nodes 注入（名稱對映規則＝既有
 `scip_refs --audit` 對帳邏輯）。與 S1 同批驗收。
+
+審查補強（🟡）：nodes 表無 provenance 欄位（schema 實查）——
+- **回滾**：注入節點 `extra` 塞 `{"tier":"SCIP"}`（回滾＝extra 標記 DELETE，
+  注入時同步落 id 清單檔）；backup 仍為最後防線
+- **碰撞**：`qualified_name UNIQUE`——存在即 **skip**（保守，不 upsert 原生列），
+  碰撞計數進注入報告
+- **次序**：邊面已走 sidecar（(A) 裁決）——graph.db 僅節點面，無懸掛邊顧慮；
+  sidecar 注入與節點注入同批跑（驗收一次結算）。S2 注入器＝graph.db **唯一
+  寫入面**（與 common.rs 讀面分離）
+- **rebuild 語義（二審補）**：任何 CRG 寫入（build／incremental file-scoped
+  remove）後重跑節點注入——upsert on qualified_name 與原生列共存；被 remove
+  清除者重跑冪等恢復
 
 ### S3 — B1/B2 圖引擎裁決報告（研究段，不改碼）
 - communities：Rust 生態評估（community-detection crate / Leiden port）vs 沿用 CRG Python 計算
@@ -79,8 +163,40 @@ graph_audit missing 名單 → SCIP 符號 → graph.db nodes 注入（名稱對
 ### S4 — CRG MCP 退役評估（S1-S3 後；條件式）
 僅當 S3 裁決「CRG 獨有面已無消費者或已有替代」才啟動；否則維持分層互賴現況。
 
+### S5 — Python producer（多語言擴展；研究＋POC）
+Python repo（mosaic/ai-rules）符號真相目前只有 LSP/pyright——本段補 producer 面，
+消費面全共用。內部合約是 row 三元組（defs/occurrences/fn-spans）而非 SCIP
+protobuf 本身；SCIP 只是 rust-analyzer 的序列化形態，換 producer 不換管線。
+
+- **P1 主路徑：scip-python**——Sourcegraph fork of pyright emitting SCIP
+  （pyright 級解析＋SCIP 輸出＝既有引擎零改動；倉庫未封存，維護節奏未驗）。
+  POC：index ai-rules → 引擎解析 → refs 抽查對拍 pyright LSP（R2-R7 parity
+  oracle 方法論重演）
+- **P2 備援：通用 LSP-harvest adapter**——ty（astral，Rust 原生，已支援
+  workspace-wide `textDocument/references`/rename）或 pyright-langserver，
+  協議同形、adapter 一份
+- **P3 結構邊：ruff_python_parser 原生 indexer**（已在 Cargo workspace
+  `0.0.10`，hazard/boundary_build 已用）——CRG tree-sitter 的 Rust 替代，
+  服務 S4 退役線；Python 無 macro，CRG-only 缺口主因不存在
+- 共用面：engine 解析（scip crate 語言無關）、歸屬/closure/hub、fndefs/cache、
+  注入機制（tier/kind/sweep）、qname 映射框架、CLI/MCP 面。不共用者僅 producer
+  binary 本身（adapter 層定義）。外部符號判定 Python 較簡（site-packages 路徑
+  判定 vs SCIP symbol scheme）
+- 審查補強（🟡）：P1 POC 判準須**量化**（refs 抽查樣本數＋一致率門檻，POC 設計時
+  釘死——R2-R7 parity oracle 的 pass-bar 慣例）；ai-rules 無 CRG graph（實查），
+  POC 對拍走 pyright LSP 面，不涉 CRG
+
 ## 驗收彙總
 
-- S1/S2：861→0（NT 基準重跑）＋注入形態裁決紀錄
+- S1/S2：861→0（NT 基準重跑）＋sidecar 邊數對帳＋形態裁決紀錄（(A) sidecar，
+  S1 裁決塊）
 - S3：裁決報告（含 POC 數字與本檔證據段引用）
-- 回退：注入採 (a) 時先 backup graph.db；(b) 無需回退
+- 回退：邊面＝刪 sidecar（graph.db 不受影響）；節點面＝extra 標記 DELETE＋
+  backup（首次節點注入前完整複製 graph.db，最後防線）
+
+## 收尾步驟（審查補）
+
+- S1 build 完成 → AGENTS.md Capabilities 加 `scip_edges` 行（匯出面＋`--inject`
+  sidecar 寫入語義標註）＋.kanban 建卡（沿用父 EP 慣例）
+- crates/AGENTS.md：S2 節點注入器成為 graph.db 唯一寫入面——「CRG graph.db
+  reads are read-only」陳述修訂（加注入器例外或改述）
