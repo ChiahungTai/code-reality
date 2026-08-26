@@ -48,7 +48,7 @@ Installed via `cargo install --path ~/Github/code-reality/crates/code-reality`
 | Completeness governance (audit + `[SRC]` provenance) | `code-reality scip_refs --audit --repo` + `code-reality graph_audit --json` | ✅ |
 | Deletability safety net (hub_refs/hazard) | `code-reality hub_refs <symbol> --repo <repo> --hazard` | ✅ |
 | Boundary / export / narrative tool family | `code-reality <snapshot\|transition\|graph_csv\|boundary\|boundary_build\|chain_tour\|delta_tour\|tour_manifest\|tour_validate\|tour_upgrade\|runtime_edges> ...` | ✅ |
-| Unified MCP interface | `code-reality-mcp`（rmcp streamable-http `127.0.0.1:8200/mcp`；launchd plist in `launchd/`） | ✅ |
+| Unified MCP interface | stdio `code-reality-mcp --stdio` (default face: ZCode/Claude plugin in `plugin/`; repo-root `marketplace.json` = installable market) + streamable-http `127.0.0.1:8200/mcp` (launchd plist in `launchd/`, multi-harness sharing) | ✅ |
 
 ## Tests
 
