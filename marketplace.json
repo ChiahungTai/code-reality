@@ -1,0 +1,14 @@
+{
+  "name": "code-reality-market",
+  "description": "code-reality: structural facts, governance audits, and narrative artifacts for AI coding sessions (Rust carrier)",
+  "plugins": [
+    {
+      "name": "code-reality",
+      "source": "./plugin",
+      "description": "Symbol truth queries, caller edges/closures, completeness audits — per-call repo_root, stdio MCP (zero daemon)",
+      "version": "0.1.0",
+      "category": "developer-tools",
+      "tags": ["code-analysis", "scip", "callgraph", "audit"]
+    }
+  ]
+}

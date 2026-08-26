@@ -1,14 +1,22 @@
-//! `code-reality-mcp` — the MCP daemon bin (R6). Streamable-HTTP on
-//! 127.0.0.1:8200/mcp; launchd owns the lifecycle (KeepAlive restarts,
-//! `cargo install --path` + `launchctl kickstart` upgrades — AD-2).
+//! `code-reality-mcp` — the MCP bin. Two modes:
+//! - `--stdio` (plugin default): the AI harness spawns and owns this
+//!   process over stdin/stdout — zero daemon, zero port, any OS.
+//! - HTTP resident (default): streamable-http on 127.0.0.1:8200/mcp;
+//!   launchd/systemd owns the lifecycle (multi-harness sharing).
 
 #[tokio::main]
 async fn main() {
-    let port: u16 = std::env::var("CODE_REALITY_MCP_PORT")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(8200);
-    if let Err(e) = code_reality::mcp_server::serve(port).await {
+    let stdio = std::env::args().any(|a| a == "--stdio");
+    let result = if stdio {
+        code_reality::mcp_server::serve_stdio().await
+    } else {
+        let port: u16 = std::env::var("CODE_REALITY_MCP_PORT")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(8200);
+        code_reality::mcp_server::serve(port).await
+    };
+    if let Err(e) = result {
         eprintln!("[FAIL] {e}");
         std::process::exit(2);
     }

@@ -20,6 +20,32 @@ Tools: `snapshot` `transition` `hub_refs` `runtime_edges` `boundary_build`
 Sidecar home (frozen at migration): `~/.mosaic/code-reality/` — including the
 per-repo SCIP index slots under `scip/<repo-basename>/`.
 
+## Quickstart (AI harness enablement)
+
+```
+cargo install --path crates/code-reality        # code-reality + code-reality-mcp on PATH
+```
+
+**ZCode / Claude Code plugin** (stdio MCP + usage skill, zero daemon):
+add this repo as a plugin marketplace (Settings → Plugins → Add
+marketplace → local path or GitHub URL — the repo root carries
+`marketplace.json`), install `code-reality`. The MCP server mounts as
+`plugin:code-reality:code-reality` and spawns per session.
+
+**Any MCP-capable harness** (generic): point your MCP config at
+
+```json
+{"type": "stdio", "command": "code-reality-mcp", "args": ["--stdio"]}
+```
+
+An HTTP resident mode also exists (`code-reality-mcp`, port 8200,
+launchd plist in `launchd/`) for multi-harness sharing on one machine —
+not needed for the plugin path.
+
+Per-repo prerequisites for the query tools: a SCIP index
+(`rust-analyzer scip <repo>` → `~/.mosaic/code-reality/scip/<basename>/index.scip`)
+and, for audits, a CRG graph (`uvx code-review-graph build`).
+
 ## Tests
 
 ```

@@ -227,3 +227,21 @@ pub async fn serve(port: u16) -> Result<(), String> {
         .map_err(|e| format!("serve 失敗：{e}"))
 }
 
+
+/// Stdio serving mode (open-source default, `--stdio`): the AI harness
+/// spawns and owns this process — zero daemon, zero port, works on any
+/// OS. The HTTP resident mode (launchd/`serve`) remains for
+/// multi-harness sharing on a single machine.
+pub async fn serve_stdio() -> Result<(), String> {
+    use rmcp::ServiceExt;
+    let server = CodeRealityServer::new();
+    let (stdin, stdout) = (tokio::io::stdin(), tokio::io::stdout());
+    let peer = server
+        .serve((stdin, stdout))
+        .await
+        .map_err(|e| format!("stdio serve 失敗：{e}"))?;
+    peer.waiting()
+        .await
+        .map_err(|e| format!("stdio session 結束：{e}"))?;
+    Ok(())
+}

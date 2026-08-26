@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "code-reality": {
+      "type": "stdio",
+      "command": "code-reality-mcp",
+      "args": ["--stdio"],
+      "timeoutMs": 60000
+    }
+  }
+}

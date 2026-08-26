@@ -1,0 +1,11 @@
+{
+  "name": "code-reality",
+  "version": "0.1.0",
+  "description": "Structural facts and governance audits for AI coding sessions: symbol truth queries (refs/defs, trait disambiguation), caller edges and closures, completeness audits, deletability hazards — every tool takes an explicit repo_root.",
+  "author": { "name": "Chia-hung Tai" },
+  "repository": "https://github.com/ctai/code-reality",
+  "license": "MIT",
+  "keywords": ["code-analysis", "scip", "callgraph", "audit", "mcp"],
+  "skills": "skills",
+  "mcpServers": ".mcp.json"
+}

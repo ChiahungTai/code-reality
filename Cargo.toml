@@ -20,7 +20,7 @@ glob = "0.3"
 ruff_python_parser = "0.0.10"
 ruff_python_ast = "0.0.10"
 fancy-regex = "0.14"
-tokio = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "io-std"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 hyper-util = { version = "0.1", features = ["tokio", "server-auto"] }
 axum = "0.8"
