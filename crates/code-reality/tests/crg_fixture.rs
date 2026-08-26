@@ -1,6 +1,8 @@
-//! Shared synthetic CRG graph.db builder — the DDL mirror of
-//! `tests/fixtures/crg_db.py:13-121` (self-contained: no real CRG
-//! install). Integration tests include this via `mod crg_fixture;`.
+//! Shared synthetic CRG graph.db builder — the CRG schema as the family
+//! consumes it (production-shape columns incl. `extra`, verified against
+//! the live NT graph.db DDL on 2026-08-26 — CRG 2.3.7; the retired Python
+//! fixture was the original source, superseded when R7 deleted the parity
+//! oracle). Integration tests include this via `mod crg_fixture;`.
 
 use rusqlite::Connection;
 use std::path::Path;
@@ -55,6 +57,7 @@ pub fn make_crg_db(path: &Path, spec: &CrgDbSpec) -> rusqlite::Result<()> {
             language TEXT,
             parent_name TEXT,
             is_test INTEGER DEFAULT 0,
+            extra TEXT DEFAULT '{}',
             updated_at REAL NOT NULL,
             community_id INTEGER
          );

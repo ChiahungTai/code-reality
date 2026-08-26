@@ -80,7 +80,8 @@ pub fn matches_query(symbol: &str, query: &Query) -> bool {
     match query {
         Query::TypeMethod { type_name, method } => {
             name_pat_match(symbol, method)
-                && (symbol.contains(&format!("[{}]", type_name)) || trait_decl_match(symbol, type_name))
+                && (symbol.contains(&format!("[{}]", type_name))
+                    || trait_decl_match(symbol, type_name))
         }
         Query::Bare { name } => name_pat_match(symbol, name),
     }
@@ -214,13 +215,16 @@ pub fn fn_spans(index: &Index) -> (BTreeMap<String, Vec<FnSpan>>, Vec<String>) {
                     continue;
                 }
             };
-            spans.entry(d.relative_path.clone()).or_default().push(FnSpan {
-                symbol: occ.symbol.clone(),
-                rel_path: d.relative_path.clone(),
-                start_line,
-                end_line,
-                seq,
-            });
+            spans
+                .entry(d.relative_path.clone())
+                .or_default()
+                .push(FnSpan {
+                    symbol: occ.symbol.clone(),
+                    rel_path: d.relative_path.clone(),
+                    start_line,
+                    end_line,
+                    seq,
+                });
             seq += 1;
         }
     }
@@ -236,11 +240,7 @@ pub fn refs_rows(index: &Index, symbols: &BTreeSet<String>) -> Vec<(String, Stri
     for d in &index.documents {
         for occ in &d.occurrences {
             if occ.symbol_roles & 1 == 0 && symbols.contains(&occ.symbol) {
-                rows.push((
-                    occ.symbol.clone(),
-                    d.relative_path.clone(),
-                    ln(occ),
-                ));
+                rows.push((occ.symbol.clone(), d.relative_path.clone(), ln(occ)));
             }
         }
     }
@@ -291,8 +291,7 @@ pub struct LoadedIndex {
 
 pub fn load_index(path: &Path) -> Result<LoadedIndex, String> {
     // Bare messages — the [FAIL] tag is applied once at the ToolOutput::fail boundary.
-    let bytes = std::fs::read(path)
-        .map_err(|e| format!("索引解析失敗（損壞/截斷？）：{}", e))?;
+    let bytes = std::fs::read(path).map_err(|e| format!("索引解析失敗（損壞/截斷？）：{}", e))?;
     let index = Index::parse_from_bytes(&bytes)
         .map_err(|e| format!("索引解析失敗（損壞/截斷？）：{}", e))?;
     if index.documents.is_empty() {
@@ -337,7 +336,9 @@ pub fn default_index_path(repo: &Path) -> Result<PathBuf, String> {
             repo.display()
         ));
     }
-    Ok(expand_home(DEFAULT_INDEX_ROOT).join(name).join("index.scip"))
+    Ok(expand_home(DEFAULT_INDEX_ROOT)
+        .join(name)
+        .join("index.scip"))
 }
 
 pub fn meta_path(index_path: &Path) -> PathBuf {
@@ -362,7 +363,10 @@ pub fn load_meta(index_path: &Path) -> (Option<serde_json::Value>, Vec<String>) 
         Err(e) => {
             return (
                 None,
-                vec![format!("[WARN] index meta 損壞（[SRC] 缺 index 版本）：{}\n", e)],
+                vec![format!(
+                    "[WARN] index meta 損壞（[SRC] 缺 index 版本）：{}\n",
+                    e
+                )],
             )
         }
     };
@@ -485,12 +489,10 @@ fn py_str_coerced(v: &serde_json::Value) -> String {
 pub fn source_line(index_path: &Path, repo: Option<&Path>) -> (Option<String>, Vec<String>) {
     let mut warns: Vec<String> = Vec::new();
     let stale_stamp = match (meta_path(index_path).metadata(), index_path.metadata()) {
-        (Ok(m), Ok(i)) => {
-            match (m.modified(), i.modified()) {
-                (Ok(mt), Ok(it)) => mt < it,
-                _ => false,
-            }
-        }
+        (Ok(m), Ok(i)) => match (m.modified(), i.modified()) {
+            (Ok(mt), Ok(it)) => mt < it,
+            _ => false,
+        },
         _ => false,
     };
     let (meta, meta_warns) = load_meta(index_path);
@@ -510,7 +512,9 @@ pub fn source_line(index_path: &Path, repo: Option<&Path>) -> (Option<String>, V
         return (None, warns);
     }
     if stale_stamp && meta.is_some() {
-        warns.push("[WARN] stamp 比索引檔舊——索引重生成後未重 stamp（跑 --stamp-meta）\n".to_string());
+        warns.push(
+            "[WARN] stamp 比索引檔舊——索引重生成後未重 stamp（跑 --stamp-meta）\n".to_string(),
+        );
     }
     let mut parts: Vec<String> = Vec::new();
     match idx_sha.as_deref().filter(|s| !s.is_empty()) {
@@ -529,7 +533,8 @@ pub fn source_line(index_path: &Path, repo: Option<&Path>) -> (Option<String>, V
             }
         }
         _ => warns.push(
-            "[WARN] index meta 未 stamp（生成後跑 --stamp-meta）——[SRC] 缺 index 版本\n".to_string(),
+            "[WARN] index meta 未 stamp（生成後跑 --stamp-meta）——[SRC] 缺 index 版本\n"
+                .to_string(),
         ),
     }
     if let Some(sha) = &repo_sha {

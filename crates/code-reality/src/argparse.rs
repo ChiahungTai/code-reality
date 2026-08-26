@@ -21,7 +21,9 @@ use std::collections::HashMap;
 pub enum Kind {
     StoreTrue,
     /// Value flag with the argparse metavar (usage rendering only).
-    Value { metavar: &'static str },
+    Value {
+        metavar: &'static str,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -166,10 +168,7 @@ pub fn parse(spec: &ToolSpec, toks: &[&str]) -> Outcome {
                                     i += 1;
                                     v.to_string()
                                 }
-                                _ => fail!(format!(
-                                    "argument {}: expected one argument",
-                                    f.long
-                                )),
+                                _ => fail!(format!("argument {}: expected one argument", f.long)),
                             },
                         };
                         values.insert(f.long, Some(val)); // last wins
@@ -216,10 +215,7 @@ pub fn parse(spec: &ToolSpec, toks: &[&str]) -> Outcome {
                                     i += 1;
                                     v.to_string()
                                 }
-                                _ => fail!(format!(
-                                    "argument {}: expected one argument",
-                                    f.long
-                                )),
+                                _ => fail!(format!("argument {}: expected one argument", f.long)),
                             }
                         };
                         values.insert(f.long, Some(val));

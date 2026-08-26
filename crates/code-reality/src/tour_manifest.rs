@@ -11,9 +11,23 @@ use std::path::{Path, PathBuf};
 
 const SPEC: ToolSpec = ToolSpec {
     flags: &[
-        FlagSpec { long: "--repo", short: None, kind: Kind::Value { metavar: "REPO" } },
-        FlagSpec { long: "--tours-dir", short: None, kind: Kind::Value { metavar: "TOURS_DIR" } },
-        FlagSpec { long: "--init-scan", short: None, kind: Kind::StoreTrue },
+        FlagSpec {
+            long: "--repo",
+            short: None,
+            kind: Kind::Value { metavar: "REPO" },
+        },
+        FlagSpec {
+            long: "--tours-dir",
+            short: None,
+            kind: Kind::Value {
+                metavar: "TOURS_DIR",
+            },
+        },
+        FlagSpec {
+            long: "--init-scan",
+            short: None,
+            kind: Kind::StoreTrue,
+        },
     ],
     positionals: &[],
 };
@@ -41,9 +55,10 @@ pub fn git_head(repo: &Path) -> (String, String) {
         .arg("HEAD")
         .output();
     match out {
-        Ok(o) if o.status.success() => {
-            (String::from_utf8_lossy(&o.stdout).trim().to_string(), String::new())
-        }
+        Ok(o) if o.status.success() => (
+            String::from_utf8_lossy(&o.stdout).trim().to_string(),
+            String::new(),
+        ),
         _ => (
             "unknown".to_string(),
             format!(
@@ -67,10 +82,10 @@ pub fn load(path: &Path) -> Result<Manifest, String> {
     if !path.exists() {
         return Ok(Manifest::default());
     }
-    let text = std::fs::read_to_string(path)
-        .map_err(|e| format!("{} 讀取失敗：{}", path.display(), e))?;
-    let data: toml::Value = toml::from_str(&text)
-        .map_err(|e| format!("{} TOML 解析失敗：{}", path.display(), e))?;
+    let text =
+        std::fs::read_to_string(path).map_err(|e| format!("{} 讀取失敗：{}", path.display(), e))?;
+    let data: toml::Value =
+        toml::from_str(&text).map_err(|e| format!("{} TOML 解析失敗：{}", path.display(), e))?;
     let table = data.as_table().cloned().unwrap_or_default();
     let mut m = Manifest::default();
     for (k, v) in table {
@@ -93,12 +108,23 @@ pub fn load(path: &Path) -> Result<Manifest, String> {
 
 pub fn upsert(m: &mut Manifest, rel: &str, generator: &str, sources: &[String], commit: &str) {
     let mut row = toml::Table::new();
-    row.insert("generator".into(), toml::Value::String(generator.to_string()));
+    row.insert(
+        "generator".into(),
+        toml::Value::String(generator.to_string()),
+    );
     row.insert(
         "sources".into(),
-        toml::Value::Array(sources.iter().map(|s| toml::Value::String(s.clone())).collect()),
+        toml::Value::Array(
+            sources
+                .iter()
+                .map(|s| toml::Value::String(s.clone()))
+                .collect(),
+        ),
     );
-    row.insert("anchored_commit".into(), toml::Value::String(commit.to_string()));
+    row.insert(
+        "anchored_commit".into(),
+        toml::Value::String(commit.to_string()),
+    );
     m.tour.insert(rel.to_string(), row);
 }
 
@@ -164,10 +190,7 @@ fn toml_value(v: &toml::Value) -> Result<String, String> {
 
 pub fn dump(path: &Path, m: &Manifest) -> Result<(), String> {
     let mut lines = Vec::new();
-    let version = m
-        .version
-        .clone()
-        .unwrap_or(toml::Value::Integer(1));
+    let version = m.version.clone().unwrap_or(toml::Value::Integer(1));
     lines.push(format!("version = {}", toml_value(&version)?));
     // unknown top-level keys roundtrip (sorted)
     let mut extra = m.extra.clone();
@@ -193,7 +216,9 @@ pub fn dump(path: &Path, m: &Manifest) -> Result<(), String> {
         lines.push(format!("sources = [{}]", srcs.join(", ")));
         lines.push(format!(
             "anchored_commit = \"{}\"",
-            row.get("anchored_commit").and_then(|v| v.as_str()).unwrap_or("")
+            row.get("anchored_commit")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
         ));
         // unknown row keys roundtrip (sorted) — untouched rows must not
         // lose data; upserted rows are tool-authoritative full replaces
@@ -252,9 +277,17 @@ pub fn init_scan(repo: &Path, tours_dir: &Path) -> Result<(Manifest, String), St
         if data.tour.contains_key(&rel) {
             continue;
         }
-        let name = f.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let stem = f.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let gen = if name.starts_with("chain-") || (stem.is_ascii() && stem.chars().all(|c| c.is_ascii_digit())) {
+        let name = f
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let stem = f
+            .file_stem()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let gen = if name.starts_with("chain-")
+            || (stem.is_ascii() && stem.chars().all(|c| c.is_ascii_digit()))
+        {
             "chain_tour"
         } else {
             "manual"
@@ -282,7 +315,11 @@ pub fn run(argv: &[&str]) -> ToolOutput {
     };
     let values = match parse(&SPEC, toks) {
         Outcome::Help => {
-            return ToolOutput { stdout: HELP.to_string(), stderr: String::new(), exit_code: 0 };
+            return ToolOutput {
+                stdout: HELP.to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            };
         }
         Outcome::Err(msg) => return ToolOutput::fail(msg),
         Outcome::Ok { values, .. } => values,

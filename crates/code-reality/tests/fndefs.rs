@@ -79,12 +79,22 @@ fn enc_index() -> scip::types::Index {
     // the roundtrip below.
     let mut d1 = Document::new();
     d1.relative_path = "z.rs".to_string();
-    d1.occurrences = vec![o("cargo x b/helper().", 1, vec![3, 0], Some(vec![3, 0, 8, 1]))];
+    d1.occurrences = vec![o(
+        "cargo x b/helper().",
+        1,
+        vec![3, 0],
+        Some(vec![3, 0, 8, 1]),
+    )];
     let mut d2 = Document::new();
     d2.relative_path = "a.rs".to_string();
     d2.occurrences = vec![
         o("cargo x a/outer().", 1, vec![9, 0], Some(vec![9, 0, 11, 5])),
-        o("cargo x a/macro_fn().", 1, vec![19, 2], Some(vec![19, 2, 44])),
+        o(
+            "cargo x a/macro_fn().",
+            1,
+            vec![19, 2],
+            Some(vec![19, 2, 44]),
+        ),
         o("cargo x a/inner().", 1, vec![0, 0], Some(vec![0, 0, 5, 9])),
     ];
     let mut i = scip::types::Index::new();
@@ -96,10 +106,7 @@ fn enc_index() -> scip::types::Index {
 fn fndefs_path_is_full_filename_plus_suffix() {
     let p = fndefs_path(Path::new("/slot/nautilus_trader/index.scip"));
     assert!(p.ends_with("index.scip.fndefs.db"));
-    assert_eq!(
-        p.parent().unwrap().file_name().unwrap(),
-        "nautilus_trader"
-    );
+    assert_eq!(p.parent().unwrap().file_name().unwrap(), "nautilus_trader");
 }
 
 #[test]
@@ -171,9 +178,7 @@ fn stale_guards_index_mtime_schema_and_head() {
     let loaded = load_index(&idx).unwrap();
     build_sidecar(&loaded.index, &side, "headsha").unwrap();
     std::fs::write(&side, b"not a sqlite file at all").unwrap();
-    assert!(stale_sidecar_reason(&idx, &side)
-        .unwrap()
-        .contains("損壞"));
+    assert!(stale_sidecar_reason(&idx, &side).unwrap().contains("損壞"));
 }
 
 #[test]
@@ -280,7 +285,11 @@ fn build_cache_stdout_frozen_and_three_table_bytes_untouched() {
             sqlite_path(&idx).display()
         )
     );
-    assert!(out.stderr.contains("fn_defs sidecar built"), "{}", out.stderr);
+    assert!(
+        out.stderr.contains("fn_defs sidecar built"),
+        "{}",
+        out.stderr
+    );
     assert!(fndefs_path(&idx).exists());
 
     // SM-13: sidecar build leaves the three-table db bytes untouched

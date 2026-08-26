@@ -2,12 +2,12 @@
 //! case families (post-sync 281e07e) plus the no-oracle truncation case
 //! pinned from source.
 
+use code_reality::profile::load_profile;
 use code_reality::transition::{
-    diff_edges, extract_baseline, extract_ep_claims, load_snapshot, path_token_claims, render_report,
-    run, summarize,
+    diff_edges, extract_baseline, extract_ep_claims, load_snapshot, path_token_claims,
+    render_report, run, summarize,
 };
 use code_reality::ToolOutput;
-use code_reality::profile::load_profile;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -37,8 +37,14 @@ fn diff_reversed_reports_added_direction() {
     let b = edges(&[("m/b", "m/a", "CALLS")]);
     let d = diff_edges(&a, &b);
     assert_eq!(d.reversed, vec![("m/b".to_string(), "m/a".to_string())]);
-    assert_eq!(d.added, vec![("m/b".to_string(), "m/a".to_string(), "CALLS".to_string())]);
-    assert_eq!(d.removed, vec![("m/a".to_string(), "m/b".to_string(), "CALLS".to_string())]);
+    assert_eq!(
+        d.added,
+        vec![("m/b".to_string(), "m/a".to_string(), "CALLS".to_string())]
+    );
+    assert_eq!(
+        d.removed,
+        vec![("m/a".to_string(), "m/b".to_string(), "CALLS".to_string())]
+    );
 }
 
 #[test]
@@ -162,9 +168,16 @@ fn write_profile(repo: &Path) -> PathBuf {
 fn extract_baseline_bold_literal_required() {
     let tmp = tempfile::tempdir().unwrap();
     let ep = tmp.path().join("ep.md");
-    std::fs::write(&ep, "baseline: aabbccddeeff\nsome **baseline**: 0123456789ab\n").unwrap();
+    std::fs::write(
+        &ep,
+        "baseline: aabbccddeeff\nsome **baseline**: 0123456789ab\n",
+    )
+    .unwrap();
     // the bare line must NOT match; the bold one must
-    assert_eq!(extract_baseline(&ep).unwrap().as_deref(), Some("0123456789ab"));
+    assert_eq!(
+        extract_baseline(&ep).unwrap().as_deref(),
+        Some("0123456789ab")
+    );
 }
 
 #[test]
@@ -172,8 +185,20 @@ fn report_no_change_and_claims_faces() {
     let tmp = tempfile::tempdir().unwrap();
     let sa_path = tmp.path().join("a.json");
     let sb_path = tmp.path().join("b.json");
-    write_snap(&sa_path, "r", "aaaa1111", &["f.py"], &[("m/a", "m/b", "CALLS")]);
-    write_snap(&sb_path, "r", "bbbb2222", &["f.py"], &[("m/a", "m/b", "CALLS")]);
+    write_snap(
+        &sa_path,
+        "r",
+        "aaaa1111",
+        &["f.py"],
+        &[("m/a", "m/b", "CALLS")],
+    );
+    write_snap(
+        &sb_path,
+        "r",
+        "bbbb2222",
+        &["f.py"],
+        &[("m/a", "m/b", "CALLS")],
+    );
     let sa = load_snapshot(&sa_path).unwrap();
     let sb = load_snapshot(&sb_path).unwrap();
     let (diff, nf, gf) = summarize(&sa, &sb);
@@ -184,7 +209,8 @@ fn report_no_change_and_claims_faces() {
     // claims faces (need a non-empty diff: the no-change early return
     // precedes the claims section in the frozen renderer)
     let mut sb2 = sb.clone();
-    sb2.module_edges.insert(("m/a".into(), "m/c".into(), "CALLS".into()));
+    sb2.module_edges
+        .insert(("m/a".into(), "m/c".into(), "CALLS".into()));
     let (diff2, nf2, gf2) = summarize(&sa, &sb2);
     let none_md = render_report(&sa, &sb2, Some(&BTreeSet::new()), &diff2, &nf2, &gf2, None);
     assert!(none_md.contains("claims: **NONE**——EP 內無 profile prefix 路徑 mention。"));
@@ -199,9 +225,19 @@ fn files_only_change_counts_as_changed_module() {
     let sa_path = tmp.path().join("a.json");
     let sb_path = tmp.path().join("b.json");
     write_snap(&sa_path, "r", "aaaa1111", &["mosaic_alpha/a.py"], &[]);
-    write_snap(&sb_path, "r", "bbbb2222", &["mosaic_alpha/a.py", "mosaic_alpha/conditions/new.py"], &[]);
+    write_snap(
+        &sb_path,
+        "r",
+        "bbbb2222",
+        &["mosaic_alpha/a.py", "mosaic_alpha/conditions/new.py"],
+        &[],
+    );
     // repo with a depth-1 mosaic profile: module_of maps the new file
-    std::fs::write(tmp.path().join(".code-reality.toml"), "[[module]]\nprefix = \"mosaic_alpha/\"\n").unwrap();
+    std::fs::write(
+        tmp.path().join(".code-reality.toml"),
+        "[[module]]\nprefix = \"mosaic_alpha/\"\n",
+    )
+    .unwrap();
     let out = run_cli(&[
         "transition",
         &sa_path.to_string_lossy(),
@@ -212,13 +248,17 @@ fn files_only_change_counts_as_changed_module() {
         &tmp.path().join("t").to_string_lossy(),
     ]);
     assert_eq!(out.exit_code, 0, "{}", out.stderr);
-    let j: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(tmp.path().join("t.json")).unwrap(),
-    )
-    .unwrap();
-    assert_eq!(j["changed_modules"], serde_json::json!(["mosaic_alpha/conditions"]));
+    let j: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(tmp.path().join("t.json")).unwrap()).unwrap();
+    assert_eq!(
+        j["changed_modules"],
+        serde_json::json!(["mosaic_alpha/conditions"])
+    );
     assert_eq!(j["gone_files"], serde_json::json!([]));
-    assert_eq!(j["new_files"], serde_json::json!(["mosaic_alpha/conditions/new.py"]));
+    assert_eq!(
+        j["new_files"],
+        serde_json::json!(["mosaic_alpha/conditions/new.py"])
+    );
 }
 
 #[test]
@@ -228,7 +268,11 @@ fn truncation_over_twenty_appends_more_line() {
     let sb_path = tmp.path().join("b.json");
     let mut many: Vec<(&str, &str, &str)> = Vec::new();
     for i in 0..25 {
-        many.push(("m/src", Box::leak(format!("m/d{i:02}").into_boxed_str()), "CALLS"));
+        many.push((
+            "m/src",
+            Box::leak(format!("m/d{i:02}").into_boxed_str()),
+            "CALLS",
+        ));
     }
     write_snap(&sa_path, "r", "aaaa1111", &[], &[]);
     write_snap(&sb_path, "r", "bbbb2222", &[], &many);
@@ -250,8 +294,20 @@ fn cli_ok_and_log_lines() {
     let tmp = tempfile::tempdir().unwrap();
     let sa_path = tmp.path().join("a.json");
     let sb_path = tmp.path().join("b.json");
-    write_snap(&sa_path, "r", "aaaa11112222", &["x.py"], &[("m/a", "m/b", "CALLS")]);
-    write_snap(&sb_path, "r", "bbbb33334444", &[], &[("m/b", "m/a", "CALLS")]);
+    write_snap(
+        &sa_path,
+        "r",
+        "aaaa11112222",
+        &["x.py"],
+        &[("m/a", "m/b", "CALLS")],
+    );
+    write_snap(
+        &sb_path,
+        "r",
+        "bbbb33334444",
+        &[],
+        &[("m/b", "m/a", "CALLS")],
+    );
     let out = run_cli(&[
         "transition",
         &sa_path.to_string_lossy(),
@@ -338,5 +394,7 @@ fn cli_usage_errors_exit_2() {
     assert_eq!(out.exit_code, 2);
     let out = run_cli(&["transition", "-h"]);
     assert_eq!(out.exit_code, 0);
-    assert!(out.stdout.starts_with("usage: transition [-h] [--ep EP] [--repo REPO]\n"));
+    assert!(out
+        .stdout
+        .starts_with("usage: transition [-h] [--ep EP] [--repo REPO]\n"));
 }

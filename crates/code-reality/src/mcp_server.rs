@@ -99,12 +99,16 @@ impl CodeRealityServer {
         // sidecars) to per-request loud errors — the daemon survives
         let out = tokio::task::spawn_blocking(move || {
             let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                crate::cli::run(&refs)
-            }))
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| crate::cli::run(&refs)))
         })
         .await
-        .map_err(|e| McpError::new(ErrorCode::INTERNAL_ERROR, format!("任務 join 失敗：{e}"), None))?
+        .map_err(|e| {
+            McpError::new(
+                ErrorCode::INTERNAL_ERROR,
+                format!("任務 join 失敗：{e}"),
+                None,
+            )
+        })?
         .map_err(|_| {
             McpError::new(
                 ErrorCode::INTERNAL_ERROR,
@@ -133,7 +137,9 @@ impl rmcp::ServerHandler for CodeRealityServer {
 impl CodeRealityServer {
     /// Symbol truth query: refs/defs with trait disambiguation. Same
     /// lib call as `code-reality scip_refs <symbol> --repo <repo_root>`.
-    #[tool(description = "Symbol truth query (refs/defs, trait disambiguation) over the repo's SCIP index")]
+    #[tool(
+        description = "Symbol truth query (refs/defs, trait disambiguation) over the repo's SCIP index"
+    )]
     pub async fn refs(
         &self,
         Parameters(RefsParams { symbol, repo_root }): Parameters<RefsParams>,
@@ -167,7 +173,11 @@ impl CodeRealityServer {
     #[tool(description = "Closure of caller edges (BFS; depth default 2, max 10000)")]
     pub async fn closure(
         &self,
-        Parameters(ClosureParams { symbol, repo_root, depth }): Parameters<ClosureParams>,
+        Parameters(ClosureParams {
+            symbol,
+            repo_root,
+            depth,
+        }): Parameters<ClosureParams>,
     ) -> Result<CallToolResult, McpError> {
         let mut args = vec![
             "scip_refs".to_string(),
@@ -226,7 +236,6 @@ pub async fn serve(port: u16) -> Result<(), String> {
         .await
         .map_err(|e| format!("serve 失敗：{e}"))
 }
-
 
 /// Stdio serving mode (open-source default, `--stdio`): the AI harness
 /// spawns and owns this process — zero daemon, zero port, works on any

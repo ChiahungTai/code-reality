@@ -66,12 +66,19 @@ pub struct LoadedSnapshot {
 }
 
 pub fn load_snapshot(path: &Path) -> Result<LoadedSnapshot, String> {
-    let text = std::fs::read_to_string(path)
-        .map_err(|e| format!("{} 讀取失敗：{}", path.display(), e))?;
-    let data: Value = serde_json::from_str(&text)
-        .map_err(|e| format!("非 S2 snapshot 格式（缺 _meta/module_edges）: {}（{e}）", path.display()))?;
+    let text =
+        std::fs::read_to_string(path).map_err(|e| format!("{} 讀取失敗：{}", path.display(), e))?;
+    let data: Value = serde_json::from_str(&text).map_err(|e| {
+        format!(
+            "非 S2 snapshot 格式（缺 _meta/module_edges）: {}（{e}）",
+            path.display()
+        )
+    })?;
     let obj = data.as_object().ok_or_else(|| {
-        format!("非 S2 snapshot 格式（缺 _meta/module_edges）: {}", path.display())
+        format!(
+            "非 S2 snapshot 格式（缺 _meta/module_edges）: {}",
+            path.display()
+        )
     })?;
     if !obj.contains_key("_meta") || !obj.contains_key("module_edges") {
         return Err(format!(
@@ -80,12 +87,18 @@ pub fn load_snapshot(path: &Path) -> Result<LoadedSnapshot, String> {
         ));
     }
     let edges_raw = obj["module_edges"].as_array().ok_or_else(|| {
-        format!("module_edges 元素非 [src, dst, kind] 三元組: {}", path.display())
+        format!(
+            "module_edges 元素非 [src, dst, kind] 三元組: {}",
+            path.display()
+        )
     })?;
     let mut module_edges = BTreeSet::new();
     for e in edges_raw {
         let arr = e.as_array().ok_or_else(|| {
-            format!("module_edges 元素非 [src, dst, kind] 三元組: {}", path.display())
+            format!(
+                "module_edges 元素非 [src, dst, kind] 三元組: {}",
+                path.display()
+            )
         })?;
         if arr.len() != 3 || !arr.iter().all(Value::is_string) {
             return Err(format!(
@@ -130,10 +143,14 @@ pub struct EdgeDiff {
 pub fn diff_edges(a: &BTreeSet<Edge>, b: &BTreeSet<Edge>) -> EdgeDiff {
     let removed: BTreeSet<&Edge> = a.difference(b).collect();
     let added: BTreeSet<&Edge> = b.difference(a).collect();
-    let removed_pairs: BTreeSet<(&str, &str)> =
-        removed.iter().map(|(s, d, _)| (s.as_str(), d.as_str())).collect();
-    let added_pairs: BTreeSet<(&str, &str)> =
-        added.iter().map(|(s, d, _)| (s.as_str(), d.as_str())).collect();
+    let removed_pairs: BTreeSet<(&str, &str)> = removed
+        .iter()
+        .map(|(s, d, _)| (s.as_str(), d.as_str()))
+        .collect();
+    let added_pairs: BTreeSet<(&str, &str)> = added
+        .iter()
+        .map(|(s, d, _)| (s.as_str(), d.as_str()))
+        .collect();
     let mut reversed: Vec<(String, String)> = added_pairs
         .intersection(&removed_pairs.iter().map(|&(s, d)| (d, s)).collect())
         .map(|&(s, d)| (s.to_string(), d.to_string()))
@@ -162,9 +179,7 @@ pub fn summarize(sa: &LoadedSnapshot, sb: &LoadedSnapshot) -> (EdgeDiff, Vec<Str
 /// File-path token regex (`transition.py:100`).
 fn file_token_re() -> &'static regex::Regex {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    RE.get_or_init(|| {
-        regex::Regex::new(r"[A-Za-z0-9_][\w./+-]*\.[A-Za-z0-9]+").unwrap()
-    })
+    RE.get_or_init(|| regex::Regex::new(r"[A-Za-z0-9_][\w./+-]*\.[A-Za-z0-9]+").unwrap())
 }
 
 /// Relative path tokens → module claims with existence verification
@@ -172,11 +187,7 @@ fn file_token_re() -> &'static regex::Regex {
 /// as-is; bare-relative tokens resolve only when
 /// `repo_root/<prefix>/<first-segment>` is a real directory — a grounded
 /// mapping, no guessing.
-pub fn path_token_claims(
-    text: &str,
-    profile: &Profile,
-    repo_root: &Path,
-) -> BTreeSet<String> {
+pub fn path_token_claims(text: &str, profile: &Profile, repo_root: &Path) -> BTreeSet<String> {
     let mut claims = BTreeSet::new();
     for tok in file_token_re().find_iter(text).map(|m| m.as_str()) {
         if !tok.contains('/') {
@@ -238,9 +249,7 @@ pub fn extract_ep_claims(
 /// literal is load-bearing (a bare `baseline:` line must NOT match).
 pub fn extract_baseline(ep_path: &Path) -> Result<Option<String>, String> {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let re = RE.get_or_init(|| {
-        regex::Regex::new(r"\*\*baseline\*\*:\s*([0-9a-f]{7,40})").unwrap()
-    });
+    let re = RE.get_or_init(|| regex::Regex::new(r"\*\*baseline\*\*:\s*([0-9a-f]{7,40})").unwrap());
     if !ep_path.is_file() {
         return Err(format!("EP 檔不存在或非檔案：{}", ep_path.display()));
     }
@@ -305,7 +314,10 @@ fn trunc_lines(entries: &[String], limit: usize) -> Vec<String> {
 }
 
 fn meta_str(meta: &Map<String, Value>, key: &str) -> String {
-    meta.get(key).and_then(Value::as_str).unwrap_or("?").to_string()
+    meta.get(key)
+        .and_then(Value::as_str)
+        .unwrap_or("?")
+        .to_string()
 }
 
 fn meta_commit8(meta: &Map<String, Value>) -> String {
@@ -326,8 +338,20 @@ pub fn render_report(
     let mut lines: Vec<String> = vec![
         format!("# Transition Report: {}", meta_str(&sb.meta, "repo")),
         String::new(),
-        format!("- before: `{a8}`（{}）", sa.path.file_name().map(|n| n.to_string_lossy()).unwrap_or_default()),
-        format!("- after: `{b8}`（{}）", sb.path.file_name().map(|n| n.to_string_lossy()).unwrap_or_default()),
+        format!(
+            "- before: `{a8}`（{}）",
+            sa.path
+                .file_name()
+                .map(|n| n.to_string_lossy())
+                .unwrap_or_default()
+        ),
+        format!(
+            "- after: `{b8}`（{}）",
+            sb.path
+                .file_name()
+                .map(|n| n.to_string_lossy())
+                .unwrap_or_default()
+        ),
         format!(
             "- module edges: {} -> {}（+{} / -{} / reversed {}）",
             sa.module_edges.len(),
@@ -370,7 +394,10 @@ pub fn render_report(
         lines.push(String::new());
     }
     if !diff.reversed.is_empty() {
-        lines.push(format!("### reversed ({})——added 方向", diff.reversed.len()));
+        lines.push(format!(
+            "### reversed ({})——added 方向",
+            diff.reversed.len()
+        ));
         let items: Vec<String> = diff
             .reversed
             .iter()
@@ -485,7 +512,10 @@ pub fn run(argv: &[&str]) -> ToolOutput {
             };
         }
         Outcome::Err(msg) => return ToolOutput::fail(msg),
-        Outcome::Ok { values, positionals } => (values, positionals),
+        Outcome::Ok {
+            values,
+            positionals,
+        } => (values, positionals),
     };
     // D3 crash face — but the frozen main() prints the profile-less WARN
     // to stdout BEFORE a later crash (e.g. missing EP): the accumulated
@@ -549,7 +579,15 @@ pub fn run(argv: &[&str]) -> ToolOutput {
     let md_path = prefix.with_file_name(format!("{stem}.md"));
     let json_path = prefix.with_file_name(format!("{stem}.json"));
     let (diff, new_files, gone_files) = summarize(&sa, &sb);
-    let md_body = render_report(&sa, &sb, claims.as_ref(), &diff, &new_files, &gone_files, profile.as_ref());
+    let md_body = render_report(
+        &sa,
+        &sb,
+        claims.as_ref(),
+        &diff,
+        &new_files,
+        &gone_files,
+        profile.as_ref(),
+    );
     if let Err(e) = std::fs::write(&md_path, md_body) {
         crash!(format!("{} 寫入失敗：{}", md_path.display(), e));
     }

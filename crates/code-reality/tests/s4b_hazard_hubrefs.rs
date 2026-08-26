@@ -7,11 +7,11 @@
 mod crg_fixture;
 
 use code_reality::hazard::{
-    build_getattr_pattern, build_importlib_pattern, build_strentenum_patterns,
-    classify_rg_lines, detect_getattr_dispatch, detect_importlib_lazy_load,
-    detect_protocol_duck_typing, detect_registry_auto_discovery,
-    detect_static_edge_gap, detect_strentenum_string_dispatch, full_findings,
-    hazard_gate_warning, method_name, parse_symbol_facts, resident_findings, symbol_facts,
+    build_getattr_pattern, build_importlib_pattern, build_strentenum_patterns, classify_rg_lines,
+    detect_getattr_dispatch, detect_importlib_lazy_load, detect_protocol_duck_typing,
+    detect_registry_auto_discovery, detect_static_edge_gap, detect_strentenum_string_dispatch,
+    full_findings, hazard_gate_warning, method_name, parse_symbol_facts, resident_findings,
+    symbol_facts,
 };
 use code_reality::hub_refs::{aggregate, caller_files_of, json_payload, resolve_qualified, run};
 use code_reality::profile::{HazardRegistry, Profile};
@@ -163,14 +163,20 @@ fn strentenum_dispatch_counts_and_excludes_definition() {
         finding.detail,
         vec![("prod".to_string(), 1), ("test".to_string(), 2)]
     );
-    assert_eq!(finding.evidence, vec!["pkg/use.py:7:v = \"1d\"".to_string()]);
+    assert_eq!(
+        finding.evidence,
+        vec!["pkg/use.py:7:v = \"1d\"".to_string()]
+    );
     assert!(finding.summary.contains("1 處 prod + 2 處 test"));
 }
 
 #[test]
 fn getattr_dispatch_shape() {
     let f = facts_of("class Loader:\n    pass\n", "Loader");
-    let rg = lines_rg(&["pkg/a.py:5:m = getattr(x, \"Loader\")", "tests/t.py:1:getattr(y, \"Loader\")"]);
+    let rg = lines_rg(&[
+        "pkg/a.py:5:m = getattr(x, \"Loader\")",
+        "tests/t.py:1:getattr(y, \"Loader\")",
+    ]);
     let finding = detect_getattr_dispatch(&f, &rg, None).unwrap().unwrap();
     assert_eq!(finding.count, 2);
     assert!(finding.summary.contains("1 prod + 1 test"));
@@ -190,7 +196,9 @@ fn registry_detection_by_prefix_and_suffix() {
     }];
     let finding = detect_registry_auto_discovery(&f, &regs).unwrap();
     assert_eq!(finding.count, 1);
-    assert!(finding.summary.contains("經 auto_register() 註冊到 REGISTRY"));
+    assert!(finding
+        .summary
+        .contains("經 auto_register() 註冊到 REGISTRY"));
     assert_eq!(finding.evidence, vec!["x.py:1".to_string()]);
     // non-matching suffix
     let mut g = f.clone();
@@ -224,8 +232,9 @@ fn static_edge_gap_two_forms_and_set_diff() {
     ]);
     let mut baseline = BTreeSet::new();
     baseline.insert("pkg/a.py".to_string());
-    let finding =
-        detect_static_edge_gap(&f, Some(&baseline), &rg, None).unwrap().unwrap();
+    let finding = detect_static_edge_gap(&f, Some(&baseline), &rg, None)
+        .unwrap()
+        .unwrap();
     assert_eq!(finding.count, 2); // pkg/b.py + tests/t.py
     assert!(finding.summary.contains("prod 1 / test 1"));
 
@@ -233,18 +242,23 @@ fn static_edge_gap_two_forms_and_set_diff() {
     let rg_m = lines_rg(&["pkg/c.py:9:o.run(", "pkg/d.py:1:o.run()"]);
     let mut baseline2 = BTreeSet::new();
     baseline2.insert("pkg/c.py".to_string());
-    let finding2 =
-        detect_static_edge_gap(&f, Some(&baseline2), &rg_m, Some("run")).unwrap().unwrap();
+    let finding2 = detect_static_edge_gap(&f, Some(&baseline2), &rg_m, Some("run"))
+        .unwrap()
+        .unwrap();
     assert_eq!(finding2.count, 1);
 
     // None baseline skips
-    assert!(detect_static_edge_gap(&f, None, &rg, None).unwrap().is_none());
+    assert!(detect_static_edge_gap(&f, None, &rg, None)
+        .unwrap()
+        .is_none());
     // no diff → no finding
     let mut baseline3 = BTreeSet::new();
     baseline3.insert("pkg/a.py".to_string());
     baseline3.insert("pkg/b.py".to_string());
     baseline3.insert("tests/t.py".to_string());
-    assert!(detect_static_edge_gap(&f, Some(&baseline3), &rg, None).unwrap().is_none());
+    assert!(detect_static_edge_gap(&f, Some(&baseline3), &rg, None)
+        .unwrap()
+        .is_none());
 }
 
 #[test]
@@ -260,7 +274,10 @@ fn resident_vs_full_and_gate() {
     // arg-aware injection: only the strentenum -F query yields lines
     let rg = |args: &[&str]| -> Result<Vec<String>, String> {
         if args.contains(&"-F") {
-            Ok(vec!["pkg/x.py:1:\"1d\"".to_string(), "pkg/x.py:2:\"1w\"".to_string()])
+            Ok(vec![
+                "pkg/x.py:1:\"1d\"".to_string(),
+                "pkg/x.py:2:\"1w\"".to_string(),
+            ])
         } else {
             Ok(Vec::new())
         }
@@ -272,7 +289,9 @@ fn resident_vs_full_and_gate() {
     // gate: threshold inclusive at 2
     let findings = vec![full[0].clone()];
     let w = hazard_gate_warning(2, 0, &findings, 2).unwrap();
-    assert!(w.starts_with("[WARN] 靜態 prod callers 僅 2 但命中 1 類 dynamic hazard（strentenum-string-dispatch）"));
+    assert!(w.starts_with(
+        "[WARN] 靜態 prod callers 僅 2 但命中 1 類 dynamic hazard（strentenum-string-dispatch）"
+    ));
     assert!(hazard_gate_warning(3, 0, &findings, 2).is_none());
     assert!(hazard_gate_warning(2, 0, &[], 2).is_none());
 }
@@ -299,7 +318,12 @@ fn repo_with_nodes(tag: &str, dup: bool) -> PathBuf {
     });
     spec.node_attrs.push((
         format!("{abs}::Interval"),
-        crg_fixture::NodeAttr { kind: "Class", language: "python", is_test: 0, community_id: None },
+        crg_fixture::NodeAttr {
+            kind: "Class",
+            language: "python",
+            is_test: 0,
+            community_id: None,
+        },
     ));
     if dup {
         spec.nodes.push(crg_fixture::NodeSeed {
@@ -310,7 +334,12 @@ fn repo_with_nodes(tag: &str, dup: bool) -> PathBuf {
         });
         spec.node_attrs.push((
             format!("{abs}2::Interval"),
-            crg_fixture::NodeAttr { kind: "Class", language: "python", is_test: 0, community_id: None },
+            crg_fixture::NodeAttr {
+                kind: "Class",
+                language: "python",
+                is_test: 0,
+                community_id: None,
+            },
         ));
     }
     crg_fixture::make_crg_db(&db, &spec).unwrap();
@@ -358,8 +387,8 @@ fn aggregate_counts_split_top_and_outside() {
         ("{repo}/pkg/a.py", false),
         ("{repo}/tests/unit/x.py", false), // is_test false but tests/ prefix
         ("{repo}/tests/y.py", true),
-        ("/elsewhere/z.py", false),         // outside
-        ("{repo}/.venv/w.py", false),       // excluded
+        ("/elsewhere/z.py", false),   // outside
+        ("{repo}/.venv/w.py", false), // excluded
     ])
     .to_string()
     .replace("{repo}", &repo.display().to_string());
@@ -374,7 +403,10 @@ fn aggregate_counts_split_top_and_outside() {
     assert_eq!(agg.excluded, 1);
     assert_eq!(agg.outside, 1);
     assert_eq!(agg.prod, vec![("pkg".to_string(), 3)]);
-    assert_eq!(agg.test, vec![("tests/unit".to_string(), 1), ("tests".to_string(), 1)]);
+    assert_eq!(
+        agg.test,
+        vec![("tests/unit".to_string(), 1), ("tests".to_string(), 1)]
+    );
     // top truncation
     let agg2 = aggregate(&arr, &repo, 1).unwrap();
     assert_eq!(agg2.test.len(), 1);
@@ -443,7 +475,10 @@ fn json_payload_and_compact_bytes() {
     );
     let text = code_reality::common::to_json_py_compact(&payload);
     // Python default separators: ", " and ": " — pinned shape
-    assert!(text.starts_with("{\"symbol\": \"Sym\", \"target\": \"/abs::Sym\""), "{text}");
+    assert!(
+        text.starts_with("{\"symbol\": \"Sym\", \"target\": \"/abs::Sym\""),
+        "{text}"
+    );
     assert!(text.contains("\"hazard_findings\": [{\"kind\": \"getattr-string-dispatch\""));
     assert!(text.contains("\"detail\": {\"prod\": 1, \"test\": 1}"));
     assert!(text.contains("\"hazard_gate\": null"));
@@ -482,7 +517,10 @@ fn rg_runner_builder_patterns_compatible() {
     std::fs::write(repo.join("tests/t.py"), "assert \"1d\"\n").unwrap();
     let rg = make_rg_runner(repo);
     let getattr = rg(&[&build_getattr_pattern("Loader")]).unwrap();
-    assert_eq!(getattr, vec!["pkg/use.py:1:v = getattr(x, \"Loader\")".to_string()]);
+    assert_eq!(
+        getattr,
+        vec!["pkg/use.py:1:v = getattr(x, \"Loader\")".to_string()]
+    );
     let importlib = rg(&[&build_importlib_pattern("pkg.deep.mod")]).unwrap();
     assert_eq!(importlib.len(), 1);
     let mut owned = vec!["-F".to_string()];
@@ -526,14 +564,13 @@ fn resolve_qualified_faces() {
     let repo = repo_with_nodes("resolve", false);
     // bare exact
     assert_eq!(
-        resolve_qualified("Interval", &repo).map_err(|o| o.exit_code).unwrap(),
+        resolve_qualified("Interval", &repo)
+            .map_err(|o| o.exit_code)
+            .unwrap(),
         format!("{}/pkg/mod_.py::Interval", repo.display())
     );
     // qualified passthrough
-    assert_eq!(
-        resolve_qualified("x::y", &repo).unwrap(),
-        "x::y"
-    );
+    assert_eq!(resolve_qualified("x::y", &repo).unwrap(), "x::y");
     // not found: exit 1, empty stdout
     let out = resolve_qualified("Nope", &repo).unwrap_err();
     assert_eq!(out.exit_code, 1);
@@ -552,7 +589,9 @@ fn resolve_qualified_faces() {
 fn cli_help_and_usage_family() {
     let out = run(&["hub_refs", "-h"]);
     assert_eq!(out.exit_code, 0);
-    assert!(out.stdout.starts_with("usage: hub_refs [-h] [--repo REPO] [--direction {callers,callees}]\n"));
+    assert!(out
+        .stdout
+        .starts_with("usage: hub_refs [-h] [--repo REPO] [--direction {callers,callees}]\n"));
     let out = run(&["hub_refs"]);
     assert_eq!(out.exit_code, 2);
     let out = run(&["hub_refs", "Sym", "--direction", "sideways"]);

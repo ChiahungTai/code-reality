@@ -3,8 +3,8 @@
 
 use code_reality::boundary::{load_sidecar, run_query};
 use code_reality::boundary_build::{
-    build_boundary, build_sidecar, parse_pyi, pyi_module, scan_rust_file, screaming_snake,
-    PyClass, PyFunction,
+    build_boundary, build_sidecar, parse_pyi, pyi_module, scan_rust_file, screaming_snake, PyClass,
+    PyFunction,
 };
 use std::path::{Path, PathBuf};
 
@@ -79,10 +79,15 @@ fn nt_fixture(tag: &str) -> PathBuf {
     std::fs::write(repo.join("python/nautilus_trader/live.pyi"), PYI_SRC).unwrap();
     let g = |args: &[&str]| {
         std::process::Command::new("git")
-            .arg("-C").arg(&repo).args(args)
-            .env("GIT_AUTHOR_NAME", "t").env("GIT_AUTHOR_EMAIL", "t@t")
-            .env("GIT_COMMITTER_NAME", "t").env("GIT_COMMITTER_EMAIL", "t@t")
-            .status().unwrap();
+            .arg("-C")
+            .arg(&repo)
+            .args(args)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .status()
+            .unwrap();
     };
     g(&["init", "-q"]);
     g(&["add", "."]);
@@ -115,26 +120,41 @@ fn scan_rust_extracts_all_three_kinds() {
     let (classes, methods, functions) =
         scan_rust_file(&repo.join("crates/live/src/node.rs"), &repo);
     let names: Vec<&str> = classes.iter().map(|c| c.rust_name.as_str()).collect();
-    assert!(names.contains(&"LiveNode") && names.contains(&"UsdM") && names.contains(&"NotStubbed"));
+    assert!(
+        names.contains(&"LiveNode") && names.contains(&"UsdM") && names.contains(&"NotStubbed")
+    );
     let ln = classes.iter().find(|c| c.rust_name == "LiveNode").unwrap();
     assert_eq!(ln.py_module.as_deref(), Some("nautilus_trader.live"));
     // method set: new/getter(renamed exposed)/rename/dunder/async + field_property
     let kinds: Vec<&str> = methods.iter().map(|m| m.kind.as_str()).collect();
-    for k in ["new", "getter", "method", "dunder", "variant", "field_property"] {
+    for k in [
+        "new",
+        "getter",
+        "method",
+        "dunder",
+        "variant",
+        "field_property",
+    ] {
         assert!(kinds.contains(&k), "{k} missing: {kinds:?}");
     }
     let renamed = methods.iter().find(|m| m.rust_fn == "py_build").unwrap();
     assert_eq!(renamed.exposed, "build");
     assert!(renamed.renamed);
-    let getter = methods.iter().find(|m| m.rust_fn == "get_actor_id").unwrap();
+    let getter = methods
+        .iter()
+        .find(|m| m.rust_fn == "get_actor_id")
+        .unwrap();
     assert_eq!(getter.exposed, "actor_id"); // get_ strip
-    // variant rename honored; plain variant via SCREAMING_SNAKE
+                                            // variant rename honored; plain variant via SCREAMING_SNAKE
     let sandbox = methods.iter().find(|m| m.rust_fn == "Sandbox").unwrap();
     assert_eq!(sandbox.exposed, "SANDBOX");
     let limit = methods.iter().find(|m| m.rust_fn == "LimitOrder").unwrap();
     assert_eq!(limit.exposed, "LIMIT_ORDER");
     // pyfunction rename + py_ strip fallback
-    let f = functions.iter().find(|f| f.rust_fn == "py_connect").unwrap();
+    let f = functions
+        .iter()
+        .find(|f| f.rust_fn == "py_connect")
+        .unwrap();
     assert_eq!(f.exposed, "connect");
     assert_eq!(f.py_module.as_deref(), Some("nautilus_trader.live"));
     let _ = Path::new(".");
@@ -148,10 +168,14 @@ fn build_boundary_reconciliation() {
     let (py_classes, py_functions) =
         parse_pyi(&repo.join("python/nautilus_trader/live.pyi"), &repo).unwrap();
     let module = pyi_module("python/nautilus_trader/live.pyi").unwrap();
-    let py_classes: Vec<(String, PyClass)> =
-        py_classes.into_iter().map(|c| (module.clone(), c)).collect();
-    let py_functions: Vec<(String, PyFunction)> =
-        py_functions.into_iter().map(|f| (module.clone(), f)).collect();
+    let py_classes: Vec<(String, PyClass)> = py_classes
+        .into_iter()
+        .map(|c| (module.clone(), c))
+        .collect();
+    let py_functions: Vec<(String, PyFunction)> = py_functions
+        .into_iter()
+        .map(|f| (module.clone(), f))
+        .collect();
     let (edges, cov) = build_boundary(&classes, &methods, &functions, &py_classes, &py_functions);
     // classes: LiveNode + UsdM matched; NotStubbed rs-only
     assert_eq!(cov.classes.matched, 2);
@@ -164,7 +188,7 @@ fn build_boundary_reconciliation() {
     assert!(kinds.contains(&"GETTER_PROPERTY"));
     assert!(kinds.contains(&"ENUM_VARIANT"));
     assert!(kinds.contains(&"FIELD_PROPERTY")); // get_all: actor_id matches @property
-    // function connect matched (PYO3_NAME_RENAME)
+                                                // function connect matched (PYO3_NAME_RENAME)
     assert_eq!(cov.functions.matched, 1);
 }
 
@@ -191,8 +215,16 @@ fn build_sidecar_and_query_roundtrip() {
     // not-found: FAIL + candidates + exit 1
     let out4 = run_query(&sc, "LiveNod", false);
     assert_eq!(out4.exit_code, 1);
-    assert!(out4.stdout.contains("[FAIL] symbol not found: LiveNod"), "{}", out4.stdout);
-    assert!(out4.stdout.contains("候選: nautilus_trader.live.LiveNode"), "{}", out4.stdout);
+    assert!(
+        out4.stdout.contains("[FAIL] symbol not found: LiveNod"),
+        "{}",
+        out4.stdout
+    );
+    assert!(
+        out4.stdout.contains("候選: nautilus_trader.live.LiveNode"),
+        "{}",
+        out4.stdout
+    );
 }
 
 #[test]
@@ -207,7 +239,11 @@ fn cli_build_and_query() {
         &out_dir.to_string_lossy(),
     ]);
     assert_eq!(out.exit_code, 0, "{}{}", out.stdout, out.stderr);
-    assert!(out.stdout.contains("[OK] boundary sidecar: "), "{}", out.stdout);
+    assert!(
+        out.stdout.contains("[OK] boundary sidecar: "),
+        "{}",
+        out.stdout
+    );
     assert!(out.stdout.contains("class: 2/3"), "{}", out.stdout);
     let out2 = code_reality::boundary::run(&[
         "boundary",

@@ -40,12 +40,32 @@ fn fn_spans_parses_four_and_three_element_enc() {
     let idx = index(vec![doc(
         "a.rs",
         vec![
-            occ("cargo x kernel/outer().", 1, vec![9, 0], Some(vec![9, 0, 11, 5])),
-            occ("cargo x kernel/macro_fn().", 1, vec![19, 2], Some(vec![19, 2, 44])),
+            occ(
+                "cargo x kernel/outer().",
+                1,
+                vec![9, 0],
+                Some(vec![9, 0, 11, 5]),
+            ),
+            occ(
+                "cargo x kernel/macro_fn().",
+                1,
+                vec![19, 2],
+                Some(vec![19, 2, 44]),
+            ),
             // non-fn DEF (no (). tail): not a span candidate even with enc
-            occ("cargo x kernel/struct.Type", 1, vec![30, 0], Some(vec![30, 0, 35, 0])),
+            occ(
+                "cargo x kernel/struct.Type",
+                1,
+                vec![30, 0],
+                Some(vec![30, 0, 35, 0]),
+            ),
             // ref occurrence with enc: never a span candidate
-            occ("cargo x kernel/other().", 0, vec![40, 0], Some(vec![40, 0, 45, 0])),
+            occ(
+                "cargo x kernel/other().",
+                0,
+                vec![40, 0],
+                Some(vec![40, 0, 45, 0]),
+            ),
         ],
     )]);
     let (spans, warns) = fn_spans(&idx);
@@ -67,7 +87,12 @@ fn fn_spans_skips_and_warns_on_unexpected_enc_len() {
         "a.rs",
         vec![
             occ("cargo x kernel/weird().", 1, vec![1, 0], Some(vec![1, 2])),
-            occ("cargo x kernel/ok().", 1, vec![5, 0], Some(vec![5, 0, 9, 0])),
+            occ(
+                "cargo x kernel/ok().",
+                1,
+                vec![5, 0],
+                Some(vec![5, 0, 9, 0]),
+            ),
         ],
     )]);
     let (spans, warns) = fn_spans(&idx);
@@ -75,7 +100,11 @@ fn fn_spans_skips_and_warns_on_unexpected_enc_len() {
     assert_eq!(a.len(), 1, "2-element enc must be skipped");
     assert_eq!(a[0].symbol, "cargo x kernel/ok().");
     assert_eq!(warns.len(), 1);
-    assert!(warns[0].contains("weird"), "WARN names the skipped symbol: {}", warns[0]);
+    assert!(
+        warns[0].contains("weird"),
+        "WARN names the skipped symbol: {}",
+        warns[0]
+    );
 }
 
 #[test]
@@ -84,7 +113,12 @@ fn fn_spans_absent_enc_skips_silently() {
         "a.rs",
         vec![
             occ("cargo x kernel/no_enc().", 1, vec![1, 0], None),
-            occ("cargo x kernel/ok().", 1, vec![5, 0], Some(vec![5, 0, 9, 0])),
+            occ(
+                "cargo x kernel/ok().",
+                1,
+                vec![5, 0],
+                Some(vec![5, 0, 9, 0]),
+            ),
         ],
     )]);
     let (spans, warns) = fn_spans(&idx);
@@ -187,7 +221,10 @@ fn attribute_same_width_tie_first_seen_wins() {
     )]);
     let r = attribute(&[row("a.rs", 15)], &spans);
     assert_eq!(r.callers.len(), 1);
-    assert_eq!(r.callers[0].symbol, "first().", "same-width tie → smaller seq");
+    assert_eq!(
+        r.callers[0].symbol, "first().",
+        "same-width tie → smaller seq"
+    );
 }
 
 #[test]
@@ -197,17 +234,20 @@ fn attribute_item_level_and_grouping_order() {
         ("b.rs", vec![span("two().", "b.rs", 30, 40, 1)]),
     ]);
     let rows = vec![
-        row("a.rs", 12),      // → one
-        row("b.rs", 35),      // → two
-        row("a.rs", 15),      // → one (second site)
-        row("c.rs", 99),      // no span in c.rs → item-level
-        row("a.rs", 500),     // outside any span → item-level
+        row("a.rs", 12),  // → one
+        row("b.rs", 35),  // → two
+        row("a.rs", 15),  // → one (second site)
+        row("c.rs", 99),  // no span in c.rs → item-level
+        row("a.rs", 500), // outside any span → item-level
     ];
     let r = attribute(&rows, &spans);
     assert_eq!(r.callers.len(), 2);
     // first-site scan order: one before two
     assert_eq!(r.callers[0].symbol, "one().");
-    assert_eq!(r.callers[0].sites, vec![("a.rs".to_string(), 12), ("a.rs".to_string(), 15)]);
+    assert_eq!(
+        r.callers[0].sites,
+        vec![("a.rs".to_string(), 12), ("a.rs".to_string(), 15)]
+    );
     assert_eq!(r.callers[1].symbol, "two().");
     assert_eq!(r.callers[1].def_path, "b.rs");
     assert_eq!(
@@ -239,17 +279,41 @@ fn closure_depth_truncation_and_aggregation() {
     table.insert("X.".to_string(), cr(vec![("A.", "a.rs")]));
     table.insert("A.".to_string(), cr(vec![("B.", "b.rs")]));
     table.insert("B.".to_string(), cr(vec![]));
-    let r = closure(&["X.".to_string()], |s| cr(
-        table.get(s).map(|c| c.callers.iter().map(|x| (x.symbol.as_str(), x.def_path.as_str())).collect()).unwrap_or_default(),
-    ), 1);
+    let r = closure(
+        &["X.".to_string()],
+        |s| {
+            cr(table
+                .get(s)
+                .map(|c| {
+                    c.callers
+                        .iter()
+                        .map(|x| (x.symbol.as_str(), x.def_path.as_str()))
+                        .collect()
+                })
+                .unwrap_or_default())
+        },
+        1,
+    );
     assert_eq!(r.levels.len(), 1);
     assert_eq!(r.levels[0].new_symbols, vec!["A.".to_string()]);
     assert_eq!(r.levels[0].by_file.get("a.rs"), Some(&1));
     assert_eq!(r.cycle_reentries, 0);
 
-    let r = closure(&["X.".to_string()], |s| cr(
-        table.get(s).map(|c| c.callers.iter().map(|x| (x.symbol.as_str(), x.def_path.as_str())).collect()).unwrap_or_default(),
-    ), 2);
+    let r = closure(
+        &["X.".to_string()],
+        |s| {
+            cr(table
+                .get(s)
+                .map(|c| {
+                    c.callers
+                        .iter()
+                        .map(|x| (x.symbol.as_str(), x.def_path.as_str()))
+                        .collect()
+                })
+                .unwrap_or_default())
+        },
+        2,
+    );
     assert_eq!(r.levels.len(), 2);
     assert_eq!(r.levels[1].new_symbols, vec!["B.".to_string()]);
     assert_eq!(r.levels[1].by_file.get("b.rs"), Some(&1));
@@ -272,7 +336,10 @@ fn closure_cycle_detection_no_infinite_loop() {
     for lvl in &r.levels[2..] {
         assert!(lvl.new_symbols.is_empty(), "cycle must not rediscover");
     }
-    assert_eq!(r.cycle_reentries, 1, "B re-hits A once; frontier empties after");
+    assert_eq!(
+        r.cycle_reentries, 1,
+        "B re-hits A once; frontier empties after"
+    );
     // early termination: no further expansions after the cycle re-entry
 }
 
@@ -299,5 +366,8 @@ fn closure_seed_reentry_counts_as_cycle() {
     };
     let r = closure(&["X.".to_string()], expand, 2);
     assert_eq!(r.levels[0].new_symbols, vec!["A.".to_string()]);
-    assert_eq!(r.cycle_reentries, 1, "A re-hits itself (visited this level)");
+    assert_eq!(
+        r.cycle_reentries, 1,
+        "A re-hits itself (visited this level)"
+    );
 }

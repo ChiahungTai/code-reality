@@ -104,9 +104,7 @@ impl OrderedCounter {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&str, usize)> {
-        self.order
-            .iter()
-            .map(|k| (k.as_str(), self.counts[k]))
+        self.order.iter().map(|k| (k.as_str(), self.counts[k]))
     }
 
     pub fn total(&self) -> usize {
@@ -177,11 +175,7 @@ pub fn risk_scan(files: &[PathBuf]) -> Vec<(PathBuf, String, Vec<String>)> {
         let mut cur: Option<usize> = None; // index into impls
         for line in text.split('\n') {
             if let Some(m) = impl_re().captures(line) {
-                impls.push((
-                    m[1].to_string(),
-                    Vec::new(),
-                    indent_of(line),
-                ));
+                impls.push((m[1].to_string(), Vec::new(), indent_of(line)));
                 cur = Some(impls.len() - 1);
                 continue;
             }
@@ -252,8 +246,8 @@ pub fn parse_ra_symbols(stdout_text: &str) -> OrderedCounter {
 /// records an error); spawn failure is the crash family (Python would
 /// raise FileNotFoundError after the env gate).
 pub fn ra_symbols(path: &Path) -> Result<Option<OrderedCounter>, String> {
-    let file = std::fs::File::open(path)
-        .map_err(|e| format!("{} 開啟失敗：{}", path.display(), e))?;
+    let file =
+        std::fs::File::open(path).map_err(|e| format!("{} 開啟失敗：{}", path.display(), e))?;
     let mut child = std::process::Command::new("rust-analyzer")
         .arg("symbols")
         .stdin(std::process::Stdio::from(file))
@@ -404,13 +398,11 @@ pub(crate) fn env_gate_messages() -> [&'static str; 3] {
 pub(crate) fn which(bin: &str) -> Option<PathBuf> {
     use std::os::unix::fs::PermissionsExt;
     let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path)
-        .map(|d| d.join(bin))
-        .find(|p| {
-            std::fs::metadata(p)
-                .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
-                .unwrap_or(false)
-        })
+    std::env::split_paths(&path).map(|d| d.join(bin)).find(|p| {
+        std::fs::metadata(p)
+            .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false)
+    })
 }
 
 /// Route a `code-reality graph_audit ...` invocation.
@@ -450,33 +442,45 @@ pub fn run(argv: &[&str]) -> ToolOutput {
     let gates = env_gate_messages();
     if which("rust-analyzer").is_none() {
         stderr.push_str(&crate::msg_line("FAIL", gates[0]));
-        return ToolOutput { stdout: String::new(), stderr, exit_code: 2 };
+        return ToolOutput {
+            stdout: String::new(),
+            stderr,
+            exit_code: 2,
+        };
     }
     if !graph.exists() {
         stderr.push_str(&crate::msg_line(
             "FAIL",
             &gates[1].replace("{graph}", &graph.display().to_string()),
         ));
-        return ToolOutput { stdout: String::new(), stderr, exit_code: 2 };
+        return ToolOutput {
+            stdout: String::new(),
+            stderr,
+            exit_code: 2,
+        };
     }
 
-    let (risk, audited, missing, errors, total_ra, warns) = match audit(&repo, &graph, all_files, None)
-    {
-        Ok(v) => v,
-        Err(e) => {
-            // Python crashes uncaught here (exit 1, empty stdout)
-            let mut out = ToolOutput::crash(e);
-            out.stderr.insert_str(0, &stderr);
-            return out;
-        }
-    };
+    let (risk, audited, missing, errors, total_ra, warns) =
+        match audit(&repo, &graph, all_files, None) {
+            Ok(v) => v,
+            Err(e) => {
+                // Python crashes uncaught here (exit 1, empty stdout)
+                let mut out = ToolOutput::crash(e);
+                out.stderr.insert_str(0, &stderr);
+                return out;
+            }
+        };
     for w in warns {
         stderr.push_str(&w);
     }
     // aggregate vacuous guard: all-zero symbols across an audited scope
     if audited > 0 && total_ra == 0 {
         stderr.push_str(&crate::msg_line("FAIL", gates[2]));
-        return ToolOutput { stdout: String::new(), stderr, exit_code: 2 };
+        return ToolOutput {
+            stdout: String::new(),
+            stderr,
+            exit_code: 2,
+        };
     }
 
     let stdout = if as_json {
@@ -551,5 +555,9 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         out
     };
     let exit_code = if missing.is_empty() { 0 } else { 1 };
-    ToolOutput { stdout, stderr, exit_code }
+    ToolOutput {
+        stdout,
+        stderr,
+        exit_code,
+    }
 }

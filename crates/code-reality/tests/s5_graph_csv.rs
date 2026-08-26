@@ -21,7 +21,6 @@ fn fixture_repo(tag: &str) -> PathBuf {
     std::fs::canonicalize(&repo).unwrap()
 }
 
-
 fn build_db(repo: &Path) -> PathBuf {
     let db = repo.join(".code-review-graph").join("graph.db");
     std::fs::create_dir_all(db.parent().unwrap()).unwrap();
@@ -37,7 +36,12 @@ fn build_db(repo: &Path) -> PathBuf {
         });
         spec.node_attrs.push((
             format!("{}::File", abs(rel)),
-            crg_fixture::NodeAttr { kind: "File", language: "rust", is_test: 0, community_id: None },
+            crg_fixture::NodeAttr {
+                kind: "File",
+                language: "rust",
+                is_test: 0,
+                community_id: None,
+            },
         ));
     }
     // community votes: a.py → {1: 2, 2: 2} (tie → id 1); b.py → {3}
@@ -57,22 +61,52 @@ fn build_db(repo: &Path) -> PathBuf {
         });
         spec.node_attrs.push((
             qname.to_string(),
-            crg_fixture::NodeAttr { kind: "Function", language: "rust", is_test: 0, community_id: Some(comm) },
+            crg_fixture::NodeAttr {
+                kind: "Function",
+                language: "rust",
+                is_test: 0,
+                community_id: Some(comm),
+            },
         ));
     }
     for (cid, name) in [(1, "core"), (2, "edge"), (3, "solo")] {
-        spec.communities.push((cid, name.to_string(), 1, "rust".to_string(), String::new()));
+        spec.communities
+            .push((cid, name.to_string(), 1, "rust".to_string(), String::new()));
     }
     let a = abs("pkg/a/mod.rs");
     let b = abs("pkg/b/mod.rs");
     let v = abs(".venv/x.rs");
     for (kind, s, t) in [
-        ("CALLS".to_string(), format!("{a}::Fn1"), format!("{b}::Fn5")),
-        ("IMPORTS_FROM".to_string(), format!("{a}::Fn2"), format!("{b}::Fn5")),
-        ("CALLS".to_string(), format!("{b}::Fn5"), format!("{a}::Fn1")),
-        ("INHERITS".to_string(), format!("{a}::Fn1"), format!("{v}::File")),
-        ("INHERITS".to_string(), format!("{a}::Fn1"), format!("{a}::Fn2")),
-        ("REFERENCES".to_string(), format!("{a}::Fn1"), format!("{b}::Fn5")),
+        (
+            "CALLS".to_string(),
+            format!("{a}::Fn1"),
+            format!("{b}::Fn5"),
+        ),
+        (
+            "IMPORTS_FROM".to_string(),
+            format!("{a}::Fn2"),
+            format!("{b}::Fn5"),
+        ),
+        (
+            "CALLS".to_string(),
+            format!("{b}::Fn5"),
+            format!("{a}::Fn1"),
+        ),
+        (
+            "INHERITS".to_string(),
+            format!("{a}::Fn1"),
+            format!("{v}::File"),
+        ),
+        (
+            "INHERITS".to_string(),
+            format!("{a}::Fn1"),
+            format!("{a}::Fn2"),
+        ),
+        (
+            "REFERENCES".to_string(),
+            format!("{a}::Fn1"),
+            format!("{b}::Fn5"),
+        ),
     ] {
         spec.edges.push((kind, s, t));
     }
@@ -141,7 +175,12 @@ fn quote_rules_comma_quote_newline() {
     });
     spec.node_attrs.push((
         format!("{abs}::File"),
-        crg_fixture::NodeAttr { kind: "File", language: "rust", is_test: 0, community_id: None },
+        crg_fixture::NodeAttr {
+            kind: "File",
+            language: "rust",
+            is_test: 0,
+            community_id: None,
+        },
     ));
     crg_fixture::make_crg_db(&db, &spec).unwrap();
     let g = load(&db, &repo).unwrap();
@@ -165,7 +204,12 @@ fn no_communities_case_renders_empty_fields() {
     });
     spec.node_attrs.push((
         format!("{abs}::File"),
-        crg_fixture::NodeAttr { kind: "File", language: "rust", is_test: 0, community_id: None },
+        crg_fixture::NodeAttr {
+            kind: "File",
+            language: "rust",
+            is_test: 0,
+            community_id: None,
+        },
     ));
     crg_fixture::make_crg_db(&db, &spec).unwrap();
     let g = load(&db, &repo).unwrap();
@@ -201,5 +245,7 @@ fn cli_ok_line_and_missing_db_crash() {
     assert!(out.stderr.contains("graph.db 不存在"), "{}", out.stderr);
     let out = run(&["graph_csv", "-h"]);
     assert_eq!(out.exit_code, 0);
-    assert!(out.stdout.starts_with("usage: graph_csv [-h] [--repo REPO] [--out-dir OUT_DIR]\n"));
+    assert!(out
+        .stdout
+        .starts_with("usage: graph_csv [-h] [--repo REPO] [--out-dir OUT_DIR]\n"));
 }

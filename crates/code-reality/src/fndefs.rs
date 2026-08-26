@@ -151,7 +151,9 @@ pub fn load_spans(db_path: &Path) -> Result<BTreeMap<String, Vec<FnSpan>>, Strin
             })
         })
         .map_err(|e| e.to_string())?;
-    let flat = rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+    let flat = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
     let mut map: BTreeMap<String, Vec<FnSpan>> = BTreeMap::new();
     for s in flat {
         map.entry(s.rel_path.clone()).or_default().push(s);
@@ -164,10 +166,7 @@ pub fn load_spans(db_path: &Path) -> Result<BTreeMap<String, Vec<FnSpan>>, Strin
 /// the index only if not already in hand — never builds the sidecar on
 /// miss); stale or corrupt → stderr WARN + rebuild; rebuild failure → WARN
 /// + protobuf spans (accelerator, not dependency). Returns (spans, stderr).
-pub fn spans_source(
-    index_path: &Path,
-    index: Option<&Index>,
-) -> Result<SpansWithStderr, String> {
+pub fn spans_source(index_path: &Path, index: Option<&Index>) -> Result<SpansWithStderr, String> {
     let mut stderr: Vec<String> = Vec::new();
     let path = fndefs_path(index_path);
     // Load-once slot: reused across the ladder's protobuf branches without

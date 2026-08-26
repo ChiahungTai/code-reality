@@ -9,7 +9,11 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 fn occ(symbol: &str, line: i32, is_def: bool, range_len: usize) -> Occurrence {
     let mut o = Occurrence::new();
     o.symbol = symbol.to_string();
-    o.range = if range_len >= 2 { vec![line, 0] } else { vec![] };
+    o.range = if range_len >= 2 {
+        vec![line, 0]
+    } else {
+        vec![]
+    };
     o.symbol_roles = if is_def { 1 } else { 0 };
     o
 }
@@ -50,7 +54,7 @@ fn type_method_matcher_requires_marker_or_trait_decl() {
     assert!(matches_query(IMPL_VARIANT, &q)); // marker [EventStoreLifecycle]
     assert!(matches_query(TRAIT_DECL, &q)); // trait decl Type#method
     assert!(matches_query(INHERENT, &q)); // marker
-    // name tail matches but neither marker nor trait decl
+                                          // name tail matches but neither marker nor trait decl
     assert!(!matches_query(
         "rust-analyzer cargo x 0.1.0 kernel/impl#[Other]open().",
         &q
@@ -106,17 +110,17 @@ fn fixture_index() -> Index {
         doc(
             "src/kernel.rs",
             vec![
-                occ(INHERENT, 543, true, 2), // DEF inherent
-                occ(IMPL_VARIANT, 1349, true, 2), // DEF impl variant
-                occ(INHERENT, 1355, false, 2), // ref 1
-                occ(INHERENT, 1741, false, 2), // ref 2
+                occ(INHERENT, 543, true, 2),                      // DEF inherent
+                occ(IMPL_VARIANT, 1349, true, 2),                 // DEF impl variant
+                occ(INHERENT, 1355, false, 2),                    // ref 1
+                occ(INHERENT, 1741, false, 2),                    // ref 2
                 occ("…#KernelEventStore#other().", 99, false, 2), // unrelated
             ],
         ),
         doc(
             "src/other.rs",
             vec![
-                occ(INHERENT, 12, false, 2), // cross-file ref 3
+                occ(INHERENT, 12, false, 2),     // cross-file ref 3
                 occ(IMPL_VARIANT, 30, false, 2), // ref of impl variant
             ],
         ),
@@ -134,7 +138,10 @@ fn find_defs_and_refs_scan_order_and_symbol_sort() {
     assert_eq!(symbols.len(), 2);
     assert_eq!(symbols[0].as_str(), IMPL_VARIANT);
     assert_eq!(symbols[1].as_str(), INHERENT);
-    assert_eq!(defs.get(INHERENT).unwrap(), &vec!["src/kernel.rs:544".to_string()]);
+    assert_eq!(
+        defs.get(INHERENT).unwrap(),
+        &vec!["src/kernel.rs:544".to_string()]
+    );
     assert_eq!(
         defs.get(IMPL_VARIANT).unwrap(),
         &vec!["src/kernel.rs:1350".to_string()]
@@ -191,10 +198,17 @@ fn report_empty_defs_is_warn_exit_1() {
 fn slot_resolution_is_repo_basename_keyed() {
     let tmp = tempfile::tempdir().unwrap();
     let p = default_index_path(tmp.path()).unwrap();
-    let base = tmp.path().file_name().unwrap().to_string_lossy().to_string();
+    let base = tmp
+        .path()
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
     assert_eq!(
         p,
-        expand_home(DEFAULT_INDEX_ROOT).join(base).join("index.scip")
+        expand_home(DEFAULT_INDEX_ROOT)
+            .join(base)
+            .join("index.scip")
     );
 }
 
@@ -246,7 +260,7 @@ fn source_line_variants() {
 
     // Meta stamped with the live head → both parts, no drift/stale/mismatch warns
     // (meta is written last → newer than index → no stale-stamp warn)
-    let head = git_head(&repo).unwrap();  // Ok variant
+    let head = git_head(&repo).unwrap(); // Ok variant
     std::fs::write(
         meta_path(&idx),
         format!(
@@ -278,7 +292,9 @@ fn source_line_variants() {
     .unwrap();
     let (line, warns) = source_line(&idx, Some(&repo));
     assert!(line.is_some());
-    assert!(warns.iter().any(|w| w.contains("repo HEAD 已離開 index 生成點")));
+    assert!(warns
+        .iter()
+        .any(|w| w.contains("repo HEAD 已離開 index 生成點")));
 
     // [SRC] index-only variant (stamped meta, no --repo): scip part alone.
     // Absent stamped_at key → no （date） suffix (Python get-default "").

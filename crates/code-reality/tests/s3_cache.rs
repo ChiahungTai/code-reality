@@ -51,7 +51,13 @@ fn protobuf_and_sqlite_faces_agree() {
         panic!("fresh db must select the sqlite face");
     };
 
-    for q in ["EventStoreLifecycle.open", "open", "my-open", "X.my_open", "run"] {
+    for q in [
+        "EventStoreLifecycle.open",
+        "open",
+        "my-open",
+        "X.my_open",
+        "run",
+    ] {
         let query = Query::parse(q);
         let pb_defs = code_reality::engine::find_defs(&loaded.index, &query);
         let sq_defs = code_reality::cache::sqlite_defs(&conn, &query).unwrap();
@@ -102,7 +108,11 @@ fn stale_guards_all_four_signals() {
     // 2. schema version mismatch
     tamper(&db, "UPDATE meta SET value = '9' WHERE key = 'schema'");
     let reason = stale_reason(&idx, &db).unwrap();
-    assert!(reason.contains("schema 版本不符（9 ≠ 1）"), "got: {}", reason);
+    assert!(
+        reason.contains("schema 版本不符（9 ≠ 1）"),
+        "got: {}",
+        reason
+    );
     build_db(&loaded.index, &db, "headsha").unwrap();
 
     // 3. sidecar head drift (meta.json appears with a different head)
@@ -132,7 +142,10 @@ fn open_face_no_db_never_builds() {
     let idx = fixture_copy(&tmp);
     let (face, _) = open_face(&idx).unwrap();
     assert!(matches!(face, Face::Protobuf { .. }));
-    assert!(!sqlite_path(&idx).exists(), "query miss must not create a db");
+    assert!(
+        !sqlite_path(&idx).exists(),
+        "query miss must not create a db"
+    );
 }
 
 #[test]
@@ -178,6 +191,9 @@ fn crash_leftover_tmp_is_cleaned_by_rebuild() {
     let tmpdb = db.with_file_name("index.scip.db.tmp");
     std::fs::write(&tmpdb, b"junk from a crashed build").unwrap();
     build_db(&loaded.index, &db, "headsha").unwrap();
-    assert!(!tmpdb.exists(), "leftover tmp must be removed before CREATE");
+    assert!(
+        !tmpdb.exists(),
+        "leftover tmp must be removed before CREATE"
+    );
     assert!(db.exists());
 }

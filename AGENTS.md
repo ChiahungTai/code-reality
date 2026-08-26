@@ -49,6 +49,8 @@ Installed via `cargo install --path ~/Github/code-reality/crates/code-reality`
 | Deletability safety net (hub_refs/hazard) | `code-reality hub_refs <symbol> --repo <repo> --hazard` | ✅ |
 | Boundary / export / narrative tool family | `code-reality <snapshot\|transition\|graph_csv\|boundary\|boundary_build\|chain_tour\|delta_tour\|tour_manifest\|tour_validate\|tour_upgrade\|runtime_edges> ...` | ✅ |
 | Unified MCP interface | stdio `code-reality-mcp --stdio` (default face: ZCode/Claude plugin in `plugin/`; repo-root `marketplace.json` = installable market) + streamable-http `127.0.0.1:8200/mcp` (launchd plist in `launchd/`, multi-harness sharing) | ✅ |
+| SCIP reference-edge export + union sidecar injection | `code-reality scip_edges --repo <repo> [--inject [--dry-run\|--json]]` (edge plane lands in the index-sibling `index.union.db`, never CRG graph.db) | ✅ |
+| graph_audit missing → graph.db node injection | `code-reality scip_nodes --repo <repo> [--dry-run] [--rollback] [--json]` (the sole graph.db write face; `extra {"tier":"SCIP"}` marker rollback + `VACUUM INTO` backup) | ✅ |
 
 ## Tests
 

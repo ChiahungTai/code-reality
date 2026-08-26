@@ -37,11 +37,9 @@ fn main() {
     // Reference occurrences (is_def = 0 mirrors cache::sqlite_refs_rows
     // semantics; ORDER BY seq mirrors insertion scan order).
     let db = index_path.with_file_name("index.scip.db");
-    let conn = rusqlite::Connection::open_with_flags(
-        &db,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .expect("open cache db");
+    let conn =
+        rusqlite::Connection::open_with_flags(&db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .expect("open cache db");
     let mut stmt = conn
         .prepare("SELECT symbol, rel_path, line FROM occurrences WHERE is_def = 0 ORDER BY seq")
         .expect("prepare scan");
@@ -66,9 +64,7 @@ fn main() {
         let res = code_reality::callers::attribute(rows, &spans);
         item_level += res.item_level.len();
         for c in &res.callers {
-            *edges
-                .entry((c.symbol.clone(), callee.clone()))
-                .or_insert(0) += c.sites.len();
+            *edges.entry((c.symbol.clone(), callee.clone())).or_insert(0) += c.sites.len();
         }
     }
     let mut w = File::create(format!("{out_dir}/a1_edges.tsv")).expect("edges out");

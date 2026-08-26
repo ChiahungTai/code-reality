@@ -12,9 +12,23 @@ use std::path::{Path, PathBuf};
 
 const SPEC: ToolSpec = ToolSpec {
     flags: &[
-        FlagSpec { long: "--repo", short: None, kind: Kind::Value { metavar: "REPO" } },
-        FlagSpec { long: "--tours-dir", short: None, kind: Kind::Value { metavar: "TOURS_DIR" } },
-        FlagSpec { long: "--apply", short: None, kind: Kind::StoreTrue },
+        FlagSpec {
+            long: "--repo",
+            short: None,
+            kind: Kind::Value { metavar: "REPO" },
+        },
+        FlagSpec {
+            long: "--tours-dir",
+            short: None,
+            kind: Kind::Value {
+                metavar: "TOURS_DIR",
+            },
+        },
+        FlagSpec {
+            long: "--apply",
+            short: None,
+            kind: Kind::StoreTrue,
+        },
     ],
     positionals: &[],
 };
@@ -66,7 +80,10 @@ fn line_pattern(line: &str) -> String {
 }
 
 fn step_str(step: &serde_json::Value, key: &str) -> String {
-    step.get(key).and_then(|v| v.as_str()).unwrap_or("").to_string()
+    step.get(key)
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string()
 }
 
 /// Buildable pattern for a step (`tour_upgrade.py:31-60`): declaration
@@ -89,9 +106,16 @@ pub fn build_step_pattern(step: &serde_json::Value, repo: &Path) -> Option<Strin
     if decl_re().is_match(target) {
         let pat = line_pattern(target);
         let hits = tour_validate::hits(&lines, &pat);
-        return if hits == vec![(ln - 1) as usize] { Some(pat) } else { None };
+        return if hits == vec![(ln - 1) as usize] {
+            Some(pat)
+        } else {
+            None
+        };
     }
-    let desc = step.get("description").and_then(|d| d.as_str()).unwrap_or("");
+    let desc = step
+        .get("description")
+        .and_then(|d| d.as_str())
+        .unwrap_or("");
     for m in backtick_decl().captures_iter(desc) {
         let cand = regex::Regex::new(&format!(
             r"^[ \t]*(?:pub\s+)?(?:async\s+)?(?:unsafe\s+)?{}\s+{}\b",
@@ -105,7 +129,10 @@ pub fn build_step_pattern(step: &serde_json::Value, repo: &Path) -> Option<Strin
             .filter(|(_, x)| cand.is_match(x))
             .map(|(i, _)| i as i64)
             .collect();
-        let near: Vec<i64> = hits.into_iter().filter(|i| (i - (ln - 1)).abs() <= 1).collect();
+        let near: Vec<i64> = hits
+            .into_iter()
+            .filter(|i| (i - (ln - 1)).abs() <= 1)
+            .collect();
         if near.len() == 1 {
             return Some(line_pattern(lines[near[0] as usize]));
         }
@@ -123,8 +150,16 @@ pub fn sanitize_brackets(desc: &str) -> (String, usize) {
     for m in bracket().captures_iter(desc) {
         let whole = m.get(0).unwrap();
         let (start, end) = (whole.start(), whole.end());
-        let before = if start > 0 { &desc[start - 1..start] } else { "" };
-        let after = if end < desc.len() { &desc[end..end + 1] } else { "" };
+        let before = if start > 0 {
+            &desc[start - 1..start]
+        } else {
+            ""
+        };
+        let after = if end < desc.len() {
+            &desc[end..end + 1]
+        } else {
+            ""
+        };
         if "]([".contains(before) || "](".contains(after) {
             continue;
         }
@@ -164,9 +199,10 @@ pub fn revive_crossrefs(desc: &str, key_by_num: &BTreeMap<i64, String>) -> (Stri
 }
 
 fn set_step_desc(step: &mut serde_json::Value, new_desc: &str) {
-    step.as_object_mut()
-        .unwrap()
-        .insert("description".into(), serde_json::Value::String(new_desc.to_string()));
+    step.as_object_mut().unwrap().insert(
+        "description".into(),
+        serde_json::Value::String(new_desc.to_string()),
+    );
 }
 
 /// Mutate one tour in place (`tour_upgrade.py:99-123`); returns the
@@ -181,7 +217,12 @@ pub fn upgrade_tour(
     let mut refs = 0;
     if let Some(steps) = tour.get_mut("steps").and_then(|s| s.as_array_mut()) {
         for step in steps.iter_mut() {
-            if step.get("pattern").and_then(|p| p.as_str()).map(|p| !p.is_empty()).unwrap_or(false) {
+            if step
+                .get("pattern")
+                .and_then(|p| p.as_str())
+                .map(|p| !p.is_empty())
+                .unwrap_or(false)
+            {
                 continue;
             }
             if let Some(pat) = build_step_pattern(step, repo) {
@@ -219,7 +260,11 @@ pub fn run(argv: &[&str]) -> ToolOutput {
     };
     let values = match parse(&SPEC, toks) {
         Outcome::Help => {
-            return ToolOutput { stdout: HELP.to_string(), stderr: String::new(), exit_code: 0 };
+            return ToolOutput {
+                stdout: HELP.to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            };
         }
         Outcome::Err(msg) => return ToolOutput::fail(msg),
         Outcome::Ok { values, .. } => values,
@@ -285,7 +330,11 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         ));
     }
     if !apply {
-        return ToolOutput { stdout, stderr: String::new(), exit_code: 0 };
+        return ToolOutput {
+            stdout,
+            stderr: String::new(),
+            exit_code: 0,
+        };
     }
     let root = repo.join(&tours_dir);
     for (rel, tour) in &tours {

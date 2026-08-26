@@ -13,14 +13,44 @@ use std::path::{Path, PathBuf};
 
 const SPEC: ToolSpec = ToolSpec {
     flags: &[
-        FlagSpec { long: "--output", short: Some('o'), kind: Kind::Value { metavar: "OUTPUT" } },
-        FlagSpec { long: "--top", short: None, kind: Kind::Value { metavar: "TOP" } },
-        FlagSpec { long: "--include", short: None, kind: Kind::Value { metavar: "INCLUDE" } },
-        FlagSpec { long: "--exclude", short: None, kind: Kind::Value { metavar: "EXCLUDE" } },
+        FlagSpec {
+            long: "--output",
+            short: Some('o'),
+            kind: Kind::Value { metavar: "OUTPUT" },
+        },
+        FlagSpec {
+            long: "--top",
+            short: None,
+            kind: Kind::Value { metavar: "TOP" },
+        },
+        FlagSpec {
+            long: "--include",
+            short: None,
+            kind: Kind::Value { metavar: "INCLUDE" },
+        },
+        FlagSpec {
+            long: "--exclude",
+            short: None,
+            kind: Kind::Value { metavar: "EXCLUDE" },
+        },
         // BooleanOptionalAction pair (default ON; --no-repo-only disables)
-        FlagSpec { long: "--repo-only", short: None, kind: Kind::StoreTrue },
-        FlagSpec { long: "--no-repo-only", short: None, kind: Kind::StoreTrue },
-        FlagSpec { long: "--repo-root", short: None, kind: Kind::Value { metavar: "REPO_ROOT" } },
+        FlagSpec {
+            long: "--repo-only",
+            short: None,
+            kind: Kind::StoreTrue,
+        },
+        FlagSpec {
+            long: "--no-repo-only",
+            short: None,
+            kind: Kind::StoreTrue,
+        },
+        FlagSpec {
+            long: "--repo-root",
+            short: None,
+            kind: Kind::Value {
+                metavar: "REPO_ROOT",
+            },
+        },
     ],
     positionals: &["trace"],
 };
@@ -59,9 +89,7 @@ fn path_suffix_re() -> &'static regex::Regex {
 
 /// `fn (path:line)` → `path`; no suffix (genexpr import noise) → None.
 pub fn event_path(name: &str) -> Option<String> {
-    path_suffix_re()
-        .captures(name)
-        .map(|m| m[1].to_string())
+    path_suffix_re().captures(name).map(|m| m[1].to_string())
 }
 
 pub fn load_trace(path: &Path) -> Result<(Value, String), String> {
@@ -72,16 +100,21 @@ pub fn load_trace(path: &Path) -> Result<(Value, String), String> {
     if size > 200 * 1024 * 1024 {
         warn.push_str(&format!(
             "[WARN] {} {}MB：json.load 中（數十秒級）\n",
-            path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+            path.file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
             size / 1024 / 1024
         ));
     }
-    let text = std::fs::read_to_string(path)
-        .map_err(|e| format!("{} 讀取失敗：{}", path.display(), e))?;
+    let text =
+        std::fs::read_to_string(path).map_err(|e| format!("{} 讀取失敗：{}", path.display(), e))?;
     let data: Value = serde_json::from_str(&text)
         .map_err(|e| format!("{} JSON 解析失敗：{}", path.display(), e))?;
     if !data.is_object() || data.get("traceEvents").is_none() {
-        return Err(format!("非 viztracer 格式（缺 traceEvents）: {}", path.display()));
+        return Err(format!(
+            "非 viztracer 格式（缺 traceEvents）: {}",
+            path.display()
+        ));
     }
     Ok((data, warn))
 }
@@ -122,9 +155,16 @@ pub fn extract_edges(events: &[Value]) -> Result<Vec<(String, String, f64)>, Str
                 Value::String(s) => s.clone(),
                 other => other.to_string(),
             };
-            let name = e.get("name").and_then(Value::as_str).unwrap_or("").to_string();
+            let name = e
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
             let ts = e.get("ts").and_then(Value::as_i64).unwrap_or(0);
-            by_tid.entry((pid, tid_key)).or_default().push((ts, dur, name));
+            by_tid
+                .entry((pid, tid_key))
+                .or_default()
+                .push((ts, dur, name));
         }
     }
     if by_tid.values().all(|g| g.is_empty()) {
@@ -155,7 +195,10 @@ pub fn extract_edges(events: &[Value]) -> Result<Vec<(String, String, f64)>, Str
 /// Keep edges with at least one endpoint path inside the repo
 /// (`runtime_edges.py:108-129`); name-level cache — distinct names are
 /// orders of magnitude fewer than edges on giant traces.
-pub fn repo_only_filter(edges: &[(String, String, f64)], repo_root: &Path) -> Vec<(String, String, f64)> {
+pub fn repo_only_filter(
+    edges: &[(String, String, f64)],
+    repo_root: &Path,
+) -> Vec<(String, String, f64)> {
     let root = crate::common::resolve(repo_root);
     let mut cache: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
     let in_repo = |name: &str, cache: &mut std::collections::HashMap<String, bool>| -> bool {
@@ -247,8 +290,14 @@ fn filter_rows(
     exclude: Option<&str>,
 ) -> Vec<serde_json::Map<String, Value>> {
     let contains = |r: &serde_json::Map<String, Value>, s: &str| {
-        r.get("caller").and_then(Value::as_str).map(|v| v.contains(s)).unwrap_or(false)
-            || r.get("callee").and_then(Value::as_str).map(|v| v.contains(s)).unwrap_or(false)
+        r.get("caller")
+            .and_then(Value::as_str)
+            .map(|v| v.contains(s))
+            .unwrap_or(false)
+            || r.get("callee")
+                .and_then(Value::as_str)
+                .map(|v| v.contains(s))
+                .unwrap_or(false)
     };
     rows.into_iter()
         .filter(|r| include.map(|s| contains(r, s)).unwrap_or(true))
@@ -263,10 +312,17 @@ pub fn run(argv: &[&str]) -> ToolOutput {
     };
     let (values, positionals) = match parse(&SPEC, toks) {
         Outcome::Help => {
-            return ToolOutput { stdout: HELP.to_string(), stderr: String::new(), exit_code: 0 };
+            return ToolOutput {
+                stdout: HELP.to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            };
         }
         Outcome::Err(msg) => return ToolOutput::fail(msg),
-        Outcome::Ok { values, positionals } => (values, positionals),
+        Outcome::Ok {
+            values,
+            positionals,
+        } => (values, positionals),
     };
     let trace_path = PathBuf::from(&positionals[0]);
     let repo_root = values
@@ -276,7 +332,10 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     // BooleanOptionalAction: default ON; --no-repo-only disables
     let repo_only = !values.contains_key("--no-repo-only");
-    let top_s = values.get("--top").and_then(|v| v.clone()).unwrap_or_else(|| "0".into());
+    let top_s = values
+        .get("--top")
+        .and_then(|v| v.clone())
+        .unwrap_or_else(|| "0".into());
     let top: usize = match top_s.parse() {
         Ok(v) => v,
         Err(_) => {
@@ -324,7 +383,10 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         .and_then(|v| v.clone())
         .map(PathBuf::from)
         .unwrap_or_else(|| {
-            let stem = trace_path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+            let stem = trace_path
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default();
             trace_path.with_file_name(format!("{stem}.edges.json"))
         });
     let meta = match make_meta(
@@ -385,5 +447,9 @@ pub fn run(argv: &[&str]) -> ToolOutput {
             pids
         ));
     }
-    ToolOutput { stdout, stderr: String::new(), exit_code: 0 }
+    ToolOutput {
+        stdout,
+        stderr: String::new(),
+        exit_code: 0,
+    }
 }

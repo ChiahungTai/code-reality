@@ -24,10 +24,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 /// defs map + refs map from a query face.
-type QueryResults = (
-    BTreeMap<String, Vec<String>>,
-    HashMap<String, Vec<String>>,
-);
+type QueryResults = (BTreeMap<String, Vec<String>>, HashMap<String, Vec<String>>);
 
 const FLAGS: [&str; 9] = [
     "--index",
@@ -474,7 +471,11 @@ fn build_cache_mode(index_path: &Path, stderr: &mut String) -> ToolOutput {
                     }
                     stderr.push_str(&crate::msg_line(
                         "OK",
-                        &format!("fn_defs sidecar built：{}（{} spans）", fndefs_db.display(), n),
+                        &format!(
+                            "fn_defs sidecar built：{}（{} spans）",
+                            fndefs_db.display(),
+                            n
+                        ),
                     ));
                     ToolOutput {
                         stdout: crate::msg_line(
@@ -592,8 +593,7 @@ fn callers_front(
     if defs.is_empty() {
         return Ok((src_line, None));
     }
-    let (spans, span_stderr) =
-        crate::fndefs::spans_source(index_path, oracle.index())?;
+    let (spans, span_stderr) = crate::fndefs::spans_source(index_path, oracle.index())?;
     for l in span_stderr {
         stderr.push_str(&l);
     }

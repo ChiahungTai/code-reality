@@ -6,6 +6,8 @@
 > **EP Review（2026-08-26，雙獨立審查＋judge 覆核）**：🔴×1＋🟡×10 已回寫＋第二
 > 審查補遺 5 項入表（rows 12-16）；REFERENCES 語義 gate 已結（S1 裁決塊）；
 > verdict＝**可執行**（S1 邊面 sidecar／S2 節點面照舊／S3/S5 不變）。
+> Baseline: `00bcd07`（build 起點；snapshot：
+> `~/.mosaic/code-reality/snapshots/code-reality-00bcd07d.json`）
 
 ## EP Review Findings
 
@@ -13,7 +15,7 @@
 |----|--------|---------|------|------|------|
 | 1 | 🔴 必須修正 | S1 | 「全部下游立即受益」vs「對現有讀者隱形」矛盾：code-reality 讀面只認三 kind（common.rs:17）＝隱形且零受益；CRG engine 讀 REFERENCES（constants.py:62 權重 0.6、refactor.py:531 dead-code、communities.py:815,1042 全 kind）＝不隱形且語義漂移未裁決 | **已裁決＝(A) sidecar**（judge 委任裁決 2026-08-26，user 可推翻；S1 裁決塊） | implemented |
 | 2 | 🟡 建議 | S1 | 注入執行器本體未指定 | `scip_edges --inject [--dry-run]` 唯一寫入面＋CLI 註冊＋模組清單 | implemented |
-| 3 | 🟡 建議 | S1 | qname 映射契約缺失（SCIP scheme ↔ CRG 絕對路徑 qname 不相交；communities qn_to_idx drop 原樣符號） | S1 補映射契約工作項 | implemented |
+| 3 | 🟡 建議 | S1 | qname 映射契約缺失（SCIP scheme ↔ CRG 絕對路徑 qname 不相交；communities qn_to_idx drop 原樣符號） | S1 補映射契約工作項（映射器挪 S5——見 row 20） | implemented（映射→S5） |
 | 4 | 🟡 建議 | S2 | nodes 表無 provenance 欄位（schema 實查）→ 節點回滾僅剩 backup | extra 塞 {"tier":"SCIP"} 標記 | implemented |
 | 5 | 🟡 建議 | S2 | qualified_name UNIQUE 碰撞策略未定 | 存在即 skip＋碰撞計數報告 | implemented |
 | 6 | 🟡 建議 | S1 | 排序契約漏增量面（CRG incremental 按檔 DELETE 刪 SCIP 行） | 契約擴至任何 CRG 寫入後重跑注入 | implemented |
@@ -22,11 +24,15 @@
 | 9 | 🟡 建議 | S1 | 無測試計畫（冪等/回滾/過濾/匯出） | 列最小不變項測試 | implemented |
 | 10 | 🟡 建議 | 全域 | Scenario Matrix 缺席（含實質寫入步驟） | S1 補最小場景表 | implemented |
 | 11 | 🟡 建議 | S5 | POC 無量化 pass bar；ai-rules 無 CRG graph 未註明 | 補判準量化要求＋語料註記 | implemented |
-| 12 | 🔴（二審） | S1 | upsert 鍵碰撞：edges 無 UNIQUE 約束（原生 5-tuple 重複 15 組）、CRG `upsert_edge` 比對鍵不含 tier（graph.py:235-266）→ 沿用則同鍵改寫原生行 tier、tier-DELETE 回滾誤刪原生邊 | (A) 裁決下 sidecar 自有 schema 自訂 UNIQUE 鍵（雙名並存：SCIP symbol＋qname） | implemented |
+| 12 | 🔴（二審） | S1 | upsert 鍵碰撞：edges 無 UNIQUE 約束（原生 5-tuple 重複 15 組）、CRG `upsert_edge` 比對鍵不含 tier（graph.py:235-266）→ 沿用則同鍵改寫原生行 tier、tier-DELETE 回滾誤刪原生邊 | (A) 裁決下 sidecar 自有 schema 自訂 UNIQUE 鍵（雙名並存：SCIP symbol＋qname——**挪 S5**，見 row 20） | implemented（雙名→S5） |
 | 13 | 🟡（二審） | S1 | 前置條件缺：SCIP sidecar 在場＋index 新鮮度（實測 index 8/24 比 graph.db 8/25 舊）＋邊界（graph.db 缺失走 protobuf 面等） | S1 護欄補前置清單 | implemented |
 | 14 | 🟡（二審） | S1 | 邊面驗收無數字（外部符號過濾後注入量未知） | sidecar 邊數對帳（COUNT＝匯出面行數＋過濾率） | implemented |
 | 15 | ℹ️（二審） | S1 | 「updated_at 掃除＝對齊 CRG 慣例」歸因不精確——CRG 是 file-scoped DELETE＋重插（graph.py:267-270） | 措辭修正為自有設計 | implemented |
 | 16 | ℹ️（二審） | S2 | CRG rebuild/incremental 對已注入節點的命運未寫（file-scoped remove 可能清除） | 補「任何 CRG 寫入後重跑節點注入」 | implemented |
+| 17 | 🟡（build 審） | S2 | 注入列 file_path/qname 未 resolve——非 canonical 路徑（macOS `/var` symlink）下 analytic residual 與 live re-audit 背離（模型前提未被代碼保證） | 改 `resolve()` 形態（qname＋file_path） | implemented |
+| 18 | 🟡（build 審） | S2 | audit errors 捨棄＋無 aggregate guard——RA 全面失效時 missing=0 → 假乾淨「全收斂」 | errors 進報告（JSON 鍵＋`[WARN]` 行） | implemented |
+| 19 | 🟡（build 審） | S2 | rollback 僅 lib fn、無 CLI 操作面 | `scip_nodes --rollback`（marker 刪除＋計數） | implemented |
+| 20 | 🟡（build 審） | S1 | qname 雙名並存／映射器未實作但 rows 3/12 標 implemented | **裁決：映射挪 S5**（消費端在那裡；sidecar 可重生零遷移債，YAGNI）——本行同步修正 rows 3/12 的記錄 | implemented |
 > Source route: `ep-rust-migration.md` v1+ 條款（B1/B2 圖引擎研究→user 裁決；SCIP 邊注入
 > graph.db NT 861 缺差→0；CRG MCP 退役）。User 2026-08-26 定調端局設想：
 > 「高度整合 rust+python 的 rust 強化版 CRG，利用 CRG＋scip-callgraph」。
@@ -106,12 +112,12 @@ reentries 1／depth2=0，逐項命中）。兩個 S3 設計註記：closure 種�
 2. **qname 映射契約（最大未列工作項，審查 🟡 補）**：SCIP scheme
    （`rust-analyzer cargo ...`）↔ CRG qname（絕對路徑 `.../file.rs::fn` 形態）——
    原樣注入則 communities `qn_to_idx` 全 drop（隱形成真、受益歸零）；映射器
-   雙向（注入用＋聯集查詢用），為 S5 共用面具體化
+   雙向（注入用＋聯集查詢用），為 S5 共用面具體化（2026-08-26 build 裁決：S1 僅存 SCIP symbol，映射器與雙名欄位挪 S5——row 20）
 3. 注入設計護欄（(A) sidecar 形態；graph.db 邊面零寫入）：
    - **sidecar schema 自主**：union-edge db 放 sidecar home（`~/.mosaic/code-reality/
      scip/<repo>/`，cache/fndefs 機制現成）；自有 UNIQUE 鍵（二審 🔴：CRG edges 無
      UNIQUE 約束、`upsert_edge` 比對鍵不含 tier〔graph.py:235-266〕——自有 schema
-     不遷就 CRG upsert 語義）；行存**雙名並存**（SCIP symbol＋映射 qname——映射
+     不遷就 CRG upsert 語義）；行存**雙名並存（挪 S5）**（SCIP symbol＋映射 qname——映射
      壓力從「必須無損」降為「查詢便利」）＋`kind='REFERENCES'`（語義軸）＋
      `provenance='SCIP'`
    - 全量注入（非 delta-only）：聯集查詢（S3 引擎／MCP）自取全量
@@ -121,7 +127,7 @@ reentries 1／depth2=0，逐項命中）。兩個 S3 設計註記：closure 種�
      ＋重插，不沿用）
    - **前置（二審補）**：SCIP sidecar 在場＋新鮮度 gate（沿用 scip_refs WARN 語義；
      實測 index 8/24 比 graph.db 8/25 舊）；邊界情況（graph.db 缺失／cache 缺失）
-     沿用讀面失敗模式
+     沿用讀面失敗模式（邊面新鮮度 gate 由節點面承擔——邊面隨 index 全量重生；節點面 WARN 已落地）
    - 排序契約隨邊面消失（sidecar 單寫入者、免 1.6GB backup）；S2 節點面自守
      CRG 寫入後重跑（見 S2）
 4. **S1 場景表（最小）**：
@@ -131,16 +137,18 @@ reentries 1／depth2=0，逐項命中）。兩個 S3 設計註記：closure 種�
    | 複注入 | 零淨增（upsert 冪等） |
    | index 重生 | stale-sweep 掃除離開 index 的舊 SCIP 邊 |
    | 回滾 | 刪 sidecar 檔即回滾——graph.db 全程不受影響 |
-   | 注入後 graph_audit | 計數穩定（missing 走 S2，不受邊注入影響） |
+   | 注入後 graph_audit | 計數穩定（missing 走 S2，不受邊注入影響；(A) 下結構性成立——scip_edges 不開 graph.db，免測） |
 5. **測試（最小不變項）**：冪等複注入零增長；刪 sidecar 重注冪等；外部符號過濾
    （std/core 排除率）；`scip_edges` 匯出正確性（對拍 example 產物）
 6. 驗收：NT `graph_audit --json` missing 861→0（節點面走 S2，同批結算）；sidecar
-   邊數對帳（COUNT＝匯出面行數，外部符號過濾率進報告）；CRG-only 92,785 清單
-   歸檔明示（不在注入範圍）
+   邊數對帳（COUNT＝匯出面行數，外部符號過濾率進報告）；CRG-only 92,785 不在注入範圍（清單可由 compare.py＋example 從 crg_calls.tsv.gz 重生——見 POC 段）
 
 ### S2 — 節點面 861 收斂
 graph_audit missing 名單 → SCIP 符號 → graph.db nodes 注入（名稱對映規則＝既有
 `scip_refs --audit` 對帳邏輯）。與 S1 同批驗收。
+（build 註：原「同步落 id 清單檔」由 extra marker 精確匹配取代——marker 即可
+還原 id 集，清單檔冗餘；跨庫監測項：CRG 若對同 qname upsert 改寫 extra 會洗掉
+marker——「CRG 寫入後重跑注入」慣例同時恢復 marker 與資料。）
 
 審查補強（🟡）：nodes 表無 provenance 欄位（schema 實查）——
 - **回滾**：注入節點 `extra` 塞 `{"tier":"SCIP"}`（回滾＝extra 標記 DELETE，
@@ -153,6 +161,17 @@ graph_audit missing 名單 → SCIP 符號 → graph.db nodes 注入（名稱對
 - **rebuild 語義（二審補）**：任何 CRG 寫入（build／incremental file-scoped
   remove）後重跑節點注入——upsert on qualified_name 與原生列共存；被 remove
   清除者重跑冪等恢復
+
+**NT L4 實測（2026-08-26，build 段結算）**：861 → **596**（inserted 330、淨封閉
+265 項；analytic residual 與 live re-audit 兩次精確一致）。殘餘 596 為**結構性**
+，非注入器缺口——①71 項 mapped-but-qname-occupied（雙鍵命中但 `<abs>::<name>`
+節點已存在，如 CRG 的 `Type.method` 形態佔位）；②525 項 index-universe 外
+（離線重現精確命中：capnp 生成檔 `data_capnp.rs` 在 index **整檔零 occurrence**
+——rust-analyzer SCIP 不含該檔；test cfg 變體、trait-impl 同名多實例如
+`from(2/200)`）。qname UNIQUE 的節點模型表達不了同檔同名多實例——**861→0 在
+此設計下不可達，驗收修訂為「可封閉集歸零」**（複跑 injected=0 已證封閉集耗盡；
+殘餘清單在 `graph_audit --json` missing 面永久可查）。另：backup 改 `VACUUM
+INTO`（`fs::copy` 對 WAL-mode db 不健全——實測裸拷開不了 readonly）。
 
 ### S3 — B1/B2 圖引擎裁決報告（研究段，不改碼）
 - communities：Rust 生態評估（community-detection crate / Leiden port）vs 沿用 CRG Python 計算
@@ -188,7 +207,8 @@ protobuf 本身；SCIP 只是 rust-analyzer 的序列化形態，換 producer �
 
 ## 驗收彙總
 
-- S1/S2：861→0（NT 基準重跑）＋sidecar 邊數對帳＋形態裁決紀錄（(A) sidecar，
+- S1/S2：**可封閉集歸零**（NT 實測 861→596，殘餘結構性——見 S2 L4 段）＋
+  sidecar 邊數對帳（182,137＝edges_workspace）＋形態裁決紀錄（(A) sidecar，
   S1 裁決塊）
 - S3：裁決報告（含 POC 數字與本檔證據段引用）
 - 回退：邊面＝刪 sidecar（graph.db 不受影響）；節點面＝extra 標記 DELETE＋

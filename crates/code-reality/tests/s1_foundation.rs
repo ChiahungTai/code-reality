@@ -22,9 +22,11 @@ fn connect_ro_immutable_branch_without_wal() {
     crg_fixture::make_crg_db(&db, &spec).unwrap();
     let conn = connect_ro(&db).expect("immutable branch opens");
     let v: String = conn
-        .query_row("SELECT value FROM metadata WHERE key='git_head_sha'", [], |r| {
-            r.get(0)
-        })
+        .query_row(
+            "SELECT value FROM metadata WHERE key='git_head_sha'",
+            [],
+            |r| r.get(0),
+        )
         .unwrap();
     assert_eq!(v, "abc");
 }
@@ -41,9 +43,11 @@ fn connect_ro_mode_ro_branch_with_wal_file() {
     std::fs::write(db.with_file_name("graph.db-wal"), b"").unwrap();
     let conn = connect_ro(&db).expect("mode=ro branch opens with -wal present");
     let v: String = conn
-        .query_row("SELECT value FROM metadata WHERE key='git_head_sha'", [], |r| {
-            r.get(0)
-        })
+        .query_row(
+            "SELECT value FROM metadata WHERE key='git_head_sha'",
+            [],
+            |r| r.get(0),
+        )
         .unwrap();
     assert_eq!(v, "abc");
 }
@@ -73,7 +77,10 @@ fn make_meta_key_order_and_injected_commit() {
     )
     .unwrap();
     let keys: Vec<&String> = meta.keys().collect();
-    assert_eq!(keys, vec!["repo", "commit", "created_at", "tool", "label", "n"]);
+    assert_eq!(
+        keys,
+        vec!["repo", "commit", "created_at", "tool", "label", "n"]
+    );
     assert_eq!(meta["repo"], json!("myrepo"));
     assert_eq!(meta["commit"], json!("0123456789abcdef"));
     let created = meta["created_at"].as_str().unwrap();
@@ -101,7 +108,11 @@ fn d2_time_oracle_pinned() {
         ("1970-06-01T00:00:00", 13_017_600),
         ("2027-03-14T23:59:59", 1_805_039_999),
     ] {
-        assert_eq!(code_reality::common::parse_iso_to_epoch(s), Some(epoch), "{s}");
+        assert_eq!(
+            code_reality::common::parse_iso_to_epoch(s),
+            Some(epoch),
+            "{s}"
+        );
     }
 }
 
@@ -117,5 +128,7 @@ fn tooloutput_fail_shape() {
 fn json_indent1_pretty_shapes() {
     let v = json!({"_meta": {"repo": "r", "n": 1}, "files": [], "edges": [["a","b","CALLS"]]});
     let s = to_json_indent1(&v);
-    assert!(s.starts_with("{\n \"_meta\": {\n  \"repo\": \"r\",\n  \"n\": 1\n },\n \"files\": [],\n"));
+    assert!(
+        s.starts_with("{\n \"_meta\": {\n  \"repo\": \"r\",\n  \"n\": 1\n },\n \"files\": [],\n")
+    );
 }

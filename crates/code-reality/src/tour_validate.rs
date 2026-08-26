@@ -12,9 +12,23 @@ use std::path::{Path, PathBuf};
 
 const SPEC: ToolSpec = ToolSpec {
     flags: &[
-        FlagSpec { long: "--repo", short: None, kind: Kind::Value { metavar: "REPO" } },
-        FlagSpec { long: "--tours-dir", short: None, kind: Kind::Value { metavar: "TOURS_DIR" } },
-        FlagSpec { long: "--manifest", short: None, kind: Kind::StoreTrue },
+        FlagSpec {
+            long: "--repo",
+            short: None,
+            kind: Kind::Value { metavar: "REPO" },
+        },
+        FlagSpec {
+            long: "--tours-dir",
+            short: None,
+            kind: Kind::Value {
+                metavar: "TOURS_DIR",
+            },
+        },
+        FlagSpec {
+            long: "--manifest",
+            short: None,
+            kind: Kind::StoreTrue,
+        },
     ],
     positionals: &[],
 };
@@ -78,10 +92,10 @@ pub fn iter_tours(
             .strip_prefix(repo)
             .map(|p| p.to_string_lossy().replace('\\', "/"))
             .unwrap_or_else(|_| f.to_string_lossy().into_owned());
-        let text = std::fs::read_to_string(&f)
-            .map_err(|e| format!("{} 讀取失敗：{}", f.display(), e))?;
-        let tour: serde_json::Value = serde_json::from_str(&text)
-            .map_err(|e| format!("JSON parse: {e}"))?;
+        let text =
+            std::fs::read_to_string(&f).map_err(|e| format!("{} 讀取失敗：{}", f.display(), e))?;
+        let tour: serde_json::Value =
+            serde_json::from_str(&text).map_err(|e| format!("JSON parse: {e}"))?;
         out.push((rel, tour));
     }
     Ok(out)
@@ -90,9 +104,11 @@ pub fn iter_tours(
 pub fn key_index(tours: &[TourPair]) -> BTreeMap<String, Vec<String>> {
     let mut idx: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for (rel, d) in tours {
-        idx.entry(ts_key(d.get("title").and_then(|t| t.as_str()).unwrap_or("")))
-            .or_default()
-            .push(rel.clone());
+        idx.entry(ts_key(
+            d.get("title").and_then(|t| t.as_str()).unwrap_or(""),
+        ))
+        .or_default()
+        .push(rel.clone());
     }
     idx
 }
@@ -115,7 +131,8 @@ fn tour_ref() -> &'static fancy_regex::Regex {
     // lookahead-bearing consumer pattern — fancy-regex (lookaround port)
     static RE: std::sync::OnceLock<fancy_regex::Regex> = std::sync::OnceLock::new();
     RE.get_or_init(|| {
-        fancy_regex::Regex::new(r"(?:\[([^\]]+)\])?\[(?=\s*[^\]\s])([^\]#]+)?(?:#(\d+))?\](?!\()").unwrap()
+        fancy_regex::Regex::new(r"(?:\[([^\]]+)\])?\[(?=\s*[^\]\s])([^\]#]+)?(?:#(\d+))?\](?!\()")
+            .unwrap()
     })
 }
 
@@ -134,7 +151,11 @@ fn find_tour_refs(desc: &str) -> Vec<TourRefMatch> {
     let mut out = Vec::new();
     for m in tour_ref().captures_iter(desc).flatten() {
         let g = |i: usize| m.get(i).map(|g| g.as_str().to_string());
-        out.push(TourRefMatch { text: g(1), key: g(2), num: g(3) });
+        out.push(TourRefMatch {
+            text: g(1),
+            key: g(2),
+            num: g(3),
+        });
     }
     out
 }
@@ -151,9 +172,16 @@ pub fn check_links(
 ) -> (Vec<String>, usize) {
     let mut fails = Vec::new();
     let mut n_links = 0;
-    let steps = tour.get("steps").and_then(|s| s.as_array()).cloned().unwrap_or_default();
+    let steps = tour
+        .get("steps")
+        .and_then(|s| s.as_array())
+        .cloned()
+        .unwrap_or_default();
     for (i, step) in steps.iter().enumerate() {
-        let desc = step.get("description").and_then(|d| d.as_str()).unwrap_or("");
+        let desc = step
+            .get("description")
+            .and_then(|d| d.as_str())
+            .unwrap_or("");
         for m in find_tour_refs(desc) {
             let key = m.key.clone().unwrap_or_default().trim().to_string();
             let hits = idx.get(&key).cloned().unwrap_or_default();
@@ -208,12 +236,18 @@ pub fn check_anchors(
 ) -> (Vec<String>, usize, usize) {
     let mut fails = Vec::new();
     let (mut exact, mut corrected) = (0, 0);
-    let steps = tour.get("steps").and_then(|s| s.as_array()).cloned().unwrap_or_default();
+    let steps = tour
+        .get("steps")
+        .and_then(|s| s.as_array())
+        .cloned()
+        .unwrap_or_default();
     for (i, step) in steps.iter().enumerate() {
         let f = step.get("file").and_then(|v| v.as_str()).unwrap_or("");
         let ln = step.get("line").and_then(|v| v.as_i64());
         let pat = step.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
-        let (Some(ln), true) = (ln, !f.is_empty()) else { continue };
+        let (Some(ln), true) = (ln, !f.is_empty()) else {
+            continue;
+        };
         if pat.is_empty() {
             continue;
         }
@@ -227,7 +261,9 @@ pub fn check_anchors(
         let rx = regex::Regex::new(pat).ok();
         let anchored = ln >= 1
             && ((ln as usize) <= lines.len())
-            && rx.map(|r| r.is_match(lines[(ln - 1) as usize])).unwrap_or(false);
+            && rx
+                .map(|r| r.is_match(lines[(ln - 1) as usize]))
+                .unwrap_or(false);
         if anchored {
             exact += 1;
         } else {
@@ -256,9 +292,16 @@ pub fn check_anchors(
 
 pub fn check_files(rel: &str, tour: &serde_json::Value, repo: &Path) -> Vec<String> {
     let mut fails = Vec::new();
-    let steps = tour.get("steps").and_then(|s| s.as_array()).cloned().unwrap_or_default();
+    let steps = tour
+        .get("steps")
+        .and_then(|s| s.as_array())
+        .cloned()
+        .unwrap_or_default();
     for (i, step) in steps.iter().enumerate() {
-        let desc = step.get("description").and_then(|d| d.as_str()).unwrap_or("");
+        let desc = step
+            .get("description")
+            .and_then(|d| d.as_str())
+            .unwrap_or("");
         for m in file_ref().captures_iter(desc) {
             if !repo.join(&m[2]).exists() {
                 fails.push(format!(
@@ -280,7 +323,10 @@ pub fn check_manifest(
 ) -> Vec<String> {
     let path = repo.join(tours_dir).join("manifest.toml");
     if !path.exists() {
-        stdout.push_str(&format!("[WARN] 無 manifest（{}）——source 存在性未驗\n", path.display()));
+        stdout.push_str(&format!(
+            "[WARN] 無 manifest（{}）——source 存在性未驗\n",
+            path.display()
+        ));
         return Vec::new();
     }
     let data = match crate::tour_manifest::load(&path) {
@@ -303,7 +349,9 @@ pub fn check_manifest(
                 .unwrap_or_else(|_| rel.clone())
         };
         if !data.tour.contains_key(&root_rel) {
-            stdout.push_str(&format!("[WARN] {rel} 不在 manifest（derived/curated 未申報）\n"));
+            stdout.push_str(&format!(
+                "[WARN] {rel} 不在 manifest（derived/curated 未申報）\n"
+            ));
         }
     }
     for (rel, row) in &data.tour {
@@ -328,7 +376,11 @@ pub fn validate(repo: &Path, tours_dir: &Path, with_manifest: bool) -> ToolOutpu
         Ok(t) => t,
         Err(e) => {
             stdout.push_str(&format!("[FAIL] {e}\n"));
-            return ToolOutput { stdout, stderr: String::new(), exit_code: 1 };
+            return ToolOutput {
+                stdout,
+                stderr: String::new(),
+                exit_code: 1,
+            };
         }
     };
     if tours.is_empty() {
@@ -336,22 +388,31 @@ pub fn validate(repo: &Path, tours_dir: &Path, with_manifest: bool) -> ToolOutpu
             "[WARN] {} 無 .tour\n",
             repo.join(tours_dir).display()
         ));
-        return ToolOutput { stdout, stderr: String::new(), exit_code: 0 };
+        return ToolOutput {
+            stdout,
+            stderr: String::new(),
+            exit_code: 0,
+        };
     }
     let idx = key_index(&iter_tours(repo, tours_dir, true).unwrap_or_default());
-    let by_rel: BTreeMap<String, serde_json::Value> =
-        tours.iter().cloned().collect();
+    let by_rel: BTreeMap<String, serde_json::Value> = tours.iter().cloned().collect();
     let mut fails = Vec::new();
     let (mut n_links, mut n_files) = (0, 0);
     for (rel, tour) in &tours {
         let (lf, nl) = check_links(rel, tour, &idx, &by_rel, &mut stdout);
         fails.extend(lf);
         n_links += nl;
-        let desc = tour.get("description").and_then(|d| d.as_str()).unwrap_or("");
+        let desc = tour
+            .get("description")
+            .and_then(|d| d.as_str())
+            .unwrap_or("");
         n_files += file_ref().find_iter(desc).count();
         if let Some(steps) = tour.get("steps").and_then(|s| s.as_array()) {
             for step in steps {
-                let d = step.get("description").and_then(|x| x.as_str()).unwrap_or("");
+                let d = step
+                    .get("description")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("");
                 n_files += file_ref().find_iter(d).count();
             }
         }
@@ -385,7 +446,11 @@ pub fn run(argv: &[&str]) -> ToolOutput {
     };
     let values = match parse(&SPEC, toks) {
         Outcome::Help => {
-            return ToolOutput { stdout: HELP.to_string(), stderr: String::new(), exit_code: 0 };
+            return ToolOutput {
+                stdout: HELP.to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            };
         }
         Outcome::Err(msg) => return ToolOutput::fail(msg),
         Outcome::Ok { values, .. } => values,

@@ -25,14 +25,18 @@ fn main() {
     let mut callees_of: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut edge_rows = 0usize;
     let f = BufReader::new(
-        File::open(".agent-tmp/poc-scip-injection/a1_edges.tsv").expect("a1_edges.tsv (run scip_edge_poc first)"),
+        File::open(".agent-tmp/poc-scip-injection/a1_edges.tsv")
+            .expect("a1_edges.tsv (run scip_edge_poc first)"),
     );
     for line in f.lines() {
         let line = line.unwrap();
         let mut it = line.split('\t');
         let caller = it.next().expect("caller").to_string();
         let callee = it.next().expect("callee").to_string();
-        callers_of.entry(callee.clone()).or_default().insert(caller.clone());
+        callers_of
+            .entry(callee.clone())
+            .or_default()
+            .insert(caller.clone());
         callees_of.entry(caller).or_default().insert(callee);
         edge_rows += 1;
     }
@@ -40,8 +44,7 @@ fn main() {
     let node_count = callers_of.len() + callees_of.len(); // upper bound: both faces counted
     println!(
         "[OK] adjacency built in {build_ms}ms: edge-rows={} distinct-nodes≤{}",
-        edge_rows,
-        node_count
+        edge_rows, node_count
     );
 
     // ---- closure BFS from seed symbols (substring match, mirrors CLI query
@@ -79,7 +82,10 @@ fn main() {
         let n = next.len();
         visited.extend(next.iter().cloned());
         frontier = next.into_iter().collect();
-        println!("  depth {depth}: {n} new symbols (cumulative {}); reentries: {reentries}", visited.len());
+        println!(
+            "  depth {depth}: {n} new symbols (cumulative {}); reentries: {reentries}",
+            visited.len()
+        );
     }
     let closure_ms = t1.elapsed().as_millis();
     println!("[OK] closure BFS in {closure_ms}ms");

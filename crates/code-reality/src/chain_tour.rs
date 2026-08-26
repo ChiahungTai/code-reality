@@ -6,9 +6,7 @@
 //! description.
 
 use crate::argparse::{parse, FlagSpec, Kind, Outcome, ToolSpec};
-use crate::common::{
-    anchor_pattern, assert_db_unchanged, connect_ro, db_mtime_ns, graph_db_path,
-};
+use crate::common::{anchor_pattern, assert_db_unchanged, connect_ro, db_mtime_ns, graph_db_path};
 use crate::profile::{is_excluded, load_profile, Profile};
 use crate::ToolOutput;
 use rusqlite::Connection;
@@ -22,9 +20,7 @@ fn ref_re() -> &'static regex::Regex {
 
 fn ident_re() -> &'static regex::Regex {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    RE.get_or_init(|| {
-        regex::Regex::new(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]*)*").unwrap()
-    })
+    RE.get_or_init(|| regex::Regex::new(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]*)*").unwrap())
 }
 
 const TREE_PREFIX_CHARS: [char; 5] = ['│', '├', '└', '─', ' '];
@@ -50,10 +46,7 @@ pub fn parse_blocks(text: &str) -> Vec<(String, Vec<String>)> {
     let mut cur: Option<(String, Vec<String>)> = None;
     for ln in text.split('\n') {
         if !in_code && ln.trim_start().starts_with('#') {
-            heading = ln
-                .trim_start_matches(['#', ' '])
-                .trim()
-                .to_string();
+            heading = ln.trim_start_matches(['#', ' ']).trim().to_string();
         }
         if ln.trim_start().starts_with("```") {
             if !in_code {
@@ -90,12 +83,7 @@ pub fn best_ident(symbol: &str) -> String {
         return String::new();
     }
     cands.sort_by_key(|c| (std::cmp::Reverse(c.0), std::cmp::Reverse(c.1)));
-    cands[0]
-        .2
-        .rsplit('.')
-        .next()
-        .unwrap_or("")
-        .to_string()
+    cands[0].2.rsplit('.').next().unwrap_or("").to_string()
 }
 
 #[derive(Debug, Clone)]
@@ -148,7 +136,9 @@ pub fn parse_frames(lines: &[String]) -> Vec<Frame> {
             line_no = Some(m[2].parse().unwrap_or(0));
             let range = ref_re().find(&content2).map(|m| m.range());
             if let Some(r) = range {
-                content2 = format!("{}{}", &content2[..r.start], &content2[r.end..]).trim().to_string();
+                content2 = format!("{}{}", &content2[..r.start], &content2[r.end..])
+                    .trim()
+                    .to_string();
             }
         }
         let ident = best_ident(&content2);
@@ -191,7 +181,12 @@ impl PathResolver {
             })
             .filter(|v: &Vec<PathBuf>| !v.is_empty())
             .unwrap_or_else(|| vec![repo_root.clone()]);
-        Ok(Self { repo_root, profile, pkg_roots, ctx_dirs: HashMap::new() })
+        Ok(Self {
+            repo_root,
+            profile,
+            pkg_roots,
+            ctx_dirs: HashMap::new(),
+        })
     }
 
     fn bump_dir(&mut self, p: &Path) {
@@ -218,7 +213,10 @@ impl PathResolver {
         let mut opts = glob::MatchOptions::new();
         opts.require_literal_leading_dot = false;
         for pkg in &self.pkg_roots {
-            let pattern = pkg.join(format!("**/{fname}")).to_string_lossy().into_owned();
+            let pattern = pkg
+                .join(format!("**/{fname}"))
+                .to_string_lossy()
+                .into_owned();
             for p in glob::glob_with(&pattern, opts)
                 .into_iter()
                 .flatten()
@@ -277,7 +275,10 @@ pub fn check_anchor(abs_path: &Path, line_no: i64, ident: &str) -> String {
     }
     let text = std::fs::read_to_string(abs_path).unwrap_or_default();
     let lines: Vec<&str> = text.split('\n').collect();
-    if (line_no - 1) >= 0 && ((line_no - 1) as usize) < lines.len() && lines[(line_no - 1) as usize].contains(ident) {
+    if (line_no - 1) >= 0
+        && ((line_no - 1) as usize) < lines.len()
+        && lines[(line_no - 1) as usize].contains(ident)
+    {
         return "ok".into();
     }
     let lo = ((line_no - 9).max(0) as usize).min(lines.len());
@@ -293,7 +294,9 @@ pub fn check_anchor(abs_path: &Path, line_no: i64, ident: &str) -> String {
 }
 
 fn like_escape_chain(part: &str) -> String {
-    part.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+    part.replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
 }
 
 /// graph.db re-anchoring: same-file nearest line_start → cross-file move
@@ -346,14 +349,21 @@ impl GraphAnchor {
         if let Some(g_line) = hit {
             let delta = g_line - line_no;
             return GraphHit {
-                g: if delta == 0 { "same".into() } else { "moved".into() },
+                g: if delta == 0 {
+                    "same".into()
+                } else {
+                    "moved".into()
+                },
                 g_line: Some(g_line),
                 g_file: None,
                 g_files: vec![],
             };
         }
         if substring_status != "missing" || ident.chars().count() < 4 {
-            return GraphHit { g: "not-in-graph".into(), ..Default::default() };
+            return GraphHit {
+                g: "not-in-graph".into(),
+                ..Default::default()
+            };
         }
         let prefix = like_escape_chain(&format!("{}/", self.repo_root.display()));
         let rels: Vec<String> = {
@@ -361,14 +371,23 @@ impl GraphAnchor {
                 "SELECT DISTINCT substr(file_path, length(?1)+2) FROM nodes \
                  WHERE name=?2 AND file_path LIKE ?3 ESCAPE '\\' LIMIT 6",
             ) else {
-                return GraphHit { g: "not-in-graph".into(), ..Default::default() };
+                return GraphHit {
+                    g: "not-in-graph".into(),
+                    ..Default::default()
+                };
             };
-            let Ok(rows) = stmt
-                .query_map(
-                    (self.repo_root.display().to_string(), ident, format!("{prefix}%")),
-                    |r| r.get::<_, Option<String>>(0),
-                ) else {
-                return GraphHit { g: "not-in-graph".into(), ..Default::default() };
+            let Ok(rows) = stmt.query_map(
+                (
+                    self.repo_root.display().to_string(),
+                    ident,
+                    format!("{prefix}%"),
+                ),
+                |r| r.get::<_, Option<String>>(0),
+            ) else {
+                return GraphHit {
+                    g: "not-in-graph".into(),
+                    ..Default::default()
+                };
             };
             rows.filter_map(|r| r.ok().flatten()).collect()
         };
@@ -397,7 +416,10 @@ impl GraphAnchor {
                 ..Default::default()
             };
         }
-        GraphHit { g: "not-in-graph".into(), ..Default::default() }
+        GraphHit {
+            g: "not-in-graph".into(),
+            ..Default::default()
+        }
     }
 }
 
@@ -455,7 +477,10 @@ fn step_of(
             parts.push(anchor_disp);
         }
         "moved-file-ambiguous" => {
-            parts.push(format!("同名多檔無法自動判定：{}", py_list_inline(&g.g_files)));
+            parts.push(format!(
+                "同名多檔無法自動判定：{}",
+                py_list_inline(&g.g_files)
+            ));
             parts.push(anchor_disp);
         }
         _ if matches!(status, "drift" | "drift-far" | "missing") => {
@@ -479,18 +504,20 @@ fn step_of(
     // splitlines: graph line_start counts only \n
     let p = repo_root.join(&file_rel);
     let key = p.to_string_lossy().replace('\\', "/");
-    lines_cache
-        .entry(key)
-        .or_insert_with(|| {
-            std::fs::read_to_string(&p)
-                .map(|t| t.split('\n').map(|s| s.to_string()).collect())
-                .unwrap_or_default()
-        });
+    lines_cache.entry(key).or_insert_with(|| {
+        std::fs::read_to_string(&p)
+            .map(|t| t.split('\n').map(|s| s.to_string()).collect())
+            .unwrap_or_default()
+    });
     if let Some(lines) = lines_cache.get(&p.to_string_lossy().replace('\\', "/")) {
-        if line >= 1 && ((line - 1) as usize) < lines.len() && !lines[(line - 1) as usize].trim().is_empty() {
-            step.as_object_mut()
-                .unwrap()
-                .insert("pattern".into(), serde_json::Value::String(anchor_pattern(&lines[(line - 1) as usize])));
+        if line >= 1
+            && ((line - 1) as usize) < lines.len()
+            && !lines[(line - 1) as usize].trim().is_empty()
+        {
+            step.as_object_mut().unwrap().insert(
+                "pattern".into(),
+                serde_json::Value::String(anchor_pattern(&lines[(line - 1) as usize])),
+            );
         }
     }
     step
@@ -536,12 +563,21 @@ pub fn build_tours(
         let mut scen_g: BTreeMap<String, i64> = BTreeMap::new();
         for f in &frames {
             let mut status = "noref".to_string();
-            let mut g = GraphHit { g: "noref".into(), ..Default::default() };
+            let mut g = GraphHit {
+                g: "noref".into(),
+                ..Default::default()
+            };
             let mut abs_path: Option<PathBuf> = None;
             if let Some(p) = &f.path {
                 let (resolved, kind) = resolver.resolve(p);
                 match resolved {
-                    None => status = if kind == "none" { "external".into() } else { "unresolved".into() },
+                    None => {
+                        status = if kind == "none" {
+                            "external".into()
+                        } else {
+                            "unresolved".into()
+                        }
+                    }
                     Some(ap) => {
                         status = check_anchor(&ap, f.line.unwrap_or(0), &f.ident);
                         if let Some(ga) = &ga {
@@ -564,14 +600,19 @@ pub fn build_tours(
                 continue;
             };
             steps.push(step_of(
-                &f.path, f.line, &g, &status, &f.symbol, &f.note, &f.prefix,
-                &ap, &repo_root, &mut lines_cache,
+                &f.path,
+                f.line,
+                &g,
+                &status,
+                &f.symbol,
+                &f.note,
+                &f.prefix,
+                &ap,
+                &repo_root,
+                &mut lines_cache,
             ));
         }
-        let dist: Vec<String> = scen_g
-            .iter()
-            .map(|(k, v)| format!("{k}:{v}"))
-            .collect();
+        let dist: Vec<String> = scen_g.iter().map(|(k, v)| format!("{k}:{v}")).collect();
         let reasons = if skip_reasons.is_empty() {
             "無".to_string()
         } else {
@@ -603,7 +644,12 @@ pub fn build_tours(
     if let (Some(db), Some(m)) = (graph_db, m0) {
         assert_db_unchanged(db, m)?;
     }
-    Ok(ScenarioTours { tours, frames: frames_total, skipped: skipped_total, g_counts })
+    Ok(ScenarioTours {
+        tours,
+        frames: frames_total,
+        skipped: skipped_total,
+        g_counts,
+    })
 }
 
 /// Write tours: `{NN}.tour` pure sequence numbers, JSON title prefixed
@@ -613,17 +659,16 @@ pub fn write_tours(
     out_dir: &Path,
     primary: &std::collections::BTreeSet<usize>,
 ) -> Result<Vec<PathBuf>, String> {
-    std::fs::create_dir_all(out_dir)
-        .map_err(|e| format!("{} 建立失敗：{e}", out_dir.display()))?;
+    std::fs::create_dir_all(out_dir).map_err(|e| format!("{} 建立失敗：{e}", out_dir.display()))?;
     let mut paths = Vec::new();
     for (i, tour) in st.tours.iter().enumerate() {
         let n = i + 1;
         let p = out_dir.join(format!("{n:02}.tour"));
         let mut emitted = tour.clone();
-        emitted
-            .as_object_mut()
-            .unwrap()
-            .insert("title".into(), serde_json::Value::String(format!("{n:02} - {}", tour["title"].as_str().unwrap_or(""))));
+        emitted.as_object_mut().unwrap().insert(
+            "title".into(),
+            serde_json::Value::String(format!("{n:02} - {}", tour["title"].as_str().unwrap_or(""))),
+        );
         if primary.contains(&n) {
             emitted
                 .as_object_mut()
@@ -637,11 +682,12 @@ pub fn write_tours(
     // legacy filename residue warning
     let mut opts = glob::MatchOptions::new();
     opts.require_literal_leading_dot = false;
-    let legacy: Vec<PathBuf> = glob::glob_with(&out_dir.join("chain-*.tour").to_string_lossy(), opts)
-        .into_iter()
-        .flatten()
-        .filter_map(|r| r.ok())
-        .collect();
+    let legacy: Vec<PathBuf> =
+        glob::glob_with(&out_dir.join("chain-*.tour").to_string_lossy(), opts)
+            .into_iter()
+            .flatten()
+            .filter_map(|r| r.ok())
+            .collect();
     let mut legacy_sorted = legacy;
     legacy_sorted.sort();
     if !legacy_sorted.is_empty() {
@@ -661,10 +707,26 @@ pub fn run(argv: &[&str]) -> ToolOutput {
     };
     let spec = ToolSpec {
         flags: &[
-            FlagSpec { long: "--graph", short: None, kind: Kind::Value { metavar: "GRAPH" } },
-            FlagSpec { long: "--repo", short: None, kind: Kind::Value { metavar: "REPO" } },
-            FlagSpec { long: "--out-dir", short: None, kind: Kind::Value { metavar: "OUT_DIR" } },
-            FlagSpec { long: "--primary", short: None, kind: Kind::Value { metavar: "PRIMARY" } },
+            FlagSpec {
+                long: "--graph",
+                short: None,
+                kind: Kind::Value { metavar: "GRAPH" },
+            },
+            FlagSpec {
+                long: "--repo",
+                short: None,
+                kind: Kind::Value { metavar: "REPO" },
+            },
+            FlagSpec {
+                long: "--out-dir",
+                short: None,
+                kind: Kind::Value { metavar: "OUT_DIR" },
+            },
+            FlagSpec {
+                long: "--primary",
+                short: None,
+                kind: Kind::Value { metavar: "PRIMARY" },
+            },
         ],
         positionals: &["chain_md"],
     };
@@ -693,7 +755,10 @@ pub fn run(argv: &[&str]) -> ToolOutput {
             };
         }
         Outcome::Err(msg) => return ToolOutput::fail(msg),
-        Outcome::Ok { values, positionals } => (values, positionals),
+        Outcome::Ok {
+            values,
+            positionals,
+        } => (values, positionals),
     };
     let chain_md = PathBuf::from(&positionals[0]);
     let repo = values
@@ -734,7 +799,10 @@ pub fn run(argv: &[&str]) -> ToolOutput {
                 .unwrap_or_default();
             PathBuf::from(".tours").join("arch").join(stem)
         });
-    let primary_s = values.get("--primary").and_then(|v| v.clone()).unwrap_or_default();
+    let primary_s = values
+        .get("--primary")
+        .and_then(|v| v.clone())
+        .unwrap_or_default();
     let mut primary: std::collections::BTreeSet<usize> = Default::default();
     for x in primary_s.split(',') {
         if !x.trim().is_empty() {
@@ -769,7 +837,12 @@ pub fn run(argv: &[&str]) -> ToolOutput {
     // corpus provenance: generator writes the manifest natively
     let out_abs = crate::common::resolve(&out_dir);
     let mroot = crate::tour_manifest::tours_root_of(&out_abs);
-    if mroot.file_name().map(|n| n.to_string_lossy().into_owned()).as_deref() != Some(".tours") {
+    if mroot
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .as_deref()
+        != Some(".tours")
+    {
         stdout.push_str(&format!(
             "[WARN] manifest skip: out-dir 不在 .tours/ 樹內（resolved root={}）——tour 檔照寫，provenance 不記（暫存/dry-run 目錄零 manifest 副作用）\n",
             mroot.display()
@@ -817,5 +890,9 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         st.skipped
     ));
     stdout.push_str(&format!("[LOG] graph 重錨分佈: {:?}\n", st.g_counts));
-    ToolOutput { stdout, stderr: String::new(), exit_code: 0 }
+    ToolOutput {
+        stdout,
+        stderr: String::new(),
+        exit_code: 0,
+    }
 }

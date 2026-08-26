@@ -126,7 +126,11 @@ fn load_with_conn(
         for row in rows {
             let (fp, cid) = row.map_err(|e| format!("community 讀取失敗：{}", e))?;
             if let Some(fp) = fp {
-                *file_comm_votes.entry(fp).or_default().entry(cid).or_insert(0) += 1;
+                *file_comm_votes
+                    .entry(fp)
+                    .or_default()
+                    .entry(cid)
+                    .or_insert(0) += 1;
             }
         }
     }
@@ -135,16 +139,14 @@ fn load_with_conn(
         file_comm_votes.get(fp).and_then(|votes| {
             votes
                 .iter()
-                .min_by(|a, b| {
-                    (-a.1, a.0).cmp(&(-b.1, b.0))
-                })
+                .min_by(|a, b| (-a.1, a.0).cmp(&(-b.1, b.0)))
                 .map(|(cid, _)| *cid)
         })
     };
     let keep = |fp: &str| -> bool {
         fp.strip_prefix(repo)
-        .map(|rel| !is_excluded(rel, profile))
-        .unwrap_or(false)
+            .map(|rel| !is_excluded(rel, profile))
+            .unwrap_or(false)
     };
     let mut nodes: Vec<NodeRow> = Vec::new();
     {
@@ -214,7 +216,11 @@ fn load_with_conn(
             .map_err(|e| format!("edges 查詢失敗：{}", e))?;
         let rows = stmt
             .query_map(EDGE_KINDS, |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
             })
             .map_err(|e| format!("edges 查詢失敗：{}", e))?;
         for row in rows {
@@ -338,7 +344,11 @@ pub fn write_csvs(g: &GraphCsv, out_dir: &Path) -> Result<(PathBuf, PathBuf), St
     let mut body = String::new();
     body.push_str("source,target,kind\r\n");
     for e in &g.links {
-        body.push_str(&csv_row(&[e.s.to_string(), e.t.to_string(), e.kinds.clone()]));
+        body.push_str(&csv_row(&[
+            e.s.to_string(),
+            e.t.to_string(),
+            e.kinds.clone(),
+        ]));
         body.push_str("\r\n");
     }
     std::fs::write(&links_path, body)
@@ -393,8 +403,14 @@ pub fn run(argv: &[&str]) -> ToolOutput {
             "[OK] graph csv: {} nodes / {} links -> {} + {}（{}）\n",
             g.nodes.len(),
             g.links.len(),
-            nodes_path.file_name().map(|n| n.to_string_lossy()).unwrap_or_default(),
-            links_path.file_name().map(|n| n.to_string_lossy()).unwrap_or_default(),
+            nodes_path
+                .file_name()
+                .map(|n| n.to_string_lossy())
+                .unwrap_or_default(),
+            links_path
+                .file_name()
+                .map(|n| n.to_string_lossy())
+                .unwrap_or_default(),
             out_dir.display()
         ),
         stderr: String::new(),

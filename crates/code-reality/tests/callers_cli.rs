@@ -46,7 +46,10 @@ fn build_cache_with_callers_and_no_query_fails_loudly() {
     let tmp = tempfile::tempdir().unwrap();
     let out = run_fixture(&tmp, &["--build-cache", "--callers"]);
     assert_eq!(out.exit_code, 2);
-    assert_eq!(out.stderr, "[FAIL] --build-cache 與 --stamp-meta/--audit/查詢互斥\n");
+    assert_eq!(
+        out.stderr,
+        "[FAIL] --build-cache 與 --stamp-meta/--audit/查詢互斥\n"
+    );
 }
 
 #[test]
@@ -82,7 +85,8 @@ fn depth_value_family() {
         let out = run_fixture(&tmp, &["--closure", "--depth", bad, "open"]);
         assert_eq!(out.exit_code, 2, "depth {} must fail", bad);
         assert!(
-            out.stderr.starts_with(&format!("[FAIL] --depth 需正整數（1-10000）：{}", bad)),
+            out.stderr
+                .starts_with(&format!("[FAIL] --depth 需正整數（1-10000）：{}", bad)),
             "{}",
             out.stderr
         );
@@ -187,15 +191,15 @@ fn closure_depth2_and_depth3_cycle() {
         "  cycles：0 處（frontier 重入已拜訪符號）\n",
     );
     assert_eq!(out.stdout, expected);
-    let out = run_fixture(&tmp, &["--closure", "--depth", "3", "EventStoreLifecycle.open"]);
-    assert_eq!(out.exit_code, 0);
-    assert!(
-        out.stdout.contains("depth 3：0 callers"),
-        "{}",
-        out.stdout
+    let out = run_fixture(
+        &tmp,
+        &["--closure", "--depth", "3", "EventStoreLifecycle.open"],
     );
+    assert_eq!(out.exit_code, 0);
+    assert!(out.stdout.contains("depth 3：0 callers"), "{}", out.stdout);
     assert!(
-        out.stdout.contains("cycles：1 處（frontier 重入已拜訪符號）"),
+        out.stdout
+            .contains("cycles：1 處（frontier 重入已拜訪符號）"),
         "{}",
         out.stdout
     );
@@ -204,7 +208,10 @@ fn closure_depth2_and_depth3_cycle() {
 #[test]
 fn closure_depth1_is_callers_set() {
     let tmp = tempfile::tempdir().unwrap();
-    let out = run_fixture(&tmp, &["--closure", "--depth", "1", "EventStoreLifecycle.open"]);
+    let out = run_fixture(
+        &tmp,
+        &["--closure", "--depth", "1", "EventStoreLifecycle.open"],
+    );
     assert_eq!(out.exit_code, 0);
     // third source: closure level-1 == the callers set (8 here)
     assert!(out.stdout.contains("depth 1：8 callers"), "{}", out.stdout);

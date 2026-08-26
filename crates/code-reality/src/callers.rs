@@ -51,7 +51,10 @@ fn innermost(spans: &[FnSpan], line: i64) -> Option<&FnSpan> {
 /// Attribute flat scan-ordered ref rows to enclosing fn spans.
 /// Rows are `(callee_symbol, rel_path, line)`; the callee field documents
 /// provenance (the query face provides it) but does not affect attribution.
-pub fn attribute(rows: &[(String, String, i64)], spans: &BTreeMap<String, Vec<FnSpan>>) -> CallersResult {
+pub fn attribute(
+    rows: &[(String, String, i64)],
+    spans: &BTreeMap<String, Vec<FnSpan>>,
+) -> CallersResult {
     let mut result = CallersResult {
         callers: Vec::new(),
         item_level: Vec::new(),
@@ -145,7 +148,11 @@ pub fn closure<F: FnMut(&str) -> CallersResult>(
 /// Sites print in full by design (the edge set IS the product; the query
 /// mode's 6-ref truncation does not apply here) — no cap at hub scale.
 /// Returns (stdout, exit_code); exit 0 on any DEF hit.
-pub fn format_callers(query: &str, result: &CallersResult, src_line: Option<&str>) -> (String, i32) {
+pub fn format_callers(
+    query: &str,
+    result: &CallersResult,
+    src_line: Option<&str>,
+) -> (String, i32) {
     let mut out = String::new();
     if let Some(line) = src_line {
         out.push_str(line);

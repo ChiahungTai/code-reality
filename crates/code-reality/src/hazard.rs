@@ -70,12 +70,14 @@ pub fn parse_symbol_facts(source: &str, symbol: &str) -> SymbolFacts {
         return facts; // SyntaxError tolerance (hazard.py:96-98)
     };
     // ast.walk + break: FIRST matching ClassDef wins (hazard.py:99-113)
-    if let Some(cls) = find_class_defs(parsed.syntax().body.as_slice(), symbol).into_iter().next() {
+    if let Some(cls) = find_class_defs(parsed.syntax().body.as_slice(), symbol)
+        .into_iter()
+        .next()
+    {
         facts.is_class = true;
         facts.bases = cls.bases().iter().filter_map(dotted_base).collect();
         let has = |n: &str| facts.bases.iter().any(|b| b == n);
-        facts.is_strentenum = STR_ENUM_BASES.iter().any(|b| has(b))
-            || (has("str") && has("Enum"));
+        facts.is_strentenum = STR_ENUM_BASES.iter().any(|b| has(b)) || (has("str") && has("Enum"));
         facts.is_protocol = PROTOCOL_BASES.iter().any(|b| has(b));
         facts.enum_values = extract_str_members(&cls.body);
     }
@@ -84,7 +86,10 @@ pub fn parse_symbol_facts(source: &str, symbol: &str) -> SymbolFacts {
 
 /// Recursive statement walk collecting ClassDefs with the given name —
 /// the equivalent of `ast.walk` for statement-bearing nodes.
-fn find_class_defs<'a>(body: &'a [ruff_python_ast::Stmt], name: &str) -> Vec<&'a ruff_python_ast::StmtClassDef> {
+fn find_class_defs<'a>(
+    body: &'a [ruff_python_ast::Stmt],
+    name: &str,
+) -> Vec<&'a ruff_python_ast::StmtClassDef> {
     let mut out = Vec::new();
     let mut stack: Vec<&'a [ruff_python_ast::Stmt]> = vec![body];
     while let Some(stmts) = stack.pop() {
@@ -198,10 +203,7 @@ pub fn build_strentenum_patterns(values: &[String]) -> Vec<String> {
 
 /// import_module("<module>") literal pattern (`hazard.py:158-161`).
 pub fn build_importlib_pattern(module: &str) -> String {
-    format!(
-        r#"import_module\(\s*["']{}["']"#,
-        regex::escape(module)
-    )
+    format!(r#"import_module\(\s*["']{}["']"#, regex::escape(module))
 }
 
 /// rg -n output lines → (prod, test, excluded) (`hazard.py:164-183`):
@@ -266,7 +268,10 @@ pub fn detect_strentenum_string_dispatch(
         ),
     );
     f.evidence = prod.iter().take(5).cloned().collect();
-    f.detail = vec![("prod".into(), prod.len() as i64), ("test".into(), test.len() as i64)];
+    f.detail = vec![
+        ("prod".into(), prod.len() as i64),
+        ("test".into(), test.len() as i64),
+    ];
     Ok(Some(f))
 }
 
@@ -298,7 +303,10 @@ pub fn detect_getattr_dispatch(
     let mut ev = prod.clone();
     ev.extend(test.clone());
     f.evidence = ev.iter().take(5).cloned().collect();
-    f.detail = vec![("prod".into(), prod.len() as i64), ("test".into(), test.len() as i64)];
+    f.detail = vec![
+        ("prod".into(), prod.len() as i64),
+        ("test".into(), test.len() as i64),
+    ];
     Ok(Some(f))
 }
 
@@ -361,7 +369,10 @@ pub fn detect_protocol_duck_typing(
         ),
     );
     f.evidence = prod.iter().take(5).cloned().collect();
-    f.detail = vec![("prod".into(), prod.len() as i64), ("test".into(), test.len() as i64)];
+    f.detail = vec![
+        ("prod".into(), prod.len() as i64),
+        ("test".into(), test.len() as i64),
+    ];
     Ok(Some(f))
 }
 
@@ -389,7 +400,10 @@ pub fn detect_importlib_lazy_load(
     let mut ev = prod.clone();
     ev.extend(test.clone());
     f.evidence = ev.iter().take(5).cloned().collect();
-    f.detail = vec![("prod".into(), prod.len() as i64), ("test".into(), test.len() as i64)];
+    f.detail = vec![
+        ("prod".into(), prod.len() as i64),
+        ("test".into(), test.len() as i64),
+    ];
     Ok(Some(f))
 }
 
@@ -463,14 +477,15 @@ pub fn detect_static_edge_gap(
 
 /// Resident AST level (`hazard.py:359-393`): zero rg cost, existence
 /// signals (count=0 — counts only exist at the rg level).
-pub fn resident_findings(
-    facts: &SymbolFacts,
-    registries: &[HazardRegistry],
-) -> Vec<HazardFinding> {
+pub fn resident_findings(facts: &SymbolFacts, registries: &[HazardRegistry]) -> Vec<HazardFinding> {
     let mut findings = Vec::new();
     if facts.is_strentenum && !facts.enum_values.is_empty() {
         let shown: Vec<String> = facts.enum_values.iter().take(3).map(py_repr_str).collect();
-        let more = if facts.enum_values.len() > 3 { " 等" } else { "" };
+        let more = if facts.enum_values.len() > 3 {
+            " 等"
+        } else {
+            ""
+        };
         findings.push(HazardFinding::new(
             "strentenum-string-dispatch",
             0,
@@ -661,9 +676,7 @@ pub fn make_rg_runner(repo_root: &Path) -> impl Fn(&[&str]) -> Result<Vec<RgLine
             "!.code-review-graph/**",
         ])
         .current_dir(&root);
-        let out = cmd
-            .output()
-            .map_err(|e| format!("rg 執行失敗：{e}"))?;
+        let out = cmd.output().map_err(|e| format!("rg 執行失敗：{e}"))?;
         if !(out.status.success() || out.status.code() == Some(1)) {
             return Err(format!(
                 "rg 失敗（exit {}）: {}",

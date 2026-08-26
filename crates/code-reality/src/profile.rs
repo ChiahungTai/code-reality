@@ -60,8 +60,8 @@ pub fn load_profile(repo_root: &Path) -> Result<Option<Profile>, String> {
     }
     let text = std::fs::read_to_string(&path)
         .map_err(|e| format!("{} 讀取失敗：{}", path.display(), e))?;
-    let data: toml::Value = toml::from_str(&text)
-        .map_err(|e| format!("{} TOML 解析失敗：{}", path.display(), e))?;
+    let data: toml::Value =
+        toml::from_str(&text).map_err(|e| format!("{} TOML 解析失敗：{}", path.display(), e))?;
     let table = data
         .as_table()
         .ok_or_else(|| format!("{} TOML 頂層非表：{:?}", path.display(), data))?;
@@ -130,9 +130,9 @@ pub fn load_profile(repo_root: &Path) -> Result<Option<Profile>, String> {
         Some(toml::Value::Array(a)) => a
             .iter()
             .map(|v| {
-                v.as_str().map(|s| s.to_string()).ok_or_else(|| {
-                    format!("{} exclude 項需字串：{:?}", path.display(), v)
-                })
+                v.as_str()
+                    .map(|s| s.to_string())
+                    .ok_or_else(|| format!("{} exclude 項需字串：{:?}", path.display(), v))
             })
             .collect::<Result<_, _>>()?,
         Some(_) => {
@@ -313,7 +313,10 @@ mod tests {
     #[test]
     fn unknown_key_message_lists_sorted_keys() {
         let tmp = tempfile::tempdir().unwrap();
-        let p = write_profile(tmp.path(), "zzz = 1\n[[module]]\nprefix = \"a/\"\n[[whatever]]\n");
+        let p = write_profile(
+            tmp.path(),
+            "zzz = 1\n[[module]]\nprefix = \"a/\"\n[[whatever]]\n",
+        );
         let err = load_profile(tmp.path()).unwrap_err();
         assert!(err.contains(&format!("{}", p.display())), "{err}");
         assert!(err.contains("含未知鍵 ['whatever', 'zzz']"), "{err}");
@@ -362,7 +365,10 @@ mod tests {
             "[[hazard_registry]]\npackage_prefix = \"mosaic_alpha\"\nsuffix = \"C\"\nregister_fn = \"r\"\nregistry = \"R\"\n",
         );
         let err = load_profile(tmp.path()).unwrap_err();
-        assert!(err.contains("package_prefix='mosaic_alpha' 須以 / 結尾"), "{err}");
+        assert!(
+            err.contains("package_prefix='mosaic_alpha' 須以 / 結尾"),
+            "{err}"
+        );
     }
 
     #[test]
@@ -378,9 +384,9 @@ mod tests {
         };
         assert_eq!(module_of("crates/a/b/c/mod.rs", Some(&p)), "crates/a/b");
         assert_eq!(module_of("crates/lib.rs", Some(&p)), "crates"); // F6 root file
-        // F6: a file segment inside the depth window maps to the base
-        // (verified against the Python oracle: segments[:2]=["a","mod.rs"]
-        // contains an extension → base)
+                                                                    // F6: a file segment inside the depth window maps to the base
+                                                                    // (verified against the Python oracle: segments[:2]=["a","mod.rs"]
+                                                                    // contains an extension → base)
         assert_eq!(module_of("crates/a/mod.rs", Some(&p)), "crates");
         assert_eq!(module_of("top/x.py", Some(&p)), "top");
         assert_eq!(module_of("rootfile.py", None), "rootfile.py");

@@ -30,7 +30,16 @@ it; every Rust tool must reproduce Python stdout bytes + exit codes exactly
   `*.fndefs.db`, the sqlite carrier for callers/closure spans; ladder
   mirrors cache) / `snapshot` / `transition` / `graph_audit` / `graph_csv`
   (graph family — one module per frozen Python tool; byte-parity gated
-  by `tests/parity/test_graph_family_parity.py`) / `mcp_server` (frontend adapter — rmcp streamable-http on 8200, tools
+  by `tests/parity/test_graph_family_parity.py`) / `scip_edges` (v1+ S1
+  write face — SCIP reference edges into the index-sibling
+  `<index-stem>.union.db` sidecar (default slot: `index.union.db`): own schema, PK (caller, callee),
+  provenance='SCIP', idempotent upsert + `updated_at` sweep; CRG
+  graph.db stays edge-write-free per the (A) adjudication) /
+  `scip_nodes` (v1+ S2 write face — graph_audit missing → double-key
+  reconciliation → graph.db nodes; THE only graph.db writer in the
+  family: `extra {"tier":"SCIP"}` marker rollback, `VACUUM INTO`
+  first-inject backup, UNIQUE-collision skip + structural-residual
+  reporting) / `mcp_server` (frontend adapter — rmcp streamable-http on 8200, tools
   thin-wrap `cli::run` in-process with spawn_blocking + catch_unwind
   per-request isolation [SM-14]; bin `code-reality-mcp`) / `cli` (assembly —
   argv surface, mode routing incl. `--callers`/`--closure`/`--depth`
@@ -49,8 +58,9 @@ it; every Rust tool must reproduce Python stdout bytes + exit codes exactly
 - **Schema interop**: the derived db keeps the frozen three-table DDL +
   `SCHEMA_VERSION`; extensions (fn_defs, R3) live in separate sidecars —
   never in the shared db (guard would ping-pong rebuilds). CRG graph.db
-  reads are read-only (`connect_ro`); synthetic-db tests share
-  `tests/crg_fixture.rs` (DDL mirror of `tests/fixtures/crg_db.py`).
+  reads are read-only (`connect_ro`) for every module except the
+  `scip_nodes` injector (sole write face, marker-tagged). Synthetic-db
+  tests share `tests/crg_fixture.rs` (production-shape CRG DDL).
 - **Parity harness**: `tests/parity/` (pytest, `parity` marker) drives
   both implementations on identical inputs and `cmp`s stdout + exit
   codes; mutating drills hit fixture copies only. Environment-absent

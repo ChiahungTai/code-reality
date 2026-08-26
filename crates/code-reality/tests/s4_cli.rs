@@ -33,7 +33,10 @@ fn mutex_family_verbatim_messages() {
 
     let out = run(&argv(&["q", "--build-cache", "--stamp-meta"]));
     assert_eq!(out.exit_code, 2);
-    assert_eq!(out.stderr, "[FAIL] --build-cache 與 --stamp-meta/--audit/查詢互斥\n");
+    assert_eq!(
+        out.stderr,
+        "[FAIL] --build-cache 與 --stamp-meta/--audit/查詢互斥\n"
+    );
 
     let out = run(&argv(&["q", "--stamp-meta"]));
     assert_eq!(out.exit_code, 2);
@@ -49,12 +52,17 @@ fn index_resolution_failures() {
     // no --index no --repo
     let out = run(&argv(&["q"]));
     assert_eq!(out.exit_code, 2);
-    assert_eq!(out.stderr, "[FAIL] 需 --index（或 --repo 解析 repo-keyed 預設 slot）\n");
+    assert_eq!(
+        out.stderr,
+        "[FAIL] 需 --index（或 --repo 解析 repo-keyed 預設 slot）\n"
+    );
 
     // explicit --index missing
     let out = run(&argv(&["q", "--index", "/nonexistent/index.scip"]));
     assert_eq!(out.exit_code, 2);
-    assert!(out.stderr.contains("[FAIL] 索引不在：/nonexistent/index.scip"));
+    assert!(out
+        .stderr
+        .contains("[FAIL] 索引不在：/nonexistent/index.scip"));
 
     // default slot missing (unique tempdir basename → no slot, no legacy)
     let tmp = tempfile::tempdir().unwrap();
@@ -124,7 +132,13 @@ fn stamp_meta_writes_sidecar_and_is_idempotent() {
         .unwrap();
     let repo_s = repo.to_string_lossy().to_string();
 
-    let out = run(&argv(&["--stamp-meta", "--repo", &repo_s, "--index", &idx_s]));
+    let out = run(&argv(&[
+        "--stamp-meta",
+        "--repo",
+        &repo_s,
+        "--index",
+        &idx_s,
+    ]));
     assert_eq!(out.exit_code, 0, "stderr: {}", out.stderr);
     let head = code_reality::engine::git_head(&repo).unwrap();
     assert_eq!(
@@ -142,7 +156,13 @@ fn stamp_meta_writes_sidecar_and_is_idempotent() {
     assert!(sidecar.contains("\"tool\": \"code_reality.scip_refs\""));
 
     // idempotent rerun → same shape, file overwritten
-    let out2 = run(&argv(&["--stamp-meta", "--repo", &repo_s, "--index", &idx_s]));
+    let out2 = run(&argv(&[
+        "--stamp-meta",
+        "--repo",
+        &repo_s,
+        "--index",
+        &idx_s,
+    ]));
     assert_eq!(out2.exit_code, 0);
     assert_eq!(out2.stdout, out.stdout);
 }
@@ -153,7 +173,13 @@ fn stamp_meta_git_failure_is_exit_2() {
     let idx = fixture_copy(&tmp);
     let idx_s = idx.to_string_lossy().to_string();
     let repo_s = tmp.path().to_string_lossy().to_string();
-    let out = run(&argv(&["--stamp-meta", "--repo", &repo_s, "--index", &idx_s]));
+    let out = run(&argv(&[
+        "--stamp-meta",
+        "--repo",
+        &repo_s,
+        "--index",
+        &idx_s,
+    ]));
     assert_eq!(out.exit_code, 2);
     // The git-failure WARN line is prepended before the FAIL (Python parity:
     // scip_refs.py prints the WARN first). Its tail embeds git's own stderr,
@@ -164,7 +190,9 @@ fn stamp_meta_git_failure_is_exit_2() {
         "unexpected stderr: {}",
         out.stderr
     );
-    assert!(out.stderr.ends_with("[FAIL] 取不到 repo HEAD——meta 未 stamp\n"));
+    assert!(out
+        .stderr
+        .ends_with("[FAIL] 取不到 repo HEAD——meta 未 stamp\n"));
 }
 
 #[test]
@@ -195,7 +223,13 @@ fn query_with_repo_no_meta_yields_src_repo_part_only() {
         .unwrap();
     let repo_s = repo.to_string_lossy().to_string();
 
-    let out = run(&argv(&["EventStoreLifecycle.open", "--index", &idx_s, "--repo", &repo_s]));
+    let out = run(&argv(&[
+        "EventStoreLifecycle.open",
+        "--index",
+        &idx_s,
+        "--repo",
+        &repo_s,
+    ]));
     assert_eq!(out.exit_code, 0);
     let head = code_reality::engine::git_head(&repo).unwrap();
     assert_eq!(

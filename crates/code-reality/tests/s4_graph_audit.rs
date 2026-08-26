@@ -179,7 +179,12 @@ fn db_functions_kind_includes_test_and_resolves_path() {
         });
         spec.node_attrs.push((
             qname.to_string(),
-            crg_fixture::NodeAttr { kind, language: "rust", is_test: 0, community_id: None },
+            crg_fixture::NodeAttr {
+                kind,
+                language: "rust",
+                is_test: 0,
+                community_id: None,
+            },
         ));
     }
     // add a second Test with the same name for the count
@@ -191,7 +196,12 @@ fn db_functions_kind_includes_test_and_resolves_path() {
     });
     spec.node_attrs.push((
         "src/a.rs::t_x2".into(),
-        crg_fixture::NodeAttr { kind: "Test", language: "rust", is_test: 1, community_id: None },
+        crg_fixture::NodeAttr {
+            kind: "Test",
+            language: "rust",
+            is_test: 1,
+            community_id: None,
+        },
     ));
     crg_fixture::make_crg_db(&db, &spec).unwrap();
     let conn = code_reality::common::connect_ro(&db).unwrap();
@@ -203,7 +213,9 @@ fn db_functions_kind_includes_test_and_resolves_path() {
 
 // ---------- audit flow (injected lookup) ----------
 
-fn lookup_from(map: HashMap<String, usize>) -> impl Fn(&Path) -> Result<Option<OrderedCounter>, String> {
+fn lookup_from(
+    map: HashMap<String, usize>,
+) -> impl Fn(&Path) -> Result<Option<OrderedCounter>, String> {
     move |_p: &Path| {
         let mut c = OrderedCounter::default();
         for (k, v) in &map {
@@ -239,7 +251,12 @@ impl U for T {
     });
     spec.node_attrs.push((
         "src/k.rs::T.open".into(),
-        crg_fixture::NodeAttr { kind: "Function", language: "rust", is_test: 0, community_id: None },
+        crg_fixture::NodeAttr {
+            kind: "Function",
+            language: "rust",
+            is_test: 0,
+            community_id: None,
+        },
     ));
     crg_fixture::make_crg_db(&db, &spec).unwrap();
 
@@ -258,8 +275,7 @@ impl U for T {
 
     // zero-output lookup on a non-empty file → vacuous warn + total 0
     let zero = lookup_from(HashMap::new());
-    let (_, audited2, missing2, _, total2, warns2) =
-        audit(&repo, &db, false, Some(&zero)).unwrap();
+    let (_, audited2, missing2, _, total2, warns2) = audit(&repo, &db, false, Some(&zero)).unwrap();
     assert_eq!(audited2, 1);
     assert_eq!(total2, 0);
     assert!(missing2.is_empty());
@@ -393,8 +409,12 @@ fn run_scip(args: &[&str]) -> code_reality::ToolOutput {
 fn cli_help_and_usage_family() {
     let out = run_cli(&["graph_audit", "-h"]);
     assert_eq!(out.exit_code, 0);
-    assert!(out.stdout.starts_with("usage: graph_audit [-h] --repo REPO [--all] [--json] [--graph GRAPH]\n"));
-    assert!(out.stdout.contains("  --graph GRAPH  覆寫 graph.db 路徑（預設 <repo>/.code-review-graph/graph.db）\n"));
+    assert!(out
+        .stdout
+        .starts_with("usage: graph_audit [-h] --repo REPO [--all] [--json] [--graph GRAPH]\n"));
+    assert!(out.stdout.contains(
+        "  --graph GRAPH  覆寫 graph.db 路徑（預設 <repo>/.code-review-graph/graph.db）\n"
+    ));
     let out = run_cli(&["graph_audit"]);
     assert_eq!(out.exit_code, 2);
     assert!(out.stdout.is_empty());
@@ -423,17 +443,38 @@ fn scip_audit_guard_family_before_index_resolution() {
     // guards fire before any index work — no index needed
     let out = run_scip(&["scip_refs", "--audit", "SomeQuery"]);
     assert_eq!(out.exit_code, 2);
-    assert!(out.stderr.contains("--audit 與查詢字串互斥"), "{}", out.stderr);
+    assert!(
+        out.stderr.contains("--audit 與查詢字串互斥"),
+        "{}",
+        out.stderr
+    );
     let out = run_scip(&["scip_refs", "--audit"]);
     assert_eq!(out.exit_code, 2);
-    assert!(out.stderr.contains("--audit 需 --repo（graph_audit 目標）"), "{}", out.stderr);
+    assert!(
+        out.stderr.contains("--audit 需 --repo（graph_audit 目標）"),
+        "{}",
+        out.stderr
+    );
     let out = run_scip(&["scip_refs", "--build-cache", "--audit", "--repo", "/x"]);
     assert_eq!(out.exit_code, 2);
-    assert!(out.stderr.contains("--build-cache 與 --stamp-meta/--audit/查詢互斥"), "{}", out.stderr);
+    assert!(
+        out.stderr
+            .contains("--build-cache 與 --stamp-meta/--audit/查詢互斥"),
+        "{}",
+        out.stderr
+    );
     let out = run_scip(&["scip_refs", "--stamp-meta", "--audit", "--repo", "/x"]);
     assert_eq!(out.exit_code, 2);
-    assert!(out.stderr.contains("--stamp-meta 與 --audit/查詢互斥"), "{}", out.stderr);
+    assert!(
+        out.stderr.contains("--stamp-meta 與 --audit/查詢互斥"),
+        "{}",
+        out.stderr
+    );
     // abbreviation still resolves through the new flag
     let out = run_scip(&["scip_refs", "--a", "q"]);
-    assert!(out.stderr.contains("--audit 與查詢字串互斥"), "{}", out.stderr);
+    assert!(
+        out.stderr.contains("--audit 與查詢字串互斥"),
+        "{}",
+        out.stderr
+    );
 }

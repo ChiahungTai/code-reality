@@ -49,16 +49,33 @@ fn db_with_edges(repo: &Path) -> PathBuf {
     let db = repo.join(".code-review-graph").join("graph.db");
     std::fs::create_dir_all(db.parent().unwrap()).unwrap();
     let mut spec = crg_fixture::CrgDbSpec::default();
-    spec.metadata.push(("git_head_sha".into(), "deadbeefdeadbeef".into()));
+    spec.metadata
+        .push(("git_head_sha".into(), "deadbeefdeadbeef".into()));
     let q = |rel: &str, sym: &str| crg_fixture::qualified(repo, rel, sym);
     for (kind, s, t) in [
-        ("IMPORTS_FROM", q("mosaic_alpha/domain/a.py", "A"), q("mosaic_alpha/infra/b.py", "B")),
+        (
+            "IMPORTS_FROM",
+            q("mosaic_alpha/domain/a.py", "A"),
+            q("mosaic_alpha/infra/b.py", "B"),
+        ),
         // same-module edge: files still counted, edge dropped
-        ("CALLS", q("mosaic_alpha/domain/a.py", "A"), q("mosaic_alpha/domain/c.py", "C")),
+        (
+            "CALLS",
+            q("mosaic_alpha/domain/a.py", "A"),
+            q("mosaic_alpha/domain/c.py", "C"),
+        ),
         // excluded endpoint: skipped entirely
-        ("INHERITS", q("mosaic_alpha/domain/a.py", "A"), q(".venv/pkg/v.py", "V")),
+        (
+            "INHERITS",
+            q("mosaic_alpha/domain/a.py", "A"),
+            q(".venv/pkg/v.py", "V"),
+        ),
         // non-structural kind: not exported, still in raw count
-        ("REFERENCES", q("mosaic_alpha/infra/b.py", "B"), q("mosaic_alpha/domain/a.py", "A2")),
+        (
+            "REFERENCES",
+            q("mosaic_alpha/infra/b.py", "B"),
+            q("mosaic_alpha/domain/a.py", "A2"),
+        ),
     ] {
         spec.edges.push((kind.into(), s, t));
     }
@@ -105,13 +122,28 @@ fn detect_stale_three_levels() {
     assert_eq!(detect_stale(&meta, Some("aaaa"), 1000, "T", None), None);
     // last_updated older → stale reason embeds the raw value + HEAD iso
     let mut meta2 = HashMap::new();
-    meta2.insert("last_updated".to_string(), "2020-01-01T00:00:00".to_string());
+    meta2.insert(
+        "last_updated".to_string(),
+        "2020-01-01T00:00:00".to_string(),
+    );
     assert_eq!(
-        detect_stale(&meta2, Some("bbbb"), 1_800_000_000, "2026-12-31T00:00:00+08:00", None),
-        Some("graph last_updated 2020-01-01T00:00:00 < HEAD commit 2026-12-31T00:00:00+08:00".to_string())
+        detect_stale(
+            &meta2,
+            Some("bbbb"),
+            1_800_000_000,
+            "2026-12-31T00:00:00+08:00",
+            None
+        ),
+        Some(
+            "graph last_updated 2020-01-01T00:00:00 < HEAD commit 2026-12-31T00:00:00+08:00"
+                .to_string()
+        )
     );
     // last_updated newer → fresh
-    meta2.insert("last_updated".to_string(), "2030-01-01T00:00:00".to_string());
+    meta2.insert(
+        "last_updated".to_string(),
+        "2030-01-01T00:00:00".to_string(),
+    );
     assert_eq!(
         detect_stale(&meta2, Some("bbbb"), 1_800_000_000, "T", None),
         None
@@ -119,11 +151,23 @@ fn detect_stale_three_levels() {
     // falls to mtime level
     let meta3 = HashMap::new();
     assert_eq!(
-        detect_stale(&meta3, Some("x"), 1_800_000_000, "T", Some((1_700_000_000, "old".into()))),
+        detect_stale(
+            &meta3,
+            Some("x"),
+            1_800_000_000,
+            "T",
+            Some((1_700_000_000, "old".into()))
+        ),
         Some("graph mtime old < HEAD commit T".to_string())
     );
     assert_eq!(
-        detect_stale(&meta3, Some("x"), 1_800_000_000, "T", Some((1_900_000_000, "new".into()))),
+        detect_stale(
+            &meta3,
+            Some("x"),
+            1_800_000_000,
+            "T",
+            Some((1_900_000_000, "new".into()))
+        ),
         None
     );
 }
@@ -166,18 +210,37 @@ fn cli_ok_line_and_sidecar_schema() {
     assert!(out.stderr.is_empty());
     let want_ok = format!(
         "[OK] snapshot: 3 files, 1 module edges -> {}\n",
-        out_dir.join(format!("{}-{}.json", repo.file_name().unwrap().to_string_lossy(), &sha[..8])).display()
+        out_dir
+            .join(format!(
+                "{}-{}.json",
+                repo.file_name().unwrap().to_string_lossy(),
+                &sha[..8]
+            ))
+            .display()
     );
-    assert_eq!(out.stdout, format!("{want_ok}[LOG] rg '\"module_edges\"' {} | head\n", out_dir.join(format!("{}-{}.json", repo.file_name().unwrap().to_string_lossy(), &sha[..8])).display()));
+    assert_eq!(
+        out.stdout,
+        format!(
+            "{want_ok}[LOG] rg '\"module_edges\"' {} | head\n",
+            out_dir
+                .join(format!(
+                    "{}-{}.json",
+                    repo.file_name().unwrap().to_string_lossy(),
+                    &sha[..8]
+                ))
+                .display()
+        )
+    );
 
-    let sidecar: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(out_dir.join(format!(
+    let sidecar: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(out_dir.join(format!(
             "{}-{}.json",
             repo.file_name().unwrap().to_string_lossy(),
             &sha[..8]
         )))
-        .unwrap())
-        .unwrap();
+        .unwrap(),
+    )
+    .unwrap();
     let keys: Vec<&str> = sidecar["_meta"]
         .as_object()
         .unwrap()
@@ -187,8 +250,15 @@ fn cli_ok_line_and_sidecar_schema() {
     assert_eq!(
         keys,
         vec![
-            "repo", "commit", "created_at", "tool", "label", "stale",
-            "crg_last_updated", "crg_last_build_type", "crg_raw_edges"
+            "repo",
+            "commit",
+            "created_at",
+            "tool",
+            "label",
+            "stale",
+            "crg_last_updated",
+            "crg_last_build_type",
+            "crg_raw_edges"
         ]
     );
     assert_eq!(sidecar["_meta"]["crg_raw_edges"], serde_json::json!(4));
@@ -208,10 +278,12 @@ fn cli_stale_warn_line_shape() {
         &out_dir.to_string_lossy(),
     ]);
     assert_eq!(out.exit_code, 0);
-    assert!(out.stdout.starts_with(
-        "[WARN] CRG graph stale: graph sha deadbeef != HEAD "
-    ));
-    assert!(out.stdout.contains("——先 uvx code-review-graph build 再 snapshot\n"));
+    assert!(out
+        .stdout
+        .starts_with("[WARN] CRG graph stale: graph sha deadbeef != HEAD "));
+    assert!(out
+        .stdout
+        .contains("——先 uvx code-review-graph build 再 snapshot\n"));
 }
 
 #[test]
@@ -229,7 +301,11 @@ fn cli_subdir_repo_is_git_root_crash() {
     // no graph.db under the subdir → missing-db crash family first
     assert_eq!(out.exit_code, 1);
     assert!(out.stdout.is_empty());
-    assert!(out.stderr.contains("[FAIL] graph.db 不存在"), "{}", out.stderr);
+    assert!(
+        out.stderr.contains("[FAIL] graph.db 不存在"),
+        "{}",
+        out.stderr
+    );
 }
 
 #[test]
@@ -244,7 +320,12 @@ fn cli_missing_db_crash_message() {
     ]);
     assert_eq!(out.exit_code, 1);
     assert!(out.stdout.is_empty());
-    assert!(out.stderr.contains("先跑 `uvx code-review-graph build`（SM-11）"), "{}", out.stderr);
+    assert!(
+        out.stderr
+            .contains("先跑 `uvx code-review-graph build`（SM-11）"),
+        "{}",
+        out.stderr
+    );
 }
 
 #[test]
@@ -271,7 +352,9 @@ fn cli_empty_set_warn() {
     assert!(out.stdout.contains(
         "[WARN] snapshot 空集合（0 files，db raw 1 邊）——graph.db 與 --repo 不同 root？下游 transition 會誤報無結構變化\n"
     ));
-    assert!(out.stdout.contains("[OK] snapshot: 0 files, 0 module edges -> "));
+    assert!(out
+        .stdout
+        .contains("[OK] snapshot: 0 files, 0 module edges -> "));
 }
 
 #[test]
@@ -287,7 +370,9 @@ fn build_snapshot_writes_committed_label() {
 fn help_face_bytes() {
     let out = run_cli(&["snapshot", "-h"]);
     assert_eq!(out.exit_code, 0);
-    assert!(out.stdout.starts_with("usage: snapshot [-h] [--repo REPO] [--label LABEL]\n"));
+    assert!(out
+        .stdout
+        .starts_with("usage: snapshot [-h] [--repo REPO] [--label LABEL]\n"));
     assert!(out.stdout.ends_with("  --out-dir OUT_DIR\n"));
 }
 

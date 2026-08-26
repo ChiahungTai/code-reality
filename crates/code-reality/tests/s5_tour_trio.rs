@@ -22,7 +22,11 @@ fn write_tour(root: &Path, rel: &str, title: &str, steps: &[serde_json::Value]) 
         "description": format!("tour {title}"),
         "steps": steps,
     });
-    std::fs::write(&p, format!("{}\n", serde_json::to_string_pretty(&body).unwrap())).unwrap();
+    std::fs::write(
+        &p,
+        format!("{}\n", serde_json::to_string_pretty(&body).unwrap()),
+    )
+    .unwrap();
 }
 
 fn step(file: &str, line: i64, desc: &str) -> serde_json::Value {
@@ -43,7 +47,13 @@ fn manifest_upsert_dump_roundtrip_with_unknown_keys() {
     )
     .unwrap();
     let mut m = tour_manifest::load(&mpath).unwrap();
-    tour_manifest::upsert(&mut m, "b.tour", "chain_tour", &["src/x.py".to_string()], "bbb");
+    tour_manifest::upsert(
+        &mut m,
+        "b.tour",
+        "chain_tour",
+        &["src/x.py".to_string()],
+        "bbb",
+    );
     tour_manifest::dump(&mpath, &m).unwrap();
     let text = std::fs::read_to_string(&mpath).unwrap();
     assert!(text.contains("audience = \"newcomer\""), "{text}");
@@ -67,12 +77,15 @@ fn manifest_init_scan_generator_guess_and_skip_dirs() {
     write_tour(&repo, ".tours/arch/07.tour", "07 - Bar", &[]);
     write_tour(&repo, ".tours/arch/hand-made.tour", "Hand", &[]);
     write_tour(&repo, ".tours/delta/regen.tour", "d", &[]); // skipped
-    // non-git repo → warn + "unknown"
+                                                            // non-git repo → warn + "unknown"
     let (data, warn) = tour_manifest::init_scan(&repo, Path::new(".tours")).unwrap();
     assert!(warn.contains("[WARN] git HEAD 取不到"), "{warn}");
     assert_eq!(data.tour.len(), 3);
     assert_eq!(
-        data.tour["arch/chain-foo.tour"].get("generator").unwrap().as_str(),
+        data.tour["arch/chain-foo.tour"]
+            .get("generator")
+            .unwrap()
+            .as_str(),
         Some("chain_tour")
     );
     assert_eq!(
@@ -80,10 +93,19 @@ fn manifest_init_scan_generator_guess_and_skip_dirs() {
         Some("chain_tour")
     );
     assert_eq!(
-        data.tour["arch/hand-made.tour"].get("generator").unwrap().as_str(),
+        data.tour["arch/hand-made.tour"]
+            .get("generator")
+            .unwrap()
+            .as_str(),
         Some("manual")
     );
-    assert!(data.tour["arch/07.tour"].get("anchored_commit").unwrap().as_str() == Some("unknown"));
+    assert!(
+        data.tour["arch/07.tour"]
+            .get("anchored_commit")
+            .unwrap()
+            .as_str()
+            == Some("unknown")
+    );
 }
 
 #[test]
@@ -121,37 +143,69 @@ fn iter_tours_excludes_delta_by_default() {
 #[test]
 fn validate_link_and_anchor_faces() {
     let repo = repo_fixture("validate");
-    write_tour(&repo, ".tours/01.tour", "01 - Target", &[step("src/a.py", 1, "base")]);
+    write_tour(
+        &repo,
+        ".tours/01.tour",
+        "01 - Target",
+        &[step("src/a.py", 1, "base")],
+    );
     write_tour(
         &repo,
         ".tours/02.tour",
         "02 - Linker",
         &[
-            step("src/a.py", 1, "see [Target][Target#1] and [Missing][ghost key]"),
+            step(
+                "src/a.py",
+                1,
+                "see [Target][Target#1] and [Missing][ghost key]",
+            ),
             step("src/a.py", 99, "prose [not a link] here"),
             step("src/gone.py", 1, "missing file"),
         ],
     );
     std::fs::create_dir_all(repo.join("src")).unwrap();
-    std::fs::write(repo.join("src/a.py"), "fn anchor_line() {}\nfn other() {}\n").unwrap();
+    std::fs::write(
+        repo.join("src/a.py"),
+        "fn anchor_line() {}\nfn other() {}\n",
+    )
+    .unwrap();
     // give step1 a valid pattern and step2 no anchor fields
     let p = repo.join(".tours/02.tour");
-    let mut v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+    let mut v: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
     v["steps"][0]["pattern"] = json!("^fn anchor_line");
     v["steps"][1].as_object_mut().unwrap().remove("line");
     v["steps"][2].as_object_mut().unwrap().remove("line");
     std::fs::write(&p, serde_json::to_string(&v).unwrap()).unwrap();
     let out = tour_validate::validate(&repo, Path::new(".tours"), false);
     assert_eq!(out.exit_code, 1);
-    assert!(out.stdout.contains("[FAIL] .tours/02.tour 步1 tour link 無/歧義目標: ghost key"), "{}", out.stdout);
-    assert!(out.stdout.contains("[WARN] .tours/02.tour 步2 單括號非 link 文字: [not a link]"), "{}", out.stdout);
-    assert!(out.stdout.contains("[OK] tour validate: 2 tours | links=1"), "{}", out.stdout);
+    assert!(
+        out.stdout
+            .contains("[FAIL] .tours/02.tour 步1 tour link 無/歧義目標: ghost key"),
+        "{}",
+        out.stdout
+    );
+    assert!(
+        out.stdout
+            .contains("[WARN] .tours/02.tour 步2 單括號非 link 文字: [not a link]"),
+        "{}",
+        out.stdout
+    );
+    assert!(
+        out.stdout.contains("[OK] tour validate: 2 tours | links=1"),
+        "{}",
+        out.stdout
+    );
     // anchor corrected path: bump the line so the pattern re-anchors
     let mut v2 = v.clone();
     v2["steps"][0]["line"] = json!(2);
     std::fs::write(&p, serde_json::to_string(&v2).unwrap()).unwrap();
     let out2 = tour_validate::validate(&repo, Path::new(".tours"), false);
-    assert!(out2.stdout.contains("錨 corrected: src/a.py L2->L1"), "{}", out2.stdout);
+    assert!(
+        out2.stdout.contains("錨 corrected: src/a.py L2->L1"),
+        "{}",
+        out2.stdout
+    );
 }
 
 // ---------- tour_upgrade ----------
@@ -187,7 +241,9 @@ fn sanitize_brackets_and_crossrefs() {
     // frozen quirks (faithful): (a) the TEXT bracket of a double-bracket
     // link converts (only ](/][ adjacent pass); (b) an END-OF-STRING
     // bracket passes — Python's `after` is "" and `"" in "]("` is True
-    let (out, n) = tour_upgrade::sanitize_brackets("keep [link][Target#1] and [md](./f.py); rust #[derive] is code [inner]");
+    let (out, n) = tour_upgrade::sanitize_brackets(
+        "keep [link][Target#1] and [md](./f.py); rust #[derive] is code [inner]",
+    );
     assert_eq!(n, 2);
     assert!(out.contains("［derive］"), "{out}");
     assert!(out.contains("［link］[Target#1]"), "{out}");
@@ -213,13 +269,14 @@ fn upgrade_dry_run_and_apply() {
         "01 - One",
         &[step("src/m.rs", 1, "starts [1 - One]")],
     );
-    let out = code_reality::tour_upgrade::run(&[
-        "tour_upgrade",
-        "--repo",
-        &repo.to_string_lossy(),
-    ]);
+    let out = code_reality::tour_upgrade::run(&["tour_upgrade", "--repo", &repo.to_string_lossy()]);
     assert_eq!(out.exit_code, 0, "{}{}", out.stdout, out.stderr);
-    assert!(out.stdout.contains("[OK] tour_upgrade DRY-RUN: 1 tours | pattern +1 skip 0 | crossref 1"), "{}", out.stdout);
+    assert!(
+        out.stdout
+            .contains("[OK] tour_upgrade DRY-RUN: 1 tours | pattern +1 skip 0 | crossref 1"),
+        "{}",
+        out.stdout
+    );
     // dry-run: file untouched
     let raw = std::fs::read_to_string(repo.join(".tours/01.tour")).unwrap();
     assert!(!raw.contains("pattern"), "{raw}");
@@ -230,7 +287,11 @@ fn upgrade_dry_run_and_apply() {
         &repo.to_string_lossy(),
         "--apply",
     ]);
-    assert!(out2.stdout.contains("[OK] tour_upgrade APPLY: 1 tours"), "{}", out2.stdout);
+    assert!(
+        out2.stdout.contains("[OK] tour_upgrade APPLY: 1 tours"),
+        "{}",
+        out2.stdout
+    );
     let raw2 = std::fs::read_to_string(repo.join(".tours/01.tour")).unwrap();
     assert!(raw2.contains("\"pattern\""), "{raw2}");
     assert!(raw2.contains("［One］[One#1]"), "{raw2}");

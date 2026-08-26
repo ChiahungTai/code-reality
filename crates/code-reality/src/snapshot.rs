@@ -85,14 +85,19 @@ pub fn export_module_edges(
         .map_err(|e| format!("edges 查詢失敗：{}", e))?;
     let rows = stmt
         .query_map(kinds, |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+            ))
         })
         .map_err(|e| format!("edges 查詢失敗：{}", e))?;
     for row in rows {
         let (kind, src_q, dst_q) = row.map_err(|e| format!("edges 讀取失敗：{}", e))?;
-        let (Some(src_rel), Some(dst_rel)) =
-            (repo_rel_qualified(&src_q, &repo_root), repo_rel_qualified(&dst_q, &repo_root))
-        else {
+        let (Some(src_rel), Some(dst_rel)) = (
+            repo_rel_qualified(&src_q, &repo_root),
+            repo_rel_qualified(&dst_q, &repo_root),
+        ) else {
             continue;
         };
         if is_excluded(&src_rel, profile) || is_excluded(&dst_rel, profile) {
@@ -110,10 +115,7 @@ pub fn export_module_edges(
         .map_err(|e| format!("edges 計數失敗：{}", e))?;
     Ok(EdgeExport {
         files: files.into_iter().collect(),
-        module_edges: edges
-            .into_iter()
-            .map(|(s, d, k)| vec![s, d, k])
-            .collect(),
+        module_edges: edges.into_iter().map(|(s, d, k)| vec![s, d, k]).collect(),
         raw_edge_count,
     })
 }
@@ -280,7 +282,11 @@ impl Snapshot {
             .get("commit")
             .and_then(Value::as_str)
             .unwrap_or("");
-        format!("{}-{}.json", repo, commit.chars().take(8).collect::<String>())
+        format!(
+            "{}-{}.json",
+            repo,
+            commit.chars().take(8).collect::<String>()
+        )
     }
 
     pub fn write(&self, out_dir: &Path) -> Result<PathBuf, String> {
@@ -335,12 +341,7 @@ pub fn build_snapshot(repo_root: &Path, label: Option<&str>) -> Result<Snapshot,
     }?;
     assert_db_unchanged(&db_path, m0)?;
 
-    let mut meta = make_meta(
-        "code_reality.snapshot",
-        &repo_root,
-        Some(&sha),
-        vec![],
-    )?;
+    let mut meta = make_meta("code_reality.snapshot", &repo_root, Some(&sha), vec![])?;
     meta.insert(
         "label".into(),
         match label {
@@ -394,7 +395,10 @@ pub fn run(argv: &[&str]) -> ToolOutput {
             };
         }
         Outcome::Err(msg) => return ToolOutput::fail(msg),
-        Outcome::Ok { values, positionals } => (values, positionals),
+        Outcome::Ok {
+            values,
+            positionals,
+        } => (values, positionals),
     };
     let repo = values
         .get("--repo")
@@ -425,7 +429,11 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         ));
     }
     if snap.files.is_empty() {
-        let raw = snap.meta.get("crg_raw_edges").cloned().unwrap_or(json!(null));
+        let raw = snap
+            .meta
+            .get("crg_raw_edges")
+            .cloned()
+            .unwrap_or(json!(null));
         stdout.push_str(&format!(
             "[WARN] snapshot 空集合（0 files，db raw {raw} 邊）——graph.db 與 --repo 不同 root？下游 transition 會誤報無結構變化\n"
         ));
@@ -436,7 +444,10 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         snap.module_edges.len(),
         path.display()
     ));
-    stdout.push_str(&format!("[LOG] rg '\"module_edges\"' {} | head\n", path.display()));
+    stdout.push_str(&format!(
+        "[LOG] rg '\"module_edges\"' {} | head\n",
+        path.display()
+    ));
     ToolOutput {
         stdout,
         stderr: String::new(),

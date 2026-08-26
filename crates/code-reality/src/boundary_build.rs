@@ -30,7 +30,9 @@ fn re_fn() -> &'static regex::Regex {
 
 fn re_struct() -> &'static regex::Regex {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    RE.get_or_init(|| regex::Regex::new(r"^(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?struct\s+(\w+)").unwrap())
+    RE.get_or_init(|| {
+        regex::Regex::new(r"^(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?struct\s+(\w+)").unwrap()
+    })
 }
 
 fn re_enum() -> &'static regex::Regex {
@@ -140,7 +142,11 @@ fn starts_word_re(inner: &str, prefix: &str) -> bool {
 
 /// Attribute classification (`boundary_build.py:135-159`).
 fn attr_kind(a: &str) -> Option<&'static str> {
-    let inner = if a.ends_with(']') { &a[2..a.len() - 1] } else { &a[2..] };
+    let inner = if a.ends_with(']') {
+        &a[2..a.len() - 1]
+    } else {
+        &a[2..]
+    };
     if word_re(inner, "pyclass") {
         return Some("pyclass");
     }
@@ -222,7 +228,11 @@ fn impl_self_type(header: &str) -> Option<String> {
     let seg = body.trim().split('<').next().unwrap_or("").trim();
     let name = seg.rsplit("::").next().unwrap_or("").trim();
     let is_ident = !name.is_empty()
-        && name.chars().next().map(|c| c.is_alphabetic() || c == '_').unwrap_or(false)
+        && name
+            .chars()
+            .next()
+            .map(|c| c.is_alphabetic() || c == '_')
+            .unwrap_or(false)
         && name.chars().all(|c| c.is_alphanumeric() || c == '_');
     if is_ident {
         Some(name.to_string())
@@ -285,7 +295,10 @@ fn exposed_method_name(fn_name: &str, kind: &str, rename: Option<&str>) -> Strin
 /// One `*.rs` file scan (`boundary_build.py:237-426`): pymethods impl
 /// bodies, pyclass struct/enum with variant/field synthesis, pyfunction.
 pub fn scan_rust_file(path: &Path, repo: &Path) -> (Vec<RsClass>, Vec<RsMethod>, Vec<RsFunction>) {
-    let rel = path.strip_prefix(repo).map(|p| p.to_string_lossy().replace('\\', "/")).unwrap_or_default();
+    let rel = path
+        .strip_prefix(repo)
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_default();
     let raw = std::fs::read(path).unwrap_or_default();
     let content = String::from_utf8_lossy(&raw);
     let lines: Vec<&str> = content.split('\n').collect();
@@ -316,7 +329,11 @@ pub fn scan_rust_file(path: &Path, repo: &Path) -> (Vec<RsClass>, Vec<RsMethod>,
             let mut m = j + 1;
             while m < end {
                 let s = lines[m].trim();
-                if s.is_empty() || s.starts_with("///") || s.starts_with("//!") || s.starts_with("//") {
+                if s.is_empty()
+                    || s.starts_with("///")
+                    || s.starts_with("//!")
+                    || s.starts_with("//")
+                {
                     m += 1;
                     continue;
                 }
@@ -404,7 +421,10 @@ pub fn scan_rust_file(path: &Path, repo: &Path) -> (Vec<RsClass>, Vec<RsMethod>,
             });
             let attr_blob = attrs.join(" ");
             let mut body_start = j;
-            while !lines[body_start].contains('{') && body_start + 1 < lines.len() && body_start < j + 3 {
+            while !lines[body_start].contains('{')
+                && body_start + 1 < lines.len()
+                && body_start < j + 3
+            {
                 body_start += 1;
             }
             if !lines[body_start].contains('{') {
@@ -570,8 +590,12 @@ pub fn pyi_module(pyi_path: &str) -> Result<String, String> {
 /// Parse one .pyi file (`boundary_build.py:468-511`): top-level classes
 /// (enum-ness from bases, method/member tables) and functions.
 pub fn parse_pyi(path: &Path, repo: &Path) -> Result<(Vec<PyClass>, Vec<PyFunction>), String> {
-    let rel = path.strip_prefix(repo).map(|p| p.to_string_lossy().replace('\\', "/")).unwrap_or_default();
-    let src = std::fs::read_to_string(path).map_err(|e| format!("{} 讀取失敗：{e}", path.display()))?;
+    let rel = path
+        .strip_prefix(repo)
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_default();
+    let src =
+        std::fs::read_to_string(path).map_err(|e| format!("{} 讀取失敗：{e}", path.display()))?;
     let line_map = LineMap::new(&src);
     let parsed = ruff_python_parser::parse_module(&src)
         .map_err(|e| format!("{} pyi 解析失敗：{e}", path.display()))?;
@@ -600,15 +624,14 @@ pub fn parse_pyi(path: &Path, repo: &Path) -> Result<(Vec<PyClass>, Vec<PyFuncti
                         ruff_python_ast::Stmt::FunctionDef(f) => {
                             add_pyi_method(&mut pc, f, &line_map);
                         }
-                        ruff_python_ast::Stmt::ClassDef(_)
-                        | ruff_python_ast::Stmt::Pass(_) => {}
+                        ruff_python_ast::Stmt::ClassDef(_) | ruff_python_ast::Stmt::Pass(_) => {}
                         ruff_python_ast::Stmt::Assign(a) => {
                             for t in &a.targets {
                                 if let ruff_python_ast::Expr::Name(n) = t {
                                     // first assignment wins (setdefault)
-                                    pc.members.entry(n.id.as_str().to_string()).or_insert(
-                                        line_map.line(a.range.start().to_usize()),
-                                    );
+                                    pc.members
+                                        .entry(n.id.as_str().to_string())
+                                        .or_insert(line_map.line(a.range.start().to_usize()));
                                 }
                             }
                         }
@@ -723,7 +746,10 @@ pub fn build_boundary(
         class_by_key
             .entry((crate_of(&c.rs_path), c.rust_name.clone()))
             .or_insert_with(|| c.clone());
-        classes_by_rust.entry(c.rust_name.clone()).or_default().push(c.clone());
+        classes_by_rust
+            .entry(c.rust_name.clone())
+            .or_default()
+            .push(c.clone());
     }
     let mut py_class_index: BTreeMap<(String, String), PyClass> = BTreeMap::new();
     for (pmod, pc) in py_classes {
@@ -763,7 +789,11 @@ pub fn build_boundary(
                 rs_symbol: c.rust_name.clone(),
                 rs_path: c.rs_path.clone(),
                 rs_line: c.line,
-                match_kind: if c.exposed == c.rust_name { "NAME_MATCH" } else { "PYCLASS_NAME_RENAME" },
+                match_kind: if c.exposed == c.rust_name {
+                    "NAME_MATCH"
+                } else {
+                    "PYCLASS_NAME_RENAME"
+                },
                 method_kind: None,
             });
         } else {
@@ -782,15 +812,22 @@ pub fn build_boundary(
         .count() as i64;
 
     // method reconciliation (only on class-matched pairs)
-    let mut rs_method_keys: std::collections::BTreeSet<(String, String, String)> = Default::default();
+    let mut rs_method_keys: std::collections::BTreeSet<(String, String, String)> =
+        Default::default();
     for m in methods {
         let mut mkey0 = (crate_of(&m.rs_path), m.rust_class.clone());
         let mut rc = class_by_key.get(&mkey0).cloned();
         if rc.is_none() {
-            let candidates = classes_by_rust.get(&m.rust_class).cloned().unwrap_or_default();
+            let candidates = classes_by_rust
+                .get(&m.rust_class)
+                .cloned()
+                .unwrap_or_default();
             if candidates.len() == 1 {
                 rc = Some(candidates[0].clone());
-                mkey0 = (crate_of(&candidates[0].rs_path), candidates[0].rust_name.clone());
+                mkey0 = (
+                    crate_of(&candidates[0].rs_path),
+                    candidates[0].rust_name.clone(),
+                );
             }
         }
         let Some(rc) = rc else {
@@ -802,7 +839,9 @@ pub fn build_boundary(
         }
         let py_module = rc.py_module.clone().unwrap();
         cov.methods.rs_methods_on_matched_classes += 1;
-        let py = py_class_index.get(&(py_module.clone(), rc.exposed.clone())).unwrap();
+        let py = py_class_index
+            .get(&(py_module.clone(), rc.exposed.clone()))
+            .unwrap();
         let mut exposed = m.exposed.clone();
         if m.kind == "new" {
             // pyo3-stub-gen version difference: __init__ vs __new__ both seen
@@ -851,7 +890,10 @@ pub fn build_boundary(
             }
             None => {
                 cov.methods.rs_only += 1;
-                *cov.methods.rs_only_by_kind.entry(m.kind.clone()).or_insert(0) += 1;
+                *cov.methods
+                    .rs_only_by_kind
+                    .entry(m.kind.clone())
+                    .or_insert(0) += 1;
             }
         }
     }
@@ -885,7 +927,11 @@ pub fn build_boundary(
                     rs_symbol: f.rust_fn.clone(),
                     rs_path: f.rs_path.clone(),
                     rs_line: f.line,
-                    match_kind: if f.exposed != f.rust_fn { "PYO3_NAME_RENAME" } else { "NAME_MATCH" },
+                    match_kind: if f.exposed != f.rust_fn {
+                        "PYO3_NAME_RENAME"
+                    } else {
+                        "NAME_MATCH"
+                    },
                     method_kind: None,
                 });
             }
@@ -942,7 +988,11 @@ fn py_round1(v: f64) -> f64 {
     let scaled = v * 10.0;
     let r = if (scaled - scaled.trunc()).abs() == 0.5 {
         let floor = scaled.floor();
-        if (floor as i64) % 2 == 0 { floor } else { floor + 1.0 }
+        if (floor as i64) % 2 == 0 {
+            floor
+        } else {
+            floor + 1.0
+        }
     } else {
         scaled.round()
     };
@@ -964,7 +1014,10 @@ pub fn coverage_summary(coverage: &Coverage) -> CoverageSummary {
         class_pct: pct(coverage.classes.matched, coverage.classes.rs_pyclass_total),
         method_matched: coverage.methods.matched,
         method_total: coverage.methods.rs_methods_on_matched_classes,
-        method_pct: pct(coverage.methods.matched, coverage.methods.rs_methods_on_matched_classes),
+        method_pct: pct(
+            coverage.methods.matched,
+            coverage.methods.rs_methods_on_matched_classes,
+        ),
         function_matched: coverage.functions.matched,
         function_total: coverage.functions.rs_functions,
         function_pct: pct(coverage.functions.matched, coverage.functions.rs_functions),
@@ -984,9 +1037,21 @@ pub fn known_gaps_of(coverage: &Coverage) -> KnownGaps {
     KnownGaps {
         pyi_only_class_custom_data_macro_est: coverage.classes.pyi_only,
         rs_only_class_declared_not_stubbed: coverage.classes.rs_only,
-        rs_only_method_field_property: *coverage.methods.rs_only_by_kind.get("field_property").unwrap_or(&0),
-        rs_only_method_getter_empty_stub_est: *coverage.methods.rs_only_by_kind.get("getter").unwrap_or(&0),
-        rs_only_method_variant_residual: *coverage.methods.rs_only_by_kind.get("variant").unwrap_or(&0),
+        rs_only_method_field_property: *coverage
+            .methods
+            .rs_only_by_kind
+            .get("field_property")
+            .unwrap_or(&0),
+        rs_only_method_getter_empty_stub_est: *coverage
+            .methods
+            .rs_only_by_kind
+            .get("getter")
+            .unwrap_or(&0),
+        rs_only_method_variant_residual: *coverage
+            .methods
+            .rs_only_by_kind
+            .get("variant")
+            .unwrap_or(&0),
     }
 }
 
@@ -1006,8 +1071,14 @@ pub fn write_sidecar(
     let _ = std::fs::remove_file(&db);
     let mut meta = make_meta(TOOL, nt_repo, Some(nt_commit), vec![])?;
     meta.shift_remove("commit"); // nt_commit is the authority key
-    meta.insert("nt_commit".into(), serde_json::Value::String(nt_commit.to_string()));
-    meta.insert("edges_count".into(), serde_json::Value::String(edges.len().to_string()));
+    meta.insert(
+        "nt_commit".into(),
+        serde_json::Value::String(nt_commit.to_string()),
+    );
+    meta.insert(
+        "edges_count".into(),
+        serde_json::Value::String(edges.len().to_string()),
+    );
     meta.insert(
         "coverage_summary".into(),
         serde_json::Value::String(serde_json::to_string(&coverage_summary(coverage)).unwrap()),
@@ -1142,7 +1213,8 @@ pub fn build_sidecar(repo: &Path, out_dir: &Path) -> Result<PathBuf, String> {
         py_classes.extend(pcs.into_iter().map(|c| (module.clone(), c)));
         py_functions.extend(pfs.into_iter().map(|f| (module.clone(), f)));
     }
-    let (edges, coverage) = build_boundary(&classes, &methods, &functions, &py_classes, &py_functions);
+    let (edges, coverage) =
+        build_boundary(&classes, &methods, &functions, &py_classes, &py_functions);
     write_sidecar(&repo, &sha, &edges, &coverage, out_dir)
 }
 
@@ -1153,8 +1225,16 @@ pub fn run(argv: &[&str]) -> ToolOutput {
     };
     let spec = ToolSpec {
         flags: &[
-            FlagSpec { long: "--repo", short: None, kind: Kind::Value { metavar: "REPO" } },
-            FlagSpec { long: "--out-dir", short: None, kind: Kind::Value { metavar: "OUT_DIR" } },
+            FlagSpec {
+                long: "--repo",
+                short: None,
+                kind: Kind::Value { metavar: "REPO" },
+            },
+            FlagSpec {
+                long: "--out-dir",
+                short: None,
+                kind: Kind::Value { metavar: "OUT_DIR" },
+            },
         ],
         positionals: &[],
     };
@@ -1205,11 +1285,14 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         .unwrap_or_default();
     drop(conn);
     let summary: CoverageSummary = serde_json::from_str(
-        meta.get("coverage_summary").map(String::as_str).unwrap_or("{}"),
+        meta.get("coverage_summary")
+            .map(String::as_str)
+            .unwrap_or("{}"),
     )
     .unwrap_or_default();
     let gaps: KnownGaps =
-        serde_json::from_str(meta.get("known_gaps").map(String::as_str).unwrap_or("{}")).unwrap_or_default();
+        serde_json::from_str(meta.get("known_gaps").map(String::as_str).unwrap_or("{}"))
+            .unwrap_or_default();
     let nt_commit = meta.get("nt_commit").cloned().unwrap_or_default();
     let mut stdout = format!(
         "[OK] boundary sidecar: {} edges -> {}（NT {}）\n",
@@ -1241,7 +1324,11 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         "[LOG] 查詢：uv run --project ~/Github/ai-rules python -m code_reality.boundary <symbol> --repo <repo>｜裸 sqlite：sqlite3 {} 'SELECT * FROM boundary_edges WHERE py_symbol LIKE \"%LiveNode%\"'\n",
         db.display()
     ));
-    ToolOutput { stdout, stderr: String::new(), exit_code: 0 }
+    ToolOutput {
+        stdout,
+        stderr: String::new(),
+        exit_code: 0,
+    }
 }
 
 use crate::argparse::{parse, FlagSpec, Kind, Outcome, ToolSpec};

@@ -72,7 +72,9 @@ pub fn connect_ro(db_path: &Path) -> Result<Connection, String> {
                 "{} 有 {} 但 mode=ro 開啟失敗（writer crash 後 hot-WAL-無-shm）——先 \
                  `uvx code-review-graph status` 或 build 後重跑",
                 name,
-                wal.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+                wal.file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default()
             )
         },
     )
@@ -315,9 +317,7 @@ pub fn parse_iso_to_epoch(s: &str) -> Option<i64> {
     if b.len() < 19 {
         return None;
     }
-    let num = |r: std::ops::Range<usize>| -> Option<i64> {
-        s.get(r)?.parse::<i64>().ok()
-    };
+    let num = |r: std::ops::Range<usize>| -> Option<i64> { s.get(r)?.parse::<i64>().ok() };
     let y = num(0..4)?;
     let mo = num(5..7)? as u32;
     let d = num(8..10)? as u32;
@@ -462,7 +462,10 @@ mod tests {
     #[test]
     fn repo_relative_outside_is_none() {
         let root = Path::new("/tmp/repo");
-        assert_eq!(repo_relative("/tmp/repo/a/b.py", root), Some("a/b.py".into()));
+        assert_eq!(
+            repo_relative("/tmp/repo/a/b.py", root),
+            Some("a/b.py".into())
+        );
         assert_eq!(repo_relative("/elsewhere/x.py", root), None);
     }
 
@@ -487,10 +490,7 @@ mod tests {
 
     #[test]
     fn epoch_to_utc_iso_zero_micros_omits_frac() {
-        assert_eq!(
-            epoch_to_utc_iso(0, 0, true),
-            "1970-01-01T00:00:00+00:00"
-        );
+        assert_eq!(epoch_to_utc_iso(0, 0, true), "1970-01-01T00:00:00+00:00");
         assert_eq!(
             epoch_to_utc_iso(1, 500_000, true),
             "1970-01-01T00:00:01.500000+00:00"

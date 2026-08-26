@@ -2,7 +2,9 @@
 //! families (nesting extraction, pid/tid grouping, repo-only filter,
 //! aggregation stats, BooleanOptionalAction pair).
 
-use code_reality::runtime_edges::{aggregate, event_path, extract_edges, qualname, repo_only_filter, run};
+use code_reality::runtime_edges::{
+    aggregate, event_path, extract_edges, qualname, repo_only_filter, run,
+};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 
@@ -27,7 +29,10 @@ fn nesting_extraction_nearest_ancestor() {
         ev(1, 10, 50, 10, "late (a.py:4)"), // after mid ends — parent = outer
     ];
     let edges = extract_edges(&events).unwrap();
-    let pairs: Vec<(&str, &str)> = edges.iter().map(|(c, f, _)| (c.as_str(), f.as_str())).collect();
+    let pairs: Vec<(&str, &str)> = edges
+        .iter()
+        .map(|(c, f, _)| (c.as_str(), f.as_str()))
+        .collect();
     assert_eq!(
         pairs,
         vec![
@@ -71,10 +76,26 @@ fn repo_only_keeps_one_endpoint_inside() {
     let repo = std::fs::canonicalize(repo.path()).unwrap();
     let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
     let edges = vec![
-        (format!("a ({}/x.py:1)", abs("")), format!("b ({}/y.py:1)", abs("")), 1.0),
-        ("noise genexpr".to_string(), format!("c ({}/z.py:1)", abs("")), 1.0),
-        (format!("d ({}/w.py:1)", abs("")), "other (/elsewhere/q.py:1)".to_string(), 1.0),
-        ("g (/elsewhere/e.py:1)".to_string(), "h (/elsewhere/f.py:1)".to_string(), 1.0),
+        (
+            format!("a ({}/x.py:1)", abs("")),
+            format!("b ({}/y.py:1)", abs("")),
+            1.0,
+        ),
+        (
+            "noise genexpr".to_string(),
+            format!("c ({}/z.py:1)", abs("")),
+            1.0,
+        ),
+        (
+            format!("d ({}/w.py:1)", abs("")),
+            "other (/elsewhere/q.py:1)".to_string(),
+            1.0,
+        ),
+        (
+            "g (/elsewhere/e.py:1)".to_string(),
+            "h (/elsewhere/f.py:1)".to_string(),
+            1.0,
+        ),
     ];
     let kept = repo_only_filter(&edges, &repo);
     assert_eq!(kept.len(), 3); // rows 1-3 (row 2's callee is in-repo; row 4 both outside)
@@ -86,7 +107,13 @@ fn aggregate_stats_count_desc_and_nearest_rank_p95() {
     // dur µs → ms rounding; p50 even-n mean; p95 ceil rank
     let mk = |n: usize| -> Vec<(String, String, f64)> {
         (0..n)
-            .map(|i| ("caller (a.py:1)".to_string(), "callee (b.py:1)".to_string(), (i + 1) as f64 * 100.0))
+            .map(|i| {
+                (
+                    "caller (a.py:1)".to_string(),
+                    "callee (b.py:1)".to_string(),
+                    (i + 1) as f64 * 100.0,
+                )
+            })
             .collect()
     };
     let rows = aggregate(&mk(20));
@@ -95,9 +122,16 @@ fn aggregate_stats_count_desc_and_nearest_rank_p95() {
     assert_eq!(r["count"], json!(20));
     assert_eq!(r["p50_ms"], json!(1.05)); // median of 100..2000µs (even-n mean) = 1050µs
     assert_eq!(r["p95_ms"], json!(1.9)); // ceil(0.95*20)=19th sorted = 1900µs
-    // ordering: higher count first
+                                         // ordering: higher count first
     let mut mixed = mk(5);
-    mixed.extend(vec![("x (a.py:1)".to_string(), "y (b.py:1)".to_string(), 50.0); 7]);
+    mixed.extend(vec![
+        (
+            "x (a.py:1)".to_string(),
+            "y (b.py:1)".to_string(),
+            50.0
+        );
+        7
+    ]);
     let rows2 = aggregate(&mixed);
     assert_eq!(rows2[0]["count"], json!(7));
     assert_eq!(rows2[1]["count"], json!(5));
@@ -125,7 +159,11 @@ fn cli_end_to_end_output_faces() {
         ev(1, 10, 0, 100, format!("outer ({}/pkg/a.py:1)", abs(""))),
         ev(1, 10, 10, 30, format!("inner ({}/pkg/a.py:2)", abs(""))),
     ];
-    std::fs::write(&trace, serde_json::to_string(&json!({"traceEvents": events})).unwrap()).unwrap();
+    std::fs::write(
+        &trace,
+        serde_json::to_string(&json!({"traceEvents": events})).unwrap(),
+    )
+    .unwrap();
     // make_meta runs `git rev-parse HEAD` with check=True semantics — the
     // fixture needs at least one commit (crash family otherwise)
     let g = |args: &[&str]| {
@@ -152,14 +190,37 @@ fn cli_end_to_end_output_faces() {
         &repo.join("edges.json").to_string_lossy(),
     ]);
     assert_eq!(out.exit_code, 0, "{}{}", out.stdout, out.stderr);
-    assert!(out.stdout.contains("[OK] 1 edges from 3 events -> "), "{}", out.stdout);
-    assert!(out.stdout.contains("top: outer -> inner x1 p50=0.03ms"), "{}", out.stdout);
+    assert!(
+        out.stdout.contains("[OK] 1 edges from 3 events -> "),
+        "{}",
+        out.stdout
+    );
+    assert!(
+        out.stdout.contains("top: outer -> inner x1 p50=0.03ms"),
+        "{}",
+        out.stdout
+    );
     let written: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(repo.join("edges.json")).unwrap()).unwrap();
-    let meta_keys: Vec<&str> = written["_meta"].as_object().unwrap().keys().map(|k| k.as_str()).collect();
+    let meta_keys: Vec<&str> = written["_meta"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(|k| k.as_str())
+        .collect();
     assert_eq!(
         meta_keys,
-        vec!["repo", "commit", "created_at", "tool", "trace", "repo_only", "pids", "total_events", "total_edges"]
+        vec![
+            "repo",
+            "commit",
+            "created_at",
+            "tool",
+            "trace",
+            "repo_only",
+            "pids",
+            "total_events",
+            "total_edges"
+        ]
     );
     assert_eq!(written["edges"][0]["count"], json!(1));
 
@@ -173,6 +234,10 @@ fn cli_end_to_end_output_faces() {
         "-o",
         &repo.join("edges2.json").to_string_lossy(),
     ]);
-    assert!(out2.stdout.contains("[OK] 1 edges from 3 events"), "{}", out2.stdout);
+    assert!(
+        out2.stdout.contains("[OK] 1 edges from 3 events"),
+        "{}",
+        out2.stdout
+    );
     let _ = PathBuf::new();
 }

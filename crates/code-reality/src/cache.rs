@@ -170,9 +170,7 @@ fn query_loc_rows(
 
 fn query_text_pairs(conn: &Connection, sql: &str) -> rusqlite::Result<Vec<(String, String)>> {
     let mut stmt = conn.prepare(sql)?;
-    let rows = stmt.query_map([], |r| {
-        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-    })?;
+    let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
     rows.collect()
 }
 
@@ -197,12 +195,16 @@ pub fn stale_reason(index_path: &Path, db_path: &Path) -> Option<String> {
         Ok(c) => c,
         Err(reason) => return Some(reason),
     };
-    let meta_rows: BTreeMap<String, String> = match query_text_pairs(&conn, "SELECT key, value FROM meta") {
-        Ok(rows) => rows.into_iter().collect(),
-        Err(e) => return Some(format!("db 損壞：{}", e)),
-    };
+    let meta_rows: BTreeMap<String, String> =
+        match query_text_pairs(&conn, "SELECT key, value FROM meta") {
+            Ok(rows) => rows.into_iter().collect(),
+            Err(e) => return Some(format!("db 損壞：{}", e)),
+        };
     if meta_rows.get("schema").map(String::as_str) != Some(SCHEMA_VERSION) {
-        let got = meta_rows.get("schema").cloned().unwrap_or_else(|| "無".into());
+        let got = meta_rows
+            .get("schema")
+            .cloned()
+            .unwrap_or_else(|| "無".into());
         return Some(format!("schema 版本不符（{} ≠ {}）", got, SCHEMA_VERSION));
     }
     if meta_rows.get("head").cloned().unwrap_or_default() != sidecar_head(index_path) {
@@ -222,9 +224,7 @@ fn open_ro(db_path: &Path) -> Result<Connection, String> {
 /// Query errors (corrupt-but-meta-intact db) propagate as Err — the caller
 /// decides (WARN + protobuf fallback), never a silent empty answer.
 pub enum Face {
-    Protobuf {
-        index: Index,
-    },
+    Protobuf { index: Index },
     Sqlite(Connection),
 }
 
@@ -269,7 +269,12 @@ pub fn open_face(index_path: &Path) -> Result<(Face, Vec<String>), String> {
     if !db_path.exists() {
         let loaded = load_index(index_path)?;
         stderr.push(loaded.stderr);
-        return Ok((Face::Protobuf { index: loaded.index }, stderr));
+        return Ok((
+            Face::Protobuf {
+                index: loaded.index,
+            },
+            stderr,
+        ));
     }
     match stale_reason(index_path, &db_path) {
         None => match open_ro(&db_path) {
@@ -281,7 +286,12 @@ pub fn open_face(index_path: &Path) -> Result<(Face, Vec<String>), String> {
                 ));
                 let loaded = load_index(index_path)?;
                 stderr.push(loaded.stderr);
-                Ok((Face::Protobuf { index: loaded.index }, stderr))
+                Ok((
+                    Face::Protobuf {
+                        index: loaded.index,
+                    },
+                    stderr,
+                ))
             }
         },
         Some(reason) => {
@@ -305,7 +315,9 @@ pub fn open_face(index_path: &Path) -> Result<(Face, Vec<String>), String> {
                         "[WARN] 衍生 db 重建失敗——本次查詢改走 protobuf 全量解析：{}\n",
                         e
                     ));
-                    Face::Protobuf { index: loaded.index }
+                    Face::Protobuf {
+                        index: loaded.index,
+                    }
                 }
             };
             Ok((face, stderr))
@@ -404,7 +416,9 @@ pub fn sqlite_refs_rows(
     );
     let params: Vec<&dyn rusqlite::ToSql> =
         symbols.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
-    let mut stmt = conn.prepare(&sql).map_err(|e| truncate_err(&e.to_string()))?;
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| truncate_err(&e.to_string()))?;
     let rows = stmt
         .query_map(params.as_slice(), |r| {
             Ok((

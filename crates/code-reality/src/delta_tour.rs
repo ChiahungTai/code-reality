@@ -7,9 +7,7 @@
 use crate::argparse::{parse, FlagSpec, Kind, Outcome, ToolSpec};
 use crate::common::{anchor_pattern, to_json_indent1};
 use crate::profile::{is_excluded, load_profile, module_of};
-use crate::transition::{
-    extract_ep_claims, load_snapshot, render_json_value, summarize,
-};
+use crate::transition::{extract_ep_claims, load_snapshot, render_json_value, summarize};
 use crate::ToolOutput;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -88,7 +86,12 @@ pub fn first_change_lines(
     let out = String::from_utf8_lossy(&git_bytes(
         repo_root,
         &[
-            "diff", "--name-status", "-z", "--diff-filter=AM", before, after,
+            "diff",
+            "--name-status",
+            "-z",
+            "--diff-filter=AM",
+            before,
+            after,
         ],
     )?)
     .into_owned();
@@ -131,13 +134,12 @@ pub fn first_change_lines(
 /// Full `git diff --name-status -z` for the claimed range — the step-set
 /// single source of truth (snapshot file sets drift when the profile or
 /// exclusions change between exports).
-pub type RangeStatus = (BTreeMap<&'static str, Vec<String>>, BTreeMap<String, String>);
+pub type RangeStatus = (
+    BTreeMap<&'static str, Vec<String>>,
+    BTreeMap<String, String>,
+);
 
-pub fn range_status(
-    repo_root: &Path,
-    before: &str,
-    after: &str,
-) -> Result<RangeStatus, String> {
+pub fn range_status(repo_root: &Path, before: &str, after: &str) -> Result<RangeStatus, String> {
     let out = String::from_utf8_lossy(&git_bytes(
         repo_root,
         &["diff", "--name-status", "-z", before, after],
@@ -203,8 +205,16 @@ pub fn new_file_anchor(repo_root: &Path, after: &str, path: &str) -> i64 {
 /// Commit subjects touching `path` within the range — the cheapest
 /// mechanical why for step descriptions.
 pub fn file_subjects(repo_root: &Path, before: &str, after: &str, path: &str) -> Vec<String> {
-    let Ok(out) = git_bytes(repo_root, &["log", "--format=%s", &format!("{before}..{after}"), "--", path])
-    else {
+    let Ok(out) = git_bytes(
+        repo_root,
+        &[
+            "log",
+            "--format=%s",
+            &format!("{before}..{after}"),
+            "--",
+            path,
+        ],
+    ) else {
         return Vec::new();
     };
     String::from_utf8_lossy(&out)
@@ -254,7 +264,11 @@ pub fn build_tour(
     let (jump, _) = first_change_lines(repo_root, before, after)?;
 
     let empty: Vec<Value> = Vec::new();
-    let claims = data.get("ep_claims").and_then(Value::as_object).cloned().unwrap_or_default();
+    let claims = data
+        .get("ep_claims")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
     let strs = |key: &str| -> Vec<String> {
         claims
             .get(key)
@@ -272,16 +286,18 @@ pub fn build_tour(
     // accusation — only when the comparison actually ran
     let (claims_state, nc_reason): (&str, Option<String>) = if data.get("ep_claims").is_none() {
         ("no_ep", None)
-    } else if claims.get("claims_none").and_then(Value::as_bool).unwrap_or(false) {
+    } else if claims
+        .get("claims_none")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
         (
             "not_compared",
-            Some(
-                if profile.is_none() {
-                    "profile 未載入——--repo 未指到含 .code-reality.toml 的 checkout".to_string()
-                } else {
-                    "EP 內無 profile 前綴路徑 mention（相對路徑需可解析至前綴下）".to_string()
-                },
-            ),
+            Some(if profile.is_none() {
+                "profile 未載入——--repo 未指到含 .code-reality.toml 的 checkout".to_string()
+            } else {
+                "EP 內無 profile 前綴路徑 mention（相對路徑需可解析至前綴下）".to_string()
+            }),
         )
     } else if c_hit.is_empty() && !c_sur.is_empty() {
         let reason =
@@ -310,10 +326,15 @@ pub fn build_tour(
     let changed_modules: Vec<String> = data
         .get("changed_modules")
         .and_then(Value::as_array)
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
-    let claims_section = match claims_state {
-        "compared" => format!(
+    let claims_section =
+        match claims_state {
+            "compared" => format!(
             "**宣稱對照**——✓ 命中 ({})：{}；\n⚠ EP 沒提卻變了 ({})：{}；\n✗ 宣稱未動 ({})：{}。",
             c_hit.len(),
             if c_hit.is_empty() { "無".into() } else { c_hit.join(", ") },
@@ -322,32 +343,52 @@ pub fn build_tour(
             c_miss.len(),
             if c_miss.is_empty() { "無".into() } else { c_miss.join(", ") }
         ),
-        "not_compared" => format!(
+            "not_compared" => format!(
             "**EP 宣稱對照：未比對**——{}；本 tour 不對步驟標註 ✓/⚠。\n實際變動模組（供判讀）：{}",
             nc_reason.unwrap_or_default(),
             if changed_modules.is_empty() { "無".into() } else { changed_modules.join(", ") }
         ),
-        _ => format!(
-            "**EP 宣稱**：NONE（未提供 --ep）。\n實際變動模組（供判讀）：{}",
-            if changed_modules.is_empty() { "無".into() } else { changed_modules.join(", ") }
-        ),
-    };
+            _ => format!(
+                "**EP 宣稱**：NONE（未提供 --ep）。\n實際變動模組（供判讀）：{}",
+                if changed_modules.is_empty() {
+                    "無".into()
+                } else {
+                    changed_modules.join(", ")
+                }
+            ),
+        };
 
     let noise = |f: &str| -> bool {
         is_excluded(f, profile.as_ref()) || f.starts_with(".kanban/") || f.starts_with(".tours/")
     };
-    let a_files: Vec<String> = statuses["A"].iter().filter(|f| !noise(f)).cloned().collect();
+    let a_files: Vec<String> = statuses["A"]
+        .iter()
+        .filter(|f| !noise(f))
+        .cloned()
+        .collect();
     let r_files: Vec<String> = renames.keys().filter(|f| !noise(f)).cloned().collect();
     let m_files: Vec<String> = statuses["M"]
         .iter()
         .filter(|f| !noise(f) && !renames.contains_key(*f))
         .cloned()
         .collect();
-    let d_files: Vec<String> = statuses["D"].iter().filter(|f| !noise(f)).cloned().collect();
+    let d_files: Vec<String> = statuses["D"]
+        .iter()
+        .filter(|f| !noise(f))
+        .cloned()
+        .collect();
 
     // overview counts derive from the same sets as the steps
-    let added_n = data.get("added").and_then(Value::as_array).map(|a| a.len()).unwrap_or(0);
-    let removed_n = data.get("removed").and_then(Value::as_array).map(|a| a.len()).unwrap_or(0);
+    let added_n = data
+        .get("added")
+        .and_then(Value::as_array)
+        .map(|a| a.len())
+        .unwrap_or(0);
+    let removed_n = data
+        .get("removed")
+        .and_then(Value::as_array)
+        .map(|a| a.len())
+        .unwrap_or(0);
     let summary = format!(
         "before `{}` → after `{}`：+{}/−{} 模組邊、{} 新檔、{} 改名、{} 修改、{} 刪檔。\n\n{}\n\n之後每步一個變動檔（修改錨第一個 hunk、新檔錨第一個宣告行）。",
         before.chars().take(8).collect::<String>(),
@@ -365,19 +406,21 @@ pub fn build_tour(
     let ep_anchor: Option<String> = if ep_on_disk {
         ep_path.map(|p| p.display().to_string())
     } else {
-        a_files.first().cloned().or_else(|| r_files.first().cloned())
+        a_files
+            .first()
+            .cloned()
+            .or_else(|| r_files.first().cloned())
     };
 
     let mut lines_cache: HashMap<String, Option<Vec<String>>> = HashMap::new();
-    let step_pattern = |f: &str, ln: i64,
-                        cache: &mut HashMap<String, Option<Vec<String>>>|
-     -> Option<String> {
-        let lines = after_lines(repo_root, after, f, cache)?;
-        if (ln - 1) >= lines.len() as i64 || lines[(ln - 1) as usize].trim().is_empty() {
-            return None;
-        }
-        Some(anchor_pattern(&lines[(ln - 1) as usize]))
-    };
+    let step_pattern =
+        |f: &str, ln: i64, cache: &mut HashMap<String, Option<Vec<String>>>| -> Option<String> {
+            let lines = after_lines(repo_root, after, f, cache)?;
+            if (ln - 1) >= lines.len() as i64 || lines[(ln - 1) as usize].trim().is_empty() {
+                return None;
+            }
+            Some(anchor_pattern(&lines[(ln - 1) as usize]))
+        };
 
     let mut overview = json!({
         "file": ep_anchor.clone().unwrap_or_else(|| "README.md".into()),
@@ -421,7 +464,10 @@ pub fn build_tour(
             description.push_str(&format!(" · {ct}"));
         }
         if tag == "→改名" {
-            description.push_str(&format!("\n改名自 `{}`。", renames.get(&f).cloned().unwrap_or_default()));
+            description.push_str(&format!(
+                "\n改名自 `{}`。",
+                renames.get(&f).cloned().unwrap_or_default()
+            ));
         }
         if !subs.is_empty() {
             description.push_str(&format!("\ncommit: {}", subs[0]));
@@ -435,7 +481,11 @@ pub fn build_tour(
         let title = format!(
             "{tag} {}{}",
             f.rsplit('/').next().unwrap_or(&f),
-            if ct.is_empty() { String::new() } else { format!("（{ct}）") }
+            if ct.is_empty() {
+                String::new()
+            } else {
+                format!("（{ct}）")
+            }
         );
         let mut step = json!({
             "file": f,
@@ -444,7 +494,9 @@ pub fn build_tour(
             "description": description,
         });
         if let Some(pat) = step_pattern(&f, ln, &mut lines_cache) {
-            step.as_object_mut().unwrap().insert("pattern".into(), Value::String(pat));
+            step.as_object_mut()
+                .unwrap()
+                .insert("pattern".into(), Value::String(pat));
         }
         steps.push(step);
     }
@@ -490,12 +542,19 @@ pub fn cleanup_expired(out_dir: &Path, keep_days: i64, today: &str) -> usize {
         if p.extension().map(|e| e != "tour").unwrap_or(true) {
             continue;
         }
-        let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let Some(m) = dr.captures(&name) else { continue };
+        let name = p
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let Some(m) = dr.captures(&name) else {
+            continue;
+        };
         // date diff in days (ISO strings compare lexicographically)
         let today_days = iso_to_days(today);
         let file_days = iso_to_days(&m[1]);
-        let (Some(t), Some(f)) = (today_days, file_days) else { continue };
+        let (Some(t), Some(f)) = (today_days, file_days) else {
+            continue;
+        };
         if t - f > keep_days {
             let _ = std::fs::remove_file(&p);
             removed += 1;
@@ -519,10 +578,26 @@ pub fn run(argv: &[&str]) -> ToolOutput {
     };
     let spec = ToolSpec {
         flags: &[
-            FlagSpec { long: "--ep", short: None, kind: Kind::Value { metavar: "EP" } },
-            FlagSpec { long: "--repo", short: None, kind: Kind::Value { metavar: "REPO" } },
-            FlagSpec { long: "--task", short: None, kind: Kind::Value { metavar: "TASK" } },
-            FlagSpec { long: "--out-dir", short: None, kind: Kind::Value { metavar: "OUT_DIR" } },
+            FlagSpec {
+                long: "--ep",
+                short: None,
+                kind: Kind::Value { metavar: "EP" },
+            },
+            FlagSpec {
+                long: "--repo",
+                short: None,
+                kind: Kind::Value { metavar: "REPO" },
+            },
+            FlagSpec {
+                long: "--task",
+                short: None,
+                kind: Kind::Value { metavar: "TASK" },
+            },
+            FlagSpec {
+                long: "--out-dir",
+                short: None,
+                kind: Kind::Value { metavar: "OUT_DIR" },
+            },
         ],
         positionals: &["snapshot_a", "snapshot_b"],
     };
@@ -552,9 +627,15 @@ pub fn run(argv: &[&str]) -> ToolOutput {
             };
         }
         Outcome::Err(msg) => return ToolOutput::fail(msg),
-        Outcome::Ok { values, positionals } => (values, positionals),
+        Outcome::Ok {
+            values,
+            positionals,
+        } => (values, positionals),
     };
-    let ep = values.get("--ep").and_then(|v| v.clone()).map(PathBuf::from);
+    let ep = values
+        .get("--ep")
+        .and_then(|v| v.clone())
+        .map(PathBuf::from);
     let repo = values
         .get("--repo")
         .and_then(|v| v.clone())
@@ -570,9 +651,16 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         None => ep
             .as_ref()
             .map(|p| {
-                let stem = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+                let stem = p
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_default();
                 let k = kebab(&stem);
-                if k.is_empty() { DEFAULT_TASK.to_string() } else { k }
+                if k.is_empty() {
+                    DEFAULT_TASK.to_string()
+                } else {
+                    k
+                }
             })
             .unwrap_or_else(|| DEFAULT_TASK.to_string()),
     };
@@ -609,7 +697,15 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         },
     };
     let (diff, new_files, gone_files) = summarize(&sa, &sb);
-    let data = render_json_value(&sa, &sb, claims.as_ref(), &diff, &new_files, &gone_files, profile.as_ref());
+    let data = render_json_value(
+        &sa,
+        &sb,
+        claims.as_ref(),
+        &diff,
+        &new_files,
+        &gone_files,
+        profile.as_ref(),
+    );
     let tour = match build_tour(&data, &repo, ep.as_deref(), &task, &mut stderr) {
         Ok(t) => t,
         Err(e) => return ToolOutput::crash(e),
@@ -622,12 +718,20 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         return ToolOutput::crash(format!("{} 寫入失敗：{e}", out_path.display()));
     }
     let n_steps = tour["steps"].as_array().map(|a| a.len()).unwrap_or(0);
-    stdout.push_str(&format!("[OK] delta tour: {n_steps} steps -> {}\n", out_path.display()));
+    stdout.push_str(&format!(
+        "[OK] delta tour: {n_steps} steps -> {}\n",
+        out_path.display()
+    ));
     let cleaned = cleanup_expired(&out_dir, 7, &local_today());
     if cleaned > 0 {
-        stdout.push_str(&format!("[OK] cleaned {cleaned} expired delta tours（>7 天）\n"));
+        stdout.push_str(&format!(
+            "[OK] cleaned {cleaned} expired delta tours（>7 天）\n"
+        ));
     }
     stdout.push_str("[LOG] CodeTour 擴充載入 .tours/ 走讀（vanilla 或 fork 皆可）\n");
-    ToolOutput { stdout, stderr, exit_code: 0 }
+    ToolOutput {
+        stdout,
+        stderr,
+        exit_code: 0,
+    }
 }
-

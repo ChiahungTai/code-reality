@@ -53,10 +53,15 @@ fn repo_fixture(tag: &str) -> (PathBuf, PathBuf) {
     std::fs::write(&chain, CHAIN_MD).unwrap();
     let g = |args: &[&str]| {
         std::process::Command::new("git")
-            .arg("-C").arg(&repo).args(args)
-            .env("GIT_AUTHOR_NAME", "t").env("GIT_AUTHOR_EMAIL", "t@t")
-            .env("GIT_COMMITTER_NAME", "t").env("GIT_COMMITTER_EMAIL", "t@t")
-            .status().unwrap();
+            .arg("-C")
+            .arg(&repo)
+            .args(args)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .status()
+            .unwrap();
     };
     g(&["init", "-q"]);
     g(&["add", "."]);
@@ -104,7 +109,7 @@ fn build_tours_skips_external_and_anchors() {
     let desc = t0["description"].as_str().unwrap();
     assert!(desc.contains("4 幀 → 3 步；1 幀跳過"), "{desc}");
     assert!(desc.contains("noref 1"), "{desc}"); // no path ref in the frame → noref
-    // steps anchored at doc lines (same-file, no graph)
+                                                 // steps anchored at doc lines (same-file, no graph)
     let steps = t0["steps"].as_array().unwrap();
     assert_eq!(steps[0]["file"], "pkg/a.py");
     assert_eq!(steps[0]["line"], 1);
@@ -123,7 +128,11 @@ fn build_tours_with_graph_reanchor() {
         ("boot", "pkg/a.py::boot", 9),
         ("load_config", "pkg/cfg.py::load_config", 2),
     ] {
-        let file = if name == "load_config" { abs("pkg/cfg.py") } else { abs("pkg/a.py") };
+        let file = if name == "load_config" {
+            abs("pkg/cfg.py")
+        } else {
+            abs("pkg/a.py")
+        };
         spec.nodes.push(crg_fixture::NodeSeed {
             name: name.into(),
             parent: None,
@@ -150,9 +159,19 @@ fn build_tours_with_graph_reanchor() {
     // moved step: line re-anchored to graph line, description carries delta
     let t0 = st.tours[0].as_object().unwrap();
     let steps = t0["steps"].as_array().unwrap();
-    let boot_step = steps.iter().find(|s| s["title"].as_str().unwrap().contains("boot")).unwrap();
+    let boot_step = steps
+        .iter()
+        .find(|s| s["title"].as_str().unwrap().contains("boot"))
+        .unwrap();
     assert_eq!(boot_step["line"], 9);
-    assert!(boot_step["description"].as_str().unwrap().contains("graph +4"), "{}", boot_step);
+    assert!(
+        boot_step["description"]
+            .as_str()
+            .unwrap()
+            .contains("graph +4"),
+        "{}",
+        boot_step
+    );
 }
 
 #[test]
@@ -190,8 +209,18 @@ fn cli_faces() {
         &out_dir.to_string_lossy(),
     ]);
     assert_eq!(out.exit_code, 0, "{}{}", out.stdout, out.stderr);
-    assert!(out.stdout.contains("[OK] chain tours: 2 場景 / 6 幀 / 5 步 / skipped 1"), "{}", out.stdout);
-    assert!(out.stdout.contains("manifest skip: out-dir 不在 .tours/ 樹內"), "{}", out.stdout);
+    assert!(
+        out.stdout
+            .contains("[OK] chain tours: 2 場景 / 6 幀 / 5 步 / skipped 1"),
+        "{}",
+        out.stdout
+    );
+    assert!(
+        out.stdout
+            .contains("manifest skip: out-dir 不在 .tours/ 樹內"),
+        "{}",
+        out.stdout
+    );
     // primary out of range crashes loudly
     let out2 = code_reality::chain_tour::run(&[
         "chain_tour",

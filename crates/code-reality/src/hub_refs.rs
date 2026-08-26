@@ -7,8 +7,7 @@
 
 use crate::argparse::{parse, FlagSpec, Kind, Outcome, ToolSpec};
 use crate::common::{
-    assert_db_unchanged, db_mtime_ns, graph_db_path, repo_relative,
-    to_json_py_compact,
+    assert_db_unchanged, db_mtime_ns, graph_db_path, repo_relative, to_json_py_compact,
 };
 use crate::hazard::{
     full_findings, hazard_gate_warning, make_rg_runner, method_name, resident_findings,
@@ -34,7 +33,9 @@ const SPEC: ToolSpec = ToolSpec {
         FlagSpec {
             long: "--direction",
             short: None,
-            kind: Kind::Value { metavar: "DIRECTION" },
+            kind: Kind::Value {
+                metavar: "DIRECTION",
+            },
         },
         FlagSpec {
             long: "--top",
@@ -118,7 +119,14 @@ pub fn crg_query(pattern: &str, target: &str, repo_root: &Path) -> Result<Value,
     let stdout = String::from_utf8_lossy(&t1.join().unwrap_or_default()).into_owned();
     let stderr = String::from_utf8_lossy(&t2.join().unwrap_or_default()).into_owned();
     if !status.success() {
-        let tail: String = stderr.chars().rev().take(500).collect::<Vec<_>>().into_iter().rev().collect();
+        let tail: String = stderr
+            .chars()
+            .rev()
+            .take(500)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
         return Err(format!(
             "CRG CLI 失敗（exit {}）: query {pattern} {target}\n{tail}",
             status.code().unwrap_or(-1)
@@ -128,7 +136,14 @@ pub fn crg_query(pattern: &str, target: &str, repo_root: &Path) -> Result<Value,
         format!(
             "CRG CLI stdout 非 JSON（可能混入 warnings）: {} | stderr: {}",
             stdout.chars().take(200).collect::<String>(),
-            stderr.chars().rev().take(200).collect::<Vec<_>>().into_iter().rev().collect::<String>()
+            stderr
+                .chars()
+                .rev()
+                .take(200)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect::<String>()
         )
     })
 }
@@ -147,13 +162,18 @@ fn require_ok(resp: &Value) -> Result<(), ToolOutput> {
         return Ok(());
     }
     let status = resp.get("status").and_then(Value::as_str).unwrap_or("");
-    let summary = resp.get("summary").and_then(Value::as_str).unwrap_or("(無 summary)");
+    let summary = resp
+        .get("summary")
+        .and_then(Value::as_str)
+        .unwrap_or("(無 summary)");
     let mut stdout = format!("[FAIL] CRG {status}: {summary}\n");
     if let Some(cands) = resp.get("candidates").and_then(Value::as_array) {
         for c in cands.iter().take(10) {
             stdout.push_str(&format!(
                 "  候選: {}  (is_test={})\n",
-                c.get("qualified_name").and_then(Value::as_str).unwrap_or(""),
+                c.get("qualified_name")
+                    .and_then(Value::as_str)
+                    .unwrap_or(""),
                 match c.get("is_test") {
                     Some(Value::Bool(b)) => b.to_string(),
                     _ => "None".to_string(),
@@ -222,14 +242,17 @@ pub fn resolve_qualified(symbol: &str, repo_root: &Path) -> Result<String, ToolO
     }
     Err(ToolOutput {
         stdout: String::new(),
-        stderr: format!("symbol not found: {symbol}——試完整 qualified name（<abs>::Class.method）\n"),
+        stderr: format!(
+            "symbol not found: {symbol}——試完整 qualified name（<abs>::Class.method）\n"
+        ),
         exit_code: 1,
     })
 }
 
 fn query_nodes_pairs(db_path: &Path, symbol: &str) -> Result<Vec<(String, String)>, String> {
     let conn = crate::common::connect_ro(db_path)?;
-    let (sql, params): (String, Vec<String>) = if let Some((cls, method)) = symbol.rsplit_once('.') {
+    let (sql, params): (String, Vec<String>) = if let Some((cls, method)) = symbol.rsplit_once('.')
+    {
         (
             "SELECT qualified_name, file_path FROM nodes WHERE name = ?1 AND parent_name = ?2"
                 .to_string(),
@@ -264,7 +287,11 @@ pub fn resolve_symbol(
     repo_root: &Path,
     direction: &str,
 ) -> Result<Value, ToolOutput> {
-    let pattern = if direction == "callers" { "callers_of" } else { "callees_of" };
+    let pattern = if direction == "callers" {
+        "callers_of"
+    } else {
+        "callees_of"
+    };
     let qname = resolve_qualified(symbol, repo_root)?;
     let resp = crg_query(pattern, &qname, repo_root).map_err(ToolOutput::crash)?;
     require_ok(&resp)?;
@@ -502,20 +529,29 @@ pub fn run(argv: &[&str]) -> ToolOutput {
             };
         }
         Outcome::Err(msg) => return ToolOutput::fail(msg),
-        Outcome::Ok { values, positionals } => (values, positionals),
+        Outcome::Ok {
+            values,
+            positionals,
+        } => (values, positionals),
     };
     let repo = values
         .get("--repo")
         .and_then(|v| v.clone())
         .map(PathBuf::from)
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-    let direction = values.get("--direction").and_then(|v| v.clone()).unwrap_or_else(|| "callers".into());
+    let direction = values
+        .get("--direction")
+        .and_then(|v| v.clone())
+        .unwrap_or_else(|| "callers".into());
     if direction != "callers" && direction != "callees" {
         return ToolOutput::fail(format!(
             "argument --direction: invalid choice: '{direction}' (choose from 'callers', 'callees')"
         ));
     }
-    let top_s = values.get("--top").and_then(|v| v.clone()).unwrap_or_else(|| "20".into());
+    let top_s = values
+        .get("--top")
+        .and_then(|v| v.clone())
+        .unwrap_or_else(|| "20".into());
     let top: usize = match top_s.parse() {
         Ok(v) => v,
         Err(_) => {
@@ -544,7 +580,10 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         .and_then(Value::as_str)
         .unwrap_or(&symbol)
         .to_string();
-    let omitted = resp.get("results_omitted").and_then(Value::as_i64).unwrap_or(0);
+    let omitted = resp
+        .get("results_omitted")
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
 
     let mut findings: Vec<HazardFinding> = Vec::new();
     let mut warn: Option<String> = None;
