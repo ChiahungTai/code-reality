@@ -28,10 +28,14 @@ cargo install --path crates/code-reality        # code-reality + code-reality-mc
 
 **ZCode / Claude Code plugin** (stdio MCP + usage skill, zero daemon):
 add this repo as a plugin marketplace (Settings → Plugin
-Management → Discover → `+` → local path, Git URL, or GitHub URL —
+Management → Discover → `+` → Git URL or GitHub URL —
 the repo root carries
 `marketplace.json`), install `code-reality`. The MCP server mounts as
 `plugin:code-reality:code-reality` and spawns per session.
+For local-path marketplaces, point at a clean slice
+(`scripts/dist-marketplace.sh` → `dist/marketplace`), never the repo
+root — directory sources mirror the whole tree, and a built `target/`
+pollutes the plugin cache with gigabytes of build artifacts.
 
 **Any MCP-capable harness** (generic): point your MCP config at
 
