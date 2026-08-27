@@ -17,13 +17,29 @@ use std::path::{Path, PathBuf};
 pub const EDGE_KINDS: [&str; 3] = ["IMPORTS_FROM", "CALLS", "INHERITS"];
 
 /// Anchor line → literal-ish line regex (`common.py:21-37`):
-/// `^[ \t]*` + fully escaped trimmed line + `[ \t]*$`. `regex::escape` is
-/// used for semantic parity with Python `re.escape` (the escape *sets*
-/// differ, but both produce a pattern matching exactly the literal line —
-/// matching behavior is the contract; pattern-string bytes are emitted
-/// only into R5 sidecar files, outside the R4 stdout gate).
+/// `^[ \t]*` + fully escaped trimmed line + `[ \t]*$`. Space bytes
+/// align with Python `re.escape` (corpus byte-identical regen
+/// convention); interior tabs still differ byte-wise (semantically
+/// equivalent). Matching behavior is the contract.
 pub fn anchor_pattern(line: &str) -> String {
-    format!("^[ \\t]*{}[ \\t]*$", regex::escape(line.trim()))
+    // Python re.escape escapes spaces; regex::escape does not. Corpus
+    // files carry a byte-identical regen convention (mosaic tours), so
+    // align the bytes — semantics are unchanged either way.
+    format!("^[ \\t]*{}[ \\t]*$", regex::escape(line.trim()).replace(' ', "\\ "))
+}
+
+#[cfg(test)]
+mod anchor_pattern_tests {
+    use super::anchor_pattern;
+
+    #[test]
+    fn space_escaping_matches_python_re_escape_bytes() {
+        // Python: re.escape("def daily(") == "def\\ daily\(" — the corpus
+        // byte-identical regen convention (mosaic dogfood, 2026-08-27)
+        assert_eq!(anchor_pattern("def daily("), "^[ \\t]*def\\ daily\\([ \\t]*$");
+        assert_eq!(anchor_pattern("  async  def x()  "), "^[ \\t]*async\\ \\ def\\ x\\(\\)[ \\t]*$");
+        assert_eq!(anchor_pattern("plain"), "^[ \\t]*plain[ \\t]*$");
+    }
 }
 
 /// Absolute path → repo-relative; outside repo → None (`common.py:40-45`).

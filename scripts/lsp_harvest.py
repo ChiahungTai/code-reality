@@ -1,20 +1,25 @@
-"""S5-P2: LSP-harvest adapter (productized home; POC-validated 2026-08-26 (pyright-langserver) -> code-reality
-cache three-table db (ep-v1plus-graph-engine.md S5; P1 scip-python is
-dead: PyPI 404 + archived git layout).
+"""LSP-harvest adapter (productized; POC-validated 2026-08-26, hardened
+2026-08-27 after the mosaic dogfood) -> code-reality cache three-table db.
 
-Contract per EP: rows are the internal triple (defs / occurrences /
-fn-spans) — SCIP is just rust-analyzer's serialization form; a different
-producer feeds the same pipeline. Symbol strings are synthesized in a
-shape engine parsers accept: "lsp python <rel_path> <name>().".
+Contract: rows are the internal triple (defs / occurrences / fn-spans) —
+SCIP is just rust-analyzer's serialization form; a different producer
+feeds the same pipeline. Symbol strings are synthesized in a shape the
+engine parsers accept: "lsp python <rel_path> L<line> <name>()." — the
+L<line> middle segment disambiguates same-file same-name defs (mosaic
+dogfood bug 1: four `execute()` in daily.py collapsed onto the first
+under the symbol UNIQUE constraint). fn_tail_name() reads the trailing
+word, so the legacy no-line shape keeps parsing too.
 
-Pass-bar (pinned at POC design): N=20 sampled symbols, engine refs ==
-LSP references sets (100%), +5 hand checks against source.
+Hardening (dogfood bug 2): references are resolved per def from the
+symbol's own selectionRange position (not a hardcoded len("def ")
+offset), over ALL repo files (no [:200] truncation), for ALL defs by
+default (--sample N restores the POC smoke shape).
+
+Usage: uv run python scripts/lsp_harvest.py --repo <repo-root> [--sample N]
 """
-import json, os, sqlite3, subprocess, sys, time
+import argparse, json, os, sqlite3, subprocess, sys, time
 
-REPO = os.path.expanduser("~/Github/ai-rules")
-SLOT = os.path.expanduser("~/.mosaic/code-reality/scip/ai-rules")
-SAMPLE = 20
+SIDEAR_HOME = os.path.expanduser("~/.mosaic/code-reality/scip")
 
 class Lsp:
     def __init__(self, root):
@@ -87,6 +92,24 @@ def sym_range(s):
         return loc["range"]
     return None
 
+def name_position(s, line_text):
+    """The symbol's own name token, as (line, character):
+    1. selectionRange.start (DocumentSymbol — pyright omits it for the
+       SymbolInformation shape);
+    2. the name's index in the def line (covers SymbolInformation, async
+       def, decorated defs — a bare range.start points at the `def`
+       keyword and references() resolves nothing);
+    3. len("def ") as the legacy last resort."""
+    sr = s.get("selectionRange")
+    if isinstance(sr, dict):
+        return sr["start"]["line"], sr["start"]["character"]
+    r = sym_range(s)
+    if r is not None and line_text is not None:
+        ch = line_text.find(s["name"])
+        if ch >= 0:
+            return r["start"]["line"], ch
+    return r["start"]["line"], len("def ")
+
 def flat_symbols(syms, out):
     for s in syms:
         if isinstance(s, dict):
@@ -95,10 +118,22 @@ def flat_symbols(syms, out):
     return out
 
 def main():
-    lsp = Lsp(REPO)
-    files = py_files(REPO)[:200]
+    ap = argparse.ArgumentParser(description="LSP-harvest -> code-reality cache")
+    ap.add_argument("--repo", required=True, help="repo root to harvest")
+    ap.add_argument("--sample", type=int, default=None,
+                    help="POC smoke shape: references for the first N defs only "
+                         "(alphabetical); default = ALL defs")
+    args = ap.parse_args()
+    repo = os.path.abspath(os.path.expanduser(args.repo))
+    slot = os.path.join(SIDEAR_HOME, os.path.basename(repo.rstrip("/")))
+
+    t0 = time.time()
+    lsp = Lsp(repo)
+    files = py_files(repo)
     print(f"[..] {len(files)} py files")
-    defs = []          # (rel, line, name, kind)
+    # defs: (rel, line, char, name) — line/char are the NAME token position
+    defs = []
+    pos_misses = 0    # name not on the def line (decorated/nested shapes)
     for f in files:
         uri = "file://" + f
         try:
@@ -106,45 +141,73 @@ def main():
             lsp.notify("textDocument/didOpen", {"textDocument": {
                 "uri": uri, "languageId": "python", "version": 1, "text": text}})
             syms = lsp.req("textDocument/documentSymbol", {"textDocument": {"uri": uri}})
-        except RuntimeError:
+        except (RuntimeError, OSError):
             continue
         if not syms:
             continue
+        src_lines = text.splitlines()
         for s in flat_symbols(syms, []):
             if s.get("kind") in (3, 6, 12):
                 r = sym_range(s)
                 if r is not None:
-                    defs.append((os.path.relpath(f, REPO), r["start"]["line"] + 1, s["name"]))
-    print(f"[OK] defs harvested: {len(defs)}")
+                    dl = r["start"]["line"]
+                    line_text = src_lines[dl] if dl < len(src_lines) else None
+                    if (line_text is not None and line_text.find(s["name"]) < 0
+                            and not isinstance(s.get("selectionRange"), dict)):
+                        pos_misses += 1
+                    pl, pc = name_position(s, line_text)
+                    defs.append((os.path.relpath(f, repo),
+                                 pl + 1, pc, s["name"],
+                                 dl + 1))
+    print(f"[OK] defs harvested: {len(defs)} ({time.time()-t0:.0f}s)")
+    if pos_misses:
+        print(f"[WARN] {pos_misses} defs: name not on the def line (decorated?) — those fall to the def-offset fallback")
 
-    # sample references
-    by_name = {}
-    for rel, line, name in defs:
-        by_name.setdefault((rel, name), line)
-    sample = sorted(by_name.items())[:SAMPLE]
-    refs = {}           # (rel,name) -> [(rel,line)]
-    for (rel, name), line in sample:
-        f = os.path.join(REPO, rel)
+    def sym_of(rel, line, name):
+        # L<line> middle segment: disambiguates same-file same-name defs;
+        # fn_tail_name() reads the trailing word so both shapes parse
+        return f"lsp python {rel} L{line} {name}()."
+
+    # references per def (each def's own name-token position — a hardcoded
+    # len("def ") offset misses async/decorated/nested shapes)
+    targets = defs
+    if args.sample is not None:
+        targets = sorted(defs)[: args.sample]
+    refs = []          # (def_rel, def_line, def_name, [(rel, line)...])
+    req_failures = 0   # a failed request writes zero-refs rows (false negatives); counted loudly, aborted when rampant
+    t1 = time.time()
+    for i, (rel, line, ch, name, _rl) in enumerate(targets):
+        f = os.path.join(repo, rel)
         try:
             locs = lsp.req("textDocument/references", {
                 "textDocument": {"uri": "file://" + f},
-                "position": {"line": line - 1, "character": len("def ")},
-                "context": {"includeDeclaration": True},
+                "position": {"line": line - 1, "character": ch},
+                "context": {"includeDeclaration": False},
             }) or []
         except RuntimeError:
+            req_failures += 1
             locs = []
         got = []
         for loc in locs:
-            r = os.path.relpath(loc["uri"][7:], REPO)
+            r = os.path.relpath(loc["uri"][7:], repo)
             got.append((r, loc["range"]["start"]["line"] + 1))
-        refs[(rel, name)] = got
-    n_refs = sum(len(v) for v in refs.values())
-    print(f"[OK] references harvested: {SAMPLE} symbols / {n_refs} sites")
+        refs.append((rel, line, name, got))
+        if (i + 1) % 500 == 0:
+            print(f"[..] references {i+1}/{len(targets)} ({time.time()-t1:.0f}s)")
+    n_refs = sum(len(g) for *_, g in refs)
+    print(f"[OK] references harvested: {len(refs)} defs / {n_refs} sites ({time.time()-t1:.0f}s)")
+    if req_failures:
+        frac = req_failures / max(len(targets), 1)
+        if frac > 0.5:
+            raise SystemExit(
+                f"[FAIL] references 失敗率 {frac:.0%}（{req_failures}/{len(targets)}）——"
+                "LSP 不穩定，中止而不寫壞 cache（重跑本腳本）")
+        print(f"[WARN] references failed for {req_failures}/{len(targets)} defs（零 refs 寫入）")
 
     # write cache three-table db
-    os.makedirs(SLOT, exist_ok=True)
-    index_path = os.path.join(SLOT, "index.scip")
-    db_path = os.path.join(SLOT, "index.scip.db")
+    os.makedirs(slot, exist_ok=True)
+    index_path = os.path.join(slot, "index.scip")
+    db_path = os.path.join(slot, "index.scip.db")
     if os.path.exists(db_path):
         os.remove(db_path)
     conn = sqlite3.connect(db_path)
@@ -157,24 +220,24 @@ def main():
       CREATE INDEX idx_symbol_tails_method ON symbol_tails(method);
     """)
     seq = 0
-    def sym_of(rel, name):
-        return f"lsp python {rel} {name}()."
-    for rel, line, name in defs:
+    for rel, line, ch, name, def_line in defs:
         seq += 1
+        sym = sym_of(rel, line, name)
         conn.execute("INSERT INTO occurrences VALUES (?,?,?,?,1)",
-                     (seq, sym_of(rel, name), rel, line))
+                     (seq, sym, rel, def_line))
         conn.execute("INSERT OR REPLACE INTO symbol_tails VALUES (?,?,?)",
-                     (sym_of(rel, name), name + "().", name))
-    for (rel, name), sites in refs.items():
-        for r, line in sites:
+                     (sym, name + "().", name))
+    for rel, line, name, sites in refs:
+        sym = sym_of(rel, line, name)
+        for r, ln in sites:
             seq += 1
             conn.execute("INSERT INTO occurrences VALUES (?,?,?,?,0)",
-                         (seq, sym_of(rel, name), r, line))
-    head = subprocess.run(["git", "-C", REPO, "rev-parse", "HEAD"],
+                         (seq, sym, r, ln))
+    head = subprocess.run(["git", "-C", repo, "rev-parse", "HEAD"],
                           capture_output=True, text=True).stdout.strip()
     conn.executemany("INSERT OR REPLACE INTO meta VALUES (?,?)", [
         ("schema", "1"), ("head", head),
-        ("producer", "lsp-harvest-poc(pyright-langserver)"),
+        ("producer", "lsp-harvest(pyright-langserver)"),
     ])
     conn.commit()
     conn.close()
@@ -183,18 +246,19 @@ def main():
     # touched LAST so db mtime >= index mtime
     with open(index_path, "w") as fh:
         fh.write(f"lsp-harvest placeholder (producer=pyright-langserver, head={head[:12]})\n")
-    meta_path = os.path.join(SLOT, "index.scip.meta.json")
+    meta_path = os.path.join(slot, "index.scip.meta.json")
     with open(meta_path, "w") as fh:
         json.dump({"head": head, "producer": "pyright-langserver"}, fh)
-    # touch order: index -> meta(stamp) -> db — every layer newer than
-    # the artifact it certifies (stamp-vs-index and db-vs-index guards)
+    # touch order: index -> meta(stamp) -> db — every layer newer than the
+    # artifact it certifies (stamp-vs-index and db-vs-index guards)
     os.utime(index_path)
     os.utime(meta_path, None)
     os.utime(db_path, None)
     print(f"[OK] cache db: {db_path} ({seq} rows)")
-    # dump LSP answer key for the engine comparison step
-    with open(os.path.join(os.path.dirname(__file__), "lsp_answers.json"), "w") as fh:
-        json.dump({f"{rel}::{name}": v for (rel, name), v in refs.items()}, fh, indent=1)
-    print("[OK] answer key written")
+    if args.sample is not None:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "lsp_answers.json"), "w") as fh:
+            json.dump({f"{rel}::{name}": sites for rel, _line, name, sites in refs}, fh, indent=1)
+        print("[OK] answer key written (sample mode)")
 
-main()
+if __name__ == "__main__":
+    main()
