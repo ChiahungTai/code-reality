@@ -1,24 +1,28 @@
 //! Graph-engine substrate for the v1+ engine parity ops
-//! (`ep-v1plus-engine-parity.md` S1): read-only loaders over the CRG
-//! graph.db. Ordering contract: CRG's `get_all_nodes` / `get_all_edges` /
-//! `load_flow_adjacency` (graph.py:352/1447/1493) issue `SELECT *` without
-//! `ORDER BY`, so every loader here relies on the same natural rowid
-//! (insertion) order — parity with Python `fetchall` iteration.
+//! (`ep-v1plus-engine-parity.md` S1): read-only loaders over the
+//! self-owned `.code-reality/graph.db` (v1+ S4 flip). Ordering contract:
+//! the CRG-era `get_all_nodes` / `get_all_edges` / `load_flow_adjacency`
+//! parity relied on natural rowid (insertion) order — loaders here keep
+//! the same reliance, now over the graph_db build/import insertion order.
 
-use crate::common::{connect_ro, graph_db_path};
+use crate::common::connect_ro;
 use rusqlite::Connection;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-/// Projection of `nodes` rows the engine ops consume. Field names follow
-/// the CRG columns; `extra` is the parsed JSON column (decorators etc.).
+/// Projection of `nodes` rows the engine ops consume. `symbol` is the
+/// join key (producer native string — legacy-imported nodes mint
+/// qname-keyed symbols, so layer-2 fixtures reconcile exactly);
+/// `qualified_name` is the display column (never a key). `extra` is the
+/// parsed JSON column (decorators etc.).
 #[derive(Debug, Clone)]
 pub struct GraphNodeLite {
     pub id: i64,
     pub kind: String,
     pub name: String,
     pub qualified_name: String,
+    pub symbol: String,
     pub file_path: String,
     pub line_start: Option<i64>,
     pub line_end: Option<i64>,
@@ -29,30 +33,36 @@ pub struct GraphNodeLite {
     pub extra: Value,
 }
 
-/// Edge projection: (kind, source, target) — the only fields the engine
-/// ops read.
+/// Edge projection: (kind, caller, callee) — the only fields the engine
+/// ops read; endpoints are node symbols.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GraphEdgeLite {
     pub kind: String,
-    pub source_qualified: String,
-    pub target_qualified: String,
+    pub caller_symbol: String,
+    pub callee_symbol: String,
 }
 
-/// Open the repo's CRG graph.db read-only (missing db is a loud failure —
-/// the caller surfaces it as env-level exit 2).
+/// Open the repo's self-owned graph.db read-only (missing db is a loud
+/// failure with a build hint — the caller surfaces it as env-level exit 2).
 pub fn open(repo_root: &Path) -> Result<Connection, String> {
-    connect_ro(&graph_db_path(repo_root))
+    let db = crate::graph_db::db_path(repo_root);
+    if !db.exists() {
+        return Err(format!(
+            "graph.db 不在：{}——先跑 `code-reality graph_db build --repo <repo>`（舊庫在場再加 `graph_db import_legacy`）",
+            db.display()
+        ));
+    }
+    connect_ro(&db)
 }
 
-/// `GraphStore.get_all_nodes` (graph.py:352): all nodes, File nodes
-/// excluded unless asked; natural rowid order.
+/// All nodes, File nodes excluded unless asked; natural rowid order.
 pub fn load_nodes(conn: &Connection, exclude_files: bool) -> Result<Vec<GraphNodeLite>, String> {
     let sql = if exclude_files {
-        "SELECT id, kind, name, qualified_name, file_path, line_start, line_end, \
+        "SELECT id, kind, name, qname, symbol, file_path, line_start, line_end, \
          language, parent_name, is_test, community_id, extra FROM nodes \
          WHERE kind != 'File'"
     } else {
-        "SELECT id, kind, name, qualified_name, file_path, line_start, line_end, \
+        "SELECT id, kind, name, qname, symbol, file_path, line_start, line_end, \
          language, parent_name, is_test, community_id, extra FROM nodes"
     };
     let mut stmt = conn
@@ -66,34 +76,35 @@ pub fn load_nodes(conn: &Connection, exclude_files: bool) -> Result<Vec<GraphNod
 }
 
 fn row_to_node(row: &rusqlite::Row<'_>) -> rusqlite::Result<GraphNodeLite> {
-    let extra_text: String = row.get(11)?;
+    let extra_text: String = row.get(12)?;
     Ok(GraphNodeLite {
         id: row.get(0)?,
         kind: row.get(1)?,
         name: row.get(2)?,
         qualified_name: row.get(3)?,
-        file_path: row.get(4)?,
-        line_start: row.get(5)?,
-        line_end: row.get(6)?,
-        language: row.get(7)?,
-        parent_name: row.get(8)?,
-        is_test: row.get::<_, i64>(9)? != 0,
-        community_id: row.get(10)?,
+        symbol: row.get(4)?,
+        file_path: row.get(5)?,
+        line_start: row.get(6)?,
+        line_end: row.get(7)?,
+        language: row.get(8)?,
+        parent_name: row.get(9)?,
+        is_test: row.get::<_, i64>(10)? != 0,
+        community_id: row.get(11)?,
         extra: serde_json::from_str(&extra_text).unwrap_or(Value::Null),
     })
 }
 
-/// `GraphStore.get_all_edges` (graph.py:1447): all edges in rowid order.
+/// All edges in rowid order.
 pub fn load_edges(conn: &Connection) -> Result<Vec<GraphEdgeLite>, String> {
     let mut stmt = conn
-        .prepare("SELECT kind, source_qualified, target_qualified FROM edges")
+        .prepare("SELECT kind, caller_symbol, callee_symbol FROM edges")
         .map_err(|e| format!("edges 查詢失敗：{e}"))?;
     let rows = stmt
         .query_map([], |r| {
             Ok(GraphEdgeLite {
                 kind: r.get(0)?,
-                source_qualified: r.get(1)?,
-                target_qualified: r.get(2)?,
+                caller_symbol: r.get(1)?,
+                callee_symbol: r.get(2)?,
             })
         })
         .map_err(|e| format!("edges 查詢失敗：{e}"))?;
@@ -101,14 +112,14 @@ pub fn load_edges(conn: &Connection) -> Result<Vec<GraphEdgeLite>, String> {
         .map_err(|e| format!("edges 讀取失敗：{e}"))
 }
 
-/// `GraphStore.load_flow_adjacency` (graph.py:1493): ALL nodes (File
-/// included) keyed by qname/id; CALLS edges append into `calls_out`
-/// (duplicates and order preserved — BFS dedup happens at traversal);
-/// TESTED_BY records its *source* (the tested production node, #515).
+/// ALL nodes (File included) keyed by symbol/id; CALLS edges append into
+/// `calls_out` (duplicates and order preserved — BFS dedup happens at
+/// traversal); TESTED_BY records its *source* (the tested production
+/// node, #515).
 pub struct FlowAdjacency {
     pub calls_out: HashMap<String, Vec<String>>,
     pub has_tested_by: HashSet<String>,
-    pub nodes_by_qn: HashMap<String, GraphNodeLite>,
+    pub nodes_by_key: HashMap<String, GraphNodeLite>,
     pub nodes_by_id: HashMap<i64, GraphNodeLite>,
 }
 
@@ -117,16 +128,16 @@ pub fn load_flow_adjacency(conn: &Connection) -> Result<FlowAdjacency, String> {
     let mut adj = FlowAdjacency {
         calls_out: HashMap::new(),
         has_tested_by: HashSet::new(),
-        nodes_by_qn: HashMap::with_capacity(nodes.len()),
+        nodes_by_key: HashMap::with_capacity(nodes.len()),
         nodes_by_id: HashMap::with_capacity(nodes.len()),
     };
     for n in nodes {
         adj.nodes_by_id.insert(n.id, n.clone());
-        adj.nodes_by_qn.insert(n.qualified_name.clone(), n);
+        adj.nodes_by_key.insert(n.symbol.clone(), n);
     }
     let mut stmt = conn
         .prepare(
-            "SELECT kind, source_qualified, target_qualified FROM edges \
+            "SELECT kind, caller_symbol, callee_symbol FROM edges \
              WHERE kind IN ('CALLS', 'TESTED_BY')",
         )
         .map_err(|e| format!("flow edges 查詢失敗：{e}"))?;
@@ -199,7 +210,7 @@ pub fn find_hub_nodes(conn: &Connection, top_n: usize) -> Result<Vec<Value>, Str
     find_hub_nodes_with(conn, &load_edges(conn)?, top_n)
 }
 
-/// Edge-injected core (union face passes graph.db + sidecar edges).
+/// Edge-injected core (callers pass the full-graph edge slice).
 pub fn find_hub_nodes_with(
     conn: &Connection,
     edges: &[GraphEdgeLite],
@@ -208,13 +219,13 @@ pub fn find_hub_nodes_with(
     let mut in_deg: HashMap<String, i64> = HashMap::new();
     let mut out_deg: HashMap<String, i64> = HashMap::new();
     for e in edges {
-        *out_deg.entry(e.source_qualified.clone()).or_default() += 1;
-        *in_deg.entry(e.target_qualified.clone()).or_default() += 1;
+        *out_deg.entry(e.caller_symbol.clone()).or_default() += 1;
+        *in_deg.entry(e.callee_symbol.clone()).or_default() += 1;
     }
     let mut scored: Vec<Value> = Vec::new();
     for n in load_nodes(conn, true)? {
-        let ind = in_deg.get(&n.qualified_name).copied().unwrap_or(0);
-        let outd = out_deg.get(&n.qualified_name).copied().unwrap_or(0);
+        let ind = in_deg.get(&n.symbol).copied().unwrap_or(0);
+        let outd = out_deg.get(&n.symbol).copied().unwrap_or(0);
         let total = ind + outd;
         if total == 0 {
             continue;
@@ -247,7 +258,7 @@ pub fn find_bridge_nodes(conn: &Connection, top_n: usize) -> Result<Vec<Value>, 
     find_bridge_nodes_with(conn, &load_edges(conn)?, top_n)
 }
 
-/// Edge-injected core (union face passes graph.db + sidecar edges).
+/// Edge-injected core (callers pass the full-graph edge slice).
 pub fn find_bridge_nodes_with(
     conn: &Connection,
     edges: &[GraphEdgeLite],
@@ -257,7 +268,7 @@ pub fn find_bridge_nodes_with(
     let mut best: HashMap<(String, String), f64> = HashMap::new();
     for e in edges {
         let w = impact_weight(&e.kind);
-        let key = (e.source_qualified.clone(), e.target_qualified.clone());
+        let key = (e.caller_symbol.clone(), e.callee_symbol.clone());
         match best.get(&key) {
             Some(existing) if w <= *existing => {}
             _ => {
@@ -344,9 +355,9 @@ pub fn find_bridge_nodes_with(
     }
     let norm = ((n as f64 - 1.0) * (n as f64 - 2.0)).max(1.0);
     let nodes_all = load_nodes(conn, false)?;
-    let node_by_qn: HashMap<&str, &GraphNodeLite> = nodes_all
+    let node_by_key: HashMap<&str, &GraphNodeLite> = nodes_all
         .iter()
-        .map(|nd| (nd.qualified_name.as_str(), nd))
+        .map(|nd| (nd.symbol.as_str(), nd))
         .collect();
     let mut results: Vec<Value> = Vec::new();
     for (i, qn) in node_ids.iter().enumerate() {
@@ -354,7 +365,7 @@ pub fn find_bridge_nodes_with(
         if score <= 0.0 {
             continue;
         }
-        let Some(node) = node_by_qn.get(qn.as_str()) else {
+        let Some(node) = node_by_key.get(qn.as_str()) else {
             continue;
         };
         if node.kind == "File" {
@@ -525,7 +536,7 @@ fn matches_entry_name(node: &GraphNodeLite) -> bool {
     false
 }
 
-const NODE_COLUMNS: &str = "id, kind, name, qualified_name, file_path, line_start, \
+const NODE_COLUMNS: &str = "id, kind, name, qname, symbol, file_path, line_start, \
      line_end, language, parent_name, is_test, community_id, extra";
 
 /// `detect_entry_points` (flows.py:164): Function/Test nodes that are true
@@ -539,8 +550,8 @@ pub fn detect_entry_points(
     {
         let mut stmt = conn
             .prepare(
-                "SELECT DISTINCT e.target_qualified FROM edges e \
-                 LEFT JOIN nodes n ON n.qualified_name = e.source_qualified \
+                "SELECT DISTINCT e.callee_symbol FROM edges e \
+                 LEFT JOIN nodes n ON n.symbol = e.caller_symbol \
                  WHERE e.kind = 'CALLS' AND (n.kind IS NULL OR n.kind != 'File')",
             )
             .map_err(|e| format!("call targets 查詢失敗：{e}"))?;
@@ -568,7 +579,7 @@ pub fn detect_entry_points(
         if node.extra.get("verilog_kind").is_some() {
             continue;
         }
-        let is_entry = !called.contains(&node.qualified_name)
+        let is_entry = !called.contains(&node.symbol)
             || has_framework_decorator(&node)
             || matches_entry_name(&node);
         if is_entry {
@@ -603,9 +614,9 @@ fn compute_criticality(path_ids: &[i64], depth: i64, adj: &FlowAdjacency) -> f64
     // external calls: call targets absent from the graph
     let mut external = 0usize;
     for n in &nodes {
-        if let Some(targets) = adj.calls_out.get(&n.qualified_name) {
+        if let Some(targets) = adj.calls_out.get(&n.symbol) {
             for t in targets {
-                if !adj.nodes_by_qn.contains_key(t) {
+                if !adj.nodes_by_key.contains_key(t) {
                     external += 1;
                 }
             }
@@ -627,7 +638,7 @@ fn compute_criticality(path_ids: &[i64], depth: i64, adj: &FlowAdjacency) -> f64
     // test coverage gap
     let tested = nodes
         .iter()
-        .filter(|n| adj.has_tested_by.contains(&n.qualified_name))
+        .filter(|n| adj.has_tested_by.contains(&n.symbol))
         .count();
     let coverage = tested as f64 / nodes.len().max(1) as f64;
     let test_gap = 1.0 - coverage;
@@ -661,10 +672,10 @@ pub fn trace_flows(
     for ep in &entry_points {
         // BFS (flows.py:222)
         let mut path_ids: Vec<i64> = vec![ep.id];
-        let mut path_qns: Vec<String> = vec![ep.qualified_name.clone()];
-        let mut visited: HashSet<String> = HashSet::from([ep.qualified_name.clone()]);
+        let mut path_keys: Vec<String> = vec![ep.symbol.clone()];
+        let mut visited: HashSet<String> = HashSet::from([ep.symbol.clone()]);
         let mut queue: std::collections::VecDeque<(String, usize)> =
-            std::collections::VecDeque::from([(ep.qualified_name.clone(), 0)]);
+            std::collections::VecDeque::from([(ep.symbol.clone(), 0)]);
         let mut actual_depth: i64 = 0;
         while let Some((current, depth)) = queue.pop_front() {
             if depth as i64 > actual_depth {
@@ -678,12 +689,12 @@ pub fn trace_flows(
                     if visited.contains(target) {
                         continue;
                     }
-                    let Some(node) = adj.nodes_by_qn.get(target) else {
+                    let Some(node) = adj.nodes_by_key.get(target) else {
                         continue;
                     };
                     visited.insert(target.clone());
                     path_ids.push(node.id);
-                    path_qns.push(target.clone());
+                    path_keys.push(target.clone());
                     queue.push_back((target.clone(), depth + 1));
                 }
             }
@@ -692,8 +703,8 @@ pub fn trace_flows(
             continue;
         }
         let mut files: Vec<String> = Vec::new();
-        for qn in &path_qns {
-            if let Some(n) = adj.nodes_by_qn.get(qn) {
+        for key in &path_keys {
+            if let Some(n) = adj.nodes_by_key.get(key) {
                 if !files.contains(&n.file_path) {
                     files.push(n.file_path.clone());
                 }
@@ -795,7 +806,7 @@ pub fn impact_radius(
     )
 }
 
-/// Edge-injected core (union face passes graph.db + sidecar edges).
+/// Edge-injected core (callers pass the full-graph edge slice).
 pub fn impact_radius_with(
     conn: &Connection,
     edges: &[GraphEdgeLite],
@@ -822,10 +833,7 @@ pub fn impact_radius_with(
     if seed_nodes.is_empty() {
         return Ok(empty);
     }
-    let seeds: HashSet<String> = seed_nodes
-        .iter()
-        .map(|n| n.qualified_name.clone())
-        .collect();
+    let seeds: HashSet<String> = seed_nodes.iter().map(|n| n.symbol.clone()).collect();
 
     // bidirectional weighted adjacency over all edge kinds (injected)
     let mut adj_out: HashMap<String, Vec<(String, f64)>> = HashMap::new();
@@ -833,13 +841,13 @@ pub fn impact_radius_with(
     for e in edges {
         let w = impact_weight(&e.kind);
         adj_out
-            .entry(e.source_qualified.clone())
+            .entry(e.caller_symbol.clone())
             .or_default()
-            .push((e.target_qualified.clone(), w));
+            .push((e.callee_symbol.clone(), w));
         adj_in
-            .entry(e.target_qualified.clone())
+            .entry(e.callee_symbol.clone())
             .or_default()
-            .push((e.source_qualified.clone(), w));
+            .push((e.caller_symbol.clone(), w));
     }
 
     let mut best: HashMap<String, f64> = HashMap::new();
@@ -880,16 +888,14 @@ pub fn impact_radius_with(
     }
 
     // final selection: join nodes (canonical), drop seeds + verilog,
-    // order (score desc, qn asc), cap with sentinel
-    let by_qn: HashMap<&str, &GraphNodeLite> = nodes_all
-        .iter()
-        .map(|n| (n.qualified_name.as_str(), n))
-        .collect();
+    // order (score desc, symbol asc), cap with sentinel
+    let by_key: HashMap<&str, &GraphNodeLite> =
+        nodes_all.iter().map(|n| (n.symbol.as_str(), n)).collect();
     let mut rows: Vec<(String, f64)> = best
         .into_iter()
         .filter(|(qn, _)| !seeds.contains(qn))
-        .filter(|(qn, _)| by_qn.contains_key(qn.as_str()))
-        .filter(|(qn, _)| by_qn[qn.as_str()].extra.get("verilog_kind").is_none())
+        .filter(|(qn, _)| by_key.contains_key(qn.as_str()))
+        .filter(|(qn, _)| by_key[qn.as_str()].extra.get("verilog_kind").is_none())
         .collect();
     rows.sort_by(|a, b| {
         b.1.partial_cmp(&a.1)
@@ -903,11 +909,11 @@ pub fn impact_radius_with(
     let score_by_qn: HashMap<&str, f64> = rows.iter().map(|(qn, s)| (qn.as_str(), *s)).collect();
     let mut impacted_nodes: Vec<Value> = rows
         .iter()
-        .map(|(qn, _)| node_dict(by_qn[qn.as_str()]))
+        .map(|(qn, _)| node_dict(by_key[qn.as_str()]))
         .collect();
     let mut impacted_files: Vec<String> = Vec::new();
     for (qn, _) in &rows {
-        let f = &by_qn[qn.as_str()].file_path;
+        let f = &by_key[qn.as_str()].file_path;
         if !impacted_files.contains(f) {
             impacted_files.push(f.clone());
         }
@@ -926,9 +932,9 @@ pub fn impact_radius_with(
     {
         let mut stmt = conn
             .prepare(
-                "SELECT id, kind, source_qualified, target_qualified, file_path, \
+                "SELECT id, kind, caller_symbol, callee_symbol, file_path, \
                  line, confidence, confidence_tier FROM edges \
-                 WHERE source_qualified IN (SELECT value FROM json_each(?1))",
+                 WHERE caller_symbol IN (SELECT value FROM json_each(?1))",
             )
             .map_err(|e| format!("edges among 查詢失敗：{e}"))?;
         let arr = Value::Array(
@@ -1200,8 +1206,8 @@ fn compute_cohesion_batch(
     let mut internal = vec![0usize; n];
     let mut external = vec![0usize; n];
     for e in all_edges {
-        let sc = qn_to_idx.get(e.source_qualified.as_str());
-        let tc = qn_to_idx.get(e.target_qualified.as_str());
+        let sc = qn_to_idx.get(e.caller_symbol.as_str());
+        let tc = qn_to_idx.get(e.callee_symbol.as_str());
         match (sc, tc) {
             (None, None) => {}
             (Some(&s), Some(&t)) if s == t => internal[s] += 1,
@@ -1234,7 +1240,7 @@ pub fn detect_communities(conn: &Connection, min_size: usize) -> Result<Vec<Valu
     detect_communities_with(conn, &load_edges(conn)?, min_size)
 }
 
-/// Edge-injected core (union face passes graph.db + sidecar edges).
+/// Edge-injected core (callers pass the full-graph edge slice).
 pub fn detect_communities_with(
     conn: &Connection,
     edges: &[GraphEdgeLite],
@@ -1323,11 +1329,7 @@ pub fn detect_communities_with(
         .collect();
     let member_sets: Vec<HashSet<String>> = pending
         .iter()
-        .map(|(_, idxs)| {
-            idxs.iter()
-                .map(|&i| nodes[i].qualified_name.clone())
-                .collect()
-        })
+        .map(|(_, idxs)| idxs.iter().map(|&i| nodes[i].symbol.clone()).collect())
         .collect();
     let cohesions = compute_cohesion_batch(&member_sets, all_edges);
     let mut communities: Vec<Value> = pending
@@ -1353,7 +1355,7 @@ pub fn detect_communities_with(
                 "cohesion": cohesions[ci],
                 "dominant_language": dominant,
                 "description": format!("Directory-based community: {dir_path}"),
-                "members": members.iter().map(|m| m.qualified_name.clone()).collect::<Vec<_>>(),
+                "members": members.iter().map(|m| m.symbol.clone()).collect::<Vec<_>>(),
             })
         })
         .collect();
@@ -1392,8 +1394,8 @@ pub fn architecture_overview(conn: &Connection, max_results: usize) -> Result<Va
         if e.kind == "TESTED_BY" {
             continue;
         }
-        let sc = node_to_community.get(e.source_qualified.as_str());
-        let tc = node_to_community.get(e.target_qualified.as_str());
+        let sc = node_to_community.get(e.caller_symbol.as_str());
+        let tc = node_to_community.get(e.callee_symbol.as_str());
         if let (Some(&s), Some(&t)) = (sc, tc) {
             if s != t {
                 let key = format!("{}:{}", s.min(t), s.max(t));
@@ -1406,8 +1408,8 @@ pub fn architecture_overview(conn: &Connection, max_results: usize) -> Result<Va
                     "source_community": s,
                     "target_community": t,
                     "edge_kind": e.kind,
-                    "source": sanitize_name(&e.source_qualified),
-                    "target": sanitize_name(&e.target_qualified),
+                    "source": sanitize_name(&e.caller_symbol),
+                    "target": sanitize_name(&e.callee_symbol),
                 }));
             }
         }
@@ -1556,14 +1558,14 @@ pub fn map_changes_to_nodes(
             }
         }
         for node in nodes {
-            if seen.contains(&node.qualified_name) {
+            if seen.contains(&node.symbol) {
                 continue;
             }
             let (Some(ls), Some(le)) = (node.line_start, node.line_end) else {
                 continue;
             };
             if ranges.iter().any(|&(s, e)| ls <= e && le >= s) {
-                seen.insert(node.qualified_name.clone());
+                seen.insert(node.symbol.clone());
                 result.push(node);
             }
         }
@@ -1612,12 +1614,12 @@ pub fn compute_risk_score(
     let caller_qns: Vec<String> = {
         let mut stmt = conn
             .prepare(
-                "SELECT DISTINCT source_qualified FROM edges \
-                 WHERE kind = 'CALLS' AND target_qualified = ?1",
+                "SELECT DISTINCT caller_symbol FROM edges \
+                 WHERE kind = 'CALLS' AND callee_symbol = ?1",
             )
             .map_err(|e| format!("callers 查詢失敗：{e}"))?;
         let rows = stmt
-            .query_map([node.qualified_name.as_str()], |r| r.get::<_, String>(0))
+            .query_map([node.symbol.as_str()], |r| r.get::<_, String>(0))
             .map_err(|e| format!("callers 查詢失敗：{e}"))?;
         rows.collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("callers 讀取失敗：{e}"))?
@@ -1628,7 +1630,7 @@ pub fn compute_risk_score(
         for qn in &caller_qns {
             let cid: Option<i64> = conn
                 .query_row(
-                    "SELECT community_id FROM nodes WHERE qualified_name = ?1",
+                    "SELECT community_id FROM nodes WHERE symbol = ?1",
                     [qn.as_str()],
                     |r| r.get(0),
                 )
@@ -1642,7 +1644,7 @@ pub fn compute_risk_score(
     }
     score += (crossing as f64 * 0.05).min(0.15);
     // test coverage: transitive tests count / 5 scaling
-    let test_count = transitive_test_count(conn, &node.qualified_name)?;
+    let test_count = transitive_test_count(conn, &node.symbol)?;
     score += 0.30 - (test_count as f64 / 5.0).min(1.0) * 0.25;
     // security sensitivity
     let name_lower = node.name.to_lowercase();
@@ -1667,14 +1669,12 @@ pub fn compute_risk_score(
 
 /// Live-path `get_transitive_tests` count: class CONTAINS expansion +
 /// direct TESTED_BY + 1-hop CALLS callee TESTED_BY (frontier cap 50).
-fn transitive_test_count(conn: &Connection, qualified_name: &str) -> Result<usize, String> {
-    let mut input_qns = vec![qualified_name.to_string()];
+fn transitive_test_count(conn: &Connection, symbol: &str) -> Result<usize, String> {
+    let mut input_qns = vec![symbol.to_string()];
     let kind: Option<String> = conn
-        .query_row(
-            "SELECT kind FROM nodes WHERE qualified_name = ?1",
-            [qualified_name],
-            |r| r.get(0),
-        )
+        .query_row("SELECT kind FROM nodes WHERE symbol = ?1", [symbol], |r| {
+            r.get(0)
+        })
         .map(Some)
         .or_else(|e| match e {
             rusqlite::Error::QueryReturnedNoRows => Ok(None),
@@ -1684,12 +1684,12 @@ fn transitive_test_count(conn: &Connection, qualified_name: &str) -> Result<usiz
     if kind.as_deref() == Some("Class") {
         let mut stmt = conn
             .prepare(
-                "SELECT target_qualified FROM edges \
-                 WHERE source_qualified = ?1 AND kind = 'CONTAINS'",
+                "SELECT callee_symbol FROM edges \
+                 WHERE caller_symbol = ?1 AND kind = 'CONTAINS'",
             )
             .map_err(|e| format!("contains 查詢失敗：{e}"))?;
         let rows = stmt
-            .query_map([qualified_name], |r| r.get::<_, String>(0))
+            .query_map([symbol], |r| r.get::<_, String>(0))
             .map_err(|e| format!("contains 查詢失敗：{e}"))?;
         for r in rows {
             input_qns.push(r.map_err(|e| format!("contains 讀取失敗：{e}"))?);
@@ -1698,8 +1698,8 @@ fn transitive_test_count(conn: &Connection, qualified_name: &str) -> Result<usiz
     let tested_by_of = |qn: &str| -> Result<Vec<String>, String> {
         let mut stmt = conn
             .prepare(
-                "SELECT target_qualified FROM edges \
-                 WHERE source_qualified = ?1 AND kind = 'TESTED_BY'",
+                "SELECT callee_symbol FROM edges \
+                 WHERE caller_symbol = ?1 AND kind = 'TESTED_BY'",
             )
             .map_err(|e| format!("tested_by 查詢失敗：{e}"))?;
         let rows = stmt
@@ -1718,8 +1718,8 @@ fn transitive_test_count(conn: &Connection, qualified_name: &str) -> Result<usiz
     for qn in &input_qns {
         let mut stmt = conn
             .prepare(
-                "SELECT DISTINCT target_qualified FROM edges \
-                 WHERE kind = 'CALLS' AND source_qualified = ?1 LIMIT 50",
+                "SELECT DISTINCT callee_symbol FROM edges \
+                 WHERE kind = 'CALLS' AND caller_symbol = ?1 LIMIT 50",
             )
             .map_err(|e| format!("calls 查詢失敗：{e}"))?;
         let rows = stmt
@@ -1800,9 +1800,9 @@ pub fn detect_changes(
         }
         let cnt: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM edges WHERE source_qualified = ?1 \
+                "SELECT COUNT(*) FROM edges WHERE caller_symbol = ?1 \
                  AND kind = 'TESTED_BY'",
-                [node.qualified_name.as_str()],
+                [node.symbol.as_str()],
                 |r| r.get(0),
             )
             .map_err(|e| format!("tested_by 計數失敗：{e}"))?;
@@ -1888,7 +1888,7 @@ pub fn search_nodes(
     };
     let fts_ok: Result<Vec<GraphNodeLite>, rusqlite::Error> = (|| {
         let mut stmt = conn.prepare(
-            "SELECT n.id, n.kind, n.name, n.qualified_name, n.file_path, \
+            "SELECT n.id, n.kind, n.name, n.qname, n.symbol, n.file_path, \
              n.line_start, n.line_end, n.language, n.parent_name, n.is_test, \
              n.community_id, n.extra \
              FROM nodes_fts f JOIN nodes n ON f.rowid = n.id \
@@ -1909,7 +1909,7 @@ pub fn search_nodes(
     // Phase 2: LIKE fallback
     let conds: Vec<String> = words
         .iter()
-        .map(|_| "(LOWER(name) LIKE ? OR LOWER(qualified_name) LIKE ?)".to_string())
+        .map(|_| "(LOWER(name) LIKE ? OR LOWER(qname) LIKE ?)".to_string())
         .collect();
     let sql = format!(
         "SELECT {NODE_COLUMNS} FROM nodes WHERE {} LIMIT {}",
@@ -2182,7 +2182,6 @@ pub fn run(argv: &[&str]) -> crate::ToolOutput {
     let mut base = String::new();
     let mut query = String::new();
     let mut include_source = false;
-    let mut use_union = false;
     let mut use_leiden = false;
     let mut seed: u64 = 42;
     let mut max_lines: Option<usize> = None;
@@ -2233,7 +2232,11 @@ pub fn run(argv: &[&str]) -> crate::ToolOutput {
                 Err(o) => return o,
             },
             "--include-source" => include_source = true,
-            "--union" => use_union = true,
+            "--union" => {
+                return gq_fail(
+                    "--union 已退休（v1+ S4）：聯集邊於 graph_db build 時物化進 .code-reality/graph.db，查詢預設全量".to_string(),
+                );
+            }
             "--leiden" => use_leiden = true,
             "--seed" => match num(&mut i, "--seed") {
                 Ok(v) => seed = v.unwrap_or(42) as u64,
@@ -2243,7 +2246,7 @@ pub fn run(argv: &[&str]) -> crate::ToolOutput {
                 return crate::ToolOutput {
                     stdout: concat!(
                         "usage: graph_query [-h] <op> --repo REPO [--files FILES] ",
-                        "[--union] [--leiden] [--seed N] ",
+                        "[--leiden] [--seed N] ",
                         "[--depth N] [--limit N] [--max-results N] [--task TASK] ",
                         "[--base BASE] [--query QUERY] [--include-source] ",
                         "[--max-lines N] [--max-nodes N]\n",
@@ -2297,17 +2300,7 @@ pub fn run(argv: &[&str]) -> crate::ToolOutput {
     let op: &str = op;
     let res: Result<Value, String> = match op {
         "impact_radius" => {
-            if use_union {
-                impact_radius_union(
-                    &conn,
-                    &repo_path,
-                    &files,
-                    depth.unwrap_or(2),
-                    max_nodes.unwrap_or(500),
-                )
-            } else {
-                impact_radius(&conn, &files, depth.unwrap_or(2), max_nodes.unwrap_or(500))
-            }
+            impact_radius(&conn, &files, depth.unwrap_or(2), max_nodes.unwrap_or(500))
         }
         "detect_changes" => {
             let ranges = if !base.is_empty() {
@@ -2328,22 +2321,10 @@ pub fn run(argv: &[&str]) -> crate::ToolOutput {
             };
             detect_changes(&conn, Some(&repo_path), &files, ranges.as_ref(), None)
         }
-        "hub" => if use_union {
-            find_hub_nodes_union(&conn, &repo_path, limit.unwrap_or(10))
-        } else {
-            find_hub_nodes(&conn, limit.unwrap_or(10))
-        }
-        .map(Value::Array),
-        "bridge" => if use_union {
-            find_bridge_nodes_union(&conn, &repo_path, limit.unwrap_or(10))
-        } else {
-            find_bridge_nodes(&conn, limit.unwrap_or(10))
-        }
-        .map(Value::Array),
+        "hub" => find_hub_nodes(&conn, limit.unwrap_or(10)).map(Value::Array),
+        "bridge" => find_bridge_nodes(&conn, limit.unwrap_or(10)).map(Value::Array),
         "communities" => if use_leiden {
             detect_communities_leiden(&conn, 2, seed)
-        } else if use_union {
-            detect_communities_union(&conn, &repo_path, 2)
         } else {
             detect_communities(&conn, 2)
         }
@@ -2378,232 +2359,6 @@ pub fn run(argv: &[&str]) -> crate::ToolOutput {
     }
 }
 
-// ---------- S5-mapper: SCIP symbol -> qname + union edge plane ----------
-// Maps sidecar (SCIP-scheme) edge endpoints to graph.db qnames via the
-// cache occurrences face (symbol -> defining rel_path) + engine::tail
-// names — the same reconciliation logic scip_nodes used for node
-// injection. Union edges stay kind='REFERENCES'; graph.db is untouched.
-
-#[derive(serde::Serialize)]
-pub struct UnionEdgesReport {
-    pub sidecar_edges: usize,
-    pub mapped_edges: usize,
-    pub distinct_symbols: usize,
-    /// symbols on at least one FULLY-mapped edge (both endpoints joined)
-    pub mapped_symbols: usize,
-    pub merged_new: usize,
-    /// (file, name) keys hitting multiple graph.db qnames — first-wins
-    pub collided_keys: usize,
-}
-
-/// Core mapper over explicit index path (tests pass temp slots; the
-/// repo-keyed home is global by basename — see default_index_path).
-pub fn load_union_edges_at(
-    conn: &Connection,
-    repo_root: &Path,
-    index_path: &Path,
-) -> Result<(Vec<GraphEdgeLite>, UnionEdgesReport), String> {
-    let sidecar = crate::scip_edges::union_db_path(index_path);
-    if !sidecar.exists() {
-        return Err(format!(
-            "union sidecar 不在：{}（先 `code-reality scip_edges --repo <repo> --inject`）",
-            sidecar.display()
-        ));
-    }
-    let cache_db = crate::cache::sqlite_path(index_path);
-    if !cache_db.exists() {
-        return Err(format!(
-            "SCIP cache 不在：{}（先 `code-reality scip_refs --build-cache --repo <repo>`）",
-            cache_db.display()
-        ));
-    }
-    // symbol -> rel_path, defining occurrence preferred (seq order)
-    let cache = crate::common::connect_ro(&cache_db)?;
-    let mut sym_file: HashMap<String, String> = HashMap::new();
-    {
-        let mut stmt = cache
-            .prepare(
-                "SELECT symbol, rel_path FROM occurrences WHERE is_def = 1 \
-                 ORDER BY seq",
-            )
-            .map_err(|e| format!("occurrences 查詢失敗：{e}"))?;
-        let rows = stmt
-            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
-            .map_err(|e| format!("occurrences 查詢失敗：{e}"))?;
-        for r in rows {
-            let (s, f) = r.map_err(|e| format!("occurrences 讀取失敗：{e}"))?;
-            sym_file.entry(s).or_insert(f);
-        }
-    }
-    // sidecar edges -> qname edges (both endpoints must map)
-    let side = crate::common::connect_ro(&sidecar)?;
-    let mut raw: Vec<(String, String)> = Vec::new();
-    {
-        let mut stmt = side
-            .prepare("SELECT caller_symbol, callee_symbol FROM edges")
-            .map_err(|e| format!("sidecar edges 查詢失敗：{e}"))?;
-        let rows = stmt
-            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
-            .map_err(|e| format!("sidecar edges 查詢失敗：{e}"))?;
-        for r in rows {
-            raw.push(r.map_err(|e| format!("sidecar edges 讀取失敗：{e}"))?);
-        }
-    }
-    let distinct_symbols = {
-        let mut set: HashSet<&str> = HashSet::new();
-        for (a, b) in &raw {
-            set.insert(a.as_str());
-            set.insert(b.as_str());
-        }
-        set.len()
-    };
-    // (resolved-file, bare-name) double key against graph.db nodes — the
-    // same reconciliation shape as scip_nodes/graph_audit. CRG method
-    // qnames are parent-qualified (`file::Type.method`), so constructing
-    // `file::name` strings would never match; the nodes table's bare
-    // `name` column carries the join key.
-    let repo_abs = crate::common::resolve(repo_root);
-    let mut key_qn: HashMap<(String, String), String> = HashMap::new();
-    let mut collided_keys = 0usize;
-    for n in load_nodes(conn, false)? {
-        let key = (n.file_path.clone(), n.name.clone());
-        match key_qn.get(&key) {
-            Some(_) => {
-                // first-wins (rowid order): same-file same-name symbols all
-                // join onto the first node — counted, not silent (F2)
-                collided_keys += 1;
-            }
-            None => {
-                key_qn.insert(key, n.qualified_name.clone());
-            }
-        }
-    }
-    let qn_of = |symbol: &str| -> Option<String> {
-        let file = sym_file.get(symbol)?;
-        let name = crate::engine::fn_tail_name(symbol)?;
-        let file_abs = repo_abs.join(file);
-        let resolved = crate::common::resolve(&file_abs);
-        key_qn
-            .get(&(resolved.to_string_lossy().into_owned(), name.to_string()))
-            .cloned()
-    };
-    let mut mapped: HashSet<&str> = HashSet::new();
-    let mut out: Vec<GraphEdgeLite> = Vec::new();
-    for (caller, callee) in &raw {
-        let (Some(cq), Some(tq)) = (qn_of(caller), qn_of(callee)) else {
-            continue;
-        };
-        mapped.insert(caller.as_str());
-        mapped.insert(callee.as_str());
-        out.push(GraphEdgeLite {
-            kind: "REFERENCES".into(),
-            source_qualified: cq,
-            target_qualified: tq,
-        });
-    }
-    let report = UnionEdgesReport {
-        sidecar_edges: raw.len(),
-        mapped_edges: out.len(),
-        distinct_symbols,
-        mapped_symbols: mapped.len(),
-        merged_new: out.len(),
-        collided_keys,
-    };
-    Ok((out, report))
-}
-
-/// Repo-keyed wrapper (sidecar home is global by repo basename).
-pub fn load_union_edges(
-    conn: &Connection,
-    repo_root: &Path,
-) -> Result<(Vec<GraphEdgeLite>, UnionEdgesReport), String> {
-    let index = crate::engine::default_index_path(repo_root)?;
-    let (edges, report) = load_union_edges_at(conn, repo_root, &index)?;
-    Ok((edges, report))
-}
-
-/// graph.db edges + mapped sidecar REFERENCES, deduped by
-/// (source, target, kind) — sidecar rows add, never replace.
-pub fn load_edges_union(
-    conn: &Connection,
-    repo_root: &Path,
-) -> Result<(Vec<GraphEdgeLite>, UnionEdgesReport), String> {
-    let mut edges = load_edges(conn)?;
-    let (extra, mut report) = load_union_edges(conn, repo_root)?;
-    let mut known: HashSet<(String, String, String)> = edges
-        .iter()
-        .map(|e| {
-            (
-                e.source_qualified.clone(),
-                e.target_qualified.clone(),
-                e.kind.clone(),
-            )
-        })
-        .collect();
-    let mut merged = 0usize;
-    for e in extra {
-        let key = (
-            e.source_qualified.clone(),
-            e.target_qualified.clone(),
-            e.kind.clone(),
-        );
-        if !known.contains(&key) {
-            edges.push(e);
-            merged += 1;
-        }
-        known.insert(key);
-    }
-    report.merged_new = merged;
-    Ok((edges, report))
-}
-
-// Union variants of the edge-consuming ops (parity signatures untouched)
-
-pub fn impact_radius_union(
-    conn: &Connection,
-    repo_root: &Path,
-    changed_files: &[String],
-    max_depth: usize,
-    max_nodes: usize,
-) -> Result<Value, String> {
-    let (edges, report) = load_edges_union(conn, repo_root)?;
-    // note (F11): the `edges` section inside the result stays graph.db-only;
-    // sidecar-supported reachability is visible via scores/union keys
-    let mut v = impact_radius_with(conn, &edges, changed_files, max_depth, max_nodes)?;
-    v.as_object_mut().unwrap().insert(
-        "union".into(),
-        serde_json::to_value(&report).unwrap_or(Value::Null),
-    );
-    Ok(v)
-}
-
-pub fn find_hub_nodes_union(
-    conn: &Connection,
-    repo_root: &Path,
-    top_n: usize,
-) -> Result<Vec<Value>, String> {
-    let (edges, _) = load_edges_union(conn, repo_root)?;
-    find_hub_nodes_with(conn, &edges, top_n)
-}
-
-pub fn find_bridge_nodes_union(
-    conn: &Connection,
-    repo_root: &Path,
-    top_n: usize,
-) -> Result<Vec<Value>, String> {
-    let (edges, _) = load_edges_union(conn, repo_root)?;
-    find_bridge_nodes_with(conn, &edges, top_n)
-}
-
-pub fn detect_communities_union(
-    conn: &Connection,
-    repo_root: &Path,
-    min_size: usize,
-) -> Result<Vec<Value>, String> {
-    let (edges, _) = load_edges_union(conn, repo_root)?;
-    detect_communities_with(conn, &edges, min_size)
-}
-
 // ---------- S10: Leiden Tier 1 (single-clustering, seeded deterministic) ----------
 
 /// Tier-1 communities via seeded Leiden (single-clustering 0.7, BSD-3;
@@ -2630,7 +2385,7 @@ pub fn detect_communities_leiden(
     let idx_of: HashMap<&str, usize> = nodes
         .iter()
         .enumerate()
-        .map(|(i, n)| (n.qualified_name.as_str(), i))
+        .map(|(i, n)| (n.symbol.as_str(), i))
         .collect();
     fn cluster_weight(kind: &str) -> f64 {
         match kind {
@@ -2647,8 +2402,8 @@ pub fn detect_communities_leiden(
     let mut weights: HashMap<(usize, usize), f64> = HashMap::new();
     for e in &edges {
         let (Some(&s), Some(&t)) = (
-            idx_of.get(e.source_qualified.as_str()),
-            idx_of.get(e.target_qualified.as_str()),
+            idx_of.get(e.caller_symbol.as_str()),
+            idx_of.get(e.callee_symbol.as_str()),
         ) else {
             continue;
         };
@@ -2690,11 +2445,7 @@ pub fn detect_communities_leiden(
                                    // node metadata + cohesion like Tier 0
     let member_sets: Vec<HashSet<String>> = ordered
         .iter()
-        .map(|idxs| {
-            idxs.iter()
-                .map(|&i| nodes[i].qualified_name.clone())
-                .collect()
-        })
+        .map(|idxs| idxs.iter().map(|&i| nodes[i].symbol.clone()).collect())
         .collect();
     let cohesions = compute_cohesion_batch(&member_sets, &edges);
     let modq = modularity(&graph, labels, resolution);
@@ -2725,7 +2476,7 @@ pub fn detect_communities_leiden(
                 "description": format!(
                     "Leiden community (modularity {modq:.4}, resolution {resolution:.4}, seed {seed})"
                 ),
-                "members": members.iter().map(|m| m.qualified_name.clone()).collect::<Vec<_>>(),
+                "members": members.iter().map(|m| m.symbol.clone()).collect::<Vec<_>>(),
             })
         })
         .collect();
@@ -2736,10 +2487,8 @@ pub fn detect_communities_leiden(
 
 /// Shared name-dedupe (communities.py:732) extracted for both tiers.
 fn dedupe_community_names(communities: &mut [Value], nodes: &[GraphNodeLite]) {
-    let nodes_by_qn: HashMap<&str, &GraphNodeLite> = nodes
-        .iter()
-        .map(|n| (n.qualified_name.as_str(), n))
-        .collect();
+    let nodes_by_key: HashMap<&str, &GraphNodeLite> =
+        nodes.iter().map(|n| (n.symbol.as_str(), n)).collect();
     let mut taken: HashSet<String> = communities
         .iter()
         .map(|c| c["name"].as_str().unwrap_or("").to_string())
@@ -2773,7 +2522,7 @@ fn dedupe_community_names(communities: &mut [Value], nodes: &[GraphNodeLite]) {
                 .as_array()
                 .unwrap()
                 .iter()
-                .filter_map(|qn| nodes_by_qn.get(qn.as_str().unwrap_or("")))
+                .filter_map(|qn| nodes_by_key.get(qn.as_str().unwrap_or("")))
                 .copied()
                 .collect();
             let naming: Vec<&GraphNodeLite> = {

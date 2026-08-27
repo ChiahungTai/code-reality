@@ -1,9 +1,8 @@
-# crates/ — Rust carrier (coexistence)
+# crates/ — Rust carrier
 
-Rust workspace member(s) of the code-reality toolchain. The frozen Python
-package (`code_reality/`) stays the parity oracle until the R7 relay deletes
-it; every Rust tool must reproduce Python stdout bytes + exit codes exactly
-(gated by `tests/parity/`).
+Rust workspace member(s) of the code-reality toolchain. The frozen-Python
+parity oracle and harness retired at R7 (2026-08-26); cargo synthetic-repo
+tests are the sole gate face.
 
 ## code-reality (lib + umbrella bin)
 
@@ -29,25 +28,27 @@ it; every Rust tool must reproduce Python stdout bytes + exit codes exactly
   target double-key attribution) / `fndefs` (adapter — fn-span sidecar
   `*.fndefs.db`, the sqlite carrier for callers/closure spans; ladder
   mirrors cache) / `snapshot` / `transition` / `graph_audit` / `graph_csv`
-  (graph family — one module per frozen Python tool; byte-parity gated
-  by `tests/parity/test_graph_family_parity.py`) / `scip_edges` (v1+ S1
-  write face — SCIP reference edges into the index-sibling
-  `<index-stem>.union.db` sidecar (default slot: `index.union.db`): own schema, PK (caller, callee),
-  provenance='SCIP', idempotent upsert + `updated_at` sweep; CRG
-  graph.db stays edge-write-free per the (A) adjudication) /
-  `scip_nodes` (v1+ S2 write face — graph_audit missing → double-key
-  reconciliation → graph.db nodes; THE only graph.db writer in the
-  family: `extra {"tier":"SCIP"}` marker rollback, `VACUUM INTO`
-  first-inject backup, UNIQUE-collision skip + structural-residual
-  reporting) / `graph_engine` (v1+ engine parity — the ten live CRG
-  MCP ops re-implemented read-only over graph.db: loaders with rowid
-  ordering parity, hub/bridge (sampled Brandes, own LCG — statistical
-  parity above 5k nodes), flows family, impact relaxation, communities
-  Tier 0 (directory grouping — igraph never present in base CRG), risk
-  six-factor, FTS5→LIKE search, compositions; `py_round` for Python
-  `round()` decimal parity; CLI umbrella `graph_query <op>` (incl. `--union`
-  sidecar join + `--leiden` tier + `symbols` outline) and the 12
-  MCP tools share the argv path) / `mcp_server` (frontend adapter — rmcp streamable-http on 8200, tools
+  (graph family — one module per frozen Python tool; cargo-test gated) /
+  `scip_edges` (v1+ derivation lib — SCIP reference edges, spans-based
+  attribution; CLI/inject/sidecar faces retired at v1+ S4, the module
+  stays as the derivation oracle `graph_db` tests reconcile against) /
+  `graph_db` (v1+ S4 — THE self-owned db face: `build` from any producer
+  cache [SCIP or LSP harvest; producer-conditional attribution — spans
+  where available, nearest-preceding on the span-less LSP face] into
+  `<repo>/.code-reality/graph.db` [symbol-keyed nodes, one-row-per-site
+  edges, derived flows/communities materialized, FTS5, temp+rename
+  atomicity] and `import_legacy` [merge onto producer symbols where
+  (file, name) resolves uniquely, qname-minted symbols otherwise,
+  dangling endpoints passthrough — legacy db read-only]) /
+  `graph_engine` (v1+ engine parity — the ten live ops read-only over
+  the self-owned db: symbol-keyed loaders with rowid ordering parity,
+  hub/bridge (sampled Brandes, own LCG — statistical parity above 5k
+  nodes), flows family, impact relaxation, communities Tier 0
+  (directory grouping) + Leiden tier, risk six-factor, FTS5→LIKE
+  search, compositions; `py_round` for Python `round()` decimal parity;
+  CLI umbrella `graph_query <op>` (`--union` retired — build-time
+  materialization) and the 12 MCP tools share the argv path) /
+  `mcp_server` (frontend adapter — rmcp streamable-http on 8200, tools
   thin-wrap `cli::run` in-process with spawn_blocking + catch_unwind
   per-request isolation [SM-14]; bin `code-reality-mcp`) / `cli` (assembly —
   argv surface, mode routing incl. `--callers`/`--closure`/`--depth`
@@ -65,10 +66,14 @@ it; every Rust tool must reproduce Python stdout bytes + exit codes exactly
   relay minimal-diff contract.
 - **Schema interop**: the derived db keeps the frozen three-table DDL +
   `SCHEMA_VERSION`; extensions (fn_defs, R3) live in separate sidecars —
-  never in the shared db (guard would ping-pong rebuilds). CRG graph.db
-  reads are read-only (`connect_ro`) for every module except the
-  `scip_nodes` injector (sole write face, marker-tagged). Synthetic-db
-  tests share `tests/crg_fixture.rs` (production-shape CRG DDL).
+  never in the shared db (guard would ping-pong rebuilds). The legacy
+  `.code-review-graph/` db is read-only everywhere (`connect_ro`) — it
+  is the parity oracle/rollback copy; the write face is `graph_db`
+  (`.code-reality/graph.db`). Engine tests use
+  `tests/graph_db_fixture.rs` (self-owned schema, symbol==qname
+  universe); the legacy-schema consumer modules keep
+  `tests/crg_fixture.rs` (production-shape CRG DDL) until their
+  migration EP.
 - **Parity harness**: `tests/parity/` (pytest, `parity` marker) drives
   both implementations on identical inputs and `cmp`s stdout + exit
   codes; mutating drills hit fixture copies only. Environment-absent

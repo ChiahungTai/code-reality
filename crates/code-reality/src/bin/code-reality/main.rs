@@ -39,9 +39,8 @@ fn route(argv: &[&str]) -> code_reality::ToolOutput {
         Some(&"boundary") => code_reality::boundary::run(argv),
         Some(&"boundary_build") => code_reality::boundary_build::run(argv),
         Some(&"runtime_edges") => code_reality::runtime_edges::run(argv),
-        Some(&"scip_edges") => code_reality::scip_edges::run(argv),
-        Some(&"scip_nodes") => code_reality::scip_nodes::run(argv),
         Some(&"graph_query") => code_reality::graph_engine::run(argv),
+        Some(&"graph_db") => code_reality::graph_db::run(argv),
         Some(&"tour_validate") => code_reality::tour_validate::run(argv),
         Some(&"tour_upgrade") => code_reality::tour_upgrade::run(argv),
         Some(&"--help") | Some(&"-h") | Some(&"--version") => ToolOutput {
@@ -75,6 +74,6 @@ const SUBCOMMANDS: [&str; 16] = [
     "tour_validate",
     "tour_upgrade",
     "runtime_edges",
-    "scip_edges",
-    "scip_nodes",
+    "graph_query",
+    "graph_db",
 ];

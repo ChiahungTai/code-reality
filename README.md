@@ -15,7 +15,7 @@ code-reality <tool> --repo <repo-root> [args]
 
 Tools: `snapshot` `transition` `hub_refs` `runtime_edges` `boundary_build`
 `boundary` `delta_tour` `chain_tour` `graph_csv` `tour_validate` `tour_upgrade`
-`tour_manifest` `graph_audit` `scip_refs`
+`tour_manifest` `graph_audit` `scip_refs` `graph_query` `graph_db`
 
 Sidecar home (frozen at migration): `~/.mosaic/code-reality/` — including the
 per-repo SCIP index slots under `scip/<repo-basename>/`.
@@ -52,8 +52,19 @@ launchd plist in `launchd/`) for multi-harness sharing on one machine —
 not needed for the plugin path.
 
 Per-repo prerequisites for the query tools: a SCIP index
-(`rust-analyzer scip <repo>` → `~/.mosaic/code-reality/scip/<basename>/index.scip`)
-and, for audits, a CRG graph (`uvx code-review-graph build`).
+(`rust-analyzer scip <repo>` → `~/.mosaic/code-reality/scip/<basename>/index.scip`;
+Python repos use the LSP-harvest adapter instead). The graph engine reads
+a self-owned db at `<repo>/.code-reality/graph.db` — produce it with
+`code-reality graph_db build --repo <repo>` (any producer cache) and,
+when a CRG-era `.code-review-graph/graph.db` exists, follow up with
+`code-reality graph_db import_legacy --repo <repo>` (one-shot; the legacy
+db is read-only). The `.code-reality/` directory is repo-local data —
+add it to the repo's `.gitignore` if you don't want it tracked (that
+choice belongs to each repo). Several tool modules still read
+the legacy-schema `.code-review-graph/graph.db` (graph_audit,
+`scip_refs --audit`, graph_csv, chain_tour, hub_refs, hazard, snapshot —
+see `crates/AGENTS.md` for the migration boundary) — a frozen CRG-era
+artifact; do not try to regenerate it with retired CRG tooling.
 
 ## Tests
 

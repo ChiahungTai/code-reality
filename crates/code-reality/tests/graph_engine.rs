@@ -3,10 +3,10 @@
 //! fixture. Rowid (insertion) order is the parity contract with CRG's
 //! ORDER-BY-less `SELECT *` queries.
 
-mod crg_fixture;
+mod graph_db_fixture;
 
 use code_reality::graph_engine::{load_edges, load_flow_adjacency, load_nodes, open};
-use crg_fixture::{make_crg_db, CrgDbSpec, NodeAttr, NodeSeed};
+use graph_db_fixture::{make_crg_db, CrgDbSpec, NodeAttr, NodeSeed};
 
 fn spec() -> CrgDbSpec {
     let nodes = vec![
@@ -132,8 +132,8 @@ fn flow_adjacency_calls_and_tested_by_semantics() {
 
     let adj = load_flow_adjacency(&conn).unwrap();
     // all nodes incl. File (graph.py:1493 reads nodes unfiltered)
-    assert_eq!(adj.nodes_by_qn.len(), 3);
-    assert!(adj.nodes_by_qn.contains_key("/repo/src/b.rs::gamma"));
+    assert_eq!(adj.nodes_by_key.len(), 3);
+    assert!(adj.nodes_by_key.contains_key("/repo/src/b.rs::gamma"));
     // CALLS appended with duplicates, only CALLS feed calls_out
     let out = &adj.calls_out["/repo/src/a.rs::alpha"];
     assert_eq!(out.len(), 2, "duplicate CALLS rows both appended");
@@ -489,7 +489,7 @@ fn impact_radius_excludes_verilog_extra() {
     let conn = rusqlite::Connection::open(&db).unwrap();
     conn.execute(
         "UPDATE nodes SET extra='{\"verilog_kind\":\"module\"}' \
-         WHERE qualified_name='/repo/b.rs::f2a'",
+         WHERE symbol='/repo/b.rs::f2a'",
         [],
     )
     .unwrap();
@@ -760,14 +760,19 @@ fn search_fts_then_like_fallback() {
     let (spec, _) = risk_spec();
     make_crg_db(&db, &spec).unwrap();
     let conn = rusqlite::Connection::open(&db).unwrap();
-    // fixture has no nodes_fts table -> LIKE fallback path
+    // the fixture ships an FTS table (production parity) -> fts5 face
     let (nodes, method) = search_nodes(&conn, "victim", 20).unwrap();
-    assert_eq!(method, "like");
+    assert_eq!(method, "fts5");
     assert!(nodes.iter().any(|n| n["name"] == "victim"));
     // multi-word AND semantics
     let (none, _) = search_nodes(&conn, "victim zzz", 20).unwrap();
     assert!(none.is_empty());
-    // with an FTS table the fts5 face fires
+    // drop the FTS table -> LIKE fallback path
+    conn.execute_batch("DROP TABLE nodes_fts;").unwrap();
+    let (nodes2, method2) = search_nodes(&conn, "victim", 20).unwrap();
+    assert_eq!(method2, "like");
+    assert!(nodes2.iter().any(|n| n["name"] == "victim"));
+    // recreate for the fts5 re-check below
     conn.execute_batch(
         "CREATE VIRTUAL TABLE nodes_fts USING fts5(name, content='nodes', content_rowid='id');",
     )
@@ -820,7 +825,7 @@ use code_reality::graph_engine::run as gq_run;
 
 fn gq_repo_db() -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = tempfile::tempdir().unwrap();
-    let graph_dir = dir.path().join(".code-review-graph");
+    let graph_dir = dir.path().join(".code-reality");
     std::fs::create_dir_all(&graph_dir).unwrap();
     let (spec, _) = risk_spec();
     make_crg_db(&graph_dir.join("graph.db"), &spec).unwrap();
@@ -873,9 +878,7 @@ fn gq_run_hub_end_to_end() {
 
 // ---------- deep-work: Leiden Tier 1 + union mapper + document_symbols ----------
 
-use code_reality::graph_engine::{
-    detect_communities_leiden, document_symbols_at, load_union_edges_at,
-};
+use code_reality::graph_engine::{detect_communities_leiden, document_symbols_at};
 
 fn two_cluster_spec() -> CrgDbSpec {
     // two dense trios joined by one weak (CONTAINS) bridge edge
@@ -949,20 +952,6 @@ fn leiden_separates_clusters_and_is_deterministic() {
         .starts_with("Leiden community")));
 }
 
-fn crate_stub_resolve(p: &std::path::Path) -> String {
-    std::fs::canonicalize(p)
-        .map(|c| c.to_string_lossy().into_owned())
-        .unwrap_or_else(|_| {
-            std::fs::canonicalize(p.parent().unwrap_or(p))
-                .map(|d| {
-                    d.join(p.file_name().unwrap_or_default())
-                        .to_string_lossy()
-                        .into_owned()
-                })
-                .unwrap_or_else(|_| p.to_string_lossy().into_owned())
-        })
-}
-
 fn make_union_slot(dir: &std::path::Path) -> std::path::PathBuf {
     use rusqlite::Connection;
     let index = dir.join("index.scip");
@@ -1006,50 +995,6 @@ fn make_union_slot(dir: &std::path::Path) -> std::path::PathBuf {
 }
 
 #[test]
-fn union_mapper_maps_sidecar_to_qnames() {
-    let dir = tempfile::tempdir().unwrap();
-    let index = make_union_slot(dir.path());
-    let dir2 = tempfile::tempdir().unwrap();
-    let db2 = dir2.path().join("graph.db");
-    let (mut spec2, _) = risk_spec();
-    spec2.nodes.clear();
-    spec2.node_attrs.clear();
-    spec2.edges.clear();
-    spec2.node_spans.clear();
-    spec2.flow_crits.clear();
-    spec2.flow_members.clear();
-    std::fs::create_dir_all(dir.path().join("src")).unwrap();
-    std::fs::write(dir.path().join("src/a.rs"), "fn a1() {}\n").unwrap();
-    std::fs::write(dir.path().join("src/b.rs"), "fn b1() {}\n").unwrap();
-    let a_abs = crate_stub_resolve(&dir.path().join("src/a.rs"));
-    let b_abs = crate_stub_resolve(&dir.path().join("src/b.rs"));
-    spec2.nodes = vec![
-        NodeSeed {
-            name: "a1".into(),
-            parent: None,
-            qname: format!("{a_abs}::a1"),
-            file_path: a_abs.clone(),
-        },
-        NodeSeed {
-            name: "b1".into(),
-            parent: None,
-            qname: format!("{b_abs}::b1"),
-            file_path: b_abs.clone(),
-        },
-    ];
-    make_crg_db(&db2, &spec2).unwrap();
-    let conn2 = rusqlite::Connection::open(&db2).unwrap();
-    let (edges, report) = load_union_edges_at(&conn2, dir.path(), &index).unwrap();
-    assert_eq!(report.sidecar_edges, 1);
-    assert_eq!(report.mapped_edges, 1);
-    assert_eq!(edges.len(), 1);
-    assert_eq!(edges[0].kind, "REFERENCES");
-    assert!(edges[0].source_qualified.ends_with("a1"));
-    assert!(edges[0].source_qualified.contains("src/a.rs"));
-    assert!(edges[0].target_qualified.ends_with("b1"));
-}
-
-#[test]
 fn document_symbols_at_outlines_file() {
     let dir = tempfile::tempdir().unwrap();
     let index = make_union_slot(dir.path());
@@ -1060,4 +1005,88 @@ fn document_symbols_at_outlines_file() {
     // missing cache -> loud error
     let err = document_symbols_at(&dir.path().join("nope.scip"), "x.rs");
     assert!(err.is_err());
+}
+
+// ---------- R2 (dual-context review): symbol≠qname key-space ----------
+
+/// In the real self-owned db, symbol (producer string) and qname
+/// (display) differ. Community cohesion is computed against edge
+/// endpoints (symbols) — with members keyed by qname it was structurally
+/// 0.0 and cross-community edges were structurally empty (masked by the
+/// fixture universe where symbol==qname). This db splits the two spaces.
+#[test]
+fn communities_cohesion_and_cross_edges_survive_symbol_ne_qname() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("g.db");
+    {
+        let c = rusqlite::Connection::open(&db).unwrap();
+        c.execute_batch(
+            "CREATE TABLE nodes (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL UNIQUE, kind TEXT NOT NULL, name TEXT NOT NULL,
+                qname TEXT NOT NULL, file_path TEXT NOT NULL, line_start INTEGER,
+                line_end INTEGER, language TEXT, parent_name TEXT,
+                is_test INTEGER DEFAULT 0, extra TEXT DEFAULT '{}',
+                updated_at REAL NOT NULL, community_id INTEGER, provenance TEXT);
+             CREATE TABLE edges (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                kind TEXT NOT NULL, caller_symbol TEXT NOT NULL, callee_symbol TEXT NOT NULL,
+                provenance TEXT NOT NULL, file_path TEXT NOT NULL, line INTEGER DEFAULT 0,
+                confidence REAL DEFAULT 1.0, confidence_tier TEXT DEFAULT 'EXTRACTED',
+                updated_at REAL NOT NULL);",
+        )
+        .unwrap();
+        // two directories, qnames deliberately unlike symbols
+        for (sym, qname, file) in [
+            ("sym a1().", "/repo/a.rs::alpha_one", "/repo/a.rs"),
+            ("sym a2().", "/repo/a.rs::alpha_two", "/repo/a.rs"),
+            ("sym b1().", "/repo/b.rs::beta_one", "/repo/b.rs"),
+            ("sym b2().", "/repo/b.rs::beta_two", "/repo/b.rs"),
+        ] {
+            c.execute(
+                "INSERT INTO nodes (symbol, kind, name, qname, file_path, language, updated_at)
+                 VALUES (?1, 'Function', ?2, ?3, ?4, 'Rust', 0)",
+                rusqlite::params![sym, sym, qname, file],
+            )
+            .unwrap();
+        }
+        for (cs, ct) in [
+            ("sym a1().", "sym a2()."),
+            ("sym a2().", "sym a1()."),
+            ("sym b1().", "sym b2()."),
+            ("sym a1().", "sym b1()."), // the cross-community edge
+        ] {
+            c.execute(
+                "INSERT INTO edges (kind, caller_symbol, callee_symbol, provenance, file_path, updated_at)
+                 VALUES ('CALLS', ?1, ?2, 'test', '/repo', 0)",
+                rusqlite::params![cs, ct],
+            )
+            .unwrap();
+        }
+    }
+    let conn = rusqlite::Connection::open(&db).unwrap();
+    let comms = code_reality::graph_engine::detect_communities(&conn, 2).unwrap();
+    assert_eq!(comms.len(), 2, "two directories");
+    assert!(
+        comms
+            .iter()
+            .any(|c| c["cohesion"].as_f64().unwrap_or(0.0) > 0.0),
+        "R2: cohesion must be computed over the symbol key space, not 0.0"
+    );
+    let arch = code_reality::graph_engine::architecture_overview(&conn, 10).unwrap();
+    // cross edges are a TOP-LEVEL array (graph_engine.rs:1463) — the R2
+    // regression face: with qname-keyed members this was structurally
+    // empty; the fixture carries exactly one cross edge (a1 → b1)
+    let cross = arch["cross_community_edges"].as_array().unwrap();
+    assert!(
+        !cross.is_empty(),
+        "R2: cross-community edges must survive the symbol key space"
+    );
+    for c in comms {
+        for m in c["members"].as_array().unwrap() {
+            let ms = m.as_str().unwrap();
+            assert!(
+                ms.starts_with("sym "),
+                "R2: members must be symbols, got {ms}"
+            );
+        }
+    }
 }

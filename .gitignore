@@ -21,3 +21,6 @@ __pycache__/
 
 # Local marketplace slice (regenerable via scripts/dist-marketplace.sh)
 dist/
+
+# v1+ S4 self-owned graph db (dogfood; sibling of .code-review-graph/)
+.code-reality/

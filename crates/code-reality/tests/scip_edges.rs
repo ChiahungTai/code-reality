@@ -1,22 +1,16 @@
-//! v1+ S1 tests: derive_edges parity with the R3 callers oracle on the
-//! committed rich_callers.scip fixture, workspace filtering (callee must
-//! carry a DEF in the index — the NT index holds zero external paths, so
-//! DEF membership IS the workspace test), sidecar union-db injection
-//! (idempotent upsert + stale sweep + dry-run no-write), and the CLI
-//! faces (export TSV / inject report / guards).
+//! v1+ S1 derivation tests (S4-retired faces pruned): derive_edges parity
+//! with the R3 callers oracle on the committed rich_callers.scip fixture,
+//! workspace filtering (callee must carry a DEF in the index — the NT
+//! index holds zero external paths, so DEF membership IS the workspace
+//! test). The sidecar inject/export/CLI faces retired with the v1+ S4
+//! flip; this module is the derivation oracle `graph_db` reconciles
+//! against.
 
 use code_reality::scip_edges::{self, EdgeRow};
-use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 const FIXTURE: &str = "tests/fixtures/rich_callers.scip";
-
-fn fixture_copy(tmp: &tempfile::TempDir) -> PathBuf {
-    let dst = tmp.path().join("index.scip");
-    std::fs::copy(FIXTURE, &dst).unwrap();
-    dst
-}
 
 // ---------- derive_edges (R3 oracle parity) ----------
 
@@ -100,142 +94,3 @@ fn filter_workspace_drops_callees_without_def() {
 }
 
 // ---------- injection ----------
-
-#[test]
-fn dry_run_creates_no_db() {
-    let tmp = tempfile::tempdir().unwrap();
-    let idx = fixture_copy(&tmp);
-    let rep = scip_edges::inject(&idx, true).unwrap();
-    assert!(rep.dry_run);
-    assert!(rep.report.edges_workspace > 0);
-    assert!(!scip_edges::union_db_path(&idx).exists());
-}
-
-#[test]
-fn inject_is_idempotent_and_counts_reconcile() {
-    let tmp = tempfile::tempdir().unwrap();
-    let idx = fixture_copy(&tmp);
-    let rep1 = scip_edges::inject(&idx, false).unwrap();
-    assert_eq!(rep1.swept, 0);
-    assert_eq!(rep1.db_rows, rep1.report.edges_workspace);
-    let rep2 = scip_edges::inject(&idx, false).unwrap();
-    assert_eq!(rep2.swept, 0, "unchanged index: nothing goes stale");
-    assert_eq!(
-        rep2.db_rows, rep1.db_rows,
-        "idempotent re-inject: zero net growth"
-    );
-}
-
-#[test]
-fn inject_sweeps_stale_rows() {
-    let tmp = tempfile::tempdir().unwrap();
-    let idx = fixture_copy(&tmp);
-    scip_edges::inject(&idx, false).unwrap();
-    // a row that left the index = absent from the new set + old updated_at
-    let db = scip_edges::union_db_path(&idx);
-    let conn = rusqlite::Connection::open(&db).unwrap();
-    conn.execute(
-        "INSERT INTO edges (caller_symbol, callee_symbol, sites, updated_at) \
-         VALUES ('gone().', 'gone().', 1, 1.0)",
-        [],
-    )
-    .unwrap();
-    drop(conn);
-    let rep = scip_edges::inject(&idx, false).unwrap();
-    assert_eq!(rep.swept, 1);
-    assert_eq!(rep.db_rows, rep.report.edges_workspace);
-    let conn = rusqlite::Connection::open(&db).unwrap();
-    let n: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM edges WHERE caller_symbol = 'gone().'",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap();
-    assert_eq!(n, 0);
-}
-
-#[test]
-fn delete_sidecar_reinject_is_stable() {
-    let tmp = tempfile::tempdir().unwrap();
-    let idx = fixture_copy(&tmp);
-    let rep1 = scip_edges::inject(&idx, false).unwrap();
-    std::fs::remove_file(scip_edges::union_db_path(&idx)).unwrap();
-    let rep2 = scip_edges::inject(&idx, false).unwrap();
-    assert_eq!(rep2.db_rows, rep1.db_rows);
-    assert_eq!(rep2.swept, 0);
-}
-
-#[test]
-fn union_db_is_index_sibling() {
-    let p = scip_edges::union_db_path(Path::new("/x/index.scip"));
-    assert_eq!(p, PathBuf::from("/x/index.union.db"));
-}
-
-// ---------- CLI faces ----------
-
-fn run_cli(index: &str, extra: &[&str]) -> code_reality::ToolOutput {
-    let mut argv: Vec<&str> = vec!["scip_edges", "--index", index];
-    argv.extend_from_slice(extra);
-    code_reality::scip_edges::run(&argv)
-}
-
-#[test]
-fn cli_help_and_guards() {
-    let h = code_reality::scip_edges::run(&["scip_edges", "-h"]);
-    assert_eq!(h.exit_code, 0);
-    assert!(h.stdout.contains("usage: scip_edges"));
-
-    let out = code_reality::scip_edges::run(&["scip_edges", "--dry-run"]);
-    assert_eq!(out.exit_code, 2);
-    assert_eq!(out.stderr, "[FAIL] --dry-run 僅伴 --inject 使用\n");
-
-    let out = code_reality::scip_edges::run(&["scip_edges", "--json"]);
-    assert_eq!(out.exit_code, 2);
-    assert_eq!(out.stderr, "[FAIL] --json 僅伴 --inject 使用\n");
-
-    let out = code_reality::scip_edges::run(&["scip_edges"]);
-    assert_eq!(out.exit_code, 2);
-    assert!(out.stderr.contains("[FAIL]"));
-
-    let out = code_reality::scip_edges::run(&["scip_edges", "--index", "/nope/none.scip"]);
-    assert_eq!(out.exit_code, 2);
-    assert!(out.stderr.contains("索引不在"));
-}
-
-#[test]
-fn cli_export_tsv_matches_derive() {
-    let tmp = tempfile::tempdir().unwrap();
-    let idx = fixture_copy(&tmp);
-    let out = run_cli(idx.to_str().unwrap(), &[]);
-    assert_eq!(out.exit_code, 0);
-    let (_edges, report, _warns) = scip_edges::derive_edges(Path::new(FIXTURE)).unwrap();
-    let lines: Vec<&str> = out.stdout.lines().collect();
-    assert_eq!(
-        lines.len(),
-        report.edges_total,
-        "export face carries the FULL edge set (external included) — one TSV line per pair"
-    );
-    let cols: Vec<&str> = lines[0].split('\t').collect();
-    assert_eq!(cols.len(), 3, "caller \\t callee \\t sites");
-    assert!(out.stderr.contains("[OK] scip_edges:"));
-}
-
-#[test]
-fn cli_inject_dry_run_and_json() {
-    let tmp = tempfile::tempdir().unwrap();
-    let idx = fixture_copy(&tmp);
-    let out = run_cli(idx.to_str().unwrap(), &["--inject", "--dry-run", "--json"]);
-    assert_eq!(out.exit_code, 0);
-    let v: Value = serde_json::from_str(&out.stdout).unwrap();
-    assert_eq!(v["dry_run"], true);
-    assert!(v["edges_workspace"].as_u64().unwrap() > 0);
-    assert!(!scip_edges::union_db_path(&idx).exists());
-
-    let out2 = run_cli(idx.to_str().unwrap(), &["--inject", "--json"]);
-    assert_eq!(out2.exit_code, 0);
-    let v2: Value = serde_json::from_str(&out2.stdout).unwrap();
-    assert_eq!(v2["dry_run"], false);
-    assert_eq!(v2["db_rows"], v2["edges_workspace"]);
-    assert_eq!(v2["swept"], 0);
-}

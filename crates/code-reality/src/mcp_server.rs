@@ -73,6 +73,8 @@ pub struct GqCommunitiesParams {
     #[serde(default)]
     pub algorithm: Option<String>,
     #[serde(default)]
+    /// Deprecated (v1+ S4): union edges materialize at `graph_db build`
+    /// time — queries are always full-graph now; the flag is a no-op.
     pub use_union: Option<bool>,
 }
 
@@ -84,6 +86,8 @@ pub struct GqUnionParams {
     #[serde(default)]
     pub max_depth: Option<usize>,
     #[serde(default)]
+    /// Deprecated (v1+ S4): union edges materialize at `graph_db build`
+    /// time — queries are always full-graph now; the flag is a no-op.
     pub use_union: Option<bool>,
 }
 
@@ -93,6 +97,8 @@ pub struct GqUnionLimitParams {
     #[serde(default)]
     pub limit: Option<usize>,
     #[serde(default)]
+    /// Deprecated (v1+ S4): union edges materialize at `graph_db build`
+    /// time — queries are always full-graph now; the flag is a no-op.
     pub use_union: Option<bool>,
 }
 
@@ -351,6 +357,25 @@ impl CodeRealityServer {
         map_tool_output(out)
     }
 
+    /// gq + a loud (non-breaking) deprecation notice when the client asked
+    /// for the retired union flag — silent no-ops teach callers nothing.
+    async fn gq_union_deprecated(
+        &self,
+        args: Vec<String>,
+        requested_union: bool,
+    ) -> Result<CallToolResult, McpError> {
+        let mut res = self.gq(args).await?;
+        if requested_union {
+            res.content.insert(
+                0,
+                ContentBlock::text(
+                    "[DEPRECATED] use_union is a no-op (v1+ S4): union edges materialize at `graph_db build` time — queries are full-graph",
+                ),
+            );
+        }
+        Ok(res)
+    }
+
     #[tool(
         description = "Blast radius of changed files: impacted nodes/files with best-path impact scores"
     )]
@@ -369,9 +394,6 @@ impl CodeRealityServer {
             "--repo".into(),
             repo_root,
         ];
-        if use_union.unwrap_or(false) {
-            args.push("--union".into());
-        }
         if !files.is_empty() {
             Self::reject_comma_files(&files)?;
             args.push("--files".into());
@@ -381,7 +403,8 @@ impl CodeRealityServer {
             args.push("--depth".into());
             args.push(d.to_string());
         }
-        self.gq(args).await
+        self.gq_union_deprecated(args, use_union.unwrap_or(false))
+            .await
     }
 
     #[tool(
@@ -414,7 +437,7 @@ impl CodeRealityServer {
             use_union,
         }): Parameters<GqUnionLimitParams>,
     ) -> Result<CallToolResult, McpError> {
-        let mut args = vec![
+        let args = vec![
             "graph_query".into(),
             "hub".into(),
             "--repo".into(),
@@ -422,10 +445,8 @@ impl CodeRealityServer {
             "--limit".into(),
             limit.unwrap_or(10).to_string(),
         ];
-        if use_union.unwrap_or(false) {
-            args.push("--union".into());
-        }
-        self.gq(args).await
+        self.gq_union_deprecated(args, use_union.unwrap_or(false))
+            .await
     }
 
     #[tool(description = "Architectural chokepoints by (sampled) betweenness centrality")]
@@ -437,7 +458,7 @@ impl CodeRealityServer {
             use_union,
         }): Parameters<GqUnionLimitParams>,
     ) -> Result<CallToolResult, McpError> {
-        let mut args = vec![
+        let args = vec![
             "graph_query".into(),
             "bridge".into(),
             "--repo".into(),
@@ -445,14 +466,12 @@ impl CodeRealityServer {
             "--limit".into(),
             limit.unwrap_or(10).to_string(),
         ];
-        if use_union.unwrap_or(false) {
-            args.push("--union".into());
-        }
-        self.gq(args).await
+        self.gq_union_deprecated(args, use_union.unwrap_or(false))
+            .await
     }
 
     #[tool(
-        description = "Communities: directory (CRG Tier-0 parity) or seeded Leiden; optional union edge plane"
+        description = "Communities: directory (CRG Tier-0 parity) or seeded Leiden (union flag deprecated: edges are materialized full-graph at graph_db build)"
     )]
     pub async fn list_communities(
         &self,
@@ -471,13 +490,6 @@ impl CodeRealityServer {
         match algorithm.as_deref() {
             None | Some("directory") => {}
             Some("leiden") => {
-                if use_union.unwrap_or(false) {
-                    return Err(McpError::new(
-                        ErrorCode::INVALID_PARAMS,
-                        "leiden + union 組合未支援（Leiden 走 graph.db 邊集）",
-                        None,
-                    ));
-                }
                 args.push("--leiden".into());
             }
             Some(other) => {
@@ -488,10 +500,8 @@ impl CodeRealityServer {
                 ));
             }
         }
-        if use_union.unwrap_or(false) {
-            args.push("--union".into());
-        }
-        self.gq(args).await
+        self.gq_union_deprecated(args, use_union.unwrap_or(false))
+            .await
     }
 
     #[tool(description = "Communities + cross-community edges + high-coupling warnings")]
