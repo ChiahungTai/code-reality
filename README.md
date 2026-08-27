@@ -53,7 +53,11 @@ not needed for the plugin path.
 
 Per-repo prerequisites for the query tools: a SCIP index
 (`rust-analyzer scip <repo>` → `~/.mosaic/code-reality/scip/<basename>/index.scip`;
-Python repos use the LSP-harvest adapter instead). All graph-reading
+Python repos use the Rust-native pyrefly producer —
+`cargo run --release -p pyrefly-producer --bin pyrefly-index -- --repo <repo>`
+emits the same slot, then `--stamp-meta`/`--build-cache` as usual; the
+Node-based scip-python fork is the retained fallback, not the default
+face. All graph-reading
 tools (engine, audit, chain_tour, hub_refs/hazard, snapshot) read a
 self-owned db at `<repo>/.code-reality/graph.db` — produce it with
 `code-reality graph_db build --repo <repo>` (any producer cache); when a

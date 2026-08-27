@@ -9,19 +9,65 @@ multisets are compared.
 
 Site-grain caveat (EP R2-3 / S5): pyright per-site vs tree-sitter lexical
 sites differ in grain, so the primary metric is per-symbol reference
-COUNTS plus per-(symbol, rel_path) file-level counts.
+COUNTS (the file-level counter is retained by extract() for future use).
+
+Cross-producer reconciliation (ep-pyrefly-native-producer S2, review F-5):
+symbol sets are disjoint across producers by construction (each mints its
+own discriminator prefix), so `--normalize` re-keys both sides through the
+fn_tail gate (trailing function identifier of a fn-shaped symbol) before
+comparing — a name-level coverage/ratio signal, not symbol identity.
+Default off: output is byte-identical to the frozen format (R2-7).
 
 Usage:
   uv run python scripts/golden_corpus.py --db <cache.db>                 # extract baseline (JSON to stdout)
   uv run python scripts/golden_corpus.py --self --db <cache.db>          # self-consistency
   uv run python scripts/golden_corpus.py --golden <db> --candidate <db>  # reconciliation report
-      [--report out.json] [--top N] [--max-list N]
+      [--normalize] [--report out.json] [--top N] [--max-list N]
 """
 import argparse
 import json
+import re
 import sqlite3
 import sys
 from collections import Counter
+
+# Python port of the Rust engine's fn-tail extraction (engine.rs
+# fn_tail_name: strip a trailing "()." then read back the identifier;
+# tolerates one trailing newline like the Rust `$`-semantics note —
+# pathological double-newline input diverges, real symbols don't).
+_FN_TAIL_RE = re.compile(r"(?<!\w)(\w+)\(\)\.$")
+
+
+def fn_tail(symbol: str):
+    """Trailing function identifier of a fn-shaped symbol, else None."""
+    m = _FN_TAIL_RE.search(symbol)
+    return m.group(1) if m else None
+
+
+def normalize_extract(db_path: str) -> dict:
+    """fn_tail-keyed extract: name-level defs and reference counts."""
+    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    try:
+        defs = set()
+        sym_counts = Counter()
+        dangling = 0
+        def_rows = list(conn.execute(
+            "SELECT DISTINCT symbol FROM occurrences WHERE is_def = 1"))
+        for (symbol,) in def_rows:
+            tail = fn_tail(symbol)
+            if tail is not None:
+                defs.add(tail)
+        for symbol, _rel_path, _line in conn.execute(
+                "SELECT symbol, rel_path, line FROM occurrences WHERE is_def = 0 ORDER BY seq"):
+            tail = fn_tail(symbol)
+            if tail is None or tail not in defs:
+                dangling += 1
+                continue
+            sym_counts[tail] += 1
+        meta = dict(conn.execute("SELECT key, value FROM meta"))
+    finally:
+        conn.close()
+    return {"defs": defs, "sym_counts": sym_counts, "dangling": dangling, "meta": meta}
 
 
 def extract(db_path: str) -> dict:
@@ -76,9 +122,14 @@ def self_check(db_path: str) -> dict:
             "dangling": data["dangling"], "meta": meta}
 
 
-def reconcile(golden_db: str, candidate_db: str, top: int, max_list: int) -> dict:
-    g = extract(golden_db)
-    c = extract(candidate_db)
+def reconcile(golden_db: str, candidate_db: str, top: int, max_list: int,
+              normalize: bool = False) -> dict:
+    if normalize:
+        g = normalize_extract(golden_db)
+        c = normalize_extract(candidate_db)
+    else:
+        g = extract(golden_db)
+        c = extract(candidate_db)
     missing_defs = sorted(g["defs"] - c["defs"])
     extra_defs = sorted(c["defs"] - g["defs"])
     all_syms = set(g["sym_counts"]) | set(c["sym_counts"])
@@ -88,7 +139,7 @@ def reconcile(golden_db: str, candidate_db: str, top: int, max_list: int) -> dic
         if d != 0:
             diffs.append({"symbol": s, "golden": g["sym_counts"].get(s, 0),
                           "candidate": c["sym_counts"].get(s, 0), "delta": d})
-    diffs.sort(key=lambda x: (-abs(x["delta"]), x["symbol"]))
+    diffs.sort(key=lambda x: (-abs(x["delta"]), str(x["symbol"])))
     g_total = sum(g["sym_counts"].values())
     c_total = sum(c["sym_counts"].values())
     report = {
@@ -98,9 +149,9 @@ def reconcile(golden_db: str, candidate_db: str, top: int, max_list: int) -> dic
                       "workspace_refs": c_total, "dangling": c["dangling"]},
         "defs": {
             "missing_count": len(missing_defs),
-            "missing_sample": missing_defs[:max_list],
+            "missing_sample": [str(s) for s in missing_defs[:max_list]],
             "extra_count": len(extra_defs),
-            "extra_sample": extra_defs[:max_list],
+            "extra_sample": [str(s) for s in extra_defs[:max_list]],
             "coverage": (len(g["defs"]) - len(missing_defs)) / max(len(g["defs"]), 1),
         },
         "refs": {
@@ -113,6 +164,10 @@ def reconcile(golden_db: str, candidate_db: str, top: int, max_list: int) -> dic
             "top": diffs[:top],
         },
     }
+    if normalize:
+        # Only in --normalize mode: the frozen symbol-exact report shape
+        # stays byte-identical when the flag is off (R2-7).
+        report["mode"] = "name-normalized (fn_tail)"
     return report
 
 
@@ -122,6 +177,9 @@ def main() -> None:
     ap.add_argument("--self", action="store_true", help="self-consistency check")
     ap.add_argument("--golden", help="golden cache db")
     ap.add_argument("--candidate", help="candidate producer cache db")
+    ap.add_argument("--normalize", action="store_true",
+                    help="name-normalized (fn_tail) reconcile for cross-producer comparison "
+                         "(default off: byte-identical frozen format, R2-7)")
     ap.add_argument("--report", help="write JSON report here (else stdout)")
     ap.add_argument("--top", type=int, default=20)
     ap.add_argument("--max-list", type=int, default=50)
@@ -146,7 +204,8 @@ def main() -> None:
             "workspace_refs": sum(data["sym_counts"].values()),
             "dangling": data["dangling"]}, ensure_ascii=False, indent=2))
         return
-    report = reconcile(args.golden, args.candidate, args.top, args.max_list)
+    report = reconcile(args.golden, args.candidate, args.top, args.max_list,
+                       normalize=args.normalize)
     out = json.dumps(report, ensure_ascii=False, indent=2)
     if args.report:
         with open(args.report, "w") as f:

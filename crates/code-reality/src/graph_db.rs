@@ -231,11 +231,15 @@ pub fn is_test_rel(rel: &str) -> bool {
 /// symbols — the `lsp ` prefix is the language discriminator, the
 /// optional `L<line>` middle segment disambiguates same-file same-name
 /// defs (both shapes parse). scip-python emits
-/// `scip-python python <project> <version> \`symbol\`...` — also a
-/// leading Python discriminator (F1). Everything else is the
+/// `scip-python python <project> <version> \`symbol\`...` and
+/// pyrefly-producer mirrors that shape with a `pyrefly ` discriminator
+/// — both leading Python discriminators (F1). Everything else is the
 /// rust-analyzer SCIP face.
 fn infer_language(symbol: &str) -> &'static str {
-    if symbol.starts_with("lsp ") || symbol.starts_with("scip-python ") {
+    if symbol.starts_with("lsp ")
+        || symbol.starts_with("scip-python ")
+        || symbol.starts_with("pyrefly ")
+    {
         "Python"
     } else {
         "Rust"
@@ -397,14 +401,15 @@ fn attribute_nearest(
     (out, item_level, self_refs)
 }
 
-/// Build the self-owned db from any producer cache (rust-analyzer SCIP or
-/// the LSP-harvest adapter — one schema, one edge ontology). Core over an
-/// explicit index path; the CLI face resolves the repo-keyed slot.
+/// Build the self-owned db from any producer cache (rust-analyzer SCIP,
+/// the pyrefly producer, or the LSP-harvest golden face — one schema, one
+/// edge ontology). Core over an explicit index path; the CLI face
+/// resolves the repo-keyed slot.
 pub fn build_from_cache_at(repo: &Path, index_path: &Path) -> Result<BuildReport, String> {
     let cache_db = cache::sqlite_path(index_path);
     if !cache_db.exists() && !index_path.exists() {
         return Err(format!(
-            "cache 不在：{}（rust-analyzer 走 scip_refs --build-cache；Python 走 LSP-harvest adapter）",
+            "cache 不在：{}（rust-analyzer 走 scip_refs --build-cache；Python 走 pyrefly producer）",
             cache_db.display()
         ));
     }
@@ -1286,7 +1291,7 @@ mod tests {
     use super::infer_language;
 
     #[test]
-    fn python_prefixes_cover_both_python_producers() {
+    fn python_prefixes_cover_all_python_producers() {
         // lsp-harvest synthesized shape
         assert_eq!(infer_language("lsp python src/a.py target()."), "Python");
         // lsp-harvest line-disambiguated shape
@@ -1301,6 +1306,15 @@ mod tests {
         );
         assert_eq!(
             infer_language("scip-python python proj 0.1.0 `pkg.mod`/Class#method()."),
+            "Python"
+        );
+        // pyrefly-producer mirrored shape (ep-pyrefly-native-producer S1)
+        assert_eq!(
+            infer_language("pyrefly python proj 0.1.0 `pkg.mod`/fn()."),
+            "Python"
+        );
+        assert_eq!(
+            infer_language("pyrefly python proj 0.1.0 `pkg.mod`/Class#method()."),
             "Python"
         );
         // rust-analyzer SCIP face stays Rust

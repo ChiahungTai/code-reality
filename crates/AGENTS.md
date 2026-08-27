@@ -4,6 +4,28 @@ Rust workspace member(s) of the code-reality toolchain. The frozen-Python
 parity oracle and harness retired at R7 (2026-08-26); cargo synthetic-repo
 tests are the sole gate face.
 
+## pyrefly-producer (bin crate)
+
+- **role**: Rust-native Python occurrence producer (ep-pyrefly-native-
+  producer) — links the Pyrefly engine as a git-dep (pinned rev
+  `1d64c4b…`; crates.io carries only a placeholder) and emits a SCIP
+  protobuf index into the repo-keyed sidecar slot. SCIP face: the
+  existing `--stamp-meta` → `--build-cache` → `graph_db build` pipeline
+  consumes it unchanged — no cache-schema writes.
+- **layering**: `api.rs` is the single-point isolation of every Pyrefly
+  import (rev upgrades touch only this file); `walk.rs` pure ruff-AST
+  collectors (callee-name positions, not receiver starts); `symbol.rs`
+  scip-python-mirroring symbol forms (`pyrefly python <proj> <ver>`
+  discriminator — infer_language's third Python prefix) + dunder-pair
+  collapse; `emit.rs` protobuf assembly (DEF occurrences carry the full
+  node range in `enclosing_range` — engine::fn_spans builds caller
+  attribution from it); `lib.rs` orchestration (module identity derived
+  from rel paths on both defs and targets — pyrefly handle naming is
+  fallback-shaped and would split symbol identity; local-binding guard
+  drops refs whose display name ≠ the innermost def).
+- depends on the code-reality lib only for `engine::default_index_path`
+  (slot resolution); the main binary stays free of the pyrefly dep tree.
+
 ## code-reality (lib + umbrella bin)
 
 - **lib layering**: `common` (foundation — EDGE_KINDS, anchor pattern,
