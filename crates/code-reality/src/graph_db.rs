@@ -230,10 +230,12 @@ pub fn is_test_rel(rel: &str) -> bool {
 /// LSP-harvest synthesizes `lsp python <rel> [L<line>] <name>().`
 /// symbols — the `lsp ` prefix is the language discriminator, the
 /// optional `L<line>` middle segment disambiguates same-file same-name
-/// defs (both shapes parse); everything else is the rust-analyzer SCIP
-/// face.
+/// defs (both shapes parse). scip-python emits
+/// `scip-python python <project> <version> \`symbol\`...` — also a
+/// leading Python discriminator (F1). Everything else is the
+/// rust-analyzer SCIP face.
 fn infer_language(symbol: &str) -> &'static str {
-    if symbol.starts_with("lsp ") {
+    if symbol.starts_with("lsp ") || symbol.starts_with("scip-python ") {
         "Python"
     } else {
         "Rust"
@@ -1276,5 +1278,32 @@ pub fn run(argv: &[&str]) -> ToolOutput {
             }
         }
         Err(e) => ToolOutput::crash(e),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::infer_language;
+
+    #[test]
+    fn python_prefixes_cover_both_python_producers() {
+        // lsp-harvest synthesized shape
+        assert_eq!(infer_language("lsp python src/a.py target()."), "Python");
+        // lsp-harvest line-disambiguated shape
+        assert_eq!(
+            infer_language("lsp python src/a.py L10 target()."),
+            "Python"
+        );
+        // scip-python emitted shape (F1: previously fell through to Rust)
+        assert_eq!(
+            infer_language("scip-python python proj 0.1.0 `pkg.mod`/fn()."),
+            "Python"
+        );
+        assert_eq!(
+            infer_language("scip-python python proj 0.1.0 `pkg.mod`/Class#method()."),
+            "Python"
+        );
+        // rust-analyzer SCIP face stays Rust
+        assert_eq!(infer_language("file:///repo/src/lib.rs/`main`"), "Rust");
     }
 }

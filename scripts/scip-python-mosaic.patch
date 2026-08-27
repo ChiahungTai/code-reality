@@ -1,0 +1,109 @@
+diff --git a/packages/pyright-internal/src/analyzer/protocols.ts b/packages/pyright-internal/src/analyzer/protocols.ts
+index 96764f492..17979fd5c 100644
+--- a/packages/pyright-internal/src/analyzer/protocols.ts
++++ b/packages/pyright-internal/src/analyzer/protocols.ts
+@@ -46,6 +46,21 @@ interface ProtocolAssignmentStackEntry {
+ 
+ const protocolAssignmentStack: ProtocolAssignmentStackEntry[] = [];
+ 
++// Global protocol-assignment nesting depth. The per-call recursionCount is
++// threaded through assignType but is reset by overload evaluation, and the
++// (src, dest) pair stack never repeats when generic specialization keeps
++// producing fresh types — deep corpora exhaust the native stack through
++// that path (scip-python 0.6.6 fatal on protocol-heavy files). This guard
++// bounds TOTAL nesting regardless of how the count is threaded. Bailing out
++// returns false (assume incompatible): unlike the recursionCount bail above
++// (which returns true to avoid false-positive diagnostics for the checker),
++// an optimistic "compatible" lie lets unfinished types flow into overload
++// resolution and trips downstream assertions (getVariance Debug Failure) —
++// observed on the mosaic corpus. Indexing consumers prefer the
++// conservative branch.
++let protocolAssignDepth = 0;
++const maxProtocolAssignDepth = 64;
++
+ // If treatSourceAsInstantiable is true, we're comparing the class object against the
+ // protocol. If it's false, we're comparing the class instance against the protocol.
+ export function assignClassToProtocol(
+@@ -61,9 +76,17 @@ export function assignClassToProtocol(
+ ): boolean {
+     const enforceInvariance = (flags & AssignTypeFlags.EnforceInvariance) !== 0;
+ 
++    // The depth increment must come AFTER the recursionCount early-return:
++    // that bail-out does not run the paired decrement, so incrementing
++    // first would leak depth monotonically and permanently degrade all
++    // later protocol assignments.
++    if (protocolAssignDepth >= maxProtocolAssignDepth) {
++        return false;
++    }
+     if (recursionCount > maxTypeRecursionCount) {
+         return true;
+     }
++    protocolAssignDepth++;
+     recursionCount++;
+ 
+     // Use a stack of pending protocol class evaluations to detect recursion.
+@@ -103,13 +126,15 @@ export function assignClassToProtocol(
+             recursionCount
+         );
+     } catch (e) {
+-        // We'd normally use "finally" here, but the TS debugger does such
+-        // a poor job dealing with finally, we'll use a catch instead.
++        // We'd normally use "finally" here, but the TS debugger does such a
++        // poor job dealing with finally, we'll use a catch instead.
+         protocolAssignmentStack.pop();
++        protocolAssignDepth--;
+         throw e;
+     }
+ 
+     protocolAssignmentStack.pop();
++    protocolAssignDepth--;
+ 
+     // If the destination protocol is not generic and the source type is not
+     // generic and the two are compatible, cache that information so we can
+diff --git a/packages/pyright-scip/src/indexer.ts b/packages/pyright-scip/src/indexer.ts
+index 09350c651..61d23fdd8 100644
+--- a/packages/pyright-scip/src/indexer.ts
++++ b/packages/pyright-scip/src/indexer.ts
+@@ -223,6 +223,10 @@ export class Indexer {
+         withStatus('Analyze project and dependencies', analyzer_fn);
+ 
+         let externalSymbols: Map<string, scip.SymbolInformation> = new Map();
++        // Files whose SCIP emit threw an internal error. Reported loudly at
++        // the end so downstream doc-count accounting (partial-index
++        // detection) can flag them — the index is still written.
++        let skippedFiles: string[] = [];
+         withStatus('Parse and emit SCIP', (progress) => {
+             const typeEvaluator = this.program.evaluator!;
+             projectSourceFiles.forEach((sourceFile, index) => {
+@@ -251,10 +255,13 @@ export class Indexer {
+                 try {
+                     visitor.walk(tree);
+                 } catch (e) {
+-                    throw {
+-                        currentFilepath: sourceFile.getFilePath(),
+-                        error: e,
+-                    };
++                    // Per-file emit failure: record and continue instead of
++                    // rethrowing. The analysis phase already tolerates
++                    // internal errors; aborting at emit loses every file
++                    // after the first failure.
++                    skippedFiles.push(sourceFile.getFilePath());
++                    sendStatus(`  [WARN] emit failed for ${sourceFile.getFilePath()}: ${e}`);
++                    return;
+                 }
+ 
+                 if (doc.occurrences.length === 0) {
+@@ -277,6 +284,13 @@ export class Indexer {
+         });
+ 
+         sendStatus(`Sucessfully wrote SCIP index to ${this.scipConfig.output}`);
++        if (skippedFiles.length > 0) {
++            console.warn(
++                `[WARN] ${skippedFiles.length} file(s) skipped due to internal errors during emit:`
++            );
++            skippedFiles.forEach((f) => console.warn(`  - ${f}`));
++            console.warn('The index is partial: account for these files before consuming it.');
++        }
+     }
+ 
+     private getProjectRoot(): string {
