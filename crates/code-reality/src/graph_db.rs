@@ -884,7 +884,7 @@ pub fn import_legacy(repo: &Path, dry_run: bool) -> Result<ImportLegacyReport, S
         // them from search_nodes (FTS hit short-circuits the LIKE
         // fallback)
         conn.execute("INSERT INTO nodes_fts(nodes_fts) VALUES ('rebuild')", [])
-            .map_err(|e| format!("import 後 nodes_fts 重建失敗：{e}"))?;
+            .map_err(|e| format!("import 後 nodes_fts 重建失敗：{e}（舊 schema 庫——重跑 `graph_db build` 重建含 FTS 的 schema 再 import）"))?;
     }
     let derived = if dry_run {
         None
