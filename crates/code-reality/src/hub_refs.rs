@@ -6,9 +6,7 @@
 //! node — the nodes table is the only reliable resolver).
 
 use crate::argparse::{parse, FlagSpec, Kind, Outcome, ToolSpec};
-use crate::common::{
-    assert_db_unchanged, db_mtime_ns, graph_db_path, repo_relative, to_json_py_compact,
-};
+use crate::common::{assert_db_unchanged, db_mtime_ns, repo_relative, to_json_py_compact};
 use crate::hazard::{
     full_findings, hazard_gate_warning, make_rg_runner, method_name, resident_findings,
     symbol_facts, HazardFinding,
@@ -19,7 +17,6 @@ use serde_json::{json, Map, Value};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-const CRG_TIMEOUT_S: u64 = 120;
 /// static prod callers at or below this triggers the rg-level hazard scan
 pub const RG_TRIGGER_PROD: i64 = 2;
 
@@ -75,77 +72,42 @@ const HELP: &str = concat!(
     "  --json                機器可讀輸出（hazard_findings 欄）\n",
 );
 
-/// `uvx code-review-graph query <pattern> <target>` subprocess
-/// (`hub_refs.py:70-99`): 120s timeout; nonzero exit → crash; stdout
-/// must be JSON.
-pub fn crg_query(pattern: &str, target: &str, repo_root: &Path) -> Result<Value, String> {
-    let mut child = std::process::Command::new("uvx")
-        .arg("code-review-graph")
-        .arg("query")
-        .arg(pattern)
-        .arg(target)
-        .current_dir(repo_root)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|_| "uvx 不在 PATH——先安裝 uv: uvx".to_string())?;
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(CRG_TIMEOUT_S);
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(st)) => break st,
-            Ok(None) if std::time::Instant::now() >= deadline => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(format!(
-                    "CRG CLI 逾時（>{CRG_TIMEOUT_S}s）: uvx code-review-graph query {pattern} {target}"
-                ));
-            }
-            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(50)),
-            Err(e) => return Err(format!("CRG CLI wait 失敗：{e}")),
-        }
+/// Refs query on the self-owned db (S2 cutover, replaces the
+/// `uvx code-review-graph query` subprocess): CALLS edges by endpoint,
+/// caller-side test flags joined from nodes. Same response shape the
+/// CRG CLI emitted (`status/target/results/results_omitted`) so the
+/// downstream aggregate/payload faces are untouched.
+pub fn refs_query(db: &Path, pattern: &str, target: &str) -> Result<Value, String> {
+    let conn = crate::common::connect_ro(db)?;
+    let sql = if pattern == "callers_of" {
+        "SELECT COALESCE(n.file_path, e.file_path), COALESCE(n.is_test, 0) FROM edges e \
+         LEFT JOIN nodes n ON n.symbol = e.caller_symbol \
+         WHERE e.callee_symbol = ?1 AND e.kind = 'CALLS'"
+    } else {
+        "SELECT COALESCE(n.file_path, e.file_path), COALESCE(n.is_test, 0) \
+         FROM edges e LEFT JOIN nodes n ON n.symbol = e.callee_symbol \
+         WHERE e.caller_symbol = ?1 AND e.kind = 'CALLS'"
     };
-    let mut out_pipe = child.stdout.take().unwrap();
-    let mut err_pipe = child.stderr.take().unwrap();
-    let (mut stdout_buf, mut stderr_buf) = (Vec::new(), Vec::new());
-    use std::io::Read;
-    let t1 = std::thread::spawn(move || {
-        out_pipe.read_to_end(&mut stdout_buf).ok();
-        stdout_buf
-    });
-    let t2 = std::thread::spawn(move || {
-        err_pipe.read_to_end(&mut stderr_buf).ok();
-        stderr_buf
-    });
-    let stdout = String::from_utf8_lossy(&t1.join().unwrap_or_default()).into_owned();
-    let stderr = String::from_utf8_lossy(&t2.join().unwrap_or_default()).into_owned();
-    if !status.success() {
-        let tail: String = stderr
-            .chars()
-            .rev()
-            .take(500)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect();
-        return Err(format!(
-            "CRG CLI 失敗（exit {}）: query {pattern} {target}\n{tail}",
-            status.code().unwrap_or(-1)
-        ));
-    }
-    serde_json::from_str(&stdout).map_err(|_| {
-        format!(
-            "CRG CLI stdout 非 JSON（可能混入 warnings）: {} | stderr: {}",
-            stdout.chars().take(200).collect::<String>(),
-            stderr
-                .chars()
-                .rev()
-                .take(200)
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .collect::<String>()
-        )
-    })
+    let rows: Result<Vec<Value>, rusqlite::Error> = (|| {
+        let mut stmt = conn.prepare(sql)?;
+        let mapped = stmt
+            .query_map([target], |r| {
+                Ok(json!({
+                    "file_path": r.get::<_, String>(0)?,
+                    "is_test": r.get::<_, i64>(1)? != 0,
+                }))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(mapped)
+    })();
+    let results = rows.map_err(|e| format!("refs 查詢失敗（{e}）：{}", db.display()))?;
+    Ok(json!({
+        "status": "ok",
+        "target": target,
+        "results": results,
+        "results_omitted": 0,
+        "summary": "",
+    }))
 }
 
 /// status≠ok output face (`hub_refs.py:102-114`): `[FAIL]` + candidate
@@ -188,25 +150,25 @@ fn require_ok(resp: &Value) -> Result<(), ToolOutput> {
     })
 }
 
-/// symbol → qualified name via exact nodes-table matching
-/// (`hub_refs.py:117-168`): `::` passthrough; `.` → name+parent_name;
-/// unique → qname; multiple → `[FAIL]` + list + exit 1; zero →
-/// `symbol not found` exit 1.
+/// symbol → edge key (nodes.symbol) via exact nodes-table matching
+/// (`hub_refs.py:117-168` semantics, S2 cutover onto the self-owned db):
+/// `::` resolves onto qname/symbol when a node matches, passthrough
+/// otherwise; `.` → name+parent_name; unique → symbol key; multiple →
+/// `[FAIL]` + list + exit 1; zero → `symbol not found` exit 1.
 pub fn resolve_qualified(symbol: &str, repo_root: &Path) -> Result<String, ToolOutput> {
-    if symbol.contains("::") {
-        return Ok(symbol.to_string());
+    let (db_path, warns) = crate::graph_db::consumer_db(repo_root);
+    for w in warns {
+        eprintln!("{w}");
     }
-    let db_path = graph_db_path(repo_root);
+    let Some(db_path) = db_path else {
+        return Err(ToolOutput::crash(
+            "graph.db 不存在（.code-reality/graph.db）——先跑 `code-reality graph_db build --repo <repo>`",
+        ));
+    };
     let profile = match load_profile(repo_root) {
         Ok(p) => p,
         Err(e) => return Err(ToolOutput::crash(e)),
     };
-    if !db_path.exists() {
-        return Err(ToolOutput::crash(format!(
-            "graph.db 不存在：{}——先跑 `uvx code-review-graph build`",
-            db_path.display()
-        )));
-    }
     let m0 = match db_mtime_ns(&db_path) {
         Ok(v) => v,
         Err(e) => return Err(ToolOutput::crash(e)),
@@ -215,23 +177,23 @@ pub fn resolve_qualified(symbol: &str, repo_root: &Path) -> Result<String, ToolO
     if let Err(e) = assert_db_unchanged(&db_path, m0) {
         return Err(ToolOutput::crash(e));
     }
-    let mut kept: Vec<String> = Vec::new();
-    for (q, fp) in rows {
+    let mut kept: Vec<(String, String)> = Vec::new();
+    for (sym, qname, fp) in rows {
         if let Some(rel) = repo_relative(&fp, repo_root) {
             if !is_excluded(&rel, profile.as_ref()) {
-                kept.push(q);
+                kept.push((sym, qname));
             }
         }
     }
     if kept.len() == 1 {
-        return Ok(kept.pop().unwrap());
+        return Ok(kept.pop().unwrap().0);
     }
     if kept.len() > 1 {
         let mut stdout = format!(
             "[FAIL] '{symbol}' 匹配 {} 個 node（用 qualified_name 重跑）：\n",
             kept.len()
         );
-        for q in kept.iter().take(10) {
+        for (_, q) in kept.iter().take(10) {
             stdout.push_str(&format!("  {q}\n"));
         }
         return Err(ToolOutput {
@@ -239,6 +201,10 @@ pub fn resolve_qualified(symbol: &str, repo_root: &Path) -> Result<String, ToolO
             stderr: format!("ambiguous symbol: {symbol}\n"),
             exit_code: 1,
         });
+    }
+    if kept.is_empty() && symbol.contains("::") {
+        // qualified passthrough — dangling/legacy keys still queryable
+        return Ok(symbol.to_string());
     }
     Err(ToolOutput {
         stdout: String::new(),
@@ -249,39 +215,66 @@ pub fn resolve_qualified(symbol: &str, repo_root: &Path) -> Result<String, ToolO
     })
 }
 
-fn query_nodes_pairs(db_path: &Path, symbol: &str) -> Result<Vec<(String, String)>, String> {
+fn query_nodes_pairs(
+    db_path: &Path,
+    symbol: &str,
+) -> Result<Vec<(String, String, String)>, String> {
     let conn = crate::common::connect_ro(db_path)?;
     let (sql, params): (String, Vec<String>) = if let Some((cls, method)) = symbol.rsplit_once('.')
     {
         (
-            "SELECT qualified_name, file_path FROM nodes WHERE name = ?1 AND parent_name = ?2"
+            // `Class.method` shape matches legacy parent_name rows; a
+            // producer-keyed qualified name (`<abs>::Class.method`) has
+            // parent_name NULL, so zero rows fall through to the
+            // qname/symbol-key query below (review C1 — the passthrough
+            // alone would silently yield 0 refs)
+            "SELECT symbol, qname, file_path FROM nodes WHERE name = ?1 AND parent_name = ?2"
                 .to_string(),
             vec![method.to_string(), cls.to_string()],
         )
     } else {
         (
-            "SELECT qualified_name, file_path FROM nodes WHERE name = ?1".to_string(),
+            "SELECT symbol, qname, file_path FROM nodes WHERE qname = ?1 OR symbol = ?1 OR name = ?1".to_string(),
             vec![symbol.to_string()],
         )
     };
-    let rows: Result<Vec<(String, String)>, rusqlite::Error> = (|| {
+    let rows: Result<Vec<(String, String, String)>, rusqlite::Error> = (|| {
         let mut stmt = conn.prepare(&sql)?;
         let mapped = stmt
             .query_map(rusqlite::params_from_iter(params.iter()), |r| {
-                Ok((r.get(0)?, r.get(1)?))
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
             })?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(mapped)
     })();
+    let rows = rows.map_err(|e| e.to_string()).and_then(|rows| {
+        if rows.is_empty() && symbol.contains("::") {
+            // dotted-qualified shape missed (producer rows carry no
+            // parent_name) — retry on the qname/symbol key
+            let conn2 = crate::common::connect_ro(db_path)?;
+            conn2
+                .prepare(
+                    "SELECT symbol, qname, file_path FROM nodes \
+                         WHERE qname = ?1 OR symbol = ?1",
+                )
+                .and_then(|mut stmt| {
+                    stmt.query_map([symbol], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .map_err(|e| e.to_string())
+        } else {
+            Ok(rows)
+        }
+    });
     rows.map_err(|e| {
         format!(
-            "非 CRG graph.db（讀 nodes 失敗：{e}）：{}——先跑 `uvx code-review-graph build`",
+            "graph.db 讀 nodes 失敗（{e}）：{}——非自有格式？重跑 `code-reality graph_db build --repo <repo>`",
             db_path.display()
         )
     })
 }
 
-/// Name resolution + query (`hub_refs.py:171-181`).
+/// Name resolution + query (S2: self-owned db, no CRG subprocess).
 pub fn resolve_symbol(
     symbol: &str,
     repo_root: &Path,
@@ -293,7 +286,14 @@ pub fn resolve_symbol(
         "callees_of"
     };
     let qname = resolve_qualified(symbol, repo_root)?;
-    let resp = crg_query(pattern, &qname, repo_root).map_err(ToolOutput::crash)?;
+    let (db, warns) = crate::graph_db::consumer_db(repo_root);
+    for w in warns {
+        eprintln!("{w}");
+    }
+    let db = db.ok_or_else(|| {
+        ToolOutput::crash("graph.db 不存在（.code-reality/graph.db）——先跑 `code-reality graph_db build --repo <repo>`")
+    })?;
+    let resp = refs_query(&db, pattern, &qname).map_err(ToolOutput::crash)?;
     require_ok(&resp)?;
     Ok(resp)
 }

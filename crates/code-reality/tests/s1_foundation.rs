@@ -2,7 +2,7 @@
 //! guard, make_meta ordering, and the D2 time oracle (recorded from the
 //! live Python `astimezone()` probe).
 
-mod crg_fixture;
+mod graph_db_fixture;
 
 use code_reality::common::{
     assert_db_unchanged, connect_ro, db_mtime_ns, make_meta, to_json_indent1,
@@ -17,9 +17,9 @@ fn crash(out: code_reality::ToolOutput) -> (String, String, i32) {
 fn connect_ro_immutable_branch_without_wal() {
     let tmp = tempfile::tempdir().unwrap();
     let db = tmp.path().join("graph.db");
-    let mut spec = crg_fixture::CrgDbSpec::default();
+    let mut spec = graph_db_fixture::CrgDbSpec::default();
     spec.metadata.push(("git_head_sha".into(), "abc".into()));
-    crg_fixture::make_crg_db(&db, &spec).unwrap();
+    graph_db_fixture::make_crg_db(&db, &spec).unwrap();
     let conn = connect_ro(&db).expect("immutable branch opens");
     let v: String = conn
         .query_row(
@@ -35,9 +35,9 @@ fn connect_ro_immutable_branch_without_wal() {
 fn connect_ro_mode_ro_branch_with_wal_file() {
     let tmp = tempfile::tempdir().unwrap();
     let db = tmp.path().join("graph.db");
-    let mut spec = crg_fixture::CrgDbSpec::default();
+    let mut spec = graph_db_fixture::CrgDbSpec::default();
     spec.metadata.push(("git_head_sha".into(), "abc".into()));
-    crg_fixture::make_crg_db(&db, &spec).unwrap();
+    graph_db_fixture::make_crg_db(&db, &spec).unwrap();
     // empty -wal file: existence flips connect_ro to mode=ro (a live
     // writer scenario; an empty wal reads as no frames)
     std::fs::write(db.with_file_name("graph.db-wal"), b"").unwrap();
@@ -56,7 +56,7 @@ fn connect_ro_mode_ro_branch_with_wal_file() {
 fn tear_guard_detects_mid_read_rewrite() {
     let tmp = tempfile::tempdir().unwrap();
     let db = tmp.path().join("graph.db");
-    crg_fixture::make_crg_db(&db, &crg_fixture::CrgDbSpec::default()).unwrap();
+    graph_db_fixture::make_crg_db(&db, &graph_db_fixture::CrgDbSpec::default()).unwrap();
     let m0 = db_mtime_ns(&db).unwrap();
     assert!(assert_db_unchanged(&db, m0).is_ok());
     std::fs::write(&db, b"x").unwrap();

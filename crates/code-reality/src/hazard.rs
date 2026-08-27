@@ -10,7 +10,7 @@
 //! triggered rg-level (static_prod ≤ 2 or --hazard) = all six rules with
 //! counts. rg output lines are `path:line:content` strings.
 
-use crate::common::{assert_db_unchanged, connect_ro, db_mtime_ns, graph_db_path, repo_relative};
+use crate::common::{assert_db_unchanged, connect_ro, db_mtime_ns, repo_relative};
 use crate::profile::{is_excluded, HazardRegistry, Profile};
 use std::path::{Path, PathBuf};
 
@@ -580,7 +580,7 @@ pub fn symbol_facts(
         name: cls_name.to_string(),
         ..Default::default()
     };
-    let db_path = graph_db_path(repo_root);
+    let db_path = crate::graph_db::db_path(repo_root);
     if !db_path.exists() {
         return Ok(facts);
     }
@@ -612,12 +612,13 @@ fn query_nodes(db_path: &Path, bare: &str) -> Result<Vec<(String, String, String
     let sql = if bare.contains('.') {
         let (parent, name) = bare.rsplit_once('.').unwrap();
         (
-            "SELECT qualified_name, file_path, kind FROM nodes WHERE name = ?1 AND parent_name = ?2".to_string(),
+            "SELECT qname, file_path, kind FROM nodes WHERE name = ?1 AND parent_name = ?2"
+                .to_string(),
             vec![name.to_string(), parent.to_string()],
         )
     } else {
         (
-            "SELECT qualified_name, file_path, kind FROM nodes WHERE name = ?1".to_string(),
+            "SELECT qname, file_path, kind FROM nodes WHERE name = ?1".to_string(),
             vec![bare.to_string()],
         )
     };
@@ -634,7 +635,7 @@ fn query_nodes(db_path: &Path, bare: &str) -> Result<Vec<(String, String, String
     match rows {
         Ok(v) => Ok(v),
         Err(e) => Err(format!(
-            "非 CRG graph.db（讀 nodes 失敗：{e}）：{}——先跑 `uvx code-review-graph build`",
+            "graph.db 讀 nodes 失敗（{e}）：{}——非自有格式？重跑 `code-reality graph_db build --repo <repo>`",
             db_path.display()
         )),
     }
@@ -674,6 +675,8 @@ pub fn make_rg_runner(repo_root: &Path) -> impl Fn(&[&str]) -> Result<Vec<RgLine
             "!.agent-tmp/**",
             "-g",
             "!.code-review-graph/**",
+            "-g",
+            "!.code-reality/**",
         ])
         .current_dir(&root);
         let out = cmd.output().map_err(|e| format!("rg 執行失敗：{e}"))?;

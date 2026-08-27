@@ -304,13 +304,13 @@ fn repo_with_nodes(tag: &str, dup: bool) -> PathBuf {
     // the resolved root (macOS tempfile /var symlink trap)
     let repo = std::fs::canonicalize(&tmp).unwrap().join(tag);
     std::fs::create_dir_all(repo.join("pkg")).unwrap();
-    std::fs::create_dir_all(repo.join(".code-review-graph")).unwrap();
+    std::fs::create_dir_all(repo.join(".code-reality")).unwrap();
     let src = repo.join("pkg/mod_.py");
     std::fs::write(&src, STRENTENUM_SRC).unwrap();
-    let db = repo.join(".code-review-graph").join("graph.db");
+    let db = repo.join(".code-reality").join("graph.db");
     let abs = src.to_string_lossy().into_owned();
-    let mut spec = crg_fixture::CrgDbSpec::default();
-    spec.nodes.push(crg_fixture::NodeSeed {
+    let mut spec = graph_db_fixture::CrgDbSpec::default();
+    spec.nodes.push(graph_db_fixture::NodeSeed {
         name: "Interval".into(),
         parent: None,
         qname: format!("{abs}::Interval"),
@@ -318,7 +318,7 @@ fn repo_with_nodes(tag: &str, dup: bool) -> PathBuf {
     });
     spec.node_attrs.push((
         format!("{abs}::Interval"),
-        crg_fixture::NodeAttr {
+        graph_db_fixture::NodeAttr {
             kind: "Class",
             language: "python",
             is_test: 0,
@@ -326,7 +326,7 @@ fn repo_with_nodes(tag: &str, dup: bool) -> PathBuf {
         },
     ));
     if dup {
-        spec.nodes.push(crg_fixture::NodeSeed {
+        spec.nodes.push(graph_db_fixture::NodeSeed {
             name: "Interval".into(),
             parent: None,
             qname: format!("{abs}2::Interval"),
@@ -334,7 +334,7 @@ fn repo_with_nodes(tag: &str, dup: bool) -> PathBuf {
         });
         spec.node_attrs.push((
             format!("{abs}2::Interval"),
-            crg_fixture::NodeAttr {
+            graph_db_fixture::NodeAttr {
                 kind: "Class",
                 language: "python",
                 is_test: 0,
@@ -342,7 +342,7 @@ fn repo_with_nodes(tag: &str, dup: bool) -> PathBuf {
             },
         ));
     }
-    crg_fixture::make_crg_db(&db, &spec).unwrap();
+    graph_db_fixture::make_crg_db(&db, &spec).unwrap();
     repo
 }
 
@@ -611,4 +611,136 @@ fn cli_missing_db_crash_exit_1() {
     assert_eq!(out.exit_code, 1, "{}", out.stderr);
     assert!(out.stdout.is_empty());
     assert!(out.stderr.contains("graph.db 不存在"), "{}", out.stderr);
+}
+
+// ---------- S2 cutover: refs_query + resolve on the self-owned db ----------
+
+mod graph_db_fixture;
+
+use code_reality::hub_refs::{refs_query, resolve_symbol};
+
+fn s2_repo(tag: &str) -> PathBuf {
+    let tmp = tempfile::tempdir().unwrap().keep();
+    let repo = std::fs::canonicalize(&tmp).unwrap().join(tag);
+    std::fs::create_dir_all(repo.join("pkg")).unwrap();
+    std::fs::create_dir_all(repo.join("tests")).unwrap();
+    std::fs::create_dir_all(repo.join(".code-reality")).unwrap();
+    let db = repo.join(".code-reality/graph.db");
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let spec = graph_db_fixture::CrgDbSpec {
+        nodes: vec![
+            graph_db_fixture::NodeSeed {
+                name: "Interval".into(),
+                parent: None,
+                qname: format!("{}::Interval", abs("pkg/mod_.py")),
+                file_path: abs("pkg/mod_.py"),
+            },
+            graph_db_fixture::NodeSeed {
+                name: "caller_fn".into(),
+                parent: None,
+                qname: "prod::caller_fn".into(),
+                file_path: abs("pkg/calls.py"),
+            },
+            graph_db_fixture::NodeSeed {
+                name: "test_uses".into(),
+                parent: None,
+                qname: "test::test_uses".into(),
+                file_path: abs("tests/test_x.py"),
+            },
+        ],
+        node_attrs: vec![
+            (
+                "prod::caller_fn".into(),
+                graph_db_fixture::NodeAttr {
+                    kind: "Function",
+                    language: "python",
+                    is_test: 0,
+                    community_id: None,
+                },
+            ),
+            (
+                "test::test_uses".into(),
+                graph_db_fixture::NodeAttr {
+                    kind: "Function",
+                    language: "python",
+                    is_test: 1,
+                    community_id: None,
+                },
+            ),
+        ],
+        edges: vec![
+            (
+                "CALLS".into(),
+                "prod::caller_fn".into(),
+                format!("{}::Interval", abs("pkg/mod_.py")),
+            ),
+            (
+                "CALLS".into(),
+                "test::test_uses".into(),
+                format!("{}::Interval", abs("pkg/mod_.py")),
+            ),
+        ],
+        ..Default::default()
+    };
+    graph_db_fixture::make_crg_db(&db, &spec).unwrap();
+    repo
+}
+
+#[test]
+fn refs_query_callers_reads_new_db_with_test_flags() {
+    let repo = s2_repo("refsq");
+    let db = repo.join(".code-reality/graph.db");
+    let target = format!("{}/pkg/mod_.py::Interval", repo.display());
+    let resp = refs_query(&db, "callers_of", &target).unwrap();
+    assert_eq!(resp["status"], "ok");
+    let results = resp["results"].as_array().unwrap();
+    assert_eq!(results.len(), 2, "{results:?}");
+    let test_row = results
+        .iter()
+        .find(|r| r["file_path"].as_str().unwrap().contains("tests/"))
+        .unwrap();
+    assert_eq!(
+        test_row["is_test"], true,
+        "caller node is_test joins through"
+    );
+}
+
+#[test]
+fn resolve_symbol_end_to_end_on_new_db() {
+    let repo = s2_repo("resolve");
+    // dotted form resolves via name+parent_name (no parent here -> bare)
+    let resp = resolve_symbol("Interval", &repo, "callers").unwrap();
+    let results = resp["results"].as_array().unwrap();
+    assert_eq!(results.len(), 2, "{results:?}");
+    // :: form resolves onto the node's symbol key
+    let resp2 = resolve_symbol(
+        &format!("{}/pkg/mod_.py::Interval", repo.display()),
+        &repo,
+        "callers",
+    )
+    .unwrap();
+    assert_eq!(resp2["results"].as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn resolve_symbol_missing_db_and_unknown_symbol_fail_loud() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = std::fs::canonicalize(tmp.path()).unwrap();
+    let out = resolve_symbol("Nope", &repo, "callers").unwrap_err();
+    assert!(out.stderr.contains("graph_db build"), "{}", out.stderr);
+    let repo2 = s2_repo("missing-sym");
+    let out2 = resolve_symbol("Nope", &repo2, "callers").unwrap_err();
+    assert!(out2.stderr.contains("symbol not found"), "{}", out2.stderr);
+}
+
+#[test]
+fn resolve_qualified_dotted_producer_key_retries_qname_lookup() {
+    let repo = s2_repo("retry");
+    let file = repo.join("pkg/mod_.py");
+    // producer-form qualified name: contains both `::` and `.` — the
+    // parent_name branch misses (producer rows carry no parent_name),
+    // the retry on qname/symbol must resolve to the node's symbol
+    let q = format!("{}::Interval", file.display());
+    let resolved = code_reality::hub_refs::resolve_qualified(&q, &repo).unwrap();
+    assert_eq!(resolved, q, "producer qname resolves onto its symbol key");
 }

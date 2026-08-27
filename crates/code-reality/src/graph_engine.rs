@@ -1409,7 +1409,11 @@ pub fn architecture_overview(
                     pair_order.push(key.clone());
                 }
                 pair_counts.bump(&key);
-                *pair_kinds.entry(key.clone()).or_default().entry(e.kind.clone()).or_insert(0) += 1;
+                *pair_kinds
+                    .entry(key.clone())
+                    .or_default()
+                    .entry(e.kind.clone())
+                    .or_insert(0) += 1;
                 if !minimal {
                     cross_edges.push(serde_json::json!({
                         "source_community": s,

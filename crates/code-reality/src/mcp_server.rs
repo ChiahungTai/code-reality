@@ -564,7 +564,9 @@ impl CodeRealityServer {
             .await
     }
 
-    #[tool(description = "Communities + cross-community edge pairs + high-coupling warnings; detail_level=minimal by default (CRG _minimal_overview parity)")]
+    #[tool(
+        description = "Communities + cross-community edge pairs + high-coupling warnings; detail_level=minimal by default (CRG _minimal_overview parity)"
+    )]
     pub async fn architecture_overview(
         &self,
         Parameters(GqArchOverviewParams {
@@ -605,10 +607,7 @@ impl CodeRealityServer {
     )]
     pub async fn list_flows(
         &self,
-        Parameters(GqDetailParams {
-            repo_root,
-            limit,
-        }): Parameters<GqDetailParams>,
+        Parameters(GqDetailParams { repo_root, limit }): Parameters<GqDetailParams>,
     ) -> Result<CallToolResult, McpError> {
         let mut args = vec![
             "graph_query".into(),
@@ -623,7 +622,9 @@ impl CodeRealityServer {
         self.gq(args).await
     }
 
-    #[tool(description = "Single-community drill-down by partial name; include_members=false by default (CRG get_community parity)")]
+    #[tool(
+        description = "Single-community drill-down by partial name; include_members=false by default (CRG get_community parity)"
+    )]
     pub async fn get_community(
         &self,
         Parameters(GqCommunityParams {
@@ -643,7 +644,13 @@ impl CodeRealityServer {
             }))
         })
         .await
-        .map_err(|e| McpError::new(ErrorCode::INTERNAL_ERROR, format!("任務 join 失敗：{e}"), None))?
+        .map_err(|e| {
+            McpError::new(
+                ErrorCode::INTERNAL_ERROR,
+                format!("任務 join 失敗：{e}"),
+                None,
+            )
+        })?
         .map_err(|payload| {
             let msg = payload
                 .downcast_ref::<&str>()

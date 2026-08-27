@@ -329,6 +329,25 @@ fn scan(face: &Face) -> Result<ScanRows, String> {
     }
 }
 
+/// Stamp `git_head_sha` + `last_updated` into metadata (S3 cutover):
+/// the snapshot staleness face consumes these keys. Git failure skips
+/// stamping silently — staleness then falls back to db mtime.
+fn stamp_snapshot_metadata(conn: &Connection, repo: &Path) {
+    if let Ok(sha) = crate::common::git_rev_parse_head(repo) {
+        let _ = conn.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('git_head_sha', ?1)",
+            [&sha],
+        );
+    }
+    if let Ok(now) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+        let iso = crate::common::local_epoch_to_iso_auto(now.as_secs() as i64, now.subsec_nanos());
+        let _ = conn.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('last_updated', ?1)",
+            [iso],
+        );
+    }
+}
+
 fn now_ts() -> f64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -472,6 +491,10 @@ pub fn build_from_cache_at(repo: &Path, index_path: &Path) -> Result<BuildReport
         .map_err(|e| format!("graph.db busy_timeout 設定失敗：{e}"))?;
     g.execute_batch(DDL)
         .map_err(|e| format!("graph.db schema 建立失敗：{e}"))?;
+    // single index source: build and ensure_indexes both apply
+    // ENGINE_INDEX_DDL (schema DDL carries tables only — cannot drift)
+    g.execute_batch(ENGINE_INDEX_DDL)
+        .map_err(|e| format!("graph.db 索引建立失敗：{e}"))?;
     let now = now_ts();
     let tx = g
         .transaction()
@@ -542,6 +565,7 @@ pub fn build_from_cache_at(repo: &Path, index_path: &Path) -> Result<BuildReport
         [&producer],
     )
     .map_err(|e| format!("metadata 寫入失敗：{e}"))?;
+    stamp_snapshot_metadata(&tx, repo);
     tx.execute("INSERT INTO nodes_fts(nodes_fts) VALUES ('rebuild')", [])
         .map_err(|e| format!("nodes_fts 重建失敗：{e}"))?;
     tx.commit().map_err(|e| format!("graph.db 提交失敗：{e}"))?;
@@ -887,6 +911,7 @@ pub fn import_legacy(repo: &Path, dry_run: bool) -> Result<ImportLegacyReport, S
         // fallback)
         conn.execute("INSERT INTO nodes_fts(nodes_fts) VALUES ('rebuild')", [])
             .map_err(|e| format!("import 後 nodes_fts 重建失敗：{e}（舊 schema 庫——重跑 `graph_db build` 重建含 FTS 的 schema 再 import）"))?;
+        stamp_snapshot_metadata(&conn, repo);
     }
     let derived = if dry_run {
         None
@@ -908,6 +933,123 @@ pub fn import_legacy(repo: &Path, dry_run: bool) -> Result<ImportLegacyReport, S
         legacy_db: legacy,
         dry_run,
     })
+}
+
+/// Indexes the engine read chain filters on (edges by either endpoint +
+/// kind, flow_memberships by node) — shared by build-time DDL and
+/// `ensure_indexes` for dbs built before this schema revision.
+const ENGINE_INDEX_DDL: &str = "
+CREATE INDEX IF NOT EXISTS idx_edges_caller ON edges(caller_symbol, kind);
+CREATE INDEX IF NOT EXISTS idx_edges_callee ON edges(callee_symbol, kind);
+CREATE INDEX IF NOT EXISTS idx_flow_memberships_node ON flow_memberships(node_id);
+CREATE INDEX IF NOT EXISTS idx_nodes_name_file_line ON nodes(name, file_path, line_start);";
+
+pub struct EnsureIndexesReport {
+    pub db: PathBuf,
+    pub created: usize,
+    pub skipped: usize,
+}
+
+/// `CREATE INDEX IF NOT EXISTS` on the self-owned db (engine read-chain
+/// indexes — for dbs built before this schema revision; fresh builds get
+/// them via DDL). Idempotent; index-only — no row data is touched, query
+/// results are unchanged. The legacy-db anchor index half was removed
+/// with the legacy consumer cutover (chain_tour reads the self-owned db;
+/// the same covering index lives in ENGINE_INDEX_DDL now).
+pub fn ensure_indexes(repo: &Path) -> Result<EnsureIndexesReport, String> {
+    let mut created = 0usize;
+    let mut skipped = 0usize;
+    let db = db_path(repo);
+    if !db.exists() {
+        return Err(format!(
+            "新庫不在：{}——先 `graph_db build --repo` 再 ensure_indexes",
+            db.display()
+        ));
+    }
+    let conn =
+        Connection::open(&db).map_err(|e| format!("{} 開啟失敗（rw）：{e}", db.display()))?;
+    count_index_ddl(&conn, ENGINE_INDEX_DDL, &mut created, &mut skipped)?;
+    Ok(EnsureIndexesReport {
+        db,
+        created,
+        skipped,
+    })
+}
+
+/// Default db resolution for the legacy-schema consumers being cut over
+/// (EP ep-legacy-db-consumer-cutover S1): the self-owned db when present,
+/// plus fail-soft guidance warns — missing db points at `graph_db build`,
+/// and a present-but-unimported db (legacy `.code-review-graph/` exists,
+/// zero `treesitter-legacy` nodes) points at `import_legacy` (the
+/// mid-cutover SM-7 state loses the legacy universe silently otherwise).
+pub fn consumer_db(repo: &Path) -> (Option<PathBuf>, Vec<String>) {
+    let db = db_path(repo);
+    let mut warns = Vec::new();
+    if !db.exists() {
+        warns.push(format!(
+            "[WARN] .code-reality/graph.db 不存在（{}）——先 `code-reality graph_db build --repo <repo>`（有舊庫再接 import_legacy）\n",
+            db.display()
+        ));
+        return (None, warns);
+    }
+    let legacy = crate::common::graph_db_path(repo);
+    if legacy.exists() {
+        let imported = crate::common::connect_ro(&db).and_then(|c| {
+            c.query_row(
+                "SELECT COUNT(*) FROM nodes WHERE provenance = 'treesitter-legacy'",
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+            .map_err(|e| e.to_string())
+        });
+        match imported {
+            Ok(0) => {
+                warns.push(format!(
+                    "[WARN] 偵測到舊庫 {} 但新庫無 treesitter-legacy 節點——先 `code-reality graph_db import_legacy --repo <repo>`，否則 Class/File/legacy qname 查不到\n",
+                    legacy.display()
+                ));
+            }
+            Ok(_) => {}
+            // read/schema error is NOT "imported" (review C5) — its own
+            // warn instead of suppressing the guidance
+            Err(e) => warns.push(format!(
+                "[WARN] 新庫 provenance 檢查失敗（{e}）——schema 非 v1+？重跑 `code-reality graph_db build --repo <repo>`\n"
+            )),
+        }
+    }
+    (Some(db), warns)
+}
+
+fn count_index_ddl(
+    conn: &Connection,
+    ddl: &str,
+    created: &mut usize,
+    skipped: &mut usize,
+) -> Result<(), String> {
+    for stmt in ddl.split(';').map(str::trim).filter(|s| !s.is_empty()) {
+        let before: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND sql IS NOT NULL",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(|e| format!("sqlite_master 計數失敗：{e}"))?;
+        conn.execute_batch(stmt)
+            .map_err(|e| format!("索引建立失敗（{stmt}）：{e}"))?;
+        let after: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND sql IS NOT NULL",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(|e| format!("sqlite_master 計數失敗：{e}"))?;
+        if after > before {
+            *created += 1;
+        } else {
+            *skipped += 1;
+        }
+    }
+    Ok(())
 }
 
 const SPEC: ToolSpec = ToolSpec {
@@ -932,7 +1074,7 @@ const SPEC: ToolSpec = ToolSpec {
 };
 
 const HELP: &str = concat!(
-    "usage: graph_db [-h] <build|import_legacy> --repo REPO [--dry-run] [--json]\n",
+    "usage: graph_db [-h] <build|import_legacy|ensure_indexes> --repo REPO [--dry-run] [--json]\n",
     "\n",
     "自有格式 graph.db 面（v1+ S4；.code-reality/graph.db——producer symbol\n",
     "鍵＋單一邊本體，取代 CRG 相容格式的角色）。\n",
@@ -940,6 +1082,8 @@ const HELP: &str = concat!(
     "ops:\n",
     "  build            cache index（任何 producer）→ nodes+edges+derived 物化\n",
     "  import_legacy    舊 .code-review-graph/graph.db 一次性匯入（唯讀源）\n",
+    "  ensure_indexes   引擎讀鏈索引（edges 端點/flow node/nodes anchor）\n",
+    "                   IF NOT EXISTS，冪等，不動資料——補舊版 build 的庫\n",
     "\n",
     "options:\n",
     "  -h, --help            show this help message and exit\n",
@@ -983,12 +1127,14 @@ pub fn run(argv: &[&str]) -> ToolOutput {
             values
         }
     };
-    if op != &"build" && op != &"import_legacy" {
-        return ToolOutput::fail(format!("未知操作：{op}（支援 build / import_legacy）"));
+    if op != &"build" && op != &"import_legacy" && op != &"ensure_indexes" {
+        return ToolOutput::fail(format!(
+            "未知操作：{op}（支援 build / import_legacy / ensure_indexes）"
+        ));
     }
-    if values.contains_key("--dry-run") && op == &"build" {
+    if values.contains_key("--dry-run") && op != &"import_legacy" {
         return ToolOutput::fail(
-            "build 不支援 --dry-run（冪等重跑即預覽；僅 import_legacy 有 dry-run 面）",
+            "build/ensure_indexes 不支援 --dry-run（兩者皆冪等，重跑即預覽；僅 import_legacy 有 dry-run 面）",
         );
     }
     let Some(repo_s) = values.get("--repo").and_then(|v| v.clone()) else {
@@ -996,6 +1142,36 @@ pub fn run(argv: &[&str]) -> ToolOutput {
     };
     let dry = values.contains_key("--dry-run");
     let json = values.contains_key("--json");
+    if op == &"ensure_indexes" {
+        return match ensure_indexes(Path::new(&repo_s)) {
+            Ok(rep) => {
+                if json {
+                    let v = serde_json::json!({
+                        "created": rep.created,
+                        "skipped": rep.skipped,
+                        "db": rep.db.display().to_string(),
+                    });
+                    ToolOutput {
+                        stdout: format!("{}\n", to_json_indent1(&v)),
+                        stderr: String::new(),
+                        exit_code: 0,
+                    }
+                } else {
+                    ToolOutput {
+                        stdout: format!(
+                            "[OK] graph_db ensure_indexes：created={} skipped={} → {}\n",
+                            rep.created,
+                            rep.skipped,
+                            rep.db.display()
+                        ),
+                        stderr: String::new(),
+                        exit_code: 0,
+                    }
+                }
+            }
+            Err(e) => ToolOutput::crash(e),
+        };
+    }
     if op == &"import_legacy" {
         return match import_legacy(Path::new(&repo_s), dry) {
             Ok(rep) => {

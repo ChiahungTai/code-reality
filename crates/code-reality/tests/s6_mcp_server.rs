@@ -271,7 +271,10 @@ async fn minimal_detail_drops_members_and_aggregates_pairs() {
         .unwrap();
     let text2 = result_text(r2);
     assert!(!text2.contains("source\":"), "no per-edge source fields");
-    assert!(text2.contains("edge_count"), "aggregated per-pair counts present");
+    assert!(
+        text2.contains("edge_count"),
+        "aggregated per-pair counts present"
+    );
     assert!(text2.contains("top_kinds"), "top-kinds aggregation present");
 }
 
@@ -294,7 +297,11 @@ async fn oversized_output_hits_the_byte_cap_backstop() {
         .unwrap();
     let text = result_text(r);
     assert!(text.contains("[TRUNCATED]"), "cap sentinel must be present");
-    assert!(text.len() < 1_100_000, "capped near 1MB, got {}", text.len());
+    assert!(
+        text.len() < 1_100_000,
+        "capped near 1MB, got {}",
+        text.len()
+    );
 }
 
 #[tokio::test]
@@ -339,7 +346,10 @@ async fn get_community_drill_down_and_flows_limit() {
         ))
         .await
         .unwrap();
-    assert!(result_text(rm).contains("members"), "opt-in returns members");
+    assert!(
+        result_text(rm).contains("members"),
+        "opt-in returns members"
+    );
     // flows limit (CLI face): two chained CALLS edges -> one entry per cap
     let dir2 = tempfile::tempdir().unwrap();
     let repo2 = std::fs::canonicalize(dir2.path()).unwrap();
@@ -347,8 +357,14 @@ async fn get_community_drill_down_and_flows_limit() {
     {
         let c = rusqlite::Connection::open(repo2.join(".code-reality/graph.db")).unwrap();
         for (a, b) in [
-            ("sym module_a_very_long_symbol_name_000000().", "sym module_a_very_long_symbol_name_000001()."),
-            ("sym module_a_very_long_symbol_name_000001().", "sym module_a_very_long_symbol_name_000002()."),
+            (
+                "sym module_a_very_long_symbol_name_000000().",
+                "sym module_a_very_long_symbol_name_000001().",
+            ),
+            (
+                "sym module_a_very_long_symbol_name_000001().",
+                "sym module_a_very_long_symbol_name_000002().",
+            ),
         ] {
             c.execute(
                 "INSERT INTO edges (kind, caller_symbol, callee_symbol, provenance, file_path, updated_at)
@@ -359,7 +375,14 @@ async fn get_community_drill_down_and_flows_limit() {
         }
     }
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_code-reality"))
-        .args(["graph_query", "flows", "--repo", repo2.to_str().unwrap(), "--limit", "1"])
+        .args([
+            "graph_query",
+            "flows",
+            "--repo",
+            repo2.to_str().unwrap(),
+            "--limit",
+            "1",
+        ])
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);

@@ -704,3 +704,88 @@ fn import_legacy_collision_routes_to_synthesis() {
         .unwrap();
     assert_eq!(synth, 1);
 }
+
+#[test]
+fn build_materializes_engine_read_chain_indexes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let index = slot(&tmp);
+    let repo = repo_dir(&tmp);
+    graph_db::build_from_cache_at(&repo, &index).unwrap();
+    let conn = open(&graph_db::db_path(&repo));
+    for idx in [
+        "idx_edges_caller",
+        "idx_edges_callee",
+        "idx_flow_memberships_node",
+        "idx_nodes_name_file_line",
+    ] {
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name = ?1",
+                [idx],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 1, "{idx} present on fresh build");
+    }
+}
+
+#[test]
+fn ensure_indexes_is_idempotent_on_built_db() {
+    let tmp = tempfile::tempdir().unwrap();
+    let index = slot(&tmp);
+    let repo = repo_dir(&tmp);
+    graph_db::build_from_cache_at(&repo, &index).unwrap();
+    // fresh build already materialized the engine indexes via DDL —
+    // ensure is a no-op reporting all skipped (for dbs built before the
+    // index DDL revision it would create them)
+    let first = graph_db::ensure_indexes(&repo).unwrap();
+    assert_eq!(first.created, 0);
+    assert_eq!(first.skipped, 4);
+    let second = graph_db::ensure_indexes(&repo).unwrap();
+    assert_eq!(second.created, 0, "idempotent");
+    assert_eq!(second.skipped, 4);
+    let conn = open(&graph_db::db_path(&repo));
+    let plan: String = conn
+        .query_row(
+            "EXPLAIN QUERY PLAN SELECT line_start FROM nodes \
+             WHERE file_path LIKE '%/a.rs' AND name='target' \
+             AND line_start IS NOT NULL \
+             ORDER BY ABS(line_start-10), line_start, symbol LIMIT 1",
+            [],
+            |r| r.get(3),
+        )
+        .unwrap();
+    assert!(
+        plan.contains("idx_nodes_name_file_line"),
+        "anchor query uses the covering index, got: {plan}"
+    );
+}
+
+#[test]
+fn build_stamps_snapshot_metadata() {
+    let tmp = tempfile::tempdir().unwrap();
+    let index = slot(&tmp);
+    let repo = repo_dir(&tmp);
+    graph_db::build_from_cache_at(&repo, &index).unwrap();
+    let conn = open(&graph_db::db_path(&repo));
+    let last_updated: Option<String> = conn
+        .query_row(
+            "SELECT value FROM metadata WHERE key='last_updated'",
+            [],
+            |r| r.get(0),
+        )
+        .ok();
+    assert!(
+        last_updated.is_some(),
+        "last_updated stamped for staleness face"
+    );
+    // no git repo here -> git_head_sha absent (stamping skips silently)
+    let sha: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM metadata WHERE key='git_head_sha'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(sha, 0);
+}

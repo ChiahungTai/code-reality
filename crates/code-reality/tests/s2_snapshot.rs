@@ -4,6 +4,7 @@
 //! S6 parity harness.
 
 mod crg_fixture;
+mod graph_db_fixture;
 
 use code_reality::snapshot::{build_snapshot, detect_stale, export_module_edges, run};
 use code_reality::ToolOutput;
@@ -46,12 +47,12 @@ fn repo_fixture(tag: &str) -> PathBuf {
 }
 
 fn db_with_edges(repo: &Path) -> PathBuf {
-    let db = repo.join(".code-review-graph").join("graph.db");
+    let db = repo.join(".code-reality").join("graph.db");
     std::fs::create_dir_all(db.parent().unwrap()).unwrap();
-    let mut spec = crg_fixture::CrgDbSpec::default();
+    let mut spec = graph_db_fixture::CrgDbSpec::default();
     spec.metadata
         .push(("git_head_sha".into(), "deadbeefdeadbeef".into()));
-    let q = |rel: &str, sym: &str| crg_fixture::qualified(repo, rel, sym);
+    let q = |rel: &str, sym: &str| graph_db_fixture::qualified(repo, rel, sym);
     for (kind, s, t) in [
         (
             "IMPORTS_FROM",
@@ -79,7 +80,7 @@ fn db_with_edges(repo: &Path) -> PathBuf {
     ] {
         spec.edges.push((kind.into(), s, t));
     }
-    crg_fixture::make_crg_db(&db, &spec).unwrap();
+    graph_db_fixture::make_crg_db(&db, &spec).unwrap();
     db
 }
 
@@ -280,10 +281,10 @@ fn cli_stale_warn_line_shape() {
     assert_eq!(out.exit_code, 0);
     assert!(out
         .stdout
-        .starts_with("[WARN] CRG graph stale: graph sha deadbeef != HEAD "));
+        .starts_with("[WARN] graph stale: graph sha deadbeef != HEAD "));
     assert!(out
         .stdout
-        .contains("——先 uvx code-review-graph build 再 snapshot\n"));
+        .contains("——先 `code-reality graph_db build --repo <repo>` 再 snapshot\n"));
 }
 
 #[test]
@@ -322,7 +323,7 @@ fn cli_missing_db_crash_message() {
     assert!(out.stdout.is_empty());
     assert!(
         out.stderr
-            .contains("先跑 `uvx code-review-graph build`（SM-11）"),
+            .contains("先跑 `code-reality graph_db build --repo <repo>`"),
         "{}",
         out.stderr
     );
@@ -331,16 +332,16 @@ fn cli_missing_db_crash_message() {
 #[test]
 fn cli_empty_set_warn() {
     let repo = repo_fixture("cli_empty");
-    let db = repo.join(".code-review-graph").join("graph.db");
+    let db = repo.join(".code-reality").join("graph.db");
     std::fs::create_dir_all(db.parent().unwrap()).unwrap();
-    let mut spec = crg_fixture::CrgDbSpec::default();
+    let mut spec = graph_db_fixture::CrgDbSpec::default();
     spec.metadata.push(("git_head_sha".into(), "x".into()));
     spec.edges.push((
         "IMPORTS_FROM".into(),
         "/elsewhere/x.py::A".into(),
         "/elsewhere/y.py::B".into(),
     ));
-    crg_fixture::make_crg_db(&db, &spec).unwrap();
+    graph_db_fixture::make_crg_db(&db, &spec).unwrap();
     let out = run_cli(&[
         "snapshot",
         "--repo",
@@ -381,4 +382,74 @@ fn usage_error_exit_2() {
     let out = run_cli(&["snapshot", "--nope"]);
     assert_eq!(out.exit_code, 2);
     assert!(out.stdout.is_empty());
+}
+
+// ---------- S3 cutover: endpoint resolution via nodes table ----------
+
+#[test]
+fn export_resolves_symbols_via_nodes_with_dangling_fallback() {
+    let repo = repo_fixture("symres");
+    let db = repo.join(".code-reality/graph.db");
+    std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+    let spec = graph_db_fixture::CrgDbSpec {
+        nodes: vec![graph_db_fixture::NodeSeed {
+            name: "foo".into(),
+            parent: None,
+            qname: "lsp python mosaic_alpha/domain/a.py foo().".into(),
+            file_path: repo.join("mosaic_alpha/domain/a.py").display().to_string(),
+        }],
+        edges: vec![
+            // producer-form endpoint: resolvable ONLY via the nodes map
+            (
+                "CALLS".into(),
+                "lsp python mosaic_alpha/domain/a.py foo().".into(),
+                "dangling::B".into(),
+            ),
+        ],
+        ..Default::default()
+    };
+    graph_db_fixture::make_crg_db(&db, &spec).unwrap();
+    let conn = code_reality::common::connect_ro(&db).unwrap();
+    let out = export_module_edges(&conn, &repo, None).unwrap();
+    // dangling endpoint falls back to the ::-split: no repo file -> edge
+    // skipped, but the nodes-resolved endpoint cannot drag it in either
+    assert!(out.module_edges.is_empty(), "{:?}", out.module_edges);
+    // both endpoints must exist in the repo for the edge to export: give
+    // the dangling endpoint a node too
+    std::fs::remove_file(&db).unwrap();
+    let spec2 = graph_db_fixture::CrgDbSpec {
+        nodes: vec![
+            graph_db_fixture::NodeSeed {
+                name: "foo".into(),
+                parent: None,
+                qname: "lsp python mosaic_alpha/domain/a.py foo().".into(),
+                file_path: repo.join("mosaic_alpha/domain/a.py").display().to_string(),
+            },
+            graph_db_fixture::NodeSeed {
+                name: "bar".into(),
+                parent: None,
+                qname: "lsp python mosaic_alpha/infra/b.py bar().".into(),
+                file_path: repo.join("mosaic_alpha/infra/b.py").display().to_string(),
+            },
+        ],
+        edges: vec![(
+            "CALLS".into(),
+            "lsp python mosaic_alpha/domain/a.py foo().".into(),
+            "lsp python mosaic_alpha/infra/b.py bar().".into(),
+        )],
+        ..Default::default()
+    };
+    graph_db_fixture::make_crg_db(&db, &spec2).unwrap();
+    let conn2 = code_reality::common::connect_ro(&db).unwrap();
+    let profile = code_reality::profile::load_profile(&repo).unwrap();
+    let out2 = export_module_edges(&conn2, &repo, profile.as_ref()).unwrap();
+    assert_eq!(
+        out2.module_edges,
+        vec![vec![
+            "mosaic_alpha/domain".to_string(),
+            "mosaic_alpha/infra".to_string(),
+            "CALLS".to_string()
+        ]],
+        "symbol endpoints resolve via nodes"
+    );
 }

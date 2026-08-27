@@ -6,7 +6,7 @@
 //! description.
 
 use crate::argparse::{parse, FlagSpec, Kind, Outcome, ToolSpec};
-use crate::common::{anchor_pattern, assert_db_unchanged, connect_ro, db_mtime_ns, graph_db_path};
+use crate::common::{anchor_pattern, assert_db_unchanged, connect_ro, db_mtime_ns};
 use crate::profile::{is_excluded, load_profile, Profile};
 use crate::ToolOutput;
 use rusqlite::Connection;
@@ -317,8 +317,18 @@ pub struct GraphHit {
 
 impl GraphAnchor {
     pub fn new(db: &Path, repo_root: &Path) -> Result<Self, String> {
+        let conn = connect_ro(db)?;
+        // schema probe (review C4): the anchor face reads nodes.symbol
+        // (unique tie-break) — a legacy-schema db would silently degrade
+        // every same-file anchor to not-in-graph; fail loud instead
+        conn.prepare("SELECT symbol FROM nodes LIMIT 1").map_err(|_| {
+            format!(
+                "--graph 指定的 db 非自有格式（nodes.symbol 缺）：{}——重跑 `code-reality graph_db build --repo <repo>`",
+                db.display()
+            )
+        })?;
         Ok(Self {
-            conn: connect_ro(db)?,
+            conn,
             repo_root: crate::common::resolve(repo_root),
         })
     }
@@ -341,7 +351,7 @@ impl GraphAnchor {
                 "SELECT line_start FROM nodes \
                  WHERE file_path LIKE ?1 ESCAPE '\\' AND name=?2 \
                  AND line_start IS NOT NULL \
-                 ORDER BY ABS(line_start-?3) LIMIT 1",
+                 ORDER BY ABS(line_start-?3), line_start, symbol LIMIT 1",
                 (&like, ident, line_no),
                 |r| r.get(0),
             )
@@ -744,7 +754,7 @@ pub fn run(argv: &[&str]) -> ToolOutput {
                     "\n",
                     "options:\n",
                     "  -h, --help            show this help message and exit\n",
-                    "  --graph GRAPH         CRG graph.db（預設 <repo>/.code-review-graph/graph.db；不存在則退化純文檔錨）\n",
+                    "  --graph GRAPH         graph.db 覆寫（預設 <repo>/.code-reality/graph.db；不存在則退化純文檔錨）\n",
                     "  --repo REPO           repo 根\n",
                     "  --out-dir OUT_DIR     輸出目錄（預設 .tours/arch/<文檔 stem>/——stem 即 subgroup label）\n",
                     "  --primary PRIMARY     標 isPrimary 的場景編號（1-based 逗號分隔）；預設不標\n",
@@ -776,16 +786,11 @@ pub fn run(argv: &[&str]) -> ToolOutput {
             Some(p)
         }
         None => {
-            let default_db = graph_db_path(&repo);
-            if default_db.exists() {
-                Some(default_db)
-            } else {
-                stdout.push_str(&format!(
-                    "[WARN] graph.db 不存在（{}）——退化純文檔錨，無重錨\n",
-                    default_db.display()
-                ));
-                None
+            let (default_db, warns) = crate::graph_db::consumer_db(&repo);
+            for w in warns {
+                stdout.push_str(&w);
             }
+            default_db
         }
     };
     let explicit_out_dir = values.get("--out-dir").and_then(|v| v.clone()).is_some();

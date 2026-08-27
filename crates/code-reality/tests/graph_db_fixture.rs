@@ -41,6 +41,8 @@ pub struct CrgDbSpec {
     pub node_lines: Vec<(String, i64)>,
     /// (symbol, line_start, line_end) full-span patch
     pub node_spans: Vec<(String, i64, i64)>,
+    /// (symbol, provenance) — producer vs treesitter-legacy rows
+    pub node_prov: Vec<(String, &'static str)>,
     /// (flow_id, node_id) memberships; flows table rows are created per
     /// distinct flow_id (criticality from flow_crits).
     pub flow_members: Vec<(i64, i64)>,
@@ -181,6 +183,13 @@ pub fn make_crg_db(path: &Path, spec: &CrgDbSpec) -> rusqlite::Result<()> {
              VALUES (?1, ?2, ?3, ?4, 0.0)",
             (kind, src, dst, src.split("::").next().unwrap_or(src)),
         )?;
+    }
+    for (symbol, prov) in &spec.node_prov {
+        let n = conn.execute(
+            "UPDATE nodes SET provenance=?1 WHERE symbol=?2",
+            (prov, symbol),
+        )?;
+        assert_eq!(n, 1, "node_prov symbol 未命中任何節點：{symbol}");
     }
     conn.execute("INSERT INTO nodes_fts(nodes_fts) VALUES ('rebuild')", [])?;
     Ok(())

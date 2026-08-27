@@ -14,7 +14,7 @@ code-reality <tool> --repo <repo-root> [args]
 ```
 
 Tools: `snapshot` `transition` `hub_refs` `runtime_edges` `boundary_build`
-`boundary` `delta_tour` `chain_tour` `graph_csv` `tour_validate` `tour_upgrade`
+`boundary` `delta_tour` `chain_tour` `tour_validate` `tour_upgrade`
 `tour_manifest` `graph_audit` `scip_refs` `graph_query` `graph_db`
 
 Sidecar home (frozen at migration): `~/.mosaic/code-reality/` — including the
@@ -53,18 +53,18 @@ not needed for the plugin path.
 
 Per-repo prerequisites for the query tools: a SCIP index
 (`rust-analyzer scip <repo>` → `~/.mosaic/code-reality/scip/<basename>/index.scip`;
-Python repos use the LSP-harvest adapter instead). The graph engine reads
-a self-owned db at `<repo>/.code-reality/graph.db` — produce it with
-`code-reality graph_db build --repo <repo>` (any producer cache) and,
-when a CRG-era `.code-review-graph/graph.db` exists, follow up with
-`code-reality graph_db import_legacy --repo <repo>` (one-shot; the legacy
-db is read-only). The `.code-reality/` directory is repo-local data —
-add it to the repo's `.gitignore` if you don't want it tracked (that
-choice belongs to each repo). Several tool modules still read
-the legacy-schema `.code-review-graph/graph.db` (graph_audit,
-`scip_refs --audit`, graph_csv, chain_tour, hub_refs, hazard, snapshot —
-see `crates/AGENTS.md` for the migration boundary) — a frozen CRG-era
-artifact; do not try to regenerate it with retired CRG tooling.
+Python repos use the LSP-harvest adapter instead). All graph-reading
+tools (engine, audit, chain_tour, hub_refs/hazard, snapshot) read a
+self-owned db at `<repo>/.code-reality/graph.db` — produce it with
+`code-reality graph_db build --repo <repo>` (any producer cache); when a
+CRG-era `.code-review-graph/graph.db` exists, follow up with
+`code-reality graph_db import_legacy --repo <repo>` (one-shot; the
+legacy db is read-only and only ever read as an import source) —
+`graph_db ensure_indexes --repo <repo>` is an idempotent follow-up that
+adds the engine read-chain indexes to dbs built before that schema
+revision. The `.code-reality/` directory is repo-local data — add it to
+the repo's `.gitignore` if you don't want it tracked (that choice
+belongs to each repo).
 
 ## Tests
 
@@ -80,7 +80,7 @@ artifacts are required to run them.
 
 - **[code-review-graph](https://github.com/tirth8205/code-review-graph)** (MIT, Tirth Kanani) —
   the graph storage & query layer this toolchain builds on. `snapshot` /
-  `transition` / `hub_refs` / `graph_audit` / `graph_csv` consume its per-repo
+  `transition` / `hub_refs` / `graph_audit` consume its per-repo
   SQLite `graph.db` (nodes / edges / communities / flows / FTS5). Its
   SQLite-native design — one graph.db per repo, `qualified_name UNIQUE` node
   collapse — is the storage reference this project's derived sqlite cache

@@ -7,7 +7,7 @@
 //! governance-hook contract face — stdout bytes gated.
 
 use crate::argparse::{parse, required, FlagSpec, Kind, Outcome, ToolSpec};
-use crate::common::{connect_ro, graph_db_path};
+use crate::common::connect_ro;
 use crate::profile::{is_excluded, load_profile, scan_roots};
 use crate::ToolOutput;
 use rusqlite::Connection;
@@ -51,7 +51,7 @@ const HELP: &str = concat!(
     "  --repo REPO    掃描目標 repo 根\n",
     "  --all          對帳全部 .rs（預設僅風險檔）\n",
     "  --json         機器可讀輸出（治理鉤子契約）\n",
-    "  --graph GRAPH  覆寫 graph.db 路徑（預設 <repo>/.code-review-graph/graph.db）\n",
+    "  --graph GRAPH  覆寫 graph.db 路徑（預設 <repo>/.code-reality/graph.db）\n",
 );
 
 fn impl_re() -> &'static regex::Regex {
@@ -284,11 +284,20 @@ pub fn ra_symbols(path: &Path) -> Result<Option<OrderedCounter>, String> {
 
 /// graph.db nodes per-name counts (`graph_audit.py:154-161`): DB side kind
 /// must include 'Test' (missing it flags every test fn as a false gap).
+/// Provenance-aware (S1 cutover): the new universe can hold a producer
+/// Function and a synthesized legacy Test for the same (name, file) —
+/// shadowed rows are deduped so counts match the ra side.
 pub fn db_functions(conn: &Connection, path: &Path) -> HashMap<String, usize> {
     let resolved = crate::common::resolve(path);
     let Ok(mut stmt) = conn.prepare(
-        "SELECT name, COUNT(*) FROM nodes WHERE file_path = ?1 \
-         AND kind IN ('Function', 'Test') GROUP BY name",
+        "SELECT n.name, COUNT(*) FROM nodes n \
+         WHERE n.file_path = ?1 AND n.kind IN ('Function', 'Test') AND ( \
+             (n.kind = 'Function' AND n.provenance != 'treesitter-legacy') \
+             OR NOT EXISTS ( \
+                 SELECT 1 FROM nodes p WHERE p.file_path = n.file_path \
+                 AND p.name = n.name AND p.kind = 'Function' \
+                 AND p.provenance != 'treesitter-legacy')) \
+         GROUP BY n.name",
     ) else {
         return HashMap::new();
     };
@@ -430,15 +439,29 @@ pub fn run(argv: &[&str]) -> ToolOutput {
     let mut graph = values
         .get("--graph")
         .and_then(|v| v.clone())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| graph_db_path(&repo));
-    if graph.as_os_str().is_empty() {
-        // Python Path("") == Path(".") — exists() is true there, and the
-        // failure lands in connect_ro (exit 1), not the env gate (exit 2)
-        graph = PathBuf::from(".");
+        .map(PathBuf::from);
+    let mut consumer_warns = Vec::new();
+    if graph.is_none() {
+        let (db, warns) = crate::graph_db::consumer_db(&repo);
+        consumer_warns = warns;
+        graph = db;
     }
+    let graph = match graph {
+        Some(g) if g.as_os_str().is_empty() => PathBuf::from("."),
+        Some(g) => g,
+        None => {
+            let mut stderr = String::new();
+            for w in consumer_warns {
+                stderr.push_str(&w);
+            }
+            return ToolOutput::fail("無可用 graph.db（.code-reality/graph.db）——見上方 WARN 指引");
+        }
+    };
 
     let mut stderr = String::new();
+    for w in consumer_warns {
+        stderr.push_str(&w);
+    }
     let gates = env_gate_messages();
     if which("rust-analyzer").is_none() {
         stderr.push_str(&crate::msg_line("FAIL", gates[0]));

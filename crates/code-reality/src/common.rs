@@ -13,7 +13,7 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 
 /// Structural edge kinds (`common.py:18`) — the "no structural change"
-/// boundary in transition and the projection filter in snapshot/graph_csv.
+/// boundary in transition and the projection filter in snapshot.
 pub const EDGE_KINDS: [&str; 3] = ["IMPORTS_FROM", "CALLS", "INHERITS"];
 
 /// Anchor line → literal-ish line regex (`common.py:21-37`):
@@ -25,7 +25,10 @@ pub fn anchor_pattern(line: &str) -> String {
     // Python re.escape escapes spaces; regex::escape does not. Corpus
     // files carry a byte-identical regen convention (mosaic tours), so
     // align the bytes — semantics are unchanged either way.
-    format!("^[ \\t]*{}[ \\t]*$", regex::escape(line.trim()).replace(' ', "\\ "))
+    format!(
+        "^[ \\t]*{}[ \\t]*$",
+        regex::escape(line.trim()).replace(' ', "\\ ")
+    )
 }
 
 #[cfg(test)]
@@ -36,8 +39,14 @@ mod anchor_pattern_tests {
     fn space_escaping_matches_python_re_escape_bytes() {
         // Python: re.escape("def daily(") == "def\\ daily\(" — the corpus
         // byte-identical regen convention (mosaic dogfood, 2026-08-27)
-        assert_eq!(anchor_pattern("def daily("), "^[ \\t]*def\\ daily\\([ \\t]*$");
-        assert_eq!(anchor_pattern("  async  def x()  "), "^[ \\t]*async\\ \\ def\\ x\\(\\)[ \\t]*$");
+        assert_eq!(
+            anchor_pattern("def daily("),
+            "^[ \\t]*def\\ daily\\([ \\t]*$"
+        );
+        assert_eq!(
+            anchor_pattern("  async  def x()  "),
+            "^[ \\t]*async\\ \\ def\\ x\\(\\)[ \\t]*$"
+        );
         assert_eq!(anchor_pattern("plain"), "^[ \\t]*plain[ \\t]*$");
     }
 }
@@ -86,7 +95,7 @@ pub fn connect_ro(db_path: &Path) -> Result<Connection, String> {
         |_| {
             format!(
                 "{} 有 {} 但 mode=ro 開啟失敗（writer crash 後 hot-WAL-無-shm）——先 \
-                 `uvx code-review-graph status` 或 build 後重跑",
+                 `code-reality graph_db build --repo` 重跑（或移除殘留 -wal/-shm）",
                 name,
                 wal.file_name()
                     .map(|n| n.to_string_lossy().into_owned())

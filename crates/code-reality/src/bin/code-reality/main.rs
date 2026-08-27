@@ -31,7 +31,6 @@ fn route(argv: &[&str]) -> code_reality::ToolOutput {
         Some(&"snapshot") => code_reality::snapshot::run(argv),
         Some(&"transition") => code_reality::transition::run(argv),
         Some(&"graph_audit") => code_reality::graph_audit::run(argv),
-        Some(&"graph_csv") => code_reality::graph_csv::run(argv),
         Some(&"hub_refs") => code_reality::hub_refs::run(argv),
         Some(&"tour_manifest") => code_reality::tour_manifest::run(argv),
         Some(&"chain_tour") => code_reality::chain_tour::run(argv),
@@ -59,12 +58,11 @@ fn route(argv: &[&str]) -> code_reality::ToolOutput {
     }
 }
 
-const SUBCOMMANDS: [&str; 16] = [
+const SUBCOMMANDS: [&str; 15] = [
     "scip_refs",
     "snapshot",
     "transition",
     "graph_audit",
-    "graph_csv",
     "hub_refs",
     "boundary",
     "boundary_build",

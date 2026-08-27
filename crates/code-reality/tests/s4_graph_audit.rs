@@ -3,8 +3,6 @@
 //! injected ra_lookup, audit_targets double-key attribution on both
 //! faces, and the CLI env/usage/audit-guard families.
 
-mod crg_fixture;
-
 use code_reality::cache::{audit_targets, build_db};
 use code_reality::cli;
 use code_reality::graph_audit::{
@@ -162,16 +160,16 @@ fn ordered_counter_bump_semantics() {
 fn db_functions_kind_includes_test_and_resolves_path() {
     let tmp = tempfile::tempdir().unwrap();
     let repo = std::fs::canonicalize(tmp.path()).unwrap();
-    let db = repo.join(".code-review-graph").join("graph.db");
+    let db = repo.join(".code-reality").join("graph.db");
     std::fs::create_dir_all(db.parent().unwrap()).unwrap();
     let src = write_repo_file(&repo, "src/a.rs", "fn x() {}\n");
-    let mut spec = crg_fixture::CrgDbSpec::default();
+    let mut spec = graph_db_fixture::CrgDbSpec::default();
     for (kind, name, qname) in [
         ("Function", "x", "src/a.rs::x"),
         ("Test", "t_x", "src/a.rs::t_x"),
         ("Class", "x", "src/a.rs::X.x"), // wrong kind: not counted
     ] {
-        spec.nodes.push(crg_fixture::NodeSeed {
+        spec.nodes.push(graph_db_fixture::NodeSeed {
             name: name.into(),
             parent: None,
             qname: qname.into(),
@@ -179,7 +177,7 @@ fn db_functions_kind_includes_test_and_resolves_path() {
         });
         spec.node_attrs.push((
             qname.to_string(),
-            crg_fixture::NodeAttr {
+            graph_db_fixture::NodeAttr {
                 kind,
                 language: "rust",
                 is_test: 0,
@@ -188,7 +186,7 @@ fn db_functions_kind_includes_test_and_resolves_path() {
         ));
     }
     // add a second Test with the same name for the count
-    spec.nodes.push(crg_fixture::NodeSeed {
+    spec.nodes.push(graph_db_fixture::NodeSeed {
         name: "t_x".into(),
         parent: None,
         qname: "src/a.rs::t_x2".into(),
@@ -196,14 +194,14 @@ fn db_functions_kind_includes_test_and_resolves_path() {
     });
     spec.node_attrs.push((
         "src/a.rs::t_x2".into(),
-        crg_fixture::NodeAttr {
+        graph_db_fixture::NodeAttr {
             kind: "Test",
             language: "rust",
             is_test: 1,
             community_id: None,
         },
     ));
-    crg_fixture::make_crg_db(&db, &spec).unwrap();
+    graph_db_fixture::make_crg_db(&db, &spec).unwrap();
     let conn = code_reality::common::connect_ro(&db).unwrap();
     let counts = db_functions(&conn, &src);
     assert_eq!(counts.get("x"), Some(&1));
@@ -240,10 +238,10 @@ impl U for T {
 }
 ";
     let src = write_repo_file(&repo, "src/k.rs", body);
-    let db = repo.join(".code-review-graph").join("graph.db");
+    let db = repo.join(".code-reality").join("graph.db");
     std::fs::create_dir_all(db.parent().unwrap()).unwrap();
-    let mut spec = crg_fixture::CrgDbSpec::default();
-    spec.nodes.push(crg_fixture::NodeSeed {
+    let mut spec = graph_db_fixture::CrgDbSpec::default();
+    spec.nodes.push(graph_db_fixture::NodeSeed {
         name: "open".into(),
         parent: None,
         qname: "src/k.rs::T.open".into(),
@@ -251,14 +249,14 @@ impl U for T {
     });
     spec.node_attrs.push((
         "src/k.rs::T.open".into(),
-        crg_fixture::NodeAttr {
+        graph_db_fixture::NodeAttr {
             kind: "Function",
             language: "rust",
             is_test: 0,
             community_id: None,
         },
     ));
-    crg_fixture::make_crg_db(&db, &spec).unwrap();
+    graph_db_fixture::make_crg_db(&db, &spec).unwrap();
 
     let lookup = lookup_from(HashMap::from([("open".to_string(), 2usize)]));
     let (risk, audited, missing, errors, total_ra, warns) =
@@ -303,9 +301,9 @@ impl U for T {
 ";
     let _ = write_repo_file(&repo, "src/risky.rs", risky);
     let _ = write_repo_file(&repo, "src/clean.rs", "fn alone() {}\n");
-    let db = repo.join(".code-review-graph").join("graph.db");
+    let db = repo.join(".code-reality").join("graph.db");
     std::fs::create_dir_all(db.parent().unwrap()).unwrap();
-    crg_fixture::make_crg_db(&db, &crg_fixture::CrgDbSpec::default()).unwrap();
+    graph_db_fixture::make_crg_db(&db, &graph_db_fixture::CrgDbSpec::default()).unwrap();
     let lookup = lookup_from(HashMap::new());
     let (_, audited, _, _, _, _) = audit(&repo, &db, false, Some(&lookup)).unwrap();
     assert_eq!(audited, 1); // risk-file scope only
@@ -412,9 +410,9 @@ fn cli_help_and_usage_family() {
     assert!(out
         .stdout
         .starts_with("usage: graph_audit [-h] --repo REPO [--all] [--json] [--graph GRAPH]\n"));
-    assert!(out.stdout.contains(
-        "  --graph GRAPH  覆寫 graph.db 路徑（預設 <repo>/.code-review-graph/graph.db）\n"
-    ));
+    assert!(out
+        .stdout
+        .contains("  --graph GRAPH  覆寫 graph.db 路徑（預設 <repo>/.code-reality/graph.db）\n"));
     let out = run_cli(&["graph_audit"]);
     assert_eq!(out.exit_code, 2);
     assert!(out.stdout.is_empty());
@@ -476,5 +474,103 @@ fn scip_audit_guard_family_before_index_resolution() {
         out.stderr.contains("--audit 與查詢字串互斥"),
         "{}",
         out.stderr
+    );
+}
+
+// ---------- S1 cutover: db_functions provenance-aware dedupe ----------
+
+mod graph_db_fixture;
+
+#[test]
+fn db_functions_dedupes_synthesized_shadow_rows() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path().join("repo");
+    std::fs::create_dir_all(repo.join(".code-reality")).unwrap();
+    let file_a = repo.join("src/a.rs");
+    let file_b = repo.join("src/b.rs");
+    let spec = graph_db_fixture::CrgDbSpec {
+        nodes: vec![
+            // producer Function for shared_fn in a.rs
+            graph_db_fixture::NodeSeed {
+                name: "shared_fn".into(),
+                qname: "prod::shared_fn".into(),
+                file_path: file_a.display().to_string(),
+                parent: None,
+            },
+            // synthesized Test row for the SAME (name, file) — the
+            // legacy import always synthesizes Test nodes; it must not
+            // double-count against the producer row
+            graph_db_fixture::NodeSeed {
+                name: "shared_fn".into(),
+                qname: "synth::shared_fn".into(),
+                file_path: file_a.display().to_string(),
+                parent: None,
+            },
+            // synthesized Test in a file the producer never covered —
+            // the only record there, must count
+            graph_db_fixture::NodeSeed {
+                name: "legacy_only".into(),
+                qname: "synth::legacy_only".into(),
+                file_path: file_b.display().to_string(),
+                parent: None,
+            },
+        ],
+        node_lines: vec![
+            ("prod::shared_fn".into(), 3),
+            ("synth::shared_fn".into(), 3),
+            ("synth::legacy_only".into(), 7),
+        ],
+        node_attrs: vec![
+            (
+                "prod::shared_fn".into(),
+                graph_db_fixture::NodeAttr {
+                    kind: "Function",
+                    language: "Rust",
+                    is_test: 1,
+                    community_id: None,
+                },
+            ),
+            (
+                "synth::shared_fn".into(),
+                graph_db_fixture::NodeAttr {
+                    kind: "Test",
+                    language: "Rust",
+                    is_test: 1,
+                    community_id: None,
+                },
+            ),
+            (
+                "synth::legacy_only".into(),
+                graph_db_fixture::NodeAttr {
+                    kind: "Test",
+                    language: "Rust",
+                    is_test: 1,
+                    community_id: None,
+                },
+            ),
+        ],
+        node_prov: vec![
+            ("prod::shared_fn".into(), "scip"),
+            ("synth::shared_fn".into(), "treesitter-legacy"),
+            ("synth::legacy_only".into(), "treesitter-legacy"),
+        ],
+        ..Default::default()
+    };
+    let db = repo.join(".code-reality/graph.db");
+    graph_db_fixture::make_crg_db(&db, &spec).unwrap();
+    let conn =
+        rusqlite::Connection::open_with_flags(&db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .unwrap();
+    let counts_a = db_functions(&conn, &file_a);
+    assert_eq!(
+        counts_a.get("shared_fn"),
+        Some(&1),
+        "shadowed synth row deduped"
+    );
+    let counts_b = db_functions(&conn, &file_b);
+    assert_eq!(
+        counts_b.get("legacy_only"),
+        Some(&1),
+        "unshadowed synth counts"
     );
 }

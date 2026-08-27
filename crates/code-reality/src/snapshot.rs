@@ -7,8 +7,7 @@
 
 use crate::argparse::{parse, FlagSpec, Kind, Outcome, ToolSpec};
 use crate::common::{
-    assert_db_unchanged, connect_ro, db_mtime_ns, graph_db_path, make_meta, repo_relative,
-    to_json_indent1,
+    assert_db_unchanged, connect_ro, db_mtime_ns, make_meta, repo_relative, to_json_indent1,
 };
 use crate::profile::{is_excluded, load_profile, module_of, Profile};
 use crate::ToolOutput;
@@ -51,7 +50,7 @@ const HELP: &str = concat!(
     "\n",
     "options:\n",
     "  -h, --help         show this help message and exit\n",
-    "  --repo REPO        repo 根（含 .code-review-graph/）\n",
+    "  --repo REPO        repo 根（含 .code-reality/graph.db）\n",
     "  --label LABEL      EP/弧標籤（記入 _meta）\n",
     "  --out-dir OUT_DIR\n",
 );
@@ -66,19 +65,49 @@ fn repo_rel_qualified(qualified: &str, repo_root: &Path) -> Option<String> {
     repo_relative(qualified.split("::").next().unwrap_or(qualified), repo_root)
 }
 
+/// Endpoint symbol → repo-relative file. Producer SCIP symbols and
+/// synthesized qname symbols alike resolve through the nodes table
+/// (S3 cutover — the `::`-split only remains as the fallback for
+/// dangling legacy endpoints with no node row).
+fn endpoint_rel(
+    symbol: &str,
+    symbol_files: &HashMap<String, String>,
+    repo_root: &Path,
+) -> Option<String> {
+    if let Some(fp) = symbol_files.get(symbol) {
+        return repo_relative(fp, repo_root);
+    }
+    repo_rel_qualified(symbol, repo_root)
+}
+
 /// Full module-edge export (`snapshot.py:53-86`): `files` = the files
 /// participating in edges (same-module ends still counted — `files.update`
 /// happens before the `src_mod != dst_mod` check); excluded/repo-outside
-/// skipped; sorted output; raw count over ALL edge kinds.
+/// skipped; sorted output; raw count over ALL edge kinds (the self-owned
+/// db includes producer REFERENCES edges — a documented, expected
+/// divergence from the legacy CRG-era count).
 pub fn export_module_edges(
     conn: &Connection,
     repo_root: &Path,
     profile: Option<&Profile>,
 ) -> Result<EdgeExport, String> {
     let repo_root = crate::common::resolve(repo_root);
+    let mut symbol_files: HashMap<String, String> = HashMap::new();
+    {
+        let mut stmt = conn
+            .prepare("SELECT symbol, file_path FROM nodes")
+            .map_err(|e| format!("nodes 查詢失敗：{}", e))?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+            .map_err(|e| format!("nodes 查詢失敗：{}", e))?;
+        for row in rows {
+            let (s, f) = row.map_err(|e| format!("nodes 讀取失敗：{}", e))?;
+            symbol_files.insert(s, f);
+        }
+    }
     let mut edges: BTreeSet<(String, String, String)> = BTreeSet::new();
     let mut files: BTreeSet<String> = BTreeSet::new();
-    let sql = "SELECT kind, source_qualified, target_qualified FROM edges WHERE kind IN (?1,?2,?3)";
+    let sql = "SELECT kind, caller_symbol, callee_symbol FROM edges WHERE kind IN (?1,?2,?3)";
     let kinds = crate::common::EDGE_KINDS;
     let mut stmt = conn
         .prepare(sql)
@@ -95,8 +124,8 @@ pub fn export_module_edges(
     for row in rows {
         let (kind, src_q, dst_q) = row.map_err(|e| format!("edges 讀取失敗：{}", e))?;
         let (Some(src_rel), Some(dst_rel)) = (
-            repo_rel_qualified(&src_q, &repo_root),
-            repo_rel_qualified(&dst_q, &repo_root),
+            endpoint_rel(&src_q, &symbol_files, &repo_root),
+            endpoint_rel(&dst_q, &symbol_files, &repo_root),
         ) else {
             continue;
         };
@@ -212,7 +241,7 @@ fn load_metadata(db_path: &Path) -> Result<HashMap<String, String>, String> {
             Ok(pairs) => pairs.into_iter().collect::<HashMap<_, _>>(),
             Err(e) => {
                 return Err(format!(
-                    "非 CRG graph.db（讀 metadata 失敗：{e}）：{}——先跑 `uvx code-review-graph build`",
+                    "graph.db metadata 讀取失敗（{e}）：{}——重跑 `code-reality graph_db build --repo <repo>`",
                     db_path.display()
                 ));
             }
@@ -234,7 +263,7 @@ fn load_metadata(db_path: &Path) -> Result<HashMap<String, String>, String> {
         }
     }
     Err(format!(
-        "CRG metadata 不完整（build 進行中？）：{}——稍後重跑或 uvx code-review-graph build",
+        "metadata 不完整（build 進行中？）：{}——稍後重跑或 `code-reality graph_db build --repo <repo>`",
         db_path.display()
     ))
 }
@@ -305,13 +334,15 @@ impl Snapshot {
 
 pub fn build_snapshot(repo_root: &Path, label: Option<&str>) -> Result<Snapshot, String> {
     let repo_root = crate::common::resolve(repo_root);
-    let db_path = graph_db_path(&repo_root);
-    if !db_path.exists() {
-        return Err(format!(
-            "graph.db 不存在：{}——先跑 `uvx code-review-graph build`（SM-11）",
-            db_path.display()
-        ));
+    let (db_path, warns) = crate::graph_db::consumer_db(&repo_root);
+    for w in warns {
+        eprintln!("{w}");
     }
+    let Some(db_path) = db_path else {
+        return Err(
+            "graph.db 不存在（.code-reality/graph.db）——先跑 `code-reality graph_db build --repo <repo>`".to_string(),
+        );
+    };
     assert_git_root(&repo_root)?;
 
     let meta_db = load_metadata(&db_path)?;
@@ -425,7 +456,7 @@ pub fn run(argv: &[&str]) -> ToolOutput {
     let mut stdout = String::new();
     if let Some(stale) = snap.meta.get("stale").and_then(Value::as_str) {
         stdout.push_str(&format!(
-            "[WARN] CRG graph stale: {stale}——先 uvx code-review-graph build 再 snapshot\n"
+            "[WARN] graph stale: {stale}——先 `code-reality graph_db build --repo <repo>` 再 snapshot\n"
         ));
     }
     if snap.files.is_empty() {

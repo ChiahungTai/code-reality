@@ -37,7 +37,6 @@ fn repo_fixture(tag: &str) -> (PathBuf, PathBuf) {
     let tmp = tempfile::tempdir().unwrap().keep();
     let repo = std::fs::canonicalize(&tmp).unwrap().join(tag);
     std::fs::create_dir_all(repo.join("pkg")).unwrap();
-    std::fs::create_dir_all(repo.join(".code-review-graph")).unwrap();
     std::fs::write(
         repo.join(".code-reality.toml"),
         "[[module]]\nprefix = \"pkg/\"\n",
@@ -119,9 +118,10 @@ fn build_tours_skips_external_and_anchors() {
 #[test]
 fn build_tours_with_graph_reanchor() {
     let (repo, chain) = repo_fixture("graph");
-    let db = repo.join(".code-review-graph").join("graph.db");
+    let db = repo.join(".code-reality").join("graph.db");
+    std::fs::create_dir_all(db.parent().unwrap()).unwrap();
     let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
-    let mut spec = crg_fixture::CrgDbSpec::default();
+    let mut spec = graph_db_fixture::CrgDbSpec::default();
     // kernel at graph line 1 (same), boot at graph line 9 (moved +4)
     for (name, qname, line) in [
         ("kernel", "pkg/a.py::kernel", 1),
@@ -133,7 +133,7 @@ fn build_tours_with_graph_reanchor() {
         } else {
             abs("pkg/a.py")
         };
-        spec.nodes.push(crg_fixture::NodeSeed {
+        spec.nodes.push(graph_db_fixture::NodeSeed {
             name: name.into(),
             parent: None,
             qname: qname.into(),
@@ -141,7 +141,7 @@ fn build_tours_with_graph_reanchor() {
         });
         spec.node_attrs.push((
             qname.into(),
-            crg_fixture::NodeAttr {
+            graph_db_fixture::NodeAttr {
                 kind: "Function",
                 language: "python",
                 is_test: 0,
@@ -150,7 +150,7 @@ fn build_tours_with_graph_reanchor() {
         ));
         spec.node_lines.push((qname.into(), line));
     }
-    crg_fixture::make_crg_db(&db, &spec).unwrap();
+    graph_db_fixture::make_crg_db(&db, &spec).unwrap();
     let st = build_tours(&chain, &repo, Some(&db)).unwrap();
     let g0 = st.g_counts.get("same").copied().unwrap_or(0);
     let g1 = st.g_counts.get("moved").copied().unwrap_or(0);
@@ -381,5 +381,122 @@ fn regen_refreshes_pattern_when_same_line_content_changes() {
     assert!(
         !pat2.contains("kernel\\()"),
         "stale shape must be gone: {pat2}"
+    );
+}
+
+// ---------- S1 cutover: default db = self-owned .code-reality ----------
+
+mod graph_db_fixture;
+
+use code_reality::chain_tour::GraphAnchor;
+use code_reality::graph_db;
+
+fn owned_db(repo: &std::path::Path) -> std::path::PathBuf {
+    repo.join(".code-reality/graph.db")
+}
+
+#[test]
+fn consumer_db_defaults_to_self_owned_with_import_guidance() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo_unresolved = tmp.path().join("repo");
+    std::fs::create_dir_all(repo_unresolved.join(".code-reality")).unwrap();
+    let repo = std::fs::canonicalize(&repo_unresolved).unwrap();
+    graph_db_fixture::make_crg_db(
+        &owned_db(&repo),
+        &graph_db_fixture::CrgDbSpec {
+            nodes: vec![graph_db_fixture::NodeSeed {
+                name: "target".into(),
+                qname: "s1::target".into(),
+                file_path: format!("{}/src/a.rs", repo.display()),
+                parent: None,
+            }],
+            node_lines: vec![("s1::target".into(), 4)],
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    // case 1: owned db present, no legacy db -> db + no warns
+    let (db, warns) = graph_db::consumer_db(&repo);
+    assert_eq!(db, Some(owned_db(&repo)));
+    assert!(warns.is_empty(), "no legacy db in repo: {warns:?}");
+
+    // case 2: legacy db present but owned db lacks treesitter-legacy rows
+    // (build ran, import didn't) -> db + SM-7 guidance warn
+    let legacy_dir = repo.join(".code-review-graph");
+    std::fs::create_dir_all(&legacy_dir).unwrap();
+    crg_fixture::make_crg_db(
+        &legacy_dir.join("graph.db"),
+        &crg_fixture::CrgDbSpec::default(),
+    )
+    .unwrap();
+    let (db, warns) = graph_db::consumer_db(&repo);
+    assert_eq!(db, Some(owned_db(&repo)));
+    assert!(
+        warns.iter().any(|w| w.contains("import_legacy")),
+        "SM-7 warn guides import_legacy: {warns:?}"
+    );
+
+    // case 3: neither db -> None + missing-db warn with build guidance
+    let repo2 = tmp.path().join("repo2");
+    std::fs::create_dir_all(&repo2).unwrap();
+    let (db, warns) = graph_db::consumer_db(&repo2);
+    assert_eq!(db, None);
+    assert!(
+        warns.iter().any(|w| w.contains("graph_db build")),
+        "missing-db warn guides build: {warns:?}"
+    );
+}
+
+#[test]
+fn anchor_tiebreak_is_deterministic_on_wider_candidate_set() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo_unresolved = tmp.path().join("repo");
+    std::fs::create_dir_all(repo_unresolved.join(".code-reality")).unwrap();
+    let repo = std::fs::canonicalize(&repo_unresolved).unwrap();
+    let file = format!("{}/src/a.rs", repo.display());
+    // two same-name nodes equidistant from line 10 (8 and 12) — the new
+    // universe allows (name, file) duplicates; the pick must not depend
+    // on rowid
+    graph_db_fixture::make_crg_db(
+        &owned_db(&repo),
+        &graph_db_fixture::CrgDbSpec {
+            nodes: vec![
+                graph_db_fixture::NodeSeed {
+                    name: "dup".into(),
+                    qname: "s1::dup@12".into(),
+                    file_path: file.clone(),
+                    parent: None,
+                },
+                graph_db_fixture::NodeSeed {
+                    name: "dup".into(),
+                    qname: "s1::dup@8".into(),
+                    file_path: file.clone(),
+                    parent: None,
+                },
+            ],
+            node_lines: vec![("s1::dup@12".into(), 12), ("s1::dup@8".into(), 8)],
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let anchor = GraphAnchor::new(&owned_db(&repo), &repo).unwrap();
+    let hit = anchor.anchor(&repo.join("src/a.rs"), 10, "dup", "exact");
+    assert_eq!(hit.g_line, Some(8), "tie broken by lower line_start");
+}
+
+#[test]
+fn graph_anchor_rejects_legacy_schema_loudly() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path().join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    let legacy = repo.join("legacy.db");
+    crg_fixture::make_crg_db(&legacy, &crg_fixture::CrgDbSpec::default()).unwrap();
+    let err = match GraphAnchor::new(&legacy, &repo) {
+        Err(e) => e,
+        Ok(_) => panic!("legacy schema must be rejected"),
+    };
+    assert!(
+        err.contains("非自有格式"),
+        "legacy-schema --graph must fail loud, got: {err}"
     );
 }

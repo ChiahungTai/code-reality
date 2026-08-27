@@ -28,19 +28,18 @@ Responses embed `[SRC]` provenance lines (index version/commit) and a
 - `refs`/`callers`/`closure`/`audit` need a SCIP index:
   `rust-analyzer scip <repo>` output saved under
   `~/.mosaic/code-reality/scip/<repo-basename>/index.scip`
-- `audit` still reads the legacy-schema db at
-  `<repo>/.code-review-graph/graph.db` (frozen reader; migration to the
-  self-owned `.code-reality/graph.db` is a scoped follow-up). That file is
-  a CRG-era artifact — do NOT try to regenerate it with retired CRG
-  tooling (`uvx code-review-graph build` is dead); repos without it have
-  no audit face until the migration lands
+- `audit` reads the self-owned db at
+  `<repo>/.code-reality/graph.db` — produce it with
+  `code-reality graph_db build --repo <repo>`, then
+  `graph_db import_legacy --repo <repo>` when a CRG-era
+  `.code-review-graph/graph.db` exists (one-shot import source only)
 - Optional `.code-reality.toml` at repo root declares module rules,
   exclusions, claims prefixes, scan roots — repo facts belong to the repo.
 
 ## CLI surface (broader)
 
 The MCP face covers the SCIP family. The same binary carries the full
-toolchain: `code-reality <scip_refs|snapshot|transition|graph_audit|graph_csv|
+toolchain: `code-reality <scip_refs|snapshot|transition|graph_audit|
 hub_refs|boundary|boundary_build|chain_tour|delta_tour|
 tour_manifest|tour_validate|tour_upgrade|runtime_edges|
 graph_query|graph_db> --repo <root>`. 

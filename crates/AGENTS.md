@@ -27,8 +27,8 @@ tests are the sole gate face.
   interop, stale guards, face selection with protobuf fallback, audit
   target double-key attribution) / `fndefs` (adapter — fn-span sidecar
   `*.fndefs.db`, the sqlite carrier for callers/closure spans; ladder
-  mirrors cache) / `snapshot` / `transition` / `graph_audit` / `graph_csv`
-  (graph family — one module per frozen Python tool; cargo-test gated) /
+  mirrors cache) / `snapshot` / `transition` / `graph_audit` (graph
+  family — one module per frozen Python tool; cargo-test gated) /
   `scip_edges` (v1+ derivation lib — SCIP reference edges, spans-based
   attribution; CLI/inject/sidecar faces retired at v1+ S4, the module
   stays as the derivation oracle `graph_db` tests reconcile against) /
@@ -37,9 +37,12 @@ tests are the sole gate face.
   where available, nearest-preceding on the span-less LSP face] into
   `<repo>/.code-reality/graph.db` [symbol-keyed nodes, one-row-per-site
   edges, derived flows/communities materialized, FTS5, temp+rename
-  atomicity] and `import_legacy` [merge onto producer symbols where
+  atomicity], `import_legacy` [merge onto producer symbols where
   (file, name) resolves uniquely, qname-minted symbols otherwise,
-  dangling endpoints passthrough — legacy db read-only]) /
+  dangling endpoints passthrough — legacy db read-only], and
+  `ensure_indexes` [idempotent IF NOT EXISTS: engine read-chain indexes
+  (edges caller/callee+kind, flow_memberships node_id, nodes anchor
+  name/file/line) for dbs built before that DDL revision]) /
   `graph_engine` (v1+ engine parity — the ten live ops read-only over
   the self-owned db: symbol-keyed loaders with rowid ordering parity,
   hub/bridge (sampled Brandes, own LCG — statistical parity above 5k
@@ -57,23 +60,24 @@ tests are the sole gate face.
   exit_code}` data — the lib never prints and never exits; the bin owns
   printing/exiting (compile-time premise of CLI/MCP single-backend
   drift-freedom).
-- **Exit semantics (D3, per-tool — not uniform)**: snapshot/transition/
-  graph_csv crashes = exit 1 + empty stdout (uncaught-Python alignment);
+- **Exit semantics (D3, per-tool — not uniform)**: snapshot/transition
+  crashes = exit 1 + empty stdout (uncaught-Python alignment);
   graph_audit env errors and argparse usage errors = exit 2; `--json`
   faces print with a trailing newline (Python `print`).
 - **Subcommand names mirror Python module names verbatim** (`scip_refs`,
-  `snapshot`, `transition`, `graph_audit`, `graph_csv`; not kebab-case) —
+  `snapshot`, `transition`, `graph_audit`; not kebab-case) —
   relay minimal-diff contract.
 - **Schema interop**: the derived db keeps the frozen three-table DDL +
   `SCHEMA_VERSION`; extensions (fn_defs, R3) live in separate sidecars —
   never in the shared db (guard would ping-pong rebuilds). The legacy
   `.code-review-graph/` db is read-only everywhere (`connect_ro`) — it
-  is the parity oracle/rollback copy; the write face is `graph_db`
-  (`.code-reality/graph.db`). Engine tests use
+  is only ever an `import_legacy` source. All consumer modules
+  (audit/chain_tour/hub_refs/hazard/snapshot) read the self-owned
+  `.code-reality/graph.db` via `graph_db::consumer_db` (missing-db and
+  un-imported-legacy WARN guidance live there). Tests use
   `tests/graph_db_fixture.rs` (self-owned schema, symbol==qname
-  universe); the legacy-schema consumer modules keep
-  `tests/crg_fixture.rs` (production-shape CRG DDL) until their
-  migration EP.
+  universe); `tests/crg_fixture.rs` (production-shape CRG DDL) feeds
+  the import_legacy/ensure test universe only.
 - **Parity harness**: `tests/parity/` (pytest, `parity` marker) drives
   both implementations on identical inputs and `cmp`s stdout + exit
   codes; mutating drills hit fixture copies only. Environment-absent
