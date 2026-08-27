@@ -299,3 +299,105 @@ fn upgrade_dry_run_and_apply() {
     assert!(manifest.contains("[tour.\"01.tour\"]"), "{manifest}");
     assert!(manifest.contains("generator = \"manual\""));
 }
+
+// ---------- tour_validate acceptance faces (mosaic relay 2026-08-27) ----------
+// Post-R7 the parity harness is retired; cargo synthetic-repo tests are
+// the sole gate face. These three pin the 2026-08-26 relative-path bug
+// class (glob root silently finding 0 tours) that shipped because no
+// face existed.
+
+fn clean_corpus(repo: &Path) {
+    write_tour(
+        repo,
+        ".tours/arch/alpha/01.tour",
+        "01 - Alpha",
+        &[step("src/a.py", 1, "entry point")],
+    );
+    write_tour(
+        repo,
+        ".tours/arch/alpha/02.tour",
+        "02 - Second",
+        &[step("src/a.py", 2, "next")],
+    );
+    std::fs::create_dir_all(repo.join("src")).unwrap();
+    std::fs::write(repo.join("src/a.py"), "fn one() {}\nfn two() {}\n").unwrap();
+}
+
+#[test]
+fn validate_absolute_tours_dir_matches_relative() {
+    let repo = repo_fixture("abs-rel");
+    clean_corpus(&repo);
+    let rel = tour_validate::validate(&repo, Path::new(".tours"), false);
+    let abs = tour_validate::validate(
+        &repo,
+        &std::fs::canonicalize(repo.join(".tours")).unwrap(),
+        false,
+    );
+    assert_eq!(rel.exit_code, 0, "{}{}", rel.stdout, rel.stderr);
+    assert_eq!(abs.exit_code, 0, "{}{}", abs.stdout, abs.stderr);
+    assert_eq!(
+        rel.stdout, abs.stdout,
+        "relative and absolute --tours-dir must yield identical output"
+    );
+    assert!(rel.stdout.contains("fails=0"), "{}", rel.stdout);
+    assert!(
+        !rel.stdout.contains("無 .tour"),
+        "glob root regression: {}",
+        rel.stdout
+    );
+}
+
+#[test]
+fn validate_happy_path_fails_zero_nonzero_tours() {
+    let repo = repo_fixture("happy");
+    clean_corpus(&repo);
+    let out = tour_validate::validate(&repo, Path::new(".tours"), false);
+    assert_eq!(out.exit_code, 0, "{}{}", out.stdout, out.stderr);
+    assert!(out.stdout.contains("2 tours"), "{}", out.stdout);
+    assert!(out.stdout.contains("fails=0"), "{}", out.stdout);
+}
+
+#[test]
+fn validate_manifest_mode_fails_zero() {
+    let repo = repo_fixture("manifest-face");
+    clean_corpus(&repo);
+    // manifest aligned with the corpus files
+    let mpath = repo.join(".tours/manifest.toml");
+    let mut m = tour_manifest::Manifest::default();
+    tour_manifest::upsert(
+        &mut m,
+        "arch/alpha/01.tour",
+        "chain_tour",
+        &["md/a.md".into()],
+        "aaa",
+    );
+    tour_manifest::upsert(
+        &mut m,
+        "arch/alpha/02.tour",
+        "chain_tour",
+        &["md/a.md".into()],
+        "aaa",
+    );
+    std::fs::create_dir_all(repo.join("md")).unwrap();
+    std::fs::write(repo.join("md/a.md"), "# a\n").unwrap();
+    tour_manifest::dump(&mpath, &m).unwrap();
+    let out = tour_validate::validate(&repo, Path::new(".tours"), true);
+    assert_eq!(out.exit_code, 0, "{}{}", out.stdout, out.stderr);
+    assert!(out.stdout.contains("fails=0"), "{}", out.stdout);
+    // and a manifest pointing at a missing file must fail loud
+    let mut m2 = tour_manifest::Manifest::default();
+    tour_manifest::upsert(
+        &mut m2,
+        "arch/alpha/gone.tour",
+        "chain_tour",
+        &["md/a.md".into()],
+        "aaa",
+    );
+    tour_manifest::dump(&mpath, &m2).unwrap();
+    let out2 = tour_validate::validate(&repo, Path::new(".tours"), true);
+    assert!(
+        out2.stdout.contains("FAIL") || out2.exit_code != 0,
+        "{}",
+        out2.stdout
+    );
+}
