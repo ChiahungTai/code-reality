@@ -166,8 +166,10 @@ S1 段內定）。UC 引用：支撐兩個 📋 能力的驗收。
 - 依賴錨點：cache 三表 schema → `crates/code-reality/src/cache.rs`；
   dogfood cache → `~/.mosaic/code-reality/scip/mosaic_alpha_offline_backtesting/index.scip.db`
 - **R2-7 定案**：golden corpus baseline 存 **sidecar**（`~/.mosaic` 同域，
-  不入 repo——640,976 sites 體積），格式凍結點（per-symbol references
-  multiset＋defs 清單的序列化形態）記入結算段
+  不入 repo——640,976 sites 體積），格式凍結宣告：baseline 序列化形態
+  ＝ `scripts/golden_corpus.py` extract 輸出的 JSON 欄位集
+  （db/meta/defs/workspace_refs/dangling），reconcile 報告欄位集同為
+  S3/S5 的消費口徑——兩者變更須同步凍結宣告（P3）
 - **R2-8**：對帳腳本入本 repo `scripts/`（工具命名＋`uv run` 執行；
   public repo 英文內容約束）
 
@@ -204,7 +206,8 @@ UC 引用：occurrence producer 的前置。
   跳過＋續行＋結尾 loud 清單）。patch 檔：
   `scripts/scip-python-mosaic.patch`（vs v0.6.6 tag）；上游 issue 草稿：
   `scripts/scip-python-mosaic-upstream-issue.md`
-- **全量時長實測：24.9s**（≤10min 門檻的 1/24；vs lsp_harvest 6.7h ≈ 960×）
+- **全量時長實測：26.1s**（F5 修正後最終 run；≤10min 門檻的 1/23；
+  vs lsp_harvest 6.7h ≈ 930×）
 - **partial index：11/552 檔 skipped**（loud 列冊；缺口 defs 集中於此）
 - **R1 對帳（name-normalized def 覆蓋）**：mosaic_alpha/ 側
   3,511/3,707 = **94.7%**；golden-only 196 高度集中在 skipped 檔

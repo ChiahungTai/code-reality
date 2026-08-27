@@ -60,7 +60,7 @@ def self_check(db_path: str) -> dict:
         expected = {"meta", "occurrences", "symbol_tails"}
         missing = expected - tables
         if missing:
-            raise SystemExit(f"[FAIL] 缺表：{missing}（非 cache 三表 db？）")
+            raise SystemExit(f"[FAIL] missing tables: {missing} (not a cache three-table db?)")
         total = conn.execute("SELECT COUNT(*) FROM occurrences").fetchone()[0]
         n_def_rows = conn.execute(
             "SELECT COUNT(*) FROM occurrences WHERE is_def = 1").fetchone()[0]
@@ -129,14 +129,14 @@ def main() -> None:
 
     if args.self:
         if not args.db:
-            raise SystemExit("[FAIL] --self 需要 --db")
+            raise SystemExit("[FAIL] --self requires --db")
         if args.golden or args.candidate:
-            ap.error("--self 與 --golden/--candidate 互斥")
+            ap.error("--self is mutually exclusive with --golden/--candidate")
         self_check(args.db)
         return
     if args.golden or args.candidate:
         if not (args.golden and args.candidate):
-            ap.error("--golden 與 --candidate 必須成對提供")
+            ap.error("--golden and --candidate must be provided together")
         if not args.db:
             ap.error("需要 --self --db，或 --golden + --candidate")
         data = extract(args.db)
@@ -151,7 +151,7 @@ def main() -> None:
         with open(args.report, "w") as f:
             f.write(out + "\n")
         r, d = report["refs"], report["defs"]
-        print(f"[OK] golden_corpus report → {args.report}：defs "
+        print(f"[OK] golden_corpus report → {args.report}: defs "
               f"{report['candidate']['defs']}/{report['golden']['defs']} "
               f"(coverage {d['coverage']:.1%}, missing {d['missing_count']})；"
               f"refs {r['candidate_total']}/{r['golden_total']} "
