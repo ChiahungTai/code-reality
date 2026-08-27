@@ -28,9 +28,16 @@ Responses embed `[SRC]` provenance lines (index version/commit) and a
 - `refs`/`callers`/`closure`/`audit` need a SCIP index:
   `rust-analyzer scip <repo>` output saved under
   `~/.mosaic/code-reality/scip/<repo-basename>/index.scip`
+- Python repos generate the same slot with the Rust-native pyrefly
+  producer: `cargo run --release -p pyrefly-producer --bin
+  pyrefly-index -- --repo <repo>` (no Node.js, no venv — bundled
+  typeshed), then `code-reality scip_refs --repo <repo> --stamp-meta`
+  and `--build-cache` as usual; the Node scip-python fork is the
+  retained fallback, not the default face
 - `audit` reads the self-owned db at
   `<repo>/.code-reality/graph.db` — produce it with
-  `code-reality graph_db build --repo <repo>`, then
+  `code-reality graph_db build --repo <repo>` (edges split CALLS vs
+  REFERENCES by build-side call detection), then
   `graph_db import_legacy --repo <repo>` when a CRG-era
   `.code-review-graph/graph.db` exists (one-shot import source only)
 - Optional `.code-reality.toml` at repo root declares module rules,

@@ -288,8 +288,49 @@ UC 引用：交付「Occurrence-based Python producer」。
 NT（Rust）不受影響回歸。
 
 **進度（2026-08-28）**：F1 ✅（infer_language 前綴表＋unit test
-`graph_db::tests::python_prefixes_cover_both_python_producers`）。
-F2/F4/F5/SM-8/9/R2-3 未做——接續點見 repo root STATE.md。
+`python_prefixes_cover_all_python_producers`）。
+
+**結算（2026-08-28，pyrefly EP session 吸收完成——平行 session
+靜止後統一收斂）**：
+
+- **F2 ✅（機制修正版）**：原設計「occurrence_roles side table」
+  前提不成立——實測 scip-python index **完全不標記 call**
+  （146,867 non-def occurrences 全 role=ReadAccess/syntax_kind=0，
+  SCIP proto 無 call bit）。吸收後改 **build 端語法推導**：
+  `py_calls.rs`（ruff parse 每個 referenced 檔，收 (rel, line,
+  callee name)）；graph_db build 邊寫入時 row (symbol, rel, line)
+  命中即 CALLS、其餘 REFERENCES。**cache schema 零改動**（R2-1
+  自動滿足，side table 不再需要）；dunder 崩縮邊經 class 段回退
+  （tail `__init__` ↔ 語法端類別名）。lsp golden 面刻意維持
+  REFERENCES-only。mosaic 實測：24,881 邊＝**CALLS 23,359／
+  REFERENCES 1,522**；matcher 歸因：missing pairs 中 **0 筆**存在
+  於 REFERENCES（推導零誤標）
+- **F4 ✅（無需動作）**：pyrefly 面 symbol 帶 outer chain
+  （`make().inner_helper().`），同檔同名碰撞實測 **6/14,400≈
+  0.04%**（條件重定義形態）——L 行號消歧不需要
+- **F5 ✅（由 pyrefly EP S3 吸收執行）**：mosaic slot 新開無
+  evict；offline_backtesting lsp 槽**刻意保留**（golden oracle）；
+  producer 標記＝index tool_info＋producer_of 落 "scip" 接受
+- **SM-8/9 裁決**：預設面（pyrefly）無 venv 依賴（內建
+  typeshed）——SM-8 env assert 對預設面 N/A；partial-index 偵測
+  ＝ skipped_no_ast loud 清單＋byte-determinism 測試（SM-9 預設
+  面等價物已落地）。scip-python fallback 面維持既有 operational
+  注記（exit-code 檢查）
+- **R2-3 ✅（量化＋設計解）**：constructor call 經 dunder 崩縮落
+  `__init__`（fn-shaped 過閘）——pyrefly 面 CALLS 分母**不含**
+  class-symbol 漏損（實測 2,926 constructor pairs 全數進圖）；
+  scip-python fallback 面原狀
+- **S5 ✅（結算＋門檻記錄）**：pair-set（F6 凍結 node-key
+  grain）——producer 20,226 vs legacy resolved 20,977，**交集
+  15,172＝覆蓋 72.3%**；legacy 另有 32,630 pairs 帶 synthesized
+  端點（F6 列冊不入分母）。missing 5,805 歸因：**0 matcher 誤**；
+  673 callee 無 producer def（lexical-vs-semantic 固有差——
+  legacy 字面計、型別解析不至 corpus def）＋404 歸屬面缺口
+  （unresolved calls 4,230／item-level 1,996／unchained 1,277 帳
+  內）。extra 5,054＝語義解析真找到＋legacy qname 合成失敗處。
+  **退場門檻（記錄）**：resolved-legacy 覆蓋 ≥90% 且 missing 全
+  數歸因語義固有類——**未達**，import_legacy 過渡邊維持。報告：
+  sidecar `scip/mosaic_alpha/s5-pairset.json`
 
 ## 段落 S4：harvest 增量模式（過渡，可提前獨立）
 
@@ -348,3 +389,17 @@ mosaic baseline（2026-08-27 實測，入 EP 為判準起點）：CALLS 78,789
 3. instruction 檔：README prerequisites（Python repo 產生流程改寫）、
    crates/AGENTS.md、plugin SKILL
 4. /audit-test
+
+## 收尾結算（2026-08-28 吸收弧）
+
+- Capabilities「Python symbol truth」行已由 pyrefly EP S3 改寫
+  （pyrefly 主面 ✅＋lsp_harvest 🟢 golden-oracle only）——本 EP
+  closing step 1 由彼弧代執行
+- README prerequisites／crates/AGENTS.md 同由彼弧更新（含
+  py_calls 模組描述）
+- plugin SKILL slice＋marketplace 0.1.1：producer 用法入 slice
+  （dist 已重跑）
+- 全量 cargo test exit 0；mosaic 消費端（graph_query/callers/
+  battery）由彼弧 S3 結算
+- EP 歸檔 `_done/`；Kanban 搬 Done；P-4（pyrefly EP）由本弧
+  S5 結算解鎖

@@ -58,8 +58,11 @@ tests are the sole gate face.
   cache [SCIP or LSP harvest; producer-conditional attribution — spans
   where available, nearest-preceding on the span-less LSP face] into
   `<repo>/.code-reality/graph.db` [symbol-keyed nodes, one-row-per-site
-  edges, derived flows/communities materialized, FTS5, temp+rename
-  atomicity], `import_legacy` [merge onto producer symbols where
+  edges with the CALLS-vs-REFERENCES split derived build-side by
+  `py_calls` (ruff parse of referenced files — SCIP carries no call
+  role; dunder-collapsed constructor edges match via the symbol's own
+  class segment), derived flows/communities materialized, FTS5,
+  temp+rename atomicity], `import_legacy` [merge onto producer symbols where
   (file, name) resolves uniquely, qname-minted symbols otherwise,
   dangling endpoints passthrough — legacy db read-only], and
   `ensure_indexes` [idempotent IF NOT EXISTS: engine read-chain indexes

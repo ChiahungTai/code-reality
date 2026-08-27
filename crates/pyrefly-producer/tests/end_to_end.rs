@@ -77,7 +77,10 @@ fn emit_build_cache_and_graph_db_on_fixture() {
     // let regressions pass silently; the line off-by-one escaped that way).
     assert_eq!(report.files, 2, "pkg/core.py + main.py");
     assert_eq!(report.defs, 10, "9 defs in core.py + run() in main.py");
-    assert_eq!(report.references, 3, "Greeter import + top_fn import + CONSTANT load");
+    assert_eq!(
+        report.references, 4,
+        "2 imports + CONSTANT load + top_fn load (handler)"
+    );
     assert_eq!(report.call_sites, 6, "4 in core.py + 2 in main.py");
 
     let loaded = code_reality::engine::load_index(&index_path).expect("parse index");
@@ -176,6 +179,45 @@ fn emit_build_cache_and_graph_db_on_fixture() {
     assert!(built.nodes > 0, "nodes: {}", built.nodes);
     assert!(built.edges > 0, "edges: {}", built.edges);
 
+    // CALLS-vs-REFERENCES split (occurrence EP S3-F2, build-side
+    // derivation): the fixture's 6 resolved call sites become CALLS
+    // edges (2 constructors via the class-segment fallback, greet,
+    // inner_helper, 2× top_fn) and the single `handler = top_fn` load
+    // stays REFERENCES — exact counts, a kind regression must fail.
+    assert_eq!(
+        built.calls_edges, 6,
+        "CALLS edges (the 6 fixture call sites)"
+    );
+    {
+        let conn = rusqlite::Connection::open_with_flags(
+            &built.db,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .expect("open graph.db");
+        let calls: i64 = conn
+            .query_row("SELECT COUNT(*) FROM edges WHERE kind = 'CALLS'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        let refs: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM edges WHERE kind = 'REFERENCES'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let nested_calls: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM edges WHERE kind = 'CALLS' AND callee_symbol LIKE '%inner_helper().'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(calls, 6, "graph CALLS edges");
+        assert_eq!(refs, 1, "graph REFERENCES edges (the handler load)");
+        assert!(nested_calls >= 1, "nested-fn CALLS edge: {nested_calls}");
+    }
+
     let _ = std::fs::remove_dir_all(&repo);
 }
 
@@ -201,6 +243,9 @@ fn emit_is_byte_deterministic() {
     pyrefly_producer::emit(&repo, Some(&b)).expect("emit b");
     let bytes_a = std::fs::read(&a).expect("read a");
     let bytes_b = std::fs::read(&b).expect("read b");
-    assert_eq!(bytes_a, bytes_b, "two emits of the same repo must be byte-identical");
+    assert_eq!(
+        bytes_a, bytes_b,
+        "two emits of the same repo must be byte-identical"
+    );
     let _ = std::fs::remove_dir_all(&repo);
 }

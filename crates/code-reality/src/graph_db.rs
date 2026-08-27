@@ -27,6 +27,7 @@ use crate::callers;
 use crate::common::{resolve, to_json_indent1};
 use crate::engine::{fn_tail_name, ln};
 use crate::fndefs;
+use crate::py_calls;
 use crate::ToolOutput;
 use rusqlite::Connection;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -42,6 +43,9 @@ pub fn db_path(repo_root: &Path) -> PathBuf {
 pub struct BuildReport {
     pub nodes: usize,
     pub edges: usize,
+    /// Edges derived as CALLS by the build-side syntactic split
+    /// (occurrence EP S3-F2); the remainder are REFERENCES.
+    pub calls_edges: usize,
     pub item_level_refs: usize,
     pub self_ref_skipped: usize,
     pub non_fn_defs_skipped: usize,
@@ -246,6 +250,20 @@ fn infer_language(symbol: &str) -> &'static str {
     }
 }
 
+/// Own-class segment of a method-shaped symbol (`…\`mod\`/Class#m().`
+/// → `Class`); None for non-method symbols.
+fn class_segment(symbol: &str) -> Option<&str> {
+    let hash = symbol.rfind('#')?;
+    let head = &symbol[..hash];
+    let start = head.rfind('/').map(|i| i + 1).unwrap_or(0);
+    let name = &head[start..];
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
+}
+
 fn producer_of(face: &Face) -> String {
     match face {
         Face::Sqlite(conn) => {
@@ -437,6 +455,29 @@ pub fn build_from_cache_at(repo: &Path, index_path: &Path) -> Result<BuildReport
     };
     let producer = producer_of(&face);
     let rows = scan(&face)?;
+    // CALLS-vs-REFERENCES split (occurrence EP S3-F2, build-side
+    // mechanism): SCIP has no call role and neither producer marks one —
+    // the build site holds repo root + sources, so it re-derives call
+    // positions syntactically. The lsp-harvest golden face stays
+    // REFERENCES-only (documented; its CALLS story is out of scope).
+    let (call_marks, _call_warns) = if producer == "lsp-harvest" {
+        (py_calls::CallSiteSet::default(), Vec::new())
+    } else {
+        // .py gate: rust-analyzer faces share the "scip" producer class —
+        // without it every Rust repo build would feed .rs sources to the
+        // Python parser (WARN spam + pointless full-tree I/O).
+        let rels: std::collections::BTreeSet<String> = rows
+            .refs
+            .iter()
+            .map(|(_, r, _)| r.clone())
+            .filter(|r| r.ends_with(".py"))
+            .collect();
+        let (marks, warns) = py_calls::call_sites(&repo_abs, &rels);
+        for w in &warns {
+            eprintln!("{w}");
+        }
+        (marks, warns)
+    };
     // attribution: (caller, callee, rel, line) site rows
     let def_symbols: BTreeSet<String> = rows.defs.iter().map(|(s, _, _)| s.clone()).collect();
     let (edge_rows, item_level, self_refs): (Vec<SiteEdge>, usize, usize) =
@@ -541,19 +582,35 @@ pub fn build_from_cache_at(repo: &Path, index_path: &Path) -> Result<BuildReport
         }
     }
     let mut edges = 0usize;
+    let mut calls_edges = 0usize;
     {
         let mut stmt = tx
             .prepare(
                 "INSERT INTO edges \
                  (kind, caller_symbol, callee_symbol, provenance, file_path, line, \
                   confidence, confidence_tier, updated_at) \
-                 VALUES ('REFERENCES', ?1, ?2, ?3, ?4, ?5, 1.0, 'EXTRACTED', ?6)",
+                 VALUES (?7, ?1, ?2, ?3, ?4, ?5, 1.0, 'EXTRACTED', ?6)",
             )
             .map_err(|e| format!("邊寫入準備失敗：{e}"))?;
         for (caller, callee, rel, line) in &edge_rows {
             if !def_symbols.contains(callee) {
                 continue;
             }
+            // S3-F2: a reference row at a (file, line) that carries a
+            // call to the symbol's fn tail is a CALLS edge; the rest stay
+            // REFERENCES. Dunder-collapsed constructor edges carry tail
+            // `__init__` while the syntactic callee is the CLASS name —
+            // fall back to the symbol's own-class segment before `#`.
+            let tail_match = fn_tail_name(callee)
+                .is_some_and(|t| call_marks.contains(&(rel.clone(), *line, t.to_string())));
+            let class_match = class_segment(callee)
+                .is_some_and(|c| call_marks.contains(&(rel.clone(), *line, c.to_string())));
+            let kind = if tail_match || class_match {
+                calls_edges += 1;
+                "CALLS"
+            } else {
+                "REFERENCES"
+            };
             let file_abs = resolve(&repo_abs.join(rel));
             stmt.execute(rusqlite::params![
                 caller,
@@ -561,7 +618,8 @@ pub fn build_from_cache_at(repo: &Path, index_path: &Path) -> Result<BuildReport
                 producer,
                 file_abs.display().to_string(),
                 line,
-                now
+                now,
+                kind
             ])
             .map_err(|e| format!("邊寫入失敗：{e}"))?;
             edges += 1;
@@ -590,6 +648,7 @@ pub fn build_from_cache_at(repo: &Path, index_path: &Path) -> Result<BuildReport
     Ok(BuildReport {
         nodes,
         edges,
+        calls_edges,
         item_level_refs: item_level,
         self_ref_skipped: self_refs,
         non_fn_defs_skipped: rows.non_fn_skipped,
@@ -1253,6 +1312,7 @@ pub fn run(argv: &[&str]) -> ToolOutput {
                 let v = serde_json::json!({
                     "nodes": rep.nodes,
                     "edges": rep.edges,
+                    "calls_edges": rep.calls_edges,
                     "item_level_refs": rep.item_level_refs,
                     "self_ref_skipped": rep.self_ref_skipped,
                     "non_fn_defs_skipped": rep.non_fn_defs_skipped,
@@ -1269,9 +1329,11 @@ pub fn run(argv: &[&str]) -> ToolOutput {
             } else {
                 ToolOutput {
                     stdout: format!(
-                        "[OK] graph_db build：{} 節點 / {} 邊（REFERENCES site rows） / item-level refs 略過 {} / self-ref 略過 {} / external 略過 {} → {}\n",
+                        "[OK] graph_db build：{} 節點 / {} 邊（CALLS {} / REFERENCES {}） / item-level refs 略過 {} / self-ref 略過 {} / external 略過 {} → {}\n",
                         rep.nodes,
                         rep.edges,
+                        rep.calls_edges,
+                        rep.edges - rep.calls_edges,
                         rep.item_level_refs,
                         rep.self_ref_skipped,
                         rep.external_skipped,

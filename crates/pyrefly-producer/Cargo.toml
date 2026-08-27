@@ -12,3 +12,6 @@ ruff_text_size = "0.0.10"
 protobuf = { workspace = true }
 scip = { workspace = true }
 code-reality = { path = "../code-reality" }
+
+[dev-dependencies]
+rusqlite = { workspace = true }

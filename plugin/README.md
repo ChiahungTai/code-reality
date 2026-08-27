@@ -25,3 +25,10 @@ appears under Personal → install. The MCP server mounts as
 An HTTP resident mode also exists (launchd, port 8200) for
 multi-harness sharing on one machine — see the repo's `launchd/`.
 Not needed for the plugin path.
+
+## Updating the plugin
+
+Installed plugin caches do not pick up content-only changes under
+`plugin/` — bump `version` in `marketplace.json` whenever the slice
+changes so a marketplace refresh/reinstall is visible, and rerun
+`scripts/dist-marketplace.sh` for the directory-source slice.

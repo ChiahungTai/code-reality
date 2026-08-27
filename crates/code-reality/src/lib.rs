@@ -69,6 +69,7 @@ pub mod hazard;
 pub mod hub_refs;
 pub mod mcp_server;
 pub mod profile;
+pub mod py_calls;
 pub mod runtime_edges;
 pub mod scip_edges;
 pub mod snapshot;
