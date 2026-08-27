@@ -79,6 +79,14 @@ yields all references (M, not N×M).
 | SM-4 | 新增引用外部 def（增量漏洞 D） | 檔 D 新引用既有 def | 詞法掃描 identifiers ∩ defs 名單 → D 進重查集 | S4 | 同上 |
 | SM-5 | 語義 invalidation（增量漏洞 C） | 基類改變使第三檔解析漂移 | dependents 閉包（保守 over-approx）納入重查；漏網風險顯式記錄＋週期全量 checkpoint 兜底 | S4 | 同上 |
 | SM-6 | scope 對齊 | scip-python 只 index project 608 檔 vs lsp_harvest 1,387（tests/scripts） | 對帳差異清單；indexer 設定補齊或差異顯式接受 | S3 | occurrence producer |
+
+**mosaic 消費端回執補充（2026-08-28）**：全 repo 口徑 name coverage
+23.6% vs library（`mosaic_alpha/`）口徑 96.5%——範圍差異是**結構性
+決策**：occurrence producer 的 tests 側 reference sites（TESTED_BY
+面）會缺。S3 須裁決：顯式接受（tests 面續由 lsp/legacy 補）或
+indexer 擴 scope。另：`graph_db build` 會覆蓋 legacy import 面——
+「build 後必接 import_legacy」列為文檔使用約束（mosaic 實測
+flows→0 後補跑恢復 753,070 edges）。
 | SM-7 | CALLS 覆蓋率對帳 | 每次全量後 | 新 producer CALLS vs legacy CALLS **pair-set** diff（grain 見 S5/F6）→ 達標門檻列冊 | S5 | import 退場判準 |
 | SM-8 | env 解析靜默退化（venv/import 未解→ occurrence 集變小不崩） | 索引完成 | 索引時 assert import-resolution 健康（pyright diagnostics 面或 defs 覆蓋率下限），低於下限 loud | S3 | occurrence producer |
 | SM-9 | partial index（fatal/中斷後殘檔） | 索引輸出 | doc 數 vs repo 檔數對帳，不足 loud（與 SM-6 scope 差異分開歸因） | S3 | 同上 |
@@ -105,6 +113,19 @@ yields all references (M, not N×M).
     太common → 重查集爆炸）。
   - R4（低）：scip-python 上游若有後續 release，patch 面收斂——S2 的
     最小重現回報是為此鋪路。
+  - R4w watch item（2026-08-28 增，同日兩輪 spike 評估）：Rust 原生
+    Python 語義引擎觀察名單——**Pyrefly（Meta，v1.2，優先）**：①語料
+    相容 ✅（fatal 檔 0.29s 零崩潰、自動讀 pyrightconfig.json）；
+    ②生產成熟度高（Meta 20M 行＋PyTorch 採用）；③資料面未確認——
+    Rust workspace 有 `pyrefly_graph`（indexing/快取/依賴追蹤）等
+    library crates，但批量 occurrence API 無文檔，需讀介面 spike。
+    **ty（Astral，beta 0.0.75，備位）**：①✅ 0.14s 零崩潰；②parity
+    ⚠️（pyright 報 6 錯的檔全過）；③❌ 無批量 API 且 beta 明言 API
+    會變（引擎在 ruff monorepo `ruff/crates/ty/`）。**重評條件**：
+    批量 references library face ＋規則 parity 全 repo 抽查（僅 LSP
+    面＝回到 N×M，無速度紅利）。任一過關即可規劃「link 引擎＋自寫
+    SCIP 發射層」的 Rust 原生 producer（Node＋vendor＋patch 三負擔
+    一起消失）。
 - **非風險**：資料面——probe 已證我方 protobuf 解析、partial index
   資料完整（fatal 前的檔全在）。
 

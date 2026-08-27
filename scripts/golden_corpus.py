@@ -137,8 +137,9 @@ def main() -> None:
     if args.golden or args.candidate:
         if not (args.golden and args.candidate):
             ap.error("--golden and --candidate must be provided together")
+    else:
         if not args.db:
-            ap.error("需要 --self --db，或 --golden + --candidate")
+            ap.error("expected --self --db, or --golden + --candidate")
         data = extract(args.db)
         print(json.dumps({
             "db": args.db, "meta": data["meta"], "defs": len(data["defs"]),
