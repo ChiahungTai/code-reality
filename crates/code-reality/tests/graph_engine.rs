@@ -607,7 +607,7 @@ fn architecture_overview_cross_edges_and_warnings() {
     make_crg_db(&db, &comm_spec()).unwrap();
     let conn = rusqlite::Connection::open(&db).unwrap();
 
-    let out = architecture_overview(&conn, 100).unwrap();
+    let out = architecture_overview(&conn, 100, false).unwrap();
     let cross = out["cross_community_edges"].as_array().unwrap();
     // one cross CALLS edge (tick->entry); TESTED_BY skipped
     assert_eq!(cross.len(), 1);
@@ -1071,7 +1071,7 @@ fn communities_cohesion_and_cross_edges_survive_symbol_ne_qname() {
             .any(|c| c["cohesion"].as_f64().unwrap_or(0.0) > 0.0),
         "R2: cohesion must be computed over the symbol key space, not 0.0"
     );
-    let arch = code_reality::graph_engine::architecture_overview(&conn, 10).unwrap();
+    let arch = code_reality::graph_engine::architecture_overview(&conn, 10, false).unwrap();
     // cross edges are a TOP-LEVEL array (graph_engine.rs:1463) — the R2
     // regression face: with qname-keyed members this was structurally
     // empty; the fixture carries exactly one cross edge (a1 → b1)

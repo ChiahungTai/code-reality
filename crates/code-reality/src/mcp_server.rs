@@ -76,6 +76,9 @@ pub struct GqCommunitiesParams {
     /// Deprecated (v1+ S4): union edges materialize at `graph_db build`
     /// time — queries are always full-graph now; the flag is a no-op.
     pub use_union: Option<bool>,
+    #[serde(default)]
+    /// "minimal" (default): summary fields only; "standard": member lists.
+    pub detail_level: Option<String>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
@@ -100,6 +103,35 @@ pub struct GqUnionLimitParams {
     /// Deprecated (v1+ S4): union edges materialize at `graph_db build`
     /// time — queries are always full-graph now; the flag is a no-op.
     pub use_union: Option<bool>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct GqDetailParams {
+    pub repo_root: String,
+    /// flows cap (default 50; CRG list_flows parity)
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct GqCommunityParams {
+    pub repo_root: String,
+    /// partial community name (from list_communities)
+    pub community_name: String,
+    /// include the member list (default false — CRG parity)
+    #[serde(default)]
+    pub include_members: Option<bool>,
+}
+
+/// architecture_overview params (rmcp takes ONE Parameters wrapper —
+/// merged instead of a second wrapper)
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct GqArchOverviewParams {
+    pub repo_root: String,
+    #[serde(default)]
+    pub limit: Option<usize>,
+    #[serde(default)]
+    pub detail_level: Option<String>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
@@ -132,12 +164,34 @@ pub struct CodeRealityServer {
 
 /// ToolOutput → MCP content: stdout text + a `[STDERR]` section when the
 /// management face has content (visibility rule).
+/// MCP single-frame byte cap (backstop — the payload-shape fixes
+/// (detail_level/limit) are the real defense; this catches anything that
+/// still slips through, before the client tears the connection down).
+const MCP_TEXT_CAP: usize = 1 << 20;
+
+fn apply_text_cap(mut text: String) -> String {
+    if text.len() > MCP_TEXT_CAP {
+        // cut at a UTF-8 char boundary
+        let mut cut = MCP_TEXT_CAP;
+        while cut > 0 && !text.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        text.truncate(cut);
+        text.push_str(&format!(
+            "\n[TRUNCATED] output exceeded {} bytes — pass a smaller detail_level/limit, or use the CLI face (graph_query ... | grep/jq)\n",
+            MCP_TEXT_CAP
+        ));
+    }
+    text
+}
+
 fn to_tool_result(out: crate::ToolOutput) -> Result<CallToolResult, McpError> {
     let mut text = out.stdout;
     if !out.stderr.is_empty() {
         text.push_str("[STDERR]\n");
         text.push_str(&out.stderr);
     }
+    text = apply_text_cap(text);
     // non-exhaustive struct — build via success() then set is_error
     let mut result = CallToolResult::success(vec![ContentBlock::text(text)]);
     if out.exit_code != 0 {
@@ -198,6 +252,7 @@ impl CodeRealityServer {
             ))
             .with_route((Self::semantic_search_tool_attr(), Self::semantic_search))
             .with_route((Self::document_symbols_tool_attr(), Self::document_symbols))
+            .with_route((Self::get_community_tool_attr(), Self::get_community))
     }
 
     async fn run_refs_like(&self, args: Vec<String>) -> Result<CallToolResult, McpError> {
@@ -471,7 +526,7 @@ impl CodeRealityServer {
     }
 
     #[tool(
-        description = "Communities: directory (CRG Tier-0 parity) or seeded Leiden (union flag deprecated: edges are materialized full-graph at graph_db build)"
+        description = "Communities: directory (CRG Tier-0 parity) or seeded Leiden; detail_level=minimal by default (summary fields only — use standard for member lists)"
     )]
     pub async fn list_communities(
         &self,
@@ -479,6 +534,7 @@ impl CodeRealityServer {
             repo_root,
             algorithm,
             use_union,
+            detail_level,
         }): Parameters<GqCommunitiesParams>,
     ) -> Result<CallToolResult, McpError> {
         let mut args = vec![
@@ -487,6 +543,10 @@ impl CodeRealityServer {
             "--repo".into(),
             repo_root,
         ];
+        if detail_level.as_deref() != Some("standard") {
+            args.push("--detail-level".into());
+            args.push("minimal".into());
+        }
         match algorithm.as_deref() {
             None | Some("directory") => {}
             Some("leiden") => {
@@ -504,10 +564,14 @@ impl CodeRealityServer {
             .await
     }
 
-    #[tool(description = "Communities + cross-community edges + high-coupling warnings")]
+    #[tool(description = "Communities + cross-community edge pairs + high-coupling warnings; detail_level=minimal by default (CRG _minimal_overview parity)")]
     pub async fn architecture_overview(
         &self,
-        Parameters(GqLimitParams { repo_root, limit }): Parameters<GqLimitParams>,
+        Parameters(GqArchOverviewParams {
+            repo_root,
+            limit,
+            detail_level,
+        }): Parameters<GqArchOverviewParams>,
     ) -> Result<CallToolResult, McpError> {
         let mut args = vec![
             "graph_query".into(),
@@ -519,23 +583,79 @@ impl CodeRealityServer {
             args.push("--max-results".into());
             args.push(l.to_string());
         }
+        match detail_level.as_deref() {
+            None | Some("minimal") => {
+                args.push("--detail-level".into());
+                args.push("minimal".into());
+            }
+            Some("standard") => {}
+            Some(other) => {
+                return Err(McpError::new(
+                    ErrorCode::INVALID_PARAMS,
+                    format!("detail_level 須為 minimal|standard，收到：{other}"),
+                    None,
+                ));
+            }
+        }
         self.gq(args).await
     }
 
     #[tool(
-        description = "Execution flows from entry points (forward BFS over CALLS, criticality-sorted)"
+        description = "Execution flows from entry points (forward BFS over CALLS, criticality-sorted); limit defaults to 50 — pass a larger one for more"
     )]
     pub async fn list_flows(
         &self,
-        Parameters(GqRepoParams { repo_root }): Parameters<GqRepoParams>,
+        Parameters(GqDetailParams {
+            repo_root,
+            limit,
+        }): Parameters<GqDetailParams>,
     ) -> Result<CallToolResult, McpError> {
-        self.gq(vec![
+        let mut args = vec![
             "graph_query".into(),
             "flows".into(),
             "--repo".into(),
             repo_root,
-        ])
+        ];
+        if let Some(l) = limit {
+            args.push("--limit".into());
+            args.push(l.to_string());
+        }
+        self.gq(args).await
+    }
+
+    #[tool(description = "Single-community drill-down by partial name; include_members=false by default (CRG get_community parity)")]
+    pub async fn get_community(
+        &self,
+        Parameters(GqCommunityParams {
+            repo_root,
+            community_name,
+            include_members,
+        }): Parameters<GqCommunityParams>,
+    ) -> Result<CallToolResult, McpError> {
+        // in-process call (no CLI op — the drill-down is an MCP face)
+        let repo = repo_root.clone();
+        let needle = community_name.clone();
+        let with_members = include_members.unwrap_or(false);
+        let out = tokio::task::spawn_blocking(move || {
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let conn = crate::graph_engine::open(std::path::Path::new(&repo))?;
+                crate::graph_engine::get_community(&conn, &needle, with_members)
+            }))
+        })
         .await
+        .map_err(|e| McpError::new(ErrorCode::INTERNAL_ERROR, format!("任務 join 失敗：{e}"), None))?
+        .map_err(|payload| {
+            let msg = payload
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .or_else(|| payload.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "non-string panic payload".into());
+            McpError::new(ErrorCode::INTERNAL_ERROR, format!("lib panic：{msg}"), None)
+        })?;
+        let v = out.map_err(|e| McpError::new(ErrorCode::INTERNAL_ERROR, e, None))?;
+        Ok(CallToolResult::success(vec![ContentBlock::text(
+            apply_text_cap(crate::common::to_json_indent1(&v)),
+        )]))
     }
 
     #[tool(description = "Flows whose path touches the changed files")]

@@ -1377,10 +1377,14 @@ fn is_test_community(name: &str) -> bool {
 /// cross-community edges (TESTED_BY excluded) + high-coupling warnings
 /// (>10 edges, test-dominated pairs skipped). Uses fresh detection
 /// (CRG reads its stored table — same values on a freshly built db).
-pub fn architecture_overview(conn: &Connection, max_results: usize) -> Result<Value, String> {
-    let communities = detect_communities(conn, 2)?;
+pub fn architecture_overview(
+    conn: &Connection,
+    max_results: usize,
+    minimal: bool,
+) -> Result<Value, String> {
+    let communities_full = detect_communities(conn, 2)?;
     let mut node_to_community: HashMap<&str, i64> = HashMap::new();
-    for (ci, c) in communities.iter().enumerate() {
+    for (ci, c) in communities_full.iter().enumerate() {
         for qn in c["members"].as_array().unwrap() {
             node_to_community.insert(qn.as_str().unwrap_or(""), (ci + 1) as i64);
         }
@@ -1390,6 +1394,7 @@ pub fn architecture_overview(conn: &Connection, max_results: usize) -> Result<Va
     let mut pair_counts = OrderedCounter::new();
     let mut pair_order: Vec<String> = Vec::new();
     let mut pair_set: HashSet<String> = HashSet::new();
+    let mut pair_kinds: HashMap<String, HashMap<String, usize>> = HashMap::new();
     for e in &all_edges {
         if e.kind == "TESTED_BY" {
             continue;
@@ -1404,13 +1409,16 @@ pub fn architecture_overview(conn: &Connection, max_results: usize) -> Result<Va
                     pair_order.push(key.clone());
                 }
                 pair_counts.bump(&key);
-                cross_edges.push(serde_json::json!({
-                    "source_community": s,
-                    "target_community": t,
-                    "edge_kind": e.kind,
-                    "source": sanitize_name(&e.caller_symbol),
-                    "target": sanitize_name(&e.callee_symbol),
-                }));
+                *pair_kinds.entry(key.clone()).or_default().entry(e.kind.clone()).or_insert(0) += 1;
+                if !minimal {
+                    cross_edges.push(serde_json::json!({
+                        "source_community": s,
+                        "target_community": t,
+                        "edge_kind": e.kind,
+                        "source": sanitize_name(&e.caller_symbol),
+                        "target": sanitize_name(&e.callee_symbol),
+                    }));
+                }
             }
         }
     }
@@ -1430,11 +1438,11 @@ pub fn architecture_overview(conn: &Connection, max_results: usize) -> Result<Va
         }
         let (c1, c2) = key.split_once(':').unwrap();
         let (c1, c2): (usize, usize) = (c1.parse().unwrap(), c2.parse().unwrap());
-        let name1 = communities[c1 - 1]["name"]
+        let name1 = communities_full[c1 - 1]["name"]
             .as_str()
             .unwrap_or("")
             .to_string();
-        let name2 = communities[c2 - 1]["name"]
+        let name2 = communities_full[c2 - 1]["name"]
             .as_str()
             .unwrap_or("")
             .to_string();
@@ -1448,12 +1456,115 @@ pub fn architecture_overview(conn: &Connection, max_results: usize) -> Result<Va
             break;
         }
     }
-    cross_edges.truncate(max_results);
+    // CRG _MINIMAL_COMMUNITY_FIELDS parity — no member lists (the NT
+    // overview is 12.6MB with them, <5KB-class without)
+    let communities: Vec<Value> = if minimal {
+        communities_full
+            .iter()
+            .map(|c| {
+                serde_json::json!({
+                    "name": c["name"],
+                    "size": c["size"],
+                    "cohesion": c["cohesion"],
+                    "dominant_language": c["dominant_language"],
+                    "description": c["description"],
+                })
+            })
+            .collect()
+    } else {
+        communities_full.clone()
+    };
+    let cross_community_edges: Value = if minimal {
+        let id_to_name = |i: usize| -> String {
+            communities_full
+                .get(i.wrapping_sub(1))
+                .and_then(|c| c["name"].as_str())
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("community-{i}"))
+        };
+        let mut pairs: Vec<(String, usize)> = pair_order
+            .iter()
+            .map(|k| {
+                let count = pair_counts.counts[pair_counts.index[k]].1;
+                (k.clone(), count)
+            })
+            .collect();
+        pairs.sort_by_key(|(_, c)| std::cmp::Reverse(*c));
+        pairs
+            .iter()
+            .map(|(key, count)| {
+                let (c1, c2) = key.split_once(':').unwrap();
+                let (c1, c2): (usize, usize) = (c1.parse().unwrap(), c2.parse().unwrap());
+                let mut kinds: Vec<(String, usize)> = pair_kinds[key]
+                    .iter()
+                    .map(|(k, v)| (k.clone(), *v))
+                    .collect();
+                kinds.sort_by_key(|(_, v)| std::cmp::Reverse(*v));
+                serde_json::json!({
+                    "source_community": id_to_name(c1),
+                    "target_community": id_to_name(c2),
+                    "edge_count": count,
+                    "top_kinds": kinds.iter().take(3).map(|(k, _)| k).collect::<Vec<_>>(),
+                })
+            })
+            .collect::<Vec<_>>()
+            .into()
+    } else {
+        cross_edges.truncate(max_results);
+        cross_edges.into()
+    };
     Ok(serde_json::json!({
         "communities": communities,
-        "cross_community_edges": cross_edges,
+        "cross_community_edges": cross_community_edges,
         "warnings": warnings,
     }))
+}
+
+/// Single-community drill-down (CRG get_community parity): partial name
+/// match, members opt-in — the consumption exit for the minimal list
+/// faces (a standard-detail list on a big repo is not consumable).
+pub fn get_community(
+    conn: &Connection,
+    needle: &str,
+    include_members: bool,
+) -> Result<Value, String> {
+    let cs = detect_communities(conn, 2)?;
+    let hits: Vec<&Value> = cs
+        .iter()
+        .filter(|c| {
+            c["name"]
+                .as_str()
+                .map(|n| n.to_lowercase().contains(&needle.to_lowercase()))
+                .unwrap_or(false)
+        })
+        .collect();
+    match hits.len() {
+        0 => Err(format!("community 未命中：{needle}")),
+        1 => {
+            let c = hits[0];
+            let mut out = serde_json::json!({
+                "name": c["name"],
+                "size": c["size"],
+                "cohesion": c["cohesion"],
+                "dominant_language": c["dominant_language"],
+                "description": c["description"],
+            });
+            if include_members {
+                out.as_object_mut()
+                    .unwrap()
+                    .insert("members".into(), c["members"].clone());
+            }
+            Ok(out)
+        }
+        n => Err(format!(
+            "命中 {n} 個 community（{}）——請縮小名稱",
+            hits.iter()
+                .filter_map(|c| c["name"].as_str())
+                .take(5)
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
+    }
 }
 
 // ---------- S6: detect_changes + risk (changes.py) ----------
@@ -2183,6 +2294,7 @@ pub fn run(argv: &[&str]) -> crate::ToolOutput {
     let mut query = String::new();
     let mut include_source = false;
     let mut use_leiden = false;
+    let mut use_minimal = false; // CLI default standard; MCP passes minimal
     let mut seed: u64 = 42;
     let mut max_lines: Option<usize> = None;
     let mut i = 0usize;
@@ -2238,6 +2350,16 @@ pub fn run(argv: &[&str]) -> crate::ToolOutput {
                 );
             }
             "--leiden" => use_leiden = true,
+            "--detail-level" => match value(&mut i) {
+                Some(v) if v == "minimal" => use_minimal = true,
+                Some(v) if v == "standard" => use_minimal = false,
+                other => {
+                    return gq_fail(format!(
+                        "--detail-level 須為 minimal|standard，收到：{}",
+                        other.unwrap_or_default()
+                    ));
+                }
+            },
             "--seed" => match num(&mut i, "--seed") {
                 Ok(v) => seed = v.unwrap_or(42) as u64,
                 Err(o) => return o,
@@ -2321,16 +2443,49 @@ pub fn run(argv: &[&str]) -> crate::ToolOutput {
             };
             detect_changes(&conn, Some(&repo_path), &files, ranges.as_ref(), None)
         }
-        "hub" => find_hub_nodes(&conn, limit.unwrap_or(10)).map(Value::Array),
+        "hub" => {
+            if use_minimal {
+                return gq_fail("--detail-level 僅作用於 communities/arch_overview".to_string());
+            }
+            find_hub_nodes(&conn, limit.unwrap_or(10)).map(Value::Array)
+        }
         "bridge" => find_bridge_nodes(&conn, limit.unwrap_or(10)).map(Value::Array),
         "communities" => if use_leiden {
             detect_communities_leiden(&conn, 2, seed)
         } else {
             detect_communities(&conn, 2)
         }
-        .map(Value::Array),
-        "arch_overview" => architecture_overview(&conn, max_results.unwrap_or(100)),
-        "flows" => trace_flows(&conn, 15, false).map(Value::Array),
+        .map(|mut cs| {
+            if use_minimal {
+                // CRG list_communities minimal parity: summary fields only
+                for c in cs.iter_mut() {
+                    if let Some(obj) = c.as_object_mut() {
+                        obj.remove("members");
+                    }
+                }
+            }
+            Value::Array(cs)
+        }),
+        "flows" => {
+            if use_minimal {
+                return gq_fail("--detail-level 僅作用於 communities/arch_overview".to_string());
+            }
+            trace_flows(&conn, 15, false)
+                .map(|mut fs| {
+                    // CRG list_flows parity: limit defaults to 50 (NT full
+                    // output is 7.6MB); a large --limit keeps CLI full output
+                    let cap = limit.unwrap_or(50);
+                    if fs.len() > cap {
+                        eprintln!(
+                            "[WARN] flows truncated to {cap} of {} — pass a larger --limit for full output",
+                            fs.len()
+                        );
+                    }
+                    fs.truncate(cap);
+                    Value::Array(fs)
+                })
+        }
+        "arch_overview" => architecture_overview(&conn, max_results.unwrap_or(100), use_minimal),
         "affected_flows" => affected_flows(&conn, &files, 15, false).map(Value::Array),
         "review_context" => get_review_context(
             &conn,

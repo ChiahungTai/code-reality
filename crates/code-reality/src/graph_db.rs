@@ -227,9 +227,11 @@ pub fn is_test_rel(rel: &str) -> bool {
         || p.contains("/test_")
 }
 
-/// LSP-harvest synthesizes `lsp python <rel> <name>().` symbols — the
-/// `lsp ` prefix is the language discriminator; everything else is the
-/// rust-analyzer SCIP face.
+/// LSP-harvest synthesizes `lsp python <rel> [L<line>] <name>().`
+/// symbols — the `lsp ` prefix is the language discriminator, the
+/// optional `L<line>` middle segment disambiguates same-file same-name
+/// defs (both shapes parse); everything else is the rust-analyzer SCIP
+/// face.
 fn infer_language(symbol: &str) -> &'static str {
     if symbol.starts_with("lsp ") {
         "Python"
