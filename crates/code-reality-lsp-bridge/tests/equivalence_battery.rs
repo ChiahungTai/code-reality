@@ -14,6 +14,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use code_reality_lsp_bridge::server::hover_impl;
+use code_reality_lsp_bridge::session::LangSpec;
 use code_reality_lsp_bridge::LspSession;
 
 mod common;
@@ -104,6 +105,7 @@ fn hover_parity_vs_pyright_baseline() {
         &backend_bin(),
         tmp.path().to_path_buf(),
         300,
+        LangSpec::python(),
     ));
     let battery = tmp.path().join("battery.py").to_string_lossy().to_string();
 

@@ -6,22 +6,23 @@ daemon) and the usage skill:
 - `code-reality` — the structural face: `refs` / `callers` / `closure`
   / `audit` + the graph_query family; every tool takes an explicit
   `repo_root` absolute path.
-- `code-reality-lsp-bridge` — the Python type face: `hover` /
-  `check_file` / `edit_file` / `lsp_status`. It spawns the
-  `pyrefly-lsp` language server lazily on the first tool call.
+- `code-reality-lsp-bridge` — the type face, routed by file extension:
+  `.py` → pyrefly (`hover` / `check_file` / `edit_file` / `lsp_status`),
+  `.rs` → rust-analyzer (same tools). Each backend spawns lazily and
+  independently.
 
 ## Prerequisites (the binaries)
 
 ```
 cargo install --path ~/Github/code-reality/crates/code-reality              # code-reality + code-reality-mcp
-cargo install --path ~/Github/code-reality/crates/pyrefly-producer          # pyrefly-index + pyrefly-lsp (bridge backend)
+cargo install --path ~/Github/code-reality/crates/pyrefly-producer          # pyrefly-index + pyrefly-lsp (Python backend)
 cargo install --path ~/Github/code-reality/crates/code-reality-lsp-bridge   # code-reality-lsp-bridge
+rustup component add rust-analyzer                                           # Rust backend
 ```
 
-(or from a checkout of https://github.com/ctai/code-reality — all three
-put their bins on PATH; the type-face server needs `pyrefly-lsp` from
-the second command, missing binaries surface as loud tool errors with
-install guidance)
+(or from a checkout of https://github.com/ctai/code-reality — the
+first three put their bins on PATH; missing backends surface as loud
+tool errors with install guidance)
 
 ## Install
 

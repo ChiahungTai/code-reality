@@ -15,26 +15,35 @@ tests are the sole gate face.
   rust-analyzer as the backend command).
 - **layering**: `framing` (LSP base-protocol Content-Length framing over
   child stdio — headers must end `\r\n`, Content-Length only) /
-  `session` (lifecycle + protocol client: lazy spawn + initialize →
-  `initialized` handshake, all interactions serialized under one
-  interaction lock [pyrefly's uris_pending_close assumes a single
-  ordered writer], reader thread three-way split [responses → pending
-  slot, publishDiagnostics → per-URI diag cache, server→client requests
-  → ALWAYS an empty `[]` response — unanswered workspace/configuration
+  `session` (lifecycle + protocol client: `LangSpec` per-language
+  profile [languageId, extension gate, hover-retry window, check
+  deadline, install hint], lazy spawn + initialize → `initialized`
+  handshake, all interactions serialized under one interaction lock
+  per session [pyrefly's uris_pending_close assumes a single ordered
+  writer], reader thread three-way split [responses → pending slot,
+  publishDiagnostics → per-URI diag cache, server→client requests →
+  ALWAYS an empty `[]` response — unanswered workspace/configuration
   freezes pyrefly's background indexing], content overlay
   [path → last-sent content+version; LRU eviction didCloses the server
   copy but keeps the overlay, so un-persisted edits survive re-open],
   `sync_open` [no-op when unchanged; didChange full-sync on out-of-band
-  disk edits; re-open from overlay after eviction]) / `server` (rmcp
-  ToolRouter face: `lsp_status`, `hover` [bounded 500ms retry on the
-  transient null while indexing warms up], `check_file` [convergence =
+  disk edits; re-open from overlay after eviction]; full-content
+  didChange uses the RANGE form spanning the OLD content — the
+  range-elided form is a spec obligation rust-analyzer does not honor,
+  probe-verified 2026-08-28]) / `server` (rmcp ToolRouter face +
+  `Bridge` extension routing [.py → pyrefly session, .rs →
+  rust-analyzer session — two independent lazy backends, SM-7];
+  tools `lsp_status` [per-backend lines], `hover` [bounded retry,
+  per-backend window; rust-analyzer's transient -32801 "content
+  modified" retried like a null hover], `check_file` [convergence =
   cached push carries the overlay's version or newer AND postdates any
   mutation this call AND is per-URI quiesced; push-only model — waiting
   without a mutation would be a guaranteed fake timeout], `edit_file`
-  [range-elided full-content didChange — no UTF-16 endpoint math]; all
-  tools spawn_blocking, SM-14 pattern).
-- **client-capabilities invariant**: the initialize request advertises
-  ONLY `textDocument.hover` + `publishDiagnostics` — never
+  [range-form full-content didChange — see session]; all tools
+  spawn_blocking, SM-14 pattern).
+- **backend invariants**: rust-analyzer spawns with NO flags (default
+  stdio is LSP; it rejects the `--stdio` flag); the initialize request
+  advertises ONLY `textDocument.hover` + `publishDiagnostics` — never
   `workspace.configuration` or `didChangeWatchedFiles
   .dynamicRegistration` (advertising them makes pyrefly issue
   server→client requests whose answers gate background work).

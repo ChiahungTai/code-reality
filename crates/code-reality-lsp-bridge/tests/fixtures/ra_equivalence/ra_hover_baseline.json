@@ -1,0 +1,8 @@
+{
+  "_generator": "rust-analyzer",
+  "_version": "1.96.0 (ac68faa2 2026-05-25)",
+  "_positions": {
+    "write_message": "code_reality_lsp_bridge::framing | pub fn write_message<W>(w: &mut W, msg: &Value) -> std::io::Result<()>\nwhere\n    W: Write,",
+    "read_message": "code_reality_lsp_bridge::framing | pub fn read_message<R>(r: &mut R) -> std::io::Result<Option<Value>>\nwhere\n    R: BufRead,"
+  }
+}

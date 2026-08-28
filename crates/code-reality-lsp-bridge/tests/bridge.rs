@@ -6,11 +6,12 @@
 //! workspace `target/release/pyrefly-lsp`. On a fresh checkout, build
 //! it first: `cargo build --release -p pyrefly-producer --bin pyrefly-lsp`.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
 use code_reality_lsp_bridge::server::{check_file_impl, edit_file_impl, hover_impl};
+use code_reality_lsp_bridge::session::LangSpec;
 use code_reality_lsp_bridge::LspSession;
 
 mod common;
@@ -32,7 +33,7 @@ fn strict_fixture() -> (tempfile::TempDir, PathBuf) {
 }
 
 fn session_at(dir: &std::path::Path) -> Arc<LspSession> {
-    Arc::new(LspSession::new(&backend_bin(), dir.to_path_buf(), 300))
+    Arc::new(LspSession::new(&backend_bin(), dir.to_path_buf(), 300, LangSpec::python()))
 }
 
 // ---- S1: lifecycle -------------------------------------------------
@@ -61,10 +62,11 @@ fn backend_spawn_failure_is_loud() {
         "/nonexistent-backend",
         dir.path().to_path_buf(),
         300,
+        LangSpec::python(),
     ));
     let err = s.request("shutdown", serde_json::Value::Null).unwrap_err();
     assert!(err.contains("failed to spawn"), "got: {err}");
-    assert!(err.contains("--lsp-command"), "guidance missing: {err}");
+    assert!(err.contains("install it"), "guidance missing: {err}");
 }
 
 #[test]
@@ -125,16 +127,6 @@ fn hover_null_position_returns_no_hover() {
 }
 
 #[test]
-fn hover_non_python_rejected() {
-    let (dir, _sample) = strict_fixture();
-    let txt = dir.path().join("notes.txt");
-    std::fs::write(&txt, "hello").unwrap();
-    let s = session_at(dir.path());
-    let err = hover_impl(&s, &txt.to_string_lossy(), 0, 0).unwrap_err();
-    assert!(err.contains("not a Python file"), "got: {err}");
-}
-
-#[test]
 fn hover_missing_file_is_loud() {
     let (dir, _sample) = strict_fixture();
     let s = session_at(dir.path());
@@ -188,16 +180,6 @@ fn check_repeat_without_edit_returns_cache_immediately() {
     );
 }
 
-#[test]
-fn check_non_python_rejected() {
-    let (dir, _sample) = strict_fixture();
-    let txt = dir.path().join("notes.txt");
-    std::fs::write(&txt, "hello").unwrap();
-    let s = session_at(dir.path());
-    let err = check_file_impl(&s, &txt.to_string_lossy()).unwrap_err();
-    assert!(err.contains("not a Python file"), "got: {err}");
-}
-
 // ---- S4: edit + recheck (streaming face) ----------------------------
 
 #[test]
@@ -230,8 +212,20 @@ fn edit_then_check_reflects_new_content() {
 fn lru_evict_preserves_overlay_edits() {
     // EP R-06/SM-10: evict a dirty file from the server's open set,
     // then check it again — the overlay version must win over disk.
+    // Dedicated session with a wide deadline: this test's eviction +
+    // re-open + 8-filler recheck storm is the slowest path under full
+    // workspace test parallelism (flaked at 10s and 20s).
     let (dir, sample) = strict_fixture();
-    let s = session_at(dir.path());
+    let s = Arc::new(LspSession::new(
+        &backend_bin(),
+        dir.path().to_path_buf(),
+        300,
+        {
+            let mut lang = LangSpec::python();
+            lang.slow_timeout_ms = 60_000;
+            lang
+        },
+    ));
     let file = sample.to_string_lossy().to_string();
     let edited = SAMPLE.replace("-> str:", "-> int:");
     edit_file_impl(&s, &file, &edited).unwrap();
@@ -312,9 +306,19 @@ fn busy_channel_does_not_break_other_file_convergence() {
 fn check_file_timeout_path_warns() {
     // primed F-02 / EP SM-8: an unattainable quiesce window must
     // surface the explicit not-converged marker, never a silent
-    // partial. (Slow by design: burns the 10s deadline once.)
+    // partial. Short injected deadline (2s) keeps the test fast —
+    // the production default is 20s.
     let (dir, sample) = strict_fixture();
-    let s = Arc::new(LspSession::new(&backend_bin(), dir.path().to_path_buf(), 60_000));
+    let s = Arc::new(LspSession::new(
+        &backend_bin(),
+        dir.path().to_path_buf(),
+        60_000,
+        {
+            let mut lang = LangSpec::python();
+            lang.slow_timeout_ms = 2_000;
+            lang
+        },
+    ));
     let out = check_file_impl(&s, &sample.to_string_lossy()).unwrap();
     assert!(
         out.contains("[WARN] not converged"),

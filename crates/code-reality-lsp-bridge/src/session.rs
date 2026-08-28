@@ -49,6 +49,50 @@ pub struct OverlayEntry {
     pub stamp: Option<(std::time::SystemTime, u64)>,
 }
 
+/// Per-language backend profile: everything the generic LspSession
+/// machinery needs to serve one language. The P2 clause — the same
+/// crate serves any LSP backend given one of these.
+#[derive(Clone, Copy)]
+pub struct LangSpec {
+    pub language_id: &'static str,
+    /// Extension gate (case-sensitive, includes no dot).
+    pub extension: &'static str,
+    /// Bounded-retry window for the transient null hover while the
+    /// backend warms up (rust-analyzer cold-loads a whole workspace:
+    /// observed 749ms–9.5s, so Rust uses 30s).
+    pub hover_retry_ms: u64,
+    /// Convergence deadline for check_file (rust-analyzer pushes in
+    /// waves — syntax/semantic/flycheck — and under load the semantic
+    /// wave can exceed the Python-scale 10s).
+    pub slow_timeout_ms: u64,
+    /// Install guidance surfaced when the backend binary is missing.
+    pub install_hint: &'static str,
+}
+
+impl LangSpec {
+    pub fn python() -> Self {
+        Self {
+            language_id: "python",
+            extension: "py",
+            hover_retry_ms: 500,
+            // 20s: under parallel-test load (a dozen backends at once)
+            // the recheck wave can overshoot 10s — headroom, not latency.
+            slow_timeout_ms: 20_000,
+            install_hint: "cargo install --path <repo>/crates/pyrefly-producer",
+        }
+    }
+
+    pub fn rust() -> Self {
+        Self {
+            language_id: "rust",
+            extension: "rs",
+            hover_retry_ms: 30_000,
+            slow_timeout_ms: 30_000,
+            install_hint: "rustup component add rust-analyzer",
+        }
+    }
+}
+
 struct Backend {
     child: Child,
     stdin: ChildStdin,
@@ -60,6 +104,7 @@ pub struct LspSession {
     backend_cmd: String,
     root: PathBuf,
     pub quiesce: Duration,
+    pub lang: LangSpec,
     interaction: Mutex<()>,
     /// Shared with the reader thread (it delivers responses and answers
     /// server→client requests through the same backend slot).
@@ -97,11 +142,12 @@ fn err_str(e: impl std::fmt::Display) -> String {
 }
 
 impl LspSession {
-    pub fn new(backend_cmd: &str, root: PathBuf, quiesce_ms: u64) -> Self {
+    pub fn new(backend_cmd: &str, root: PathBuf, quiesce_ms: u64, lang: LangSpec) -> Self {
         Self {
             backend_cmd: backend_cmd.to_string(),
             root,
             quiesce: Duration::from_millis(quiesce_ms),
+            lang,
             interaction: Mutex::new(()),
             backend: Arc::new(Mutex::new(None)),
             next_id: AtomicI64::new(1),
@@ -175,9 +221,8 @@ impl LspSession {
             .map_err(|e| {
                 format!(
                     "failed to spawn language server backend `{}`: {e}\n\
-                     install it (cargo install --path <repo>/crates/pyrefly-producer) \
-                     or override with --lsp-command",
-                    self.backend_cmd
+                     install it ({}) or override the backend command",
+                    self.backend_cmd, self.lang.install_hint
                 )
             })?;
         let stdin = child.stdin.take().unwrap();
@@ -407,6 +452,7 @@ impl LspSession {
     /// LRU cap: the oldest open file is didClose'd (overlay retained).
     pub fn sync_open(&self, path: &Path) -> Result<Option<Instant>, String> {
         let uri = file_uri(path);
+        let lang_id = self.lang.language_id;
         let mut mutation: Option<Instant> = None;
 
         // LRU touch: already-open files move to the back.
@@ -427,7 +473,7 @@ impl LspSession {
                 self.notify(
                     "textDocument/didOpen",
                     json!({
-                        "textDocument": {"uri": uri, "languageId": "python", "version": 1, "text": text}
+                        "textDocument": {"uri": uri, "languageId": lang_id, "version": 1, "text": text}
                     }),
                 )?;
                 overlay.insert(
@@ -447,13 +493,7 @@ impl LspSession {
                         })?;
                         let v = entry.version + 1;
                         let t = Instant::now();
-                        self.notify(
-                            "textDocument/didChange",
-                            json!({
-                                "textDocument": {"uri": uri, "version": v},
-                                "contentChanges": [{"text": text}]
-                            }),
-                        )?;
+                        self.notify("textDocument/didChange", full_change(&uri, v, &entry.content, &text))?;
                         overlay.insert(
                             path.to_path_buf(),
                             OverlayEntry { content: text, version: v, stamp },
@@ -467,7 +507,7 @@ impl LspSession {
                     self.notify(
                         "textDocument/didOpen",
                         json!({
-                            "textDocument": {"uri": uri, "languageId": "python", "version": 1, "text": entry.content}
+                            "textDocument": {"uri": uri, "languageId": lang_id, "version": 1, "text": entry.content}
                         }),
                     )?;
                     overlay.insert(
@@ -509,10 +549,7 @@ impl LspSession {
         let t = Instant::now();
         self.notify(
             "textDocument/didChange",
-            json!({
-                "textDocument": {"uri": uri, "version": v},
-                "contentChanges": [{"text": content}]
-            }),
+            full_change(&uri, v, &entry.content, content),
         )?;
         overlay.insert(
             path.to_path_buf(),
@@ -520,4 +557,59 @@ impl LspSession {
         );
         Ok(t)
     }
+
+    /// Force-close and re-open from the overlay: the recovery path when
+    /// a backend silently drops a didChange (rust-analyzer does when
+    /// the change lands right after a hover during load — probe-verified
+    /// 2026-08-28). didClose clears the server copy AND the diag-cache
+    /// entry; the re-didOpen replays the overlay content at version 1.
+    pub fn force_reopen(&self, path: &Path) -> Result<Instant, String> {
+        let uri = file_uri(path);
+        let t = Instant::now();
+        self.notify("textDocument/didClose", json!({"textDocument": {"uri": uri.clone()}}))?;
+        self.diag_cache.lock().unwrap().remove(&uri);
+        let entry = self
+            .overlay
+            .lock()
+            .unwrap()
+            .get(path)
+            .cloned()
+            .ok_or_else(|| format!("file not opened: {}", path.display()))?;
+        let lang_id = self.lang.language_id;
+        self.notify(
+            "textDocument/didOpen",
+            json!({
+                "textDocument": {"uri": uri, "languageId": lang_id, "version": 1, "text": entry.content}
+            }),
+        )?;
+        self.overlay.lock().unwrap().insert(
+            path.to_path_buf(),
+            OverlayEntry { content: entry.content, version: 1, stamp: entry.stamp },
+        );
+        Ok(t)
+    }
+}
+
+/// Full-content replacement as a RANGE-form change event. The end
+/// position spans the OLD content (the text being replaced), in line
+/// units — start {0,0} → end {old_lines,0}. The range-elided form is a
+/// spec obligation rust-analyzer does not honor (probe-verified
+/// 2026-08-28: zero pushes); the range form works on both backends.
+/// End is a line start, so no UTF-16 endpoint math is needed.
+fn full_change(uri: &str, version: i64, old_content: &str, new_text: &str) -> Value {
+    // Empty OLD content spans nothing (end {0,0}); split() on "" would
+    // yield a phantom line.
+    let end_line = if old_content.is_empty() {
+        0
+    } else {
+        old_content.split('\n').count()
+    };
+    json!({
+        "textDocument": {"uri": uri, "version": version},
+        "contentChanges": [{
+            "range": {"start": {"line": 0, "character": 0},
+                       "end": {"line": end_line, "character": 0}},
+            "text": new_text
+        }]
+    })
 }

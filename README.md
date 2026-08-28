@@ -25,7 +25,8 @@ per-repo SCIP index slots under `scip/<repo-basename>/`.
 ```
 cargo install --path crates/code-reality              # code-reality + code-reality-mcp (structural face)
 cargo install --path crates/pyrefly-producer          # pyrefly-index + pyrefly-lsp (Python producer + language server)
-cargo install --path crates/code-reality-lsp-bridge   # code-reality-lsp-bridge (type face: hover/diagnostics MCP)
+cargo install --path crates/code-reality-lsp-bridge   # code-reality-lsp-bridge (type face: hover/diagnostics MCP, .py + .rs)
+rustup component add rust-analyzer                    # the Rust type-face backend (spawns with no flags)
 ```
 
 **ZCode / Claude Code plugin** (stdio MCP + usage skill, zero daemon):
