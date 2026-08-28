@@ -4,8 +4,6 @@
 //! byte pins. The rg runner and CRG subprocess faces are covered by the
 //! dogfood manual step (external binaries; CLI parity needs uvx+CRG).
 
-mod crg_fixture;
-
 use code_reality::hazard::{
     build_getattr_pattern, build_importlib_pattern, build_strentenum_patterns, classify_rg_lines,
     detect_getattr_dispatch, detect_importlib_lazy_load, detect_protocol_duck_typing,

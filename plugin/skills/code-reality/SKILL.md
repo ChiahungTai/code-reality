@@ -1,7 +1,7 @@
 ---
 name: code-reality
 description: "Running code-reality tools (symbol truth queries, caller edges, closures, completeness audits, hub/hazard checks) or authoring .code-reality.toml profiles. Use when you need refs/defs for a symbol, who calls it, whether a graph.db is complete, or whether a symbol is safe to delete. Tool availability: repo root has .code-reality.toml, or code-reality --help exits 0."
-when_to_use: "Symbol lookup beyond grep (trait disambiguation), caller-edge queries, delete-safety checks, CRG graph completeness audits."
+when_to_use: "Symbol lookup beyond grep (trait disambiguation), caller-edge queries, delete-safety checks, graph completeness audits."
 license: MIT
 ---
 
@@ -38,8 +38,7 @@ Responses embed `[SRC]` provenance lines (index version/commit) and a
   `<repo>/.code-reality/graph.db` — produce it with
   `code-reality graph_db build --repo <repo>` (edges split CALLS vs
   REFERENCES by build-side call detection). The refresh chain is purely
-  producer-side; `graph_db import_legacy` is retired (W3) — functional
-  but WARN-flagged, recovery/migration use only
+  producer-side (the legacy import face was removed in W5)
 - Optional `.code-reality.toml` at repo root declares module rules,
   exclusions, claims prefixes, scan roots — repo facts belong to the repo.
 

@@ -3,7 +3,6 @@
 //! frozen Python source; cross-language byte comparison lives in the
 //! S6 parity harness.
 
-mod crg_fixture;
 mod graph_db_fixture;
 
 use code_reality::snapshot::{build_snapshot, detect_stale, export_module_edges, run};

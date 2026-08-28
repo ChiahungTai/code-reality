@@ -674,8 +674,6 @@ pub fn make_rg_runner(repo_root: &Path) -> impl Fn(&[&str]) -> Result<Vec<RgLine
             "-g",
             "!.agent-tmp/**",
             "-g",
-            "!.code-review-graph/**",
-            "-g",
             "!.code-reality/**",
         ])
         .current_dir(&root);

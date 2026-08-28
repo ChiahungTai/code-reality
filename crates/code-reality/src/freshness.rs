@@ -67,7 +67,8 @@ pub fn stale_binary_warn(crate_dir: &str) {
     }
     if status_dirty(&repo) {
         eprintln!(
-            "[WARN] working tree has uncommitted changes under crates/ — installed binary may lag (commit triggers auto-reinstall)"
+            "[WARN] CR checkout {} has uncommitted changes under crates/ — installed binary may lag (commit triggers auto-reinstall)",
+            repo.display()
         );
     }
 }

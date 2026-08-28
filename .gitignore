@@ -9,9 +9,6 @@ __pycache__/
 # Instruction-init scan artifact (regenerable via scan-project)
 .project-snapshot.json
 
-# CRG graph build artifact (code-reality's own dogfood graph)
-.code-review-graph/
-
 # Local scratch (agent tooling)
 .agent-tmp/
 
@@ -24,7 +21,7 @@ poc/**/target/
 # Local marketplace slice (regenerable via scripts/dist-marketplace.sh)
 dist/
 
-# v1+ S4 self-owned graph db (dogfood; sibling of .code-review-graph/)
+# v1+ S4 self-owned graph db (dogfood)
 .code-reality/
 
 # Last-session observation layer (local session state, not repo content)

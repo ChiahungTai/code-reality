@@ -115,11 +115,7 @@ tests are the sole gate face.
   `py_calls` (ruff parse of referenced files — SCIP carries no call
   role; dunder-collapsed constructor edges match via the symbol's own
   class segment), derived flows/communities materialized, FTS5,
-  temp+rename atomicity], `import_legacy` [W3-retired: functional
-  recovery face only, WARN on every invocation; merge onto producer
-  symbols where
-  (file, name) resolves uniquely, qname-minted symbols otherwise,
-  dangling endpoints passthrough — legacy db read-only], and
+  temp+rename atomicity], and
   `ensure_indexes` [idempotent IF NOT EXISTS: engine read-chain indexes
   (edges caller/callee+kind, flow_memberships node_id, nodes anchor
   name/file/line) for dbs built before that DDL revision]) /
@@ -149,22 +145,20 @@ tests are the sole gate face.
   relay minimal-diff contract.
 - **Schema interop**: the derived db keeps the frozen three-table DDL +
   `SCHEMA_VERSION`; extensions (fn_defs, R3) live in separate sidecars —
-  never in the shared db (guard would ping-pong rebuilds). The legacy
-  `.code-review-graph/` db is read-only everywhere (`connect_ro`) — it
-  is only ever an `import_legacy` source. All consumer modules
-  (audit/chain_tour/hub_refs/hazard/snapshot) read the self-owned
-  `.code-reality/graph.db` via `graph_db::consumer_db` (missing-db WARN
-  guidance lives there; the un-imported-legacy guidance was removed at W3
-  retirement — zero `treesitter-legacy` nodes is the normal
-  pure-producer state). Tests use
+  never in the shared db (guard would ping-pong rebuilds). All consumer
+  modules (audit/chain_tour/hub_refs/hazard/snapshot) read the
+  self-owned `.code-reality/graph.db` via `graph_db::consumer_db`
+  (missing-db WARN guidance lives there). Tests use
   `tests/graph_db_fixture.rs` (self-owned schema, symbol==qname
-  universe); `tests/crg_fixture.rs` (production-shape CRG DDL) feeds
-  the import_legacy/ensure test universe only.
-- **Parity harness**: `tests/parity/` (pytest, `parity` marker) drives
-  both implementations on identical inputs and `cmp`s stdout + exit
-  codes; mutating drills hit fixture copies only. Environment-absent
-  cases are valid equivalence (both sides fail loud with the same exit).
-  `-h` faces compare with the prog prefix normalized (wrap position is
-  prog-length relative; the Rust text is byte-pinned in cargo tests).
+  universe). The CRG-era `.code-review-graph/` format and its importer
+  were fully removed at W5 (2026-08-28).
+- **Parity harness (R7-retired history)**: `tests/parity/` (pytest,
+  `parity` marker — deleted with the frozen-Python oracle) drove both
+  implementations on identical inputs and `cmp`d stdout + exit codes;
+  mutating drills hit fixture copies only. Environment-absent cases
+  were valid equivalence (both sides fail loud with the same exit).
+  `-h` faces compared with the prog prefix normalized (wrap position
+  is prog-length relative; the Rust text is byte-pinned in cargo
+  tests).
 - Authored content is English; Chinese OUTPUT strings are the byte-parity
   face and exempt.

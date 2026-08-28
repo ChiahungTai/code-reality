@@ -724,7 +724,7 @@ fn audit_mode(
     stderr: &mut String,
 ) -> ToolOutput {
     let repo = crate::common::resolve(repo);
-    let graph = crate::common::graph_db_path(&repo);
+    let graph = crate::graph_db::db_path(&repo);
     // graph_audit main()'s env gates, surfaced through the wrapper's
     // "環境錯誤" face (Python: stderr passthrough, exit 2); the inner
     // texts are the shared gate constants (single source, no string copy)

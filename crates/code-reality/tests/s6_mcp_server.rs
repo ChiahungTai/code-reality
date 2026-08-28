@@ -148,7 +148,7 @@ async fn http_server_serves_initialize_and_tools_list() {
     }
     // engine-family tool over the real transport: graph.db read face
     // against the dogfood corpus is env-dependent; here a repo WITHOUT
-    // .code-review-graph must fail loud (per-request error, client alive)
+    // a graph.db must fail loud (per-request error, client alive)
     let engine_result = client
         .call_tool(
             rmcp::model::CallToolRequestParams::new("hub_nodes").with_arguments(

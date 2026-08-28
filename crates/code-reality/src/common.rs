@@ -63,11 +63,6 @@ pub fn repo_relative(path: &str, repo_root: &Path) -> Option<String> {
         .map(|p| p.to_string_lossy().into_owned())
 }
 
-/// CRG graph.db conventional path (`common.py:48-50`).
-pub fn graph_db_path(repo_root: &Path) -> PathBuf {
-    repo_root.join(".code-review-graph").join("graph.db")
-}
-
 /// Read-only connection — `immutable=1` without a WAL file, `mode=ro`
 /// fallback with one (`common.py:53-74`). The mode=ro failure message is
 /// the frozen guidance text; an immutable open failure propagates as the

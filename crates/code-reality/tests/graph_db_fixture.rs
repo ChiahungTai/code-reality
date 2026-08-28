@@ -1,10 +1,7 @@
 //! Shared synthetic self-owned graph.db builder — the `.code-reality/`
-//! schema as the engine consumes it (v1+ S4). API mirrors crg_fixture
-//! (the legacy-schema family fixture) so engine tests switch by import;
-//! in this fixture's universe symbol == qname for every node (the
-//! layer-2 reconciliation semantics — legacy-imported nodes mint
-//! qname-keyed symbols). Integration tests include this via
-//! `mod graph_db_fixture;`.
+//! schema as the engine consumes it (v1+ S4). In this fixture's
+//! universe symbol == qname for every node. Integration tests include
+//! this via `mod graph_db_fixture;`.
 
 use rusqlite::Connection;
 use std::path::Path;

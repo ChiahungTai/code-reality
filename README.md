@@ -82,10 +82,8 @@ face. All graph-reading
 tools (engine, audit, chain_tour, hub_refs/hazard, snapshot) read a
 self-owned db at `<repo>/.code-reality/graph.db` — produce it with
 `code-reality graph_db build --repo <repo>` (any producer cache); the
-refresh chain is purely producer-side since the W3 import_legacy
-retirement. `code-reality graph_db import_legacy --repo <repo>` remains
-functional but retired (WARN on every invocation) — recovery/migration
-use only, until W4 removes the CRG-era `.code-review-graph/` dbs.
+refresh chain is purely producer-side (the CRG-era `.code-review-graph/`
+import face was fully removed with the W5 legacy-db cleanup).
 `graph_db ensure_indexes --repo <repo>` is an idempotent follow-up that
 adds the engine read-chain indexes to dbs built before that schema
 revision. The `.code-reality/` directory is repo-local data — add it to
@@ -105,13 +103,11 @@ artifacts are required to run them.
 ## References & credits
 
 - **[code-review-graph](https://github.com/tirth8205/code-review-graph)** (MIT, Tirth Kanani) —
-  the graph storage & query layer this toolchain builds on. `snapshot` /
-  `transition` / `hub_refs` / `graph_audit` consume its per-repo
-  SQLite `graph.db` (nodes / edges / communities / flows / FTS5). Its
-  SQLite-native design — one graph.db per repo, `qualified_name UNIQUE` node
-  collapse — is the storage reference this project's derived sqlite cache
-  converges on; the v1 roadmap evaluates adopting it as the internal graph
-  engine (SCIP edge injection into graph.db).
+  the graph storage & query layer this toolchain originally built on
+  (no runtime dependency since the v1+ self-owned-db flip). Its
+  SQLite-native design — one graph.db per repo, `qualified_name UNIQUE`
+  node collapse — is the storage reference this project's graph.db
+  converges on.
 - **[scip-callgraph](https://github.com/Beneficial-AI-Foundation/scip-callgraph)** (MIT OR Apache-2.0, Verus team) —
   an independent productization of the DEF-enclosure caller-edge mechanism
   that `scip_refs --callers` (v0 S2) implements; used as a cross-check
@@ -128,6 +124,8 @@ Dependency chain (verified 2026-08-25, no copyleft):
 - `rust-analyzer` (MIT/Apache-2.0) — produces the SCIP indexes consumed by `scip_refs`
 - `scip.proto` (Apache-2.0, [sourcegraph/scip](https://github.com/sourcegraph/scip)) — vendored at `crates/code-reality/schema/scip.proto`
 - `protobuf` (BSD-3) — runtime for the vendored generated bindings
-- `code-review-graph` (MIT, Copyright Tirth Kanani) — graph.db producer audited by `graph_audit`
+- `code-review-graph` (MIT, Copyright Tirth Kanani) — historical design
+  reference for the graph.db storage model (no runtime dependency since
+  the v1+ self-owned-db flip)
 
 Distribution requires retaining the upstream license notices.

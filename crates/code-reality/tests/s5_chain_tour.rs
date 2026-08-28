@@ -1,8 +1,6 @@
 //! R5-S4 chain_tour tests — mirrors of test_chain_tour case families on
 //! synthetic markdown + crg_db fixtures.
 
-mod crg_fixture;
-
 use code_reality::chain_tour::{
     best_ident, build_tours, parse_blocks, parse_frames, prefix_len, write_tours,
 };
@@ -396,7 +394,7 @@ fn owned_db(repo: &std::path::Path) -> std::path::PathBuf {
 }
 
 #[test]
-fn consumer_db_defaults_to_self_owned_no_import_guidance() {
+fn consumer_db_defaults_to_self_owned() {
     let tmp = tempfile::tempdir().unwrap();
     let repo_unresolved = tmp.path().join("repo");
     std::fs::create_dir_all(repo_unresolved.join(".code-reality")).unwrap();
@@ -415,29 +413,12 @@ fn consumer_db_defaults_to_self_owned_no_import_guidance() {
         },
     )
     .unwrap();
-    // case 1: owned db present, no legacy db -> db + no warns
+    // owned db present -> db + no warns
     let (db, warns) = graph_db::consumer_db(&repo);
     assert_eq!(db, Some(owned_db(&repo)));
-    assert!(warns.is_empty(), "no legacy db in repo: {warns:?}");
+    assert!(warns.is_empty(), "owned db in repo: {warns:?}");
 
-    // case 2 (W3): legacy db present but owned db lacks treesitter-legacy
-    // rows -> db + NO import_legacy guidance (pure-producer graph is the
-    // normal state since the retirement)
-    let legacy_dir = repo.join(".code-review-graph");
-    std::fs::create_dir_all(&legacy_dir).unwrap();
-    crg_fixture::make_crg_db(
-        &legacy_dir.join("graph.db"),
-        &crg_fixture::CrgDbSpec::default(),
-    )
-    .unwrap();
-    let (db, warns) = graph_db::consumer_db(&repo);
-    assert_eq!(db, Some(owned_db(&repo)));
-    assert!(
-        warns.iter().all(|w| !w.contains("import_legacy")),
-        "retirement: no import_legacy guidance: {warns:?}"
-    );
-
-    // case 3: neither db -> None + missing-db warn with build guidance
+    // no owned db -> None + missing-db warn with build guidance
     let repo2 = tmp.path().join("repo2");
     std::fs::create_dir_all(&repo2).unwrap();
     let (db, warns) = graph_db::consumer_db(&repo2);
@@ -491,7 +472,13 @@ fn graph_anchor_rejects_legacy_schema_loudly() {
     let repo = tmp.path().join("repo");
     std::fs::create_dir_all(&repo).unwrap();
     let legacy = repo.join("legacy.db");
-    crg_fixture::make_crg_db(&legacy, &crg_fixture::CrgDbSpec::default()).unwrap();
+    // minimal wrong-schema db (nodes without the symbol column — the
+    // CRG-era shape); the probe must fail loud
+    {
+        let c = rusqlite::Connection::open(&legacy).unwrap();
+        c.execute_batch("CREATE TABLE nodes (qualified_name TEXT)")
+            .unwrap();
+    }
     let err = match GraphAnchor::new(&legacy, &repo) {
         Err(e) => e,
         Ok(_) => panic!("legacy schema must be rejected"),
