@@ -82,6 +82,7 @@ The fatal assumption — "a pure-Rust cargo workspace can ship as
 | SM-5 | 三 dist 部分發布失敗 | trusted publishing 某專案失敗 | 其餘已上傳者不可重傳同版（PyPI 禁）→ fix＋patch bump＋retag | 版號條款 | 新增 UC |
 | SM-6 | GUI-launched harness 無 `~/.cargo/bin` 於 PATH | spawn | S4 裁決的 wrapper 需同時服務此場景（README.md 既有約束） | S4 | Unified MCP |
 | SM-7 | 有 CR checkout 的機器裝了 wheel | 任一 bin 呼叫 | checkout 領先即 WARN（行為不變）；無 checkout 靜默 | S3 復驗 | freshness face |
+| SM-8 | Python-only 機器（無 rust-analyzer）查型別面／呼叫 `.rs` 工具 | `lsp_status`／`hover(.rs)` | status 標 backend unavailable＋安裝指引（S4 補，現行靜默 not-spawned-yet——已查證 server.rs 不探測 binary 存在性）；工具呼叫 loud error | S4 | Unified MCP |
 
 ## 段落劃分原則
 
@@ -222,6 +223,10 @@ UC 引用：完成「新增 UC」的發布閉環。
 **驗證策略**
 - 上列即驗證；另跑 `cargo test --workspace` 回歸（版號 bump 不應動
   任何測試——version face 測試若釘死 `0.1.0` 需同步改釘）。
+- 版號面盤點（ai-rules ① 裁決項）：發布後目檢三面各自自洽（PyPI＝
+  workspace 版；plugin＝接線軸版本；兩軸關係 README 已載）。
+- 文檔分工抽查（ai-rules ②）：MCP 相關安裝示例一律 `uv tool install`
+  而非 `uvx`。
 - 已知未覆蓋：Windows 消費者；pip（非 uv）純 Python 環境差異（wheel
   無 ABI 依賴，風險低）。
 
@@ -251,7 +256,20 @@ UC 引用：完成「新增 UC」的發布閉環。
   重裝驗證。
 - 文檔：repo README Quickstart 增 uv/pip 消費者路徑（cargo 降為
   developer face 標題）；`plugin/README.md` prerequisites 增 wheel
-  選項；AGENTS.md Usage 段一句話帶 wheel 安裝。
+  選項；AGENTS.md Usage 段一句話帶 wheel 安裝。**工具分工條款
+  （ai-rules ②）**：`uv tool install`＝MCP server／常駐 bin 的文檔
+  定位（stdio server 每 session spawn——uvx 每次 invocation 帶
+  resolve/cache 層，對常駐 spawn 是純啟動延遲）；`uvx`＝一次性
+  查詢／CI 腳本。`.mcp.json` 維持直 spawn PATH binary（現狀即是，
+  不引入 uvx）。
+- **rust-analyzer 系統依賴語義（ai-rules ③，查證成立）**：wheel 裝
+  得到 bridge、裝不到 rust-analyzer——Python-only 機器（wheel 分發
+  的主要族群）`.rs` 型別面缺。現行 `lsp_status` 不探測 backend
+  binary 存在性（`server.rs:135-156` 只印 session 狀態；backend
+  lazy 到首次工具呼叫才 loud）——補兩件：Quickstart/README 記系統
+  依賴行（rust-analyzer 不隨 wheel＋安裝命令）；`lsp_status` 對
+  backend binary 缺場標 `unavailable`＋安裝指引（PATH 查找探測，
+  fail-loud 風格）。
 
 **驗證策略**
 - ZCode 新 session：兩 server mount＋工具實呼（比照 0.1.3 弧驗證法）。
@@ -276,6 +294,20 @@ UC 引用：完成「新增 UC」的發布閉環。
 5. **rev face 正交**：`<pkg>+<rev>`（`crates/*/build.rs`）標 build
    身分不標 release；wheels 與 cargo install 兩通道共享同一機制，
    不因發布改動。
+6. **版號面地圖（ai-rules 回饋 ①，2026-08-28 裁決：部分採納）**：
+   版本面有二軸三通道——binary 契約軸（workspace＝PyPI，本條款
+   1-5）與接線軸（plugin manifest＋marketplace entries，0.1.x 序列）。
+   **維持刻意不同步**：兩軸變更理由不同（binary 契約 vs plugin 內容），
+   且機械上無交叉比較發生（ZCode 更新提示只比 marketplace entry vs
+   已裝 plugin.json；`uv tool upgrade` 只看 PyPI）——強制「一次 bump、
+   雙發佈」＝無內容變更的 cache churn＋假版本史。「哪個是最新」的混淆
+   以文檔解（README 記兩軸關係）＋S3「版號面盤點」把關，不以 bump
+   同步解。
+7. **無 checkout 機器的 freshness 語義（ai-rules 回饋 ④）**：stale
+   WARN 的比對源是 CR checkout——wheel-only 機器永遠靜默＝設計使然
+   （無可比對源）；該場景的版本真相源＝PyPI（`uv tool upgrade` 迴路），
+   `--version` 自帶 rev 供人工比對已足。`check-update` 子命令（查
+   PyPI 最新版）列未來候選，不入本 EP。
 
 ## NOT（scope boundary——防 scope creep）
 
@@ -310,4 +342,6 @@ UC 引用：完成「新增 UC」的發布閉環。
    驗證。
 5. **ai-rules handoff**：交付 prompt（code-reality SKILL.md 安裝段
    於 wheels 上線後翻轉；觸發條件＝S3 首發落地）。EP 內不自動跨 repo
-   寫入。
+   寫入。ai-rules 端 `[cr-dist]` 翻轉卡已在該 repo Backlog（2026-08-28
+   回饋附記）——S3 落地時觸發該卡，內容口徑與本 EP S4 文檔條款
+  （uv tool install 定位、rust-analyzer 系統依賴行）對齊。
