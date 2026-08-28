@@ -1,0 +1,11 @@
+{
+  "_generator": "pyright-langserver",
+  "_positions": {
+    "count_var": "int",
+    "scale_func": "def scale( v: int, k: int ) -> int",
+    "attr_probe": "int"
+  },
+  "_probe_only": {
+    "box_class": "Box"
+  }
+}

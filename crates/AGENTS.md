@@ -4,6 +4,42 @@ Rust workspace member(s) of the code-reality toolchain. The frozen-Python
 parity oracle and harness retired at R7 (2026-08-26); cargo synthetic-repo
 tests are the sole gate face.
 
+## code-reality-lsp-bridge (bin crate)
+
+- **role**: LSP↔MCP bridge for the type face (hover / diagnostics /
+  edit-recheck, EP ep-type-face-lsp-bridge) — one MCP server process
+  (stdio, `--stdio` flag; bin `code-reality-lsp-bridge`), one lazily
+  spawned language-server backend (default `pyrefly-lsp`; `--lsp-command`
+  overrides — the bridge itself imports NO language-specific crate,
+  which is the P2 clause: the Rust type face is this crate with
+  rust-analyzer as the backend command).
+- **layering**: `framing` (LSP base-protocol Content-Length framing over
+  child stdio — headers must end `\r\n`, Content-Length only) /
+  `session` (lifecycle + protocol client: lazy spawn + initialize →
+  `initialized` handshake, all interactions serialized under one
+  interaction lock [pyrefly's uris_pending_close assumes a single
+  ordered writer], reader thread three-way split [responses → pending
+  slot, publishDiagnostics → per-URI diag cache, server→client requests
+  → ALWAYS an empty `[]` response — unanswered workspace/configuration
+  freezes pyrefly's background indexing], content overlay
+  [path → last-sent content+version; LRU eviction didCloses the server
+  copy but keeps the overlay, so un-persisted edits survive re-open],
+  `sync_open` [no-op when unchanged; didChange full-sync on out-of-band
+  disk edits; re-open from overlay after eviction]) / `server` (rmcp
+  ToolRouter face: `lsp_status`, `hover` [bounded 500ms retry on the
+  transient null while indexing warms up], `check_file` [convergence =
+  cached push carries the overlay's version or newer AND postdates any
+  mutation this call AND is per-URI quiesced; push-only model — waiting
+  without a mutation would be a guaranteed fake timeout], `edit_file`
+  [range-elided full-content didChange — no UTF-16 endpoint math]; all
+  tools spawn_blocking, SM-14 pattern).
+- **client-capabilities invariant**: the initialize request advertises
+  ONLY `textDocument.hover` + `publishDiagnostics` — never
+  `workspace.configuration` or `didChangeWatchedFiles
+  .dynamicRegistration` (advertising them makes pyrefly issue
+  server→client requests whose answers gate background work).
+- depends on no workspace crate; rmcp hoisted into workspace deps.
+
 ## pyrefly-producer (bin crate)
 
 - **role**: Rust-native Python occurrence producer (ep-pyrefly-native-
@@ -25,6 +61,10 @@ tests are the sole gate face.
   drops refs whose display name ≠ the innermost def).
 - depends on the code-reality lib only for `engine::default_index_path`
   (slot resolution); the main binary stays free of the pyrefly dep tree.
+- **bins**: `pyrefly-index` (occurrence index) + `pyrefly-lsp` (thin
+  stdio host calling upstream `LspArgs::run` from the same pinned-rev
+  engine — the type-face backend the lsp-bridge spawns; engine-version
+  parity between the two faces is a lockfile guarantee, not a config).
 
 ## code-reality (lib + umbrella bin)
 

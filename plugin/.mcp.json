@@ -5,6 +5,12 @@
       "command": "/bin/sh",
       "args": ["-c", "if [ -x \"${HOME}/.cargo/bin/code-reality-mcp\" ]; then exec \"${HOME}/.cargo/bin/code-reality-mcp\" --stdio; fi; exec code-reality-mcp --stdio"],
       "timeoutMs": 60000
+    },
+    "code-reality-lsp-bridge": {
+      "type": "stdio",
+      "command": "/bin/sh",
+      "args": ["-c", "if [ -x \"${HOME}/.cargo/bin/code-reality-lsp-bridge\" ]; then exec \"${HOME}/.cargo/bin/code-reality-lsp-bridge\" --stdio; fi; exec code-reality-lsp-bridge --stdio"],
+      "timeoutMs": 60000
     }
   }
 }

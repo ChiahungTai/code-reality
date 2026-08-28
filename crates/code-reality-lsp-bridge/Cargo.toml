@@ -1,0 +1,15 @@
+[package]
+name = "code-reality-lsp-bridge"
+version.workspace = true
+edition.workspace = true
+license = "MIT"
+
+[dependencies]
+rmcp = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+schemars = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

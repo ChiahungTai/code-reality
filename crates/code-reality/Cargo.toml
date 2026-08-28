@@ -19,7 +19,7 @@ ruff_python_parser = { workspace = true }
 ruff_python_ast = { workspace = true }
 ruff_text_size = "0.0.10"
 fancy-regex = { workspace = true }
-rmcp = { version = "3.1.4", features = ["server", "transport-streamable-http-server", "transport-streamable-http-client-reqwest", "client"] }
+rmcp = { workspace = true, features = ["transport-streamable-http-server", "transport-streamable-http-client-reqwest", "client"] }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 hyper-util = { workspace = true }

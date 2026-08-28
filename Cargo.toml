@@ -25,6 +25,7 @@ tokio-util = { version = "0.7", features = ["compat"] }
 hyper-util = { version = "0.1", features = ["tokio", "server-auto"] }
 axum = "0.8"
 schemars = "1.2.2"
+rmcp = { version = "3.1.4", features = ["server"] }
 
 [profile.release]
 # Query tooling: prefer fast index decode (the 275MB NT index parses in ~0.7s in release).
