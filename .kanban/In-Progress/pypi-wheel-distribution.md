@@ -22,11 +22,14 @@
 
 ## 驗收標準
 
-1. 三 dist 上 PyPI；`uv tool install`＋`uvx` 陌生路徑實跑可用
+1. 三 dist 上 PyPI ✅ DONE（2026-08-28 v0.2.0，run `33186412174`：
+   `uvx` 陌生路徑＋PyPI 直裝 venv 五 bin 全 `0.2.0+aacebd6`；本機
+   `uv tool install` 實裝隨 S4 spawn 翻轉後）
 2. CI dry-run ✅ DONE（2026-08-28 run `33182529285`：四腿全綠＝
    縮編超集、publish gate skipped 正確、12 顆 artifacts tag 全驗；
    Linux 編譯可行＝免費情報）；tag push 只在綠 build 發布
-3. 首發 workspace version `0.2.0`；版號三層條款生效（EP frozen 段）
+3. 首發 workspace version `0.2.0` ✅ DONE（版號條款生效：tag→綠
+   build→publish；版號面盤點通過——PyPI＝workspace＝wheel＝--version）
 4. spawn 優先序翻轉後：ZCode 新 session 雙 server mount＋GUI 無
    PATH 場景可 spawn＋freshness WARN 兩通道各驗一次
 5. Linux 腿 deferred（2026-08-28 縮編）；in-flight 全矩陣 dry-run

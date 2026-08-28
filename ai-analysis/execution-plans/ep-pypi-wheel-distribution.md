@@ -305,6 +305,16 @@ UC 引用：完成「新增 UC」的發布閉環。
   workspace 版；plugin＝接線軸版本；兩軸關係 README 已載）。
 - 文檔分工抽查（ai-rules ②）：MCP 相關安裝示例一律 `uv tool install`
   而非 `uvx`。
+
+**S3 收案（2026-08-28 深夜，run `33186412174`）**：`v0.2.0` tag →
+build 綠＋三 publish job 各自 environment OIDC 全過——PyPI 三專案上線
+（各一顆 macosx_11_0_arm64 wheel）。消費者驗證：`uvx code-reality
+--version`＝`0.2.0+aacebd6`（PyPI 下載、陌生路徑、無 WARN＝rev 對
+齊）；PyPI 直裝 venv 三 dist 五 bin 全 `0.2.0+aacebd6`、pyrefly-lsp
+engine pin 面正確。版號面盤點：PyPI＝workspace＝wheel＝`--version`
+pkg 段＝0.2.0 ✓；plugin 軸 0.1.3 獨立（兩軸關係文檔隨 S4）。本機
+`uv tool install` 實裝刻意延後（S4 spawn 翻轉前避免 ~/.local/bin 與
+開發 cargo 面疊影——以 uvx＋venv 等價驗證）。剩餘：S4＋弧收尾。
 - 已知未覆蓋：Windows 消費者；pip（非 uv）純 Python 環境差異（wheel
   無 ABI 依賴，風險低）。
 
