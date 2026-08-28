@@ -24,6 +24,11 @@ rustup component add rust-analyzer                                           # R
 first three put their bins on PATH; missing backends surface as loud
 tool errors with install guidance)
 
+Freshness: `--version` on any bin prints `<pkg>+<git rev>`; when a CR
+checkout is present on the machine, invocations warn once on stderr if
+the installed binary lags it (stale HEAD or uncommitted `crates/`
+edits).
+
 ## Install
 
 The repo root doubles as the plugin marketplace (see

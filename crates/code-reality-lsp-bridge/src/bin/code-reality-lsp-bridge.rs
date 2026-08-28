@@ -10,12 +10,22 @@
 
 #[tokio::main]
 async fn main() {
+    stale_binary_warn();
     let mut py_backend = "pyrefly-lsp".to_string();
     let mut rs_backend = "rust-analyzer".to_string();
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
             "--stdio" => {} // stdio is the only mode; flag accepted for symmetry
+            "--version" | "-V" => {
+                let rev = option_env!("CR_BUILD_REV");
+                let face = match rev {
+                    Some(r) => format!("{}+{}", env!("CARGO_PKG_VERSION"), r),
+                    None => env!("CARGO_PKG_VERSION").to_string(),
+                };
+                println!("{face}");
+                std::process::exit(0);
+            }
             "--lsp-command" => match args.next() {
                 Some(v) => py_backend = v,
                 None => {
@@ -39,6 +49,63 @@ async fn main() {
     if let Err(e) = run(py_backend, rs_backend).await {
         eprintln!("[FAIL] {e}");
         std::process::exit(2);
+    }
+}
+
+/// Local copy of the freshness warn (the crate depends on no workspace
+/// crate — the P2 independence clause; keep in sync with
+/// code-reality/src/freshness.rs). One stderr line per process when the
+/// installed binary lags the CR checkout.
+fn stale_binary_warn() {
+    static WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    if WARNED.set(()).is_err() {
+        return;
+    }
+    let Some(embedded) = option_env!("CR_BUILD_REV") else {
+        return;
+    };
+    let repo = std::env::var_os("CR_REPO")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
+                .join("Github/code-reality")
+        });
+    if !repo.is_dir() {
+        return;
+    }
+    if !repo.join("crates/code-reality-lsp-bridge").is_dir() {
+        return;
+    }
+    let head = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&repo)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+    if let Some(head) = head {
+        let base = embedded.strip_suffix("-dirty").unwrap_or(embedded);
+        if !base.is_empty() && base != "unknown" && !head.starts_with(base) {
+            let short = &head[..head.len().min(7)];
+            eprintln!(
+                "[WARN] installed binary {embedded} != repo HEAD {short} — rerun: cargo install --path {}/crates/code-reality-lsp-bridge",
+                repo.display()
+            );
+            return;
+        }
+    }
+    let dirty = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&repo)
+        .args(["status", "--porcelain", "--", "crates/"])
+        .output()
+        .map(|o| o.status.success() && !o.stdout.is_empty())
+        .unwrap_or(false);
+    if dirty {
+        eprintln!(
+            "[WARN] working tree has uncommitted changes under crates/ — installed binary may lag (commit triggers auto-reinstall)"
+        );
     }
 }
 

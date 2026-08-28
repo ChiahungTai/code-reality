@@ -1,0 +1,41 @@
+#!/bin/sh
+# post-commit — background reinstall of changed crates (EP
+# ep-binary-freshness-face). Keeps ~/.cargo/bin in sync with HEAD so the
+# freshness WARN never lingers. Maintainer-layout paths (~/Github/
+# code-reality, ~/.mosaic): external users must adapt before opting in
+# via `git config core.hooksPath .githooks`.
+# Matching is per-line (POSIX case patterns anchor both ends — a
+# whole-string `*Cargo.toml` arm would only fire when the sorted diff
+# happens to END with the root manifest, i.e. never alongside
+# lowercase paths; review R1).
+log_dir="$HOME/.mosaic/code-reality"
+mkdir -p "$log_dir"
+log="$log_dir/install.log"
+changed=$(git diff --name-only HEAD~1 HEAD 2>/dev/null) || changed="all"
+inst() {
+    echo "$(date '+%F %T') install $1 start" >> "$log"
+    cargo install --path "$HOME/Github/code-reality/crates/$1" >> "$log" 2>&1
+    echo "$(date '+%F %T') install $1 done" >> "$log"
+}
+(
+    if [ "$changed" = "all" ]; then
+        inst code-reality
+        inst pyrefly-producer
+        inst code-reality-lsp-bridge
+    else
+        printf '%s\n' "$changed" | while IFS= read -r f; do
+            case "$f" in
+                crates/code-reality-lsp-bridge/*) inst code-reality-lsp-bridge ;;
+                # code-reality changes also rebuild pyrefly-producer (path dep)
+                crates/code-reality/*) inst code-reality; inst pyrefly-producer ;;
+                crates/pyrefly-producer/*) inst pyrefly-producer ;;
+                Cargo.toml|Cargo.lock)
+                    inst code-reality
+                    inst pyrefly-producer
+                    inst code-reality-lsp-bridge
+                    ;;
+            esac
+        done
+    fi
+    echo "$(date '+%F %T') hook done" >> "$log"
+) > /dev/null 2>&1 &

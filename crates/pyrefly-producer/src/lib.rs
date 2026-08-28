@@ -45,6 +45,13 @@ pub struct EmitReport {
     pub elapsed_secs: f64,
 }
 
+/// Bin-face wrapper for the shared freshness warn (EP
+/// ep-binary-freshness-face): one stderr line when the installed binary
+/// lags the CR checkout.
+pub fn report_stale_binary() {
+    code_reality::freshness::stale_binary_warn("pyrefly-producer");
+}
+
 /// Emit a SCIP index for `repo_root` into its sidecar slot (or `out`).
 pub fn emit(repo_root: &Path, out: Option<&Path>) -> Result<EmitReport, String> {
     let t0 = Instant::now();

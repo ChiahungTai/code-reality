@@ -6,6 +6,7 @@
 
 #[tokio::main]
 async fn main() {
+    code_reality::freshness::stale_binary_warn("code-reality");
     let stdio = std::env::args_os().any(|a| a.to_string_lossy() == "--stdio");
     let result = if stdio {
         code_reality::mcp_server::serve_stdio().await

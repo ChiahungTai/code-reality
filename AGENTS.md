@@ -22,6 +22,18 @@ preserved verbatim.)
 
 ## Usage (from any repo cwd)
 
+Freshness face: every bin embeds its build rev (`git describe --always
+--dirty --exclude=*` via build.rs) — `--version` prints
+`<pkg>+<rev>` (`pyrefly-lsp` keeps its own face with the engine rev;
+it never warns — it is a spawned backend). The four WARN-wired bins
+(`code-reality`, `code-reality-mcp`, `pyrefly-index`,
+`code-reality-lsp-bridge`) each emit one stderr WARN when the CR
+checkout's HEAD has moved past the embedded rev or carries uncommitted
+`crates/` edits (silent install-lag trap, 2026-08-28). The CR repo's
+`.githooks/post-commit` (maintainer layout, opt-in via
+`core.hooksPath=.githooks`) background-reinstalls changed crates so the
+installed face follows HEAD.
+
 ```
 code-reality <tool> --repo <repo-root> [args]
 ```
@@ -58,6 +70,7 @@ Installed via `cargo install --path ~/Github/code-reality/crates/code-reality` (
 | Rust-native Python occurrence producer (Pyrefly link, SCIP face) | `cargo run --release -p pyrefly-producer --bin pyrefly-index -- --repo <repo> [--out <index.scip>]` — linked Pyrefly engine (git-dep rev `1d64c4b`) emits a SCIP index into the repo-keyed slot; dunder-pair collapse, rel-path module identity, byte-deterministic output; S2 dogfood: defs coverage 99.6% name-normalized vs lsp golden, mosaic full 73s. scip-python fork demoted to fallback (retained, not default). Same crate also ships `pyrefly-lsp` (thin stdio host calling upstream `LspArgs::run` — the type-face backend below; engine-version parity with the producer is a lockfile guarantee). On write the producer invalidates superseded sidecar artifacts beside the slot (stale cache db / stamped meta) — they would otherwise be silently trusted (silent bad-db relay 2026-08-28); `graph_db build`'s lsp fast-path fails loud on the same mtime contradiction as defense-in-depth. B7b (W2 EP): constructor calls resolving to a corpus class (dataclass / object-inherit) mint a pseudo-constructor `Cls().` call ref + one-shot DEF backfill (fn-shaped → passes the fn-tail gate, pairs with legacy class nodes); per-site B7a guard keeps corpus-`__init__` sites in method grain; alias Class-kind display mismatch exempted from the local-binding guard | ✅ |
 | S5 resolved-legacy coverage metric | `uv run python scripts/s5_coverage.py --db <repo>/.code-reality/graph.db [--json]` — four layers (raw / R2-3 carve / B7a-normalized / full-denominator gate) + diagnostics (basename collisions, alias REFERENCES residual). W2 settlement: gate 95.42% on mosaic @`24ced017` (frozen corpus), 93.86% on HEAD `0914dedd` (95.43% after carving 345 stale legacy endpoints) — W3 retirement adjudication material | ✅ |
 | Type face via LSP bridge (hover / diagnostics / edit-recheck — Python .py via pyrefly, Rust .rs via rust-analyzer) | `code-reality-lsp-bridge --stdio [--lsp-command <py-cmd>] [--rust-backend <rs-cmd>]` — MCP server routing by file extension; tools `lsp_status` / `hover(file,line,character)` / `check_file(file)` / `edit_file(file,content)`; one lazy backend session per language (independent lifecycles; rust-analyzer spawns with no flags). Consumer scenarios: hover a type signature; check a file's type errors (out-of-band disk edits auto-synced); edit in-memory then recheck (un-persisted edits survive LRU eviction; Rust flycheck/cargo-check runs on disk content). The crate has no language-specific dependencies (the P2 clause is fulfilled: the Rust face reuses the same crate). Equivalence batteries: `tests/equivalence_battery.rs` vs pyright baseline + `tests/ra_equivalence_battery.rs` vs frozen rust-analyzer baseline. Plugin entry added 2026-08-28 (inert until the next version bump — ZCode plugin cache is version-keyed) | ✅ |
+| Binary freshness face | `--version` on any bin (`<pkg>+<git rev>`, embedded via per-crate build.rs) + one-per-process stderr WARN when the CR checkout's HEAD has moved past the embedded rev or carries uncommitted `crates/` edits (`CR_REPO` env or `~/Github/code-reality` fallback; silent on machines without a checkout) + `.githooks/post-commit` background reinstall of changed crates (maintainer layout, opt-in `core.hooksPath=.githooks`) | ✅ |
 
 ## Tests
 

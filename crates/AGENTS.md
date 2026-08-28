@@ -48,6 +48,9 @@ tests are the sole gate face.
   .dynamicRegistration` (advertising them makes pyrefly issue
   server→client requests whose answers gate background work).
 - depends on no workspace crate; rmcp hoisted into workspace deps.
+  The bin's `stale_binary_warn()` is a LOCAL COPY of
+  `code-reality/src/freshness.rs` (the no-workspace-dep clause wins
+  over sharing) — change both together.
 
 ## pyrefly-producer (bin crate)
 
@@ -68,8 +71,9 @@ tests are the sole gate face.
   from rel paths on both defs and targets — pyrefly handle naming is
   fallback-shaped and would split symbol identity; local-binding guard
   drops refs whose display name ≠ the innermost def).
-- depends on the code-reality lib only for `engine::default_index_path`
-  (slot resolution); the main binary stays free of the pyrefly dep tree.
+- depends on the code-reality lib for `engine::default_index_path`
+  (slot resolution) and `freshness::stale_binary_warn`; the main
+  binary stays free of the pyrefly dep tree.
 - **bins**: `pyrefly-index` (occurrence index) + `pyrefly-lsp` (thin
   stdio host calling upstream `LspArgs::run` from the same pinned-rev
   engine — the type-face backend the lsp-bridge spawns; engine-version

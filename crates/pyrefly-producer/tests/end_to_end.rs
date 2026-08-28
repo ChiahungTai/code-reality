@@ -354,3 +354,37 @@ fn emit_invalidates_stale_sidecar_artifacts() {
     assert!(!fndefs_db.exists(), "stale fn-defs sidecar gone");
     let _ = std::fs::remove_dir_all(&repo);
 }
+
+#[test]
+fn pyrefly_index_version_face_carries_rev() {
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_pyrefly-index"))
+        .arg("--version")
+        .env("CR_REPO", "/nonexistent")
+        .output()
+        .expect("spawn pyrefly-index bin");
+    assert!(out.status.success());
+    let line = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    assert!(
+        line == env!("CARGO_PKG_VERSION")
+            || line.starts_with(concat!(env!("CARGO_PKG_VERSION"), "+")),
+        "pkg or pkg+rev face (git-less builds fall back to pkg-only): {line}"
+    );
+    assert!(!line.contains(' '), "no spaces: {line}");
+}
+
+#[test]
+fn pyrefly_lsp_version_face_carries_rev() {
+    // pyrefly-lsp keeps its own face (engine rev rides along); it never
+    // warns — it is a backend spawned by the bridge.
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_pyrefly-lsp"))
+        .arg("--version")
+        .env("CR_REPO", "/nonexistent")
+        .output()
+        .expect("spawn pyrefly-lsp bin");
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("(engine: pinned git rev 1d64c4b)"),
+        "engine rev still reported: {stdout}"
+    );
+}

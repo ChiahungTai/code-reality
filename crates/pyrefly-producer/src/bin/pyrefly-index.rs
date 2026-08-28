@@ -11,6 +11,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
+    pyrefly_producer::report_stale_binary();
     let mut repo: Option<String> = None;
     let mut out: Option<String> = None;
     let mut args = std::env::args().skip(1);
@@ -20,6 +21,15 @@ fn main() -> ExitCode {
             "--out" => out = args.next(),
             "--help" | "-h" => {
                 println!("usage: pyrefly-index --repo <repo-root> [--out <index.scip>]");
+                return ExitCode::SUCCESS;
+            }
+            "--version" | "-V" => {
+                let rev = option_env!("CR_BUILD_REV");
+                let face = match rev {
+                    Some(r) => format!("{}+{}", env!("CARGO_PKG_VERSION"), r),
+                    None => env!("CARGO_PKG_VERSION").to_string(),
+                };
+                println!("{face}");
                 return ExitCode::SUCCESS;
             }
             other => {

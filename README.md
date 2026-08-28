@@ -29,6 +29,12 @@ cargo install --path crates/code-reality-lsp-bridge   # code-reality-lsp-bridge 
 rustup component add rust-analyzer                    # the Rust type-face backend (spawns with no flags)
 ```
 
+Every bin answers `--version` with `<pkg>+<git rev>` and warns on
+stderr when a local CR checkout has moved past the installed build.
+Maintainers can auto-reinstall on commit: `git config core.hooksPath
+.githooks` (the shipped post-commit hook uses `~/Github/code-reality`
+and `~/.mosaic` paths — adapt before opting in on another layout).
+
 **ZCode / Claude Code plugin** (stdio MCP + usage skill, zero daemon):
 add this repo as a plugin marketplace (Settings → Plugin
 Management → Discover → `+` → Git URL or GitHub URL —

@@ -22,8 +22,10 @@ fn main() -> ExitCode {
     for a in std::env::args().skip(1) {
         match a.as_str() {
             "--version" => {
+                let rev = option_env!("CR_BUILD_REV");
+                let suffix = rev.map(|r| format!("+{r}")).unwrap_or_default();
                 println!(
-                    "pyrefly-lsp {} (engine: pinned git rev 1d64c4b)",
+                    "pyrefly-lsp {}{suffix} (engine: pinned git rev 1d64c4b)",
                     env!("CARGO_PKG_VERSION")
                 );
                 return ExitCode::SUCCESS;

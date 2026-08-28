@@ -62,6 +62,7 @@ pub mod common;
 pub mod delta_tour;
 pub mod engine;
 pub mod fndefs;
+pub mod freshness;
 pub mod graph_audit;
 pub mod graph_db;
 pub mod graph_engine;
