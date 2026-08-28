@@ -23,12 +23,14 @@
 ## 驗收標準
 
 1. 三 dist 上 PyPI；`uv tool install`＋`uvx` 陌生路徑實跑可用
-2. CI dry-run（workflow_dispatch）12 wheels（4 平台×3 crate）全綠；
+2. CI dry-run（workflow_dispatch）3 wheels（**macOS arm64×3 crate，
+   user 2026-08-28 縮編**；Linux 腿 deferred）全綠；
    tag push 只在綠 build 發布
 3. 首發 workspace version `0.2.0`；版號三層條款生效（EP frozen 段）
 4. spawn 優先序翻轉後：ZCode 新 session 雙 server mount＋GUI 無
    PATH 場景可 spawn＋freshness WARN 兩通道各驗一次
-5. Linux build kill-gate 有結論（全矩陣或 descope 決議記錄）
+5. Linux 腿 deferred（2026-08-28 縮編）；in-flight 全矩陣 dry-run
+   `33182529285` 的 Linux 結果作未來重啟情報記錄
 
 ## 備註
 

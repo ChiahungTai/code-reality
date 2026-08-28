@@ -1,11 +1,14 @@
 # PyPI wheel release matrix (EP: ep-pypi-wheel-distribution S2).
 #
+# Scope: macOS arm64 ONLY (user adjudication 2026-08-28 — verify/ship
+# what this machine's users run; the full platform matrix stays below,
+# commented, for when Linux consumers exist).
+#
 # Two faces:
-#   - workflow_dispatch = dry-run: build 12 wheels (4 platforms x 3 crates),
-#     upload as artifacts, publish NOTHING. Use this to validate the matrix
-#     (Linux build of the pyrefly engine git-dep is the kill-gate).
-#   - push tag v* = same matrix + publish job (currently gated OFF; S3 wires
-#     PyPI trusted publishing and flips the gate).
+#   - workflow_dispatch = dry-run: build 3 wheels (macOS arm64 x 3
+#     crates), upload as artifacts, publish NOTHING.
+#   - push tag v* = same matrix + publish job (currently gated OFF; S3
+#     wires PyPI trusted publishing and flips the gate).
 #
 # This workflow is inert until the repo has a remote and is pushed.
 
@@ -38,15 +41,18 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
             cross: false
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            cross: true  # Apple toolchain cross; rustup target only
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            cross: false
-          - os: ubuntu-24.04-arm  # free native arm64 runner, public repos
-            target: aarch64-unknown-linux-gnu
-            cross: false
+          # --- deferred full matrix (re-enable per platform as consumers
+          # --- appear; the first in-flight dry-run run 33182529285 tested
+          # --- these legs for free and its outcome is recorded in the EP):
+          # - os: macos-latest
+          #   target: x86_64-apple-darwin
+          #   cross: true  # Apple toolchain cross; rustup target only
+          # - os: ubuntu-latest
+          #   target: x86_64-unknown-linux-gnu
+          #   cross: false
+          # - os: ubuntu-24.04-arm  # free native arm64 runner, public repos
+          #   target: aarch64-unknown-linux-gnu
+          #   cross: false
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

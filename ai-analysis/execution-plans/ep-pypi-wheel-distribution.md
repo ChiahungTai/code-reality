@@ -193,7 +193,11 @@ Linux build 是全 EP 唯一未先驗風險（pyrefly engine git-dep 於 Linux
   - `workflow_dispatch`（dry-run：只 build＋上傳 artifacts，不發布）
   - `on: push: tags: ['v*']`（build＋發布，發布步驟本段留 no-op，
     S3 接上 trusted publishing）
-  - matrix（4 平台 × 3 crate = 12 wheels）：
+  - matrix（**縮編裁決 user 2026-08-28「之後只要驗證 macos arm 就好，
+    還沒有要做這麼大事業」：macOS arm64 單腿×3 crate＝3 wheels**；
+    原 4 平台矩陣保留在 workflow 註解，Linux/x86_64 腿 deferred——
+    首個 in-flight dry-run `33182529285` 以舊定義跑了全矩陣，其
+    Linux 結果作免費情報記錄，不再 gate 本 EP）：
     - `macos-latest`（arm64 native）
     - macOS x86_64：`rustup target add x86_64-apple-darwin`＋
       `maturin build --target x86_64-apple-darwin`（Apple 原生 cross）
@@ -205,8 +209,10 @@ Linux build 是全 EP 唯一未先驗風險（pyrefly engine git-dep 於 Linux
     install maturin`（pin 版）→ 三次 maturin build → upload-artifact
     （**artifact 名每 leg 唯一** `wheels-<target>`——v4 同名跨
     matrix 衝突，review I6）。
-- **Kill-gate**：pyrefly-producer 在 Linux 編譯失敗 → descope Linux
-  平台為後續追蹤（首發 macOS-only），不擋軸；成功則全矩陣進 S3。
+- **Kill-gate（已隨縮編裁決除役）**：原設計「pyrefly-producer 在
+  Linux 編譯失敗 → descope Linux」——2026-08-28 縮編後 Linux 腿
+  本來就不跑，gate 不存在；in-flight 全矩陣 dry-run 的 Linux 結果
+  僅作未來重啟的情報。
 
 **Pseudo Code（workflow 骨架）**
 ```
@@ -380,7 +386,9 @@ UC 引用：完成「新增 UC」的發布閉環。
 - **不做** CRG 式 `setup`/`install` 子命令（獨立薄弧；解 onboarding
   不解 freshness）。
 - **不做** CC community marketplace 投稿（wheels 落地後另議）。
-- **不做** Windows wheels、musllinux（CI 面後續低成本擴充）。
+- **不做** Windows wheels、musllinux、**Linux（glibc）——2026-08-28
+  縮編裁決：驗證與發布矩陣＝macOS arm64 單腿，Linux 消費者出現再
+  重啟（CI 面低成本擴充）**。
 - **不做** crates.io 發布（`cargo install --path` 維持開發者路徑；
   消費者導向 wheels——ruff 先例）。
 - **不改** launchd HTTP 面（與本軸正交）。
