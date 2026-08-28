@@ -13,4 +13,4 @@ classifiers = [
 ]
 
 [project.urls]
-Repository = "https://github.com/ctai/code-reality"
+Repository = "https://github.com/ChiahungTai/code-reality"

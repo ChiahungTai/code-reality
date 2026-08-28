@@ -43,7 +43,7 @@ repo root carries both market files — `marketplace.json` (ZCode) and
 `.claude-plugin/marketplace.json` (Claude Code). Add this repo as a
 plugin marketplace (ZCode: Settings → Plugin Management → Discover →
 `+` → Git URL or GitHub URL; Claude Code: `/plugin marketplace add
-ctai/code-reality`), install `code-reality`. Two MCP servers mount per
+ChiahungTai/code-reality`), install `code-reality`. Two MCP servers mount per
 session: `plugin:code-reality:code-reality` (structural face) and
 `plugin:code-reality:code-reality-lsp-bridge` (Python type face —
 hover / check_file / edit_file / lsp_status tools; spawns the

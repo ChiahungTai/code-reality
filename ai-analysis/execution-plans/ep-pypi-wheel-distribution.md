@@ -57,7 +57,7 @@ I4 維持現狀。
 
 | ID | 嚴重度 | EP 段落 | 問題 | 建議 | 狀態 |
 |----|--------|---------|------|------|------|
-| R1 | 🔴 必須修正 | S2/S3/整合策略 | repo 無 git remote，EP 無此前置——dry-run（server-side Actions）與 trusted publishing（OIDC 綁死 slug `ctai/code-reality`）全假設 remote 存在；AGENTS.md「remote GitHub」自述與 `git remote -v` 空矛盾 | S0 前置步驟（見段落劃分原則）；降級路線＝手動上傳 fallback 記錄不為預設 | implemented |
+| R1 | 🔴 必須修正 | S2/S3/整合策略 | repo 無 git remote，EP 無此前置——dry-run（server-side Actions）與 trusted publishing（OIDC 綁死 slug `ChiahungTai/code-reality`）全假設 remote 存在；AGENTS.md「remote GitHub」自述與 `git remote -v` 空矛盾 | S0 前置步驟（見段落劃分原則）；降級路線＝手動上傳 fallback 記錄不為預設 | implemented |
 | Y1 | 🟡 | S4 | 錨點 drift：GUI-PATH 約束實際在 `README.md:71-73`（67-69 是 JSON snippet；0.1.3 弧編輯後位移） | 改錨點 | implemented |
 | Y2 | 🟡 | 收尾 4 | audit-test 跳過理由對 S4 不成立——`lsp_status` availability 探測是 Rust 行為變更（crate 有現存測試面） | 跳過 scope 到 S1-S3；S4 補最小 smoke test 或免測理由 | implemented |
 | Y3 | 🟡 | S4 | plugin bump 段漏 dist slice 重生成——directory-source 驗證會用舊 slice | 補 rerun `dist-marketplace.sh`＋marketplace refresh | implemented |
@@ -121,7 +121,7 @@ build 是全 EP 唯一未先驗的風險，設 kill-gate（descope 不擋軸）�
 
 **S0 前置（review R1）**：repo 目前無 git remote——S2 dry-run（GitHub
 Actions 是 server-side）與 S3 trusted publishing（OIDC 綁死 repo slug）
-都假設 public repo `ctai/code-reality` 存在（pyproject urls 與 publisher
+都假設 public repo `ChiahungTai/code-reality` 存在（pyproject urls 與 publisher
 皆寫死此 slug）。**建立 remote＋首次 push 是 user 的 outward action，
 EP 不自動執行**；S2 本地可驗面（workflow 撰寫＋yamllint）不受阻擋，
 dry-run 驗收以此為 gate。降級路線（remote 延後時）：本機
@@ -168,7 +168,7 @@ crates/code-reality-lsp-bridge/pyproject.toml
 # requires-python = ">=3.8"
 # license = "MIT"
 # [project.urls]
-# Repository = "https://github.com/ctai/code-reality"
+# Repository = "https://github.com/ChiahungTai/code-reality"
 ```
 
 **驗證策略**
@@ -254,7 +254,7 @@ UC 引用：完成「新增 UC」的發布閉環。
 
 **要點**
 - PyPI 一次性手動步驟：為三個專案各建 trusted publisher（OIDC 綁
-  repo `ctai/code-reality`＋workflow 檔名＋environment `release`）；
+  repo `ChiahungTai/code-reality`＋workflow 檔名＋environment `release`）；
   workflow 加 `environment: release`＋`maturin-action`（或 maturin
   CLI）`--upload` 面。
 - 首發流程：workspace version bump → commit → `git tag v0.2.0` →

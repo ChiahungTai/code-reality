@@ -20,7 +20,7 @@ cargo install --path ~/Github/code-reality/crates/code-reality-lsp-bridge   # co
 rustup component add rust-analyzer                                           # Rust backend
 ```
 
-(or from a checkout of https://github.com/ctai/code-reality — the
+(or from a checkout of https://github.com/ChiahungTai/code-reality — the
 first three put their bins on PATH; missing backends surface as loud
 tool errors with install guidance)
 
@@ -42,7 +42,7 @@ Two market files point at the same `./plugin` slice: the repo-root
 (Claude Code format, adds the required `owner` field). Register either
 market (ZCode: Settings → Plugin Management → Discover → `+` → this
 repo's local path, Git URL, or GitHub URL; Claude Code: `/plugin
-marketplace add ctai/code-reality`). The plugin appears under
+marketplace add ChiahungTai/code-reality`). The plugin appears under
 Personal → install. Both MCP servers mount under
 `plugin:code-reality:*` and the skill auto-loads.
 
