@@ -2,7 +2,7 @@
 name = "pyrefly-producer"
 version.workspace = true
 edition.workspace = true
-publish = false
+publish = false  # crates.io only — distribution is via PyPI wheels (ep-pypi-wheel-distribution)
 
 [dependencies]
 pyrefly = { git = "https://github.com/facebook/pyrefly.git", rev = "1d64c4b605445f43d66162e56592837223b3dabf" }

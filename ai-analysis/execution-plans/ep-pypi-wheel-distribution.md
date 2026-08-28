@@ -49,6 +49,32 @@ The fatal assumption — "a pure-Rust cargo workspace can ship as
   builds (user scoped the local spike to this arch — S2 is the
   kill-gate).
 
+## EP Review Findings
+
+獨立 agent 審查（2026-08-28，F1-F5＋深層思考；錨點逐一實讀、PyPI
+三名實查 404 可用）。judge 結果：R1＋Y1-Y4＋I1-I3＋I5-I7 採納回寫；
+I4 維持現狀。
+
+| ID | 嚴重度 | EP 段落 | 問題 | 建議 | 狀態 |
+|----|--------|---------|------|------|------|
+| R1 | 🔴 必須修正 | S2/S3/整合策略 | repo 無 git remote，EP 無此前置——dry-run（server-side Actions）與 trusted publishing（OIDC 綁死 slug `ctai/code-reality`）全假設 remote 存在；AGENTS.md「remote GitHub」自述與 `git remote -v` 空矛盾 | S0 前置步驟（見段落劃分原則）；降級路線＝手動上傳 fallback 記錄不為預設 | implemented |
+| Y1 | 🟡 | S4 | 錨點 drift：GUI-PATH 約束實際在 `README.md:71-73`（67-69 是 JSON snippet；0.1.3 弧編輯後位移） | 改錨點 | implemented |
+| Y2 | 🟡 | 收尾 4 | audit-test 跳過理由對 S4 不成立——`lsp_status` availability 探測是 Rust 行為變更（crate 有現存測試面） | 跳過 scope 到 S1-S3；S4 補最小 smoke test 或免測理由 | implemented |
+| Y3 | 🟡 | S4 | plugin bump 段漏 dist slice 重生成——directory-source 驗證會用舊 slice | 補 rerun `dist-marketplace.sh`＋marketplace refresh | implemented |
+| Y4 | 🟡 | S4/S3 | `uvx pyrefly-producer` 必敗——dist 無同名 bin（bins＝pyrefly-index/pyrefly-lsp） | 文檔條款補 `uvx --from pyrefly-producer <bin>` | implemented |
+| I1 | ℹ️ | S3 | 正面查證：version-face 測試動態斷言 `env!("CARGO_PKG_VERSION")` 未釘死；三 PyPI 名 2026-08-28 均 404 | 條件句收斂為肯定句 | implemented |
+| I2 | ℹ️ | S1 | EP 伪碼缺 `[build-system]`（maturin 必要件）；root 殘留 `index.scip` | 伪碼補齊＋清檔 | implemented |
+| I3 | ℹ️ | S2 | `rust-toolchain.toml` 釘 1.96.0——「rustup stable」文字與實際不符；target add 需對 pinned toolchain 生效 | 文字修正＋workflow 步驟改 rustup show | implemented |
+| I4 | ℹ️ | 全文 | EP 中文撰寫、封存語料混用——AGENTS.md 英文義務不含 ai-analysis 規劃文檔，不違規 | 維持 | wontfix（記錄） |
+| I5 | ℹ️ | SM | 缺 uv tool upgrade 迴路、CLI PATH 疊影兩場景 | SM-9/SM-10 | implemented |
+| I6 | ℹ️ | S2 | upload-artifact v4 同名跨 matrix 衝突 | 要點註明 per-leg 唯一名（實作已用 `wheels-<target>`） | implemented |
+| I7 | ℹ️ | S3/S1 | build.rs 頭註「no tags」首 tag 後過時；`publish = false` 與 PyPI 發布語義相悖（僅指 crates.io） | S3 順手改註；Cargo.toml 加註解 | implemented |
+
+審查深層思考兩點收納：trusted publishing 定位為**終態而非首發必要條件**
+（remote 延後時手動發布是唯一可執行路）；S4 文檔面（rust-analyzer
+系統依賴行、Quickstart 雙路徑）不技術依賴 wheels 上線——remote 卡住
+時可獨立先行。
+
 ## UC 盤點
 
 ### Backlog 關聯
@@ -83,6 +109,8 @@ The fatal assumption — "a pure-Rust cargo workspace can ship as
 | SM-6 | GUI-launched harness 無 `~/.cargo/bin` 於 PATH | spawn | S4 裁決的 wrapper 需同時服務此場景（README.md 既有約束） | S4 | Unified MCP |
 | SM-7 | 有 CR checkout 的機器裝了 wheel | 任一 bin 呼叫 | checkout 領先即 WARN（行為不變）；無 checkout 靜默 | S3 復驗 | freshness face |
 | SM-8 | Python-only 機器（無 rust-analyzer）查型別面／呼叫 `.rs` 工具 | `lsp_status`／`hover(.rs)` | status 標 backend unavailable＋安裝指引（S4 補，現行靜默 not-spawned-yet——已查證 server.rs 不探測 binary 存在性）；工具呼叫 loud error | S4 | Unified MCP |
+| SM-9 | wheel 版落後升級 | `uv tool upgrade <dist>` | 拉最新 PyPI 版（條款 7 迴路） | 無 | 新增 UC |
+| SM-10 | CLI 直呼時 cargo bin 與 uv tool bin 同名疊影 | `which code-reality` | 文檔明示以 which／絕對路徑辨識（spawn 面＝SM-3） | S4 文檔 | freshness face |
 
 ## 段落劃分原則
 
@@ -90,6 +118,14 @@ The fatal assumption — "a pure-Rust cargo workspace can ship as
 S4（spawn 翻轉＋文檔，需 wheels 已上線才有裁決依據）。S2 的 Linux
 build 是全 EP 唯一未先驗的風險，設 kill-gate（descope 不擋軸）。
 每段驗證自足；S1/S2 可在同 session 連做，S3 需 PyPI 手動一次性設定。
+
+**S0 前置（review R1）**：repo 目前無 git remote——S2 dry-run（GitHub
+Actions 是 server-side）與 S3 trusted publishing（OIDC 綁死 repo slug）
+都假設 public repo `ctai/code-reality` 存在（pyproject urls 與 publisher
+皆寫死此 slug）。**建立 remote＋首次 push 是 user 的 outward action，
+EP 不自動執行**；S2 本地可驗面（workflow 撰寫＋yamllint）不受阻擋，
+dry-run 驗收以此為 gate。降級路線（remote 延後時）：本機
+`maturin build`＋API token 手動上傳——trusted publishing 仍為終態。
 
 ---
 
@@ -110,8 +146,9 @@ Spike wheels 的 METADATA 只有 80 bytes（name＋version）——發布需要
 - 每個 crate 目錄加最小 `pyproject.toml`：`[project]` name（=crate
   名）、description、`requires-python = ">=3.8"`（純 binary 無 Python
   ABI 依賴，對齊 pyrefly）、license MIT、urls（GitHub）、classifiers。
-  version 由 maturin 從 Cargo.toml 帶入（若需 `dynamic` 宣告，實測後
-  定稿）。
+  version 由 maturin 從 Cargo.toml 帶入（**已實測定案**：無需
+  `dynamic` 宣告；`[build-system]` 是必要件——缺它報 `missing field
+  build-system`，review I2 build 偏差記錄）。
 - 不加 `[tool.maturin]`（spike 證明零配置即 bin bindings）。
 - 風險：pyproject.toml 進 crate 目錄可能影響其他工具掃描（cargo 忽略
   非慣例檔，無風險；`rg`/`fd` 面新增三個 toml，無消費者）。
@@ -122,6 +159,9 @@ crates/code-reality/pyproject.toml
 crates/pyrefly-producer/pyproject.toml
 crates/code-reality-lsp-bridge/pyproject.toml
 # 內容同構，僅 name/description 差異：
+# [build-system]                 # 必需——pyproject 在場時 maturin 要求（build 實測）
+# requires = ["maturin>=1.5,<2.0"]
+# build-backend = "maturin"
 # [project]
 # name = "code-reality"          # = crate name = PyPI dist name
 # description = "..."
@@ -159,8 +199,12 @@ Linux build 是全 EP 唯一未先驗風險（pyrefly engine git-dep 於 Linux
       `maturin build --target x86_64-apple-darwin`（Apple 原生 cross）
     - `ubuntu-latest`（x86_64 native）
     - `ubuntu-24.04-arm`（aarch64 native runner；public repo 免費額度）
-  - 每 job：checkout → rustup（stable）→ `cargo install maturin`（或
-    pipx/uv 裝法擇一）→ 三次 maturin build → upload-artifact。
+  - 每 job：checkout → rustup（**尊重 `rust-toolchain.toml` pin
+    1.96.0**——runner 預裝 stable 但 cargo shim 走 pin；`rustup
+    target add` 須對 pinned toolchain 生效，review I3）→ `uv tool
+    install maturin`（pin 版）→ 三次 maturin build → upload-artifact
+    （**artifact 名每 leg 唯一** `wheels-<target>`——v4 同名跨
+    matrix 衝突，review I6）。
 - **Kill-gate**：pyrefly-producer 在 Linux 編譯失敗 → descope Linux
   平台為後續追蹤（首發 macOS-only），不擋軸；成功則全矩陣進 S3。
 
@@ -186,6 +230,8 @@ jobs:
 ```
 
 **驗證策略**
+- **前置 hard gate（R1）**：dry-run 需 remote 已建立＋push 後方可在
+  GitHub Actions 執行——本地 yamllint 面除外。
 - `workflow_dispatch` dry-run 全綠；artifacts 下載後 `unzip -l` 驗
   平台 tag（`macosx_11_0_arm64` / `macosx_10_12_x86_64`（或 maturin
   實際給的 deployment target） / `manylinux_*_x86_64` / `_aarch64`）。
@@ -213,6 +259,16 @@ UC 引用：完成「新增 UC」的發布閉環。
   CLI）`--upload` 面。
 - 首發流程：workspace version bump → commit → `git tag v0.2.0` →
   push → CI 發布 → 驗證。
+- build review 順手項（2026-08-28 fresh-eyes，W1/W4/W5）：**W1**
+  pyproject 補 `readme`（root README 引用或 per-crate——現況 wheel
+  無 Description body，PyPI 專案頁僅一行 summary）；**W4** publish
+  步驟重寫時勿繼承佔位的 `|| true`（吞 per-crate 失敗）——改下載
+  dist 批次上傳＋逐專案 fail-loud；**W5** `requires-python` 順手升
+  `>=3.9`（3.8 已 EOL）。W2（matrix `cross` key 純自述）保留；
+  W3（arm runner rustup 預裝）由 dry-run 首跑關閉。
+- 順手更新三份 `build.rs` 頭註「this repo carries no tags」——首個
+  tag 後該句過時（機制不變：`--exclude=*` 保證 hash-only；review
+  I7a）。
 - 驗證（消費者陌生路徑：中性 cwd、純 PATH）：
   - `uv tool install code-reality`×3（或確認 uv 多套件單環境語法，
     不支援則文檔寫三條）
@@ -221,8 +277,10 @@ UC 引用：完成「新增 UC」的發布閉環。
   - PyPI 專案頁 metadata rendering 目檢
 
 **驗證策略**
-- 上列即驗證；另跑 `cargo test --workspace` 回歸（版號 bump 不應動
-  任何測試——version face 測試若釘死 `0.1.0` 需同步改釘）。
+- 上列即驗證；另跑 `cargo test --workspace` 回歸（review I1 已查證
+  version-face 測試動態斷言 `env!("CARGO_PKG_VERSION")`、未釘死
+  `0.1.0`——bump 無需改測試；三個 PyPI 名 2026-08-28 實查皆 404
+  可用，佐證條款 2「0.1.x 無消費契約」）。
 - 版號面盤點（ai-rules ① 裁決項）：發布後目檢三面各自自洽（PyPI＝
   workspace 版；plugin＝接線軸版本；兩軸關係 README 已載）。
 - 文檔分工抽查（ai-rules ②）：MCP 相關安裝示例一律 `uv tool install`
@@ -240,7 +298,8 @@ UC 引用：完成「新增 UC」的發布閉環。
 - 依賴錨點：`plugin/.mcp.json:3-14`（兩個 sh fallback block）→
   消費端 ZCode/CC plugin spawn（0.1.3 cache）。
 - 語義約束：與 SM-6 共享「GUI-launched harness 可能無 cargo/pip bin
-  於 PATH」（`README.md:67-69` 既有約束）——這是當初 fallback 存在
+  於 PATH」（`README.md:71-73` 既有約束——review Y1 修正錨點，0.1.3
+  弧編輯後位移）——這是當初 fallback 存在
   的原因，翻轉不得回歸此場景。
 
 **要點**
@@ -252,8 +311,10 @@ UC 引用：完成「新增 UC」的發布閉環。
   預設 leaning：(b)——同時服務三場景（PATH 消費者／GUI 無 PATH／
   開發環），代價是 wrapper 變長一行。
 - `.mcp.json` 屬 plugin 內容變更 → plugin version bump 0.1.3→0.1.4
-  ＋三處 marketplace/manifest 同步（0.1.3 弧建立的紀律）＋ZCode 端
-  重裝驗證。
+  ＋三處 marketplace/manifest 同步（0.1.3 弧建立的紀律）＋**rerun
+  `scripts/dist-marketplace.sh` 與 in-app marketplace refresh**
+  （review Y3——directory-source 驗證用 slice，漏重跑會驗到舊
+  slice）＋ZCode 端重裝驗證。
 - 文檔：repo README Quickstart 增 uv/pip 消費者路徑（cargo 降為
   developer face 標題）；`plugin/README.md` prerequisites 增 wheel
   選項；AGENTS.md Usage 段一句話帶 wheel 安裝。**工具分工條款
@@ -261,7 +322,10 @@ UC 引用：完成「新增 UC」的發布閉環。
   定位（stdio server 每 session spawn——uvx 每次 invocation 帶
   resolve/cache 層，對常駐 spawn 是純啟動延遲）；`uvx`＝一次性
   查詢／CI 腳本。`.mcp.json` 維持直 spawn PATH binary（現狀即是，
-  不引入 uvx）。
+  不引入 uvx）。**uvx 免安裝僅對 dist 名＝bin 名者直接可用**
+  （`code-reality`／`code-reality-lsp-bridge`）；`pyrefly-producer`
+  無同名 bin——文檔寫 `uvx --from pyrefly-producer pyrefly-index`
+  （review Y4），避免消費者在 PyPI 頁照抄失敗。
 - **rust-analyzer 系統依賴語義（ai-rules ③，查證成立）**：wheel 裝
   得到 bridge、裝不到 rust-analyzer——Python-only 機器（wheel 分發
   的主要族群）`.rs` 型別面缺。現行 `lsp_status` 不探測 backend
@@ -337,9 +401,11 @@ UC 引用：完成「新增 UC」的發布閉環。
 2. 無 SYSTEM-MAP.md——正當跳過。
 3. instruction 檔：AGENTS.md Usage 段補 wheel 安裝一句；repo README
    Quickstart 消費者/開發者雙路徑（S4 內完成）。
-4. `/audit-test`：本 EP 無新增測試檔（yaml/pyproject/config 軸）——
-   跳過理由：無 callable 新增；S3 的 version-face 測試釘調整隨該段
-   驗證。
+4. `/audit-test`：S1-S3 為 yaml/pyproject/config 軸（無 callable
+   新增）——跳過成立；**S4 例外**（review Y2）：`lsp_status`
+   availability 探測是 Rust 行為變更——S4 build 時補最小 smoke
+   test（status 輸出含 availability 欄）或明示免測理由（PATH 環境
+   依賴）。
 5. **ai-rules handoff**：交付 prompt（code-reality SKILL.md 安裝段
    於 wheels 上線後翻轉；觸發條件＝S3 首發落地）。EP 內不自動跨 repo
    寫入。ai-rules 端 `[cr-dist]` 翻轉卡已在該 repo Backlog（2026-08-28
