@@ -324,3 +324,16 @@ inst() { echo "$(date '+%F %T') install $1" >> "$log"; \
 3. 記憶：弧線加註（freshness 弧；EP v2 重寫教訓＝rerun-if-changed
    的 git 觸發面要先實證 mtime 語義——結構審查抓到設計級錯誤）。
 4. `/audit-test`：S2/S3 測試品質稽核。
+
+## 結算更正（v3，2026-08-28——W5 後續審查發現）
+
+**SM-1／S2 對 mcp bin 不實（已修補）**：本 EP 的「任一 bin `--version`」
+（SM-1）與 S2 anchors 對 mcp bin 不成立——`code-reality-mcp` 的 argv
+是成員測試式 parse，一切非 `--stdio` flag 靜默落進 HTTP 常駐預設
+（`--version` 探測＝掛住一個 listener）。「已知未覆蓋：無」對此不實；
+S3（WARN 接線）有涵蓋 mcp 而 S2 漏列＝同檔自相矛盾。修補：W5 後續
+微修（ordered per-arg loop＋version/help early-exit＋未知參 exit 2＋
+`freshness::version_face()` 兩 bin 共用），回歸釘四面落
+`tests/freshness.rs`（version／unknown-arg／組合序／help）。SM-1 自此
+真為 any-bin。收尾步驟 1 的 Capabilities 行已於 `929420f` 落地；本弧
+無 kanban 卡。EP 隨修補 commit 歸檔。

@@ -43,18 +43,11 @@ fn route(argv: &[&str]) -> code_reality::ToolOutput {
         Some(&"graph_db") => code_reality::graph_db::run(argv),
         Some(&"tour_validate") => code_reality::tour_validate::run(argv),
         Some(&"tour_upgrade") => code_reality::tour_upgrade::run(argv),
-        Some(&"--version") | Some(&"-V") => {
-            let rev = option_env!("CR_BUILD_REV");
-            let face = match rev {
-                Some(r) => format!("{}+{}", env!("CARGO_PKG_VERSION"), r),
-                None => env!("CARGO_PKG_VERSION").to_string(),
-            };
-            ToolOutput {
-                stdout: format!("{face}\n"),
-                stderr: String::new(),
-                exit_code: 0,
-            }
-        }
+        Some(&"--version") | Some(&"-V") => ToolOutput {
+            stdout: format!("{}\n", code_reality::freshness::version_face()),
+            stderr: String::new(),
+            exit_code: 0,
+        },
         Some(&"--help") | Some(&"-h") => ToolOutput {
             stdout: format!(
                 "code-reality — toolchain umbrella ({})\n",

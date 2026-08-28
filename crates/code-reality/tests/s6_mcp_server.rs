@@ -62,12 +62,17 @@ async fn closure_optional_depth_and_missing_param_types() {
 
 #[test]
 fn bin_help_face() {
-    // the daemon takes no CLI args; --help is not a face it owns
-    // (launchd starts it bare). Just assert the bin builds & links.
-    assert!(
-        std::path::Path::new("target/debug/code-reality-mcp").exists()
-            || std::env::var("CARGO_MANIFEST_DIR").is_ok()
-    );
+    // The bin owns its diagnostic faces: --help answers on stdout with
+    // exit 0, unknown args reject loud (exit 2) — the membership-test
+    // era of "takes no CLI args" ended with the version-face fix.
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_code-reality-mcp"))
+        .arg("--help")
+        .env("CR_REPO", "/nonexistent")
+        .output()
+        .expect("spawn code-reality-mcp bin");
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("--stdio"), "help face: {stdout}");
 }
 
 // ---------- live HTTP smoke (V1-V3 subset) ----------

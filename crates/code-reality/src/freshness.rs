@@ -23,6 +23,17 @@ pub fn rev_mismatch(embedded: &str, head_full: &str) -> bool {
     !base.is_empty() && base != "unknown" && !head_full.starts_with(base)
 }
 
+/// The `<pkg>[+<rev>]` version face shared by this crate's bins
+/// (umbrella route arm + the mcp bin). The cross-crate bins
+/// (pyrefly-index, lsp-bridge) keep their local copies — the
+/// no-workspace-dep clause.
+pub fn version_face() -> String {
+    match option_env!("CR_BUILD_REV") {
+        Some(r) => format!("{}+{}", env!("CARGO_PKG_VERSION"), r),
+        None => env!("CARGO_PKG_VERSION").to_string(),
+    }
+}
+
 fn checkout_path() -> Option<PathBuf> {
     let p = std::env::var_os("CR_REPO")
         .map(PathBuf::from)
