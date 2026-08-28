@@ -123,13 +123,11 @@ artifacts are required to run them.
 
 This project is licensed under the **MIT License** (see [LICENSE](LICENSE)).
 
-Dependency chain (verified 2026-08-25, no copyleft):
+Dependency chain (verified 2026-08-28, no copyleft):
 
 - `rust-analyzer` (MIT/Apache-2.0) — produces the SCIP indexes consumed by `scip_refs`
 - `scip.proto` (Apache-2.0, [sourcegraph/scip](https://github.com/sourcegraph/scip)) — vendored at `crates/code-reality/schema/scip.proto`
 - `protobuf` (BSD-3) — runtime for the vendored generated bindings
-- `code-review-graph` (MIT, Copyright Tirth Kanani) — historical design
-  reference for the graph.db storage model (no runtime dependency since
-  the v1+ self-owned-db flip)
+- `pyrefly` (MIT, [facebook/pyrefly](https://github.com/facebook/pyrefly)) — the type-checker engine statically linked into the `pyrefly-producer` bins (pinned git rev)
 
 Distribution requires retaining the upstream license notices.

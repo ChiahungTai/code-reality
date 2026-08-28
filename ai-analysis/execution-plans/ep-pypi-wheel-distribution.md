@@ -268,10 +268,15 @@ UC 引用：完成「新增 UC」的發布閉環。
   version，**不碰** plugin.json / marketplace 版號。
 
 **要點**
-- PyPI 一次性手動步驟：為三個專案各建 trusted publisher（OIDC 綁
-  repo `ChiahungTai/code-reality`＋workflow 檔名＋environment `release`）；
-  workflow 加 `environment: release`＋`maturin-action`（或 maturin
-  CLI）`--upload` 面。
+- PyPI 一次性手動步驟：三筆 pending publisher——**PyPI 約束（2026-08-28
+  實撞）：同一 `(repo, workflow, environment)` 組合只能綁一個專案名**
+  ，monorepo 標準解法＝每 dist 一個 environment：`code-reality`→
+  `release`、`code-reality-lsp-bridge`→`release-lsp-bridge`、
+  `pyrefly-producer`→`release-pyrefly-producer`（三 environments 已
+  於 GitHub 建妥）。**publish job 重寫形態（W4 佔位的正式解）＝
+  拆三個 per-project job**：各 `environment: <自己的>`＋各據
+  download-artifact 過濾自己的 wheels＋`pypa/gh-action-pypi-publish`
+  走 OIDC（繞開 maturin publish 重建問題，也消滅 `|| true`）。
 - 首發流程：workspace version bump → commit → `git tag v0.2.0` →
   push → CI 發布 → 驗證。
 - build review 順手項（2026-08-28 fresh-eyes，W1/W4/W5）：**W1**
