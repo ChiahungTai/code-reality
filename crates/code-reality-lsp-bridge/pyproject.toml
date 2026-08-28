@@ -5,8 +5,9 @@ build-backend = "maturin"
 [project]
 name = "code-reality-lsp-bridge"
 description = "Type-face MCP bridge routing by file extension: .py via pyrefly (hover / check_file / edit_file), .rs via rust-analyzer — one lazy backend session per language"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license = "MIT"
+readme = "README.md"
 classifiers = [
     "Programming Language :: Rust",
     "Topic :: Software Development :: Quality Assurance",

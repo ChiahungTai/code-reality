@@ -1,7 +1,8 @@
 //! Embed the workspace git rev as CR_BUILD_REV (EP ep-binary-freshness-face).
 //! `git describe --always --dirty --exclude=*` guarantees a hash-only form
 //! (`--exclude=*` drops every tag candidate so `--always` falls back to the
-//! abbreviated hash; this repo carries no tags). Same-branch commits update
+//! abbreviated hash — release tags exist since v0.2.0 and the exclude keeps
+//! the embedded rev hash-only regardless). Same-branch commits update
 //! the branch ref file, not HEAD — all three (HEAD, the resolved loose ref,
 //! packed-refs) must be rerun triggers or the embedded rev silently lags.
 

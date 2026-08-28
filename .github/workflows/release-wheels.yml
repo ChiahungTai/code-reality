@@ -7,10 +7,10 @@
 # Two faces:
 #   - workflow_dispatch = dry-run: build 3 wheels (macOS arm64 x 3
 #     crates), upload as artifacts, publish NOTHING.
-#   - push tag v* = same matrix + publish job (currently gated OFF; S3
-#     wires PyPI trusted publishing and flips the gate).
-#
-# This workflow is inert until the repo has a remote and is pushed.
+#   - push tag v* = same build + one publish job per dist, each bound
+#     to its own PyPI trusted-publisher environment (PyPI allows one
+#     project per (repo, workflow, environment) tuple — hit live
+#     2026-08-28, hence the three environments).
 
 name: release-wheels
 
@@ -85,36 +85,61 @@ jobs:
           path: target/wheels/*.whl
           if-no-files-found: error
 
-  # S3 wires this: create the three PyPI projects' trusted publishers
-  # (OIDC bound to this repo + workflow + environment "release"), then
-  # flip `if: false` to `if: startsWith(github.ref, 'refs/tags/')`.
-  publish:
+  # Per-dist publish jobs (EP S3): each downloads the merged wheels,
+  # selects ONLY its own dist's files (glob disjointness:
+  # code_reality- vs code_reality_lsp_bridge- vs pyrefly_producer-),
+  # and uploads via OIDC trusted publishing. mv failing loud on a
+  # missing file is deliberate (no || true here).
+  publish-code-reality:
     needs: build-wheels
-    if: false  # no-op until trusted publishing is configured (EP S3)
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     environment: release
     permissions:
-      id-token: write  # PyPI trusted publishing (OIDC)
-      contents: write  # attach wheels to the GitHub release
+      id-token: write
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: astral-sh/setup-uv@v5
-
-      - name: Install maturin
-        run: uv tool install maturin==${{ env.MATURIN_VERSION }}
-
-      - name: Download all wheels
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
-          path: dist
+          path: wheels
           merge-multiple: true
+      - name: Select this dist's wheels
+        run: mkdir dist && mv wheels/code_reality-*.whl dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
 
-      - name: Publish to PyPI (trusted publishing)
-        run: |
-          for c in code-reality code-reality-lsp-bridge pyrefly-producer; do
-            maturin publish --target x86_64-unknown-linux-gnu -m "crates/$c/Cargo.toml" || true
-          done
-          # NOTE: placeholder shape — S3 replaces the rebuild-publish loop
-          # with twine-style upload of the downloaded dist/*.whl set (one
-          # upload per project across platforms) once publishers exist.
+  publish-code-reality-lsp-bridge:
+    needs: build-wheels
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    environment: release-lsp-bridge
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: wheels
+          merge-multiple: true
+      - name: Select this dist's wheels
+        run: mkdir dist && mv wheels/code_reality_lsp_bridge-*.whl dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+
+  publish-pyrefly-producer:
+    needs: build-wheels
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    environment: release-pyrefly-producer
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: wheels
+          merge-multiple: true
+      - name: Select this dist's wheels
+        run: mkdir dist && mv wheels/pyrefly_producer-*.whl dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist

@@ -5,8 +5,9 @@ build-backend = "maturin"
 [project]
 name = "code-reality"
 description = "Meta-layer structural facts, governance audits, and narrative artifacts for AI coding sessions (Rust carrier): symbol truth queries, caller edges/closures, completeness audits, graph engine"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license = "MIT"
+readme = "README.md"
 classifiers = [
     "Programming Language :: Rust",
     "Topic :: Software Development :: Quality Assurance",
