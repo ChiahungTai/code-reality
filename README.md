@@ -75,10 +75,11 @@ Node-based scip-python fork is the retained fallback, not the default
 face. All graph-reading
 tools (engine, audit, chain_tour, hub_refs/hazard, snapshot) read a
 self-owned db at `<repo>/.code-reality/graph.db` — produce it with
-`code-reality graph_db build --repo <repo>` (any producer cache); when a
-CRG-era `.code-review-graph/graph.db` exists, follow up with
-`code-reality graph_db import_legacy --repo <repo>` (one-shot; the
-legacy db is read-only and only ever read as an import source) —
+`code-reality graph_db build --repo <repo>` (any producer cache); the
+refresh chain is purely producer-side since the W3 import_legacy
+retirement. `code-reality graph_db import_legacy --repo <repo>` remains
+functional but retired (WARN on every invocation) — recovery/migration
+use only, until W4 removes the CRG-era `.code-review-graph/` dbs.
 `graph_db ensure_indexes --repo <repo>` is an idempotent follow-up that
 adds the engine read-chain indexes to dbs built before that schema
 revision. The `.code-reality/` directory is repo-local data — add it to

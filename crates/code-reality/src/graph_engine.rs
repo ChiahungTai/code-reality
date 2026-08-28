@@ -48,7 +48,7 @@ pub fn open(repo_root: &Path) -> Result<Connection, String> {
     let db = crate::graph_db::db_path(repo_root);
     if !db.exists() {
         return Err(format!(
-            "graph.db 不在：{}——先跑 `code-reality graph_db build --repo <repo>`（舊庫在場再加 `graph_db import_legacy`）",
+            "graph.db 不在：{}——先跑 `code-reality graph_db build --repo <repo>`",
             db.display()
         ));
     }

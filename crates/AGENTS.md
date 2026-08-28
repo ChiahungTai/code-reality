@@ -111,7 +111,9 @@ tests are the sole gate face.
   `py_calls` (ruff parse of referenced files — SCIP carries no call
   role; dunder-collapsed constructor edges match via the symbol's own
   class segment), derived flows/communities materialized, FTS5,
-  temp+rename atomicity], `import_legacy` [merge onto producer symbols where
+  temp+rename atomicity], `import_legacy` [W3-retired: functional
+  recovery face only, WARN on every invocation; merge onto producer
+  symbols where
   (file, name) resolves uniquely, qname-minted symbols otherwise,
   dangling endpoints passthrough — legacy db read-only], and
   `ensure_indexes` [idempotent IF NOT EXISTS: engine read-chain indexes
@@ -147,8 +149,10 @@ tests are the sole gate face.
   `.code-review-graph/` db is read-only everywhere (`connect_ro`) — it
   is only ever an `import_legacy` source. All consumer modules
   (audit/chain_tour/hub_refs/hazard/snapshot) read the self-owned
-  `.code-reality/graph.db` via `graph_db::consumer_db` (missing-db and
-  un-imported-legacy WARN guidance live there). Tests use
+  `.code-reality/graph.db` via `graph_db::consumer_db` (missing-db WARN
+  guidance lives there; the un-imported-legacy guidance was removed at W3
+  retirement — zero `treesitter-legacy` nodes is the normal
+  pure-producer state). Tests use
   `tests/graph_db_fixture.rs` (self-owned schema, symbol==qname
   universe); `tests/crg_fixture.rs` (production-shape CRG DDL) feeds
   the import_legacy/ensure test universe only.

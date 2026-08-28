@@ -492,6 +492,34 @@ fn import_legacy_skips_when_absent() {
 }
 
 #[test]
+fn import_legacy_cli_face_carries_retirement_banner() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = repo_dir(&tmp);
+    let repo_s = repo.to_str().unwrap();
+    // skip state (no legacy db): both faces carry the retirement marker
+    let text = graph_db::run(&["graph_db", "import_legacy", "--repo", repo_s]);
+    assert_eq!(text.exit_code, 0);
+    assert!(
+        text.stdout.starts_with("[WARN] import_legacy 已退役"),
+        "text skip face banner: {}",
+        text.stdout
+    );
+    let json = graph_db::run(&[
+        "graph_db",
+        "import_legacy",
+        "--repo",
+        repo_s,
+        "--json",
+    ]);
+    assert_eq!(json.exit_code, 0);
+    assert!(
+        json.stdout.contains("\"retired\": true"),
+        "json skip face marker: {}",
+        json.stdout
+    );
+}
+
+#[test]
 fn import_legacy_requires_new_db() {
     let tmp = tempfile::tempdir().unwrap();
     let repo = repo_dir(&tmp);

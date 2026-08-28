@@ -396,7 +396,7 @@ fn owned_db(repo: &std::path::Path) -> std::path::PathBuf {
 }
 
 #[test]
-fn consumer_db_defaults_to_self_owned_with_import_guidance() {
+fn consumer_db_defaults_to_self_owned_no_import_guidance() {
     let tmp = tempfile::tempdir().unwrap();
     let repo_unresolved = tmp.path().join("repo");
     std::fs::create_dir_all(repo_unresolved.join(".code-reality")).unwrap();
@@ -420,8 +420,9 @@ fn consumer_db_defaults_to_self_owned_with_import_guidance() {
     assert_eq!(db, Some(owned_db(&repo)));
     assert!(warns.is_empty(), "no legacy db in repo: {warns:?}");
 
-    // case 2: legacy db present but owned db lacks treesitter-legacy rows
-    // (build ran, import didn't) -> db + SM-7 guidance warn
+    // case 2 (W3): legacy db present but owned db lacks treesitter-legacy
+    // rows -> db + NO import_legacy guidance (pure-producer graph is the
+    // normal state since the retirement)
     let legacy_dir = repo.join(".code-review-graph");
     std::fs::create_dir_all(&legacy_dir).unwrap();
     crg_fixture::make_crg_db(
@@ -432,8 +433,8 @@ fn consumer_db_defaults_to_self_owned_with_import_guidance() {
     let (db, warns) = graph_db::consumer_db(&repo);
     assert_eq!(db, Some(owned_db(&repo)));
     assert!(
-        warns.iter().any(|w| w.contains("import_legacy")),
-        "SM-7 warn guides import_legacy: {warns:?}"
+        warns.iter().all(|w| !w.contains("import_legacy")),
+        "retirement: no import_legacy guidance: {warns:?}"
     );
 
     // case 3: neither db -> None + missing-db warn with build guidance

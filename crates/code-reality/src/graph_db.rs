@@ -1044,44 +1044,19 @@ pub fn ensure_indexes(repo: &Path) -> Result<EnsureIndexesReport, String> {
 
 /// Default db resolution for the legacy-schema consumers being cut over
 /// (EP ep-legacy-db-consumer-cutover S1): the self-owned db when present,
-/// plus fail-soft guidance warns — missing db points at `graph_db build`,
-/// and a present-but-unimported db (legacy `.code-review-graph/` exists,
-/// zero `treesitter-legacy` nodes) points at `import_legacy` (the
-/// mid-cutover SM-7 state loses the legacy universe silently otherwise).
+/// plus a fail-soft warn when the db is missing. W3 (import_legacy
+/// retirement) removed the un-imported-legacy guidance — a db with zero
+/// `treesitter-legacy` nodes is the normal pure-producer state, and the
+/// refresh chain no longer includes `import_legacy`.
 pub fn consumer_db(repo: &Path) -> (Option<PathBuf>, Vec<String>) {
     let db = db_path(repo);
     let mut warns = Vec::new();
     if !db.exists() {
         warns.push(format!(
-            "[WARN] .code-reality/graph.db 不存在（{}）——先 `code-reality graph_db build --repo <repo>`（有舊庫再接 import_legacy）\n",
+            "[WARN] .code-reality/graph.db 不存在（{}）——先 `code-reality graph_db build --repo <repo>`\n",
             db.display()
         ));
         return (None, warns);
-    }
-    let legacy = crate::common::graph_db_path(repo);
-    if legacy.exists() {
-        let imported = crate::common::connect_ro(&db).and_then(|c| {
-            c.query_row(
-                "SELECT COUNT(*) FROM nodes WHERE provenance = 'treesitter-legacy'",
-                [],
-                |r| r.get::<_, i64>(0),
-            )
-            .map_err(|e| e.to_string())
-        });
-        match imported {
-            Ok(0) => {
-                warns.push(format!(
-                    "[WARN] 偵測到舊庫 {} 但新庫無 treesitter-legacy 節點——先 `code-reality graph_db import_legacy --repo <repo>`，否則 Class/File/legacy qname 查不到\n",
-                    legacy.display()
-                ));
-            }
-            Ok(_) => {}
-            // read/schema error is NOT "imported" (review C5) — its own
-            // warn instead of suppressing the guidance
-            Err(e) => warns.push(format!(
-                "[WARN] 新庫 provenance 檢查失敗（{e}）——schema 非 v1+？重跑 `code-reality graph_db build --repo <repo>`\n"
-            )),
-        }
     }
     (Some(db), warns)
 }
@@ -1147,7 +1122,7 @@ const HELP: &str = concat!(
     "\n",
     "ops:\n",
     "  build            cache index（任何 producer）→ nodes+edges+derived 物化\n",
-    "  import_legacy    舊 .code-review-graph/graph.db 一次性匯入（唯讀源）\n",
+    "  import_legacy    （退役 W3）舊 .code-review-graph/graph.db 一次性匯入（唯讀源）——僅恢復/遷移用，刷鏈不再包含\n",
     "  ensure_indexes   引擎讀鏈索引（edges 端點/flow node/nodes anchor）\n",
     "                   IF NOT EXISTS，冪等，不動資料——補舊版 build 的庫\n",
     "\n",
@@ -1239,12 +1214,17 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         };
     }
     if op == &"import_legacy" {
+        // W3 retirement: still functional (recovery path until W4 removes
+        // the legacy dbs) but flagged on every invocation.
+        let retired_warn =
+            "[WARN] import_legacy 已退役（W3）——刷鏈不再包含此步驟；僅恢復/遷移用\n";
         return match import_legacy(Path::new(&repo_s), dry) {
             Ok(rep) => {
                 if rep.skipped {
                     if json {
                         let v = serde_json::json!({
                             "skipped": true,
+                            "retired": true,
                             "db": rep.db.display().to_string(),
                             "legacy_db": rep.legacy_db.display().to_string(),
                         });
@@ -1256,7 +1236,7 @@ pub fn run(argv: &[&str]) -> ToolOutput {
                     } else {
                         ToolOutput {
                             stdout: format!(
-                                "[OK] graph_db import_legacy：舊庫不在（{}）——skip 非 error\n",
+                                "{retired_warn}[OK] graph_db import_legacy：舊庫不在（{}）——skip 非 error\n",
                                 rep.legacy_db.display()
                             ),
                             stderr: String::new(),
@@ -1265,6 +1245,7 @@ pub fn run(argv: &[&str]) -> ToolOutput {
                     }
                 } else if json {
                     let v = serde_json::json!({
+                        "retired": true,
                         "legacy_nodes": rep.legacy_nodes,
                         "merged_nodes": rep.merged_nodes,
                         "synthesized_nodes": rep.synthesized_nodes,
@@ -1288,7 +1269,7 @@ pub fn run(argv: &[&str]) -> ToolOutput {
                     let mode = if rep.dry_run { "（dry-run）" } else { "" };
                     ToolOutput {
                         stdout: format!(
-                            "[OK] graph_db import_legacy{mode}：nodes merged={} synthesized={} collision={} symbol-skip={}；edges mapped={}/{} dangling={} → {}\n",
+                            "{retired_warn}[OK] graph_db import_legacy{mode}：nodes merged={} synthesized={} collision={} symbol-skip={}；edges mapped={}/{} dangling={} → {}\n",
                             rep.merged_nodes,
                             rep.synthesized_nodes,
                             rep.collision_keys,

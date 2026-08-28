@@ -37,9 +37,9 @@ Responses embed `[SRC]` provenance lines (index version/commit) and a
 - `audit` reads the self-owned db at
   `<repo>/.code-reality/graph.db` — produce it with
   `code-reality graph_db build --repo <repo>` (edges split CALLS vs
-  REFERENCES by build-side call detection), then
-  `graph_db import_legacy --repo <repo>` when a CRG-era
-  `.code-review-graph/graph.db` exists (one-shot import source only)
+  REFERENCES by build-side call detection). The refresh chain is purely
+  producer-side; `graph_db import_legacy` is retired (W3) — functional
+  but WARN-flagged, recovery/migration use only
 - Optional `.code-reality.toml` at repo root declares module rules,
   exclusions, claims prefixes, scan roots — repo facts belong to the repo.
 
