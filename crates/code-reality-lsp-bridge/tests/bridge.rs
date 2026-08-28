@@ -248,8 +248,25 @@ fn lru_evict_preserves_overlay_edits() {
     };
 
     // Re-check: overlay content (edited) — bad-return present, the
-    // pre-edit 8:13 assignment error absent (msg is int now).
-    let out = check_file_impl(&s, &file).unwrap();
+    // pre-edit 8:13 assignment error absent (msg is int now). Under
+    // full-workspace parallel load the backend's semantic wave can
+    // overshoot the whole 60s deadline OR land as a quiesced-empty push
+    // that reads converged (flaked at 10s/20s/60s deadline escalations);
+    // the subject here is overlay survival, not wall-clock — retry once
+    // on a STARVATION signature. The gate must not be content-shaped:
+    // a wrong-content first answer (disk-state: 8:13 present, no
+    // bad-return) is exactly the eviction-path overlay-loss signature
+    // this test exists to pin — healing it via the re-edit's normal
+    // edit path would mask that regression (review F1).
+    let mut out = check_file_impl(&s, &file).unwrap();
+    if out.contains("[WARN] not converged") || out.starts_with("count=0") {
+        edit_file_impl(&s, &file, &edited).unwrap();
+        out = check_file_impl(&s, &file).unwrap();
+    }
+    assert!(
+        !out.contains("[WARN] not converged"),
+        "still starved after the nudge retry: {out}"
+    );
     assert!(out.contains("bad-return"), "overlay edits lost ({dbg_state}): {out}");
     assert!(!out.contains("8:13"), "served disk-state diagnostics: {out}");
 }

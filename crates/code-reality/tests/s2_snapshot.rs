@@ -1,4 +1,4 @@
-//! S2 snapshot tests — synthetic CRG db + a real throwaway git repo.
+//! S2 snapshot tests — synthetic graph db + a real throwaway git repo.
 //! Byte faces (OK/WARN line shapes, file schema) are pinned from the
 //! frozen Python source; cross-language byte comparison lives in the
 //! S6 parity harness.
@@ -48,7 +48,7 @@ fn repo_fixture(tag: &str) -> PathBuf {
 fn db_with_edges(repo: &Path) -> PathBuf {
     let db = repo.join(".code-reality").join("graph.db");
     std::fs::create_dir_all(db.parent().unwrap()).unwrap();
-    let mut spec = graph_db_fixture::CrgDbSpec::default();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
     spec.metadata
         .push(("git_head_sha".into(), "deadbeefdeadbeef".into()));
     let q = |rel: &str, sym: &str| graph_db_fixture::qualified(repo, rel, sym);
@@ -79,7 +79,7 @@ fn db_with_edges(repo: &Path) -> PathBuf {
     ] {
         spec.edges.push((kind.into(), s, t));
     }
-    graph_db_fixture::make_crg_db(&db, &spec).unwrap();
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
     db
 }
 
@@ -333,14 +333,14 @@ fn cli_empty_set_warn() {
     let repo = repo_fixture("cli_empty");
     let db = repo.join(".code-reality").join("graph.db");
     std::fs::create_dir_all(db.parent().unwrap()).unwrap();
-    let mut spec = graph_db_fixture::CrgDbSpec::default();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
     spec.metadata.push(("git_head_sha".into(), "x".into()));
     spec.edges.push((
         "IMPORTS_FROM".into(),
         "/elsewhere/x.py::A".into(),
         "/elsewhere/y.py::B".into(),
     ));
-    graph_db_fixture::make_crg_db(&db, &spec).unwrap();
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
     let out = run_cli(&[
         "snapshot",
         "--repo",
@@ -390,7 +390,7 @@ fn export_resolves_symbols_via_nodes_with_dangling_fallback() {
     let repo = repo_fixture("symres");
     let db = repo.join(".code-reality/graph.db");
     std::fs::create_dir_all(db.parent().unwrap()).unwrap();
-    let spec = graph_db_fixture::CrgDbSpec {
+    let spec = graph_db_fixture::GraphDbSpec {
         nodes: vec![graph_db_fixture::NodeSeed {
             name: "foo".into(),
             parent: None,
@@ -407,7 +407,7 @@ fn export_resolves_symbols_via_nodes_with_dangling_fallback() {
         ],
         ..Default::default()
     };
-    graph_db_fixture::make_crg_db(&db, &spec).unwrap();
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
     let conn = code_reality::common::connect_ro(&db).unwrap();
     let out = export_module_edges(&conn, &repo, None).unwrap();
     // dangling endpoint falls back to the ::-split: no repo file -> edge
@@ -416,7 +416,7 @@ fn export_resolves_symbols_via_nodes_with_dangling_fallback() {
     // both endpoints must exist in the repo for the edge to export: give
     // the dangling endpoint a node too
     std::fs::remove_file(&db).unwrap();
-    let spec2 = graph_db_fixture::CrgDbSpec {
+    let spec2 = graph_db_fixture::GraphDbSpec {
         nodes: vec![
             graph_db_fixture::NodeSeed {
                 name: "foo".into(),
@@ -438,7 +438,7 @@ fn export_resolves_symbols_via_nodes_with_dangling_fallback() {
         )],
         ..Default::default()
     };
-    graph_db_fixture::make_crg_db(&db, &spec2).unwrap();
+    graph_db_fixture::make_graph_db(&db, &spec2).unwrap();
     let conn2 = code_reality::common::connect_ro(&db).unwrap();
     let profile = code_reality::profile::load_profile(&repo).unwrap();
     let out2 = export_module_edges(&conn2, &repo, profile.as_ref()).unwrap();

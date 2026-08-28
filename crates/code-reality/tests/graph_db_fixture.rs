@@ -26,7 +26,7 @@ pub struct NodeAttr {
 
 #[allow(dead_code)] // per-target helper
 #[derive(Default)]
-pub struct CrgDbSpec {
+pub struct GraphDbSpec {
     /// (kind, caller_symbol, callee_symbol)
     pub edges: Vec<(String, String, String)>,
     /// metadata key-value (git_head_sha / last_updated / …)
@@ -50,7 +50,7 @@ pub struct CrgDbSpec {
 /// Build a synthetic self-owned db at `path` (production DDL mirrors
 /// graph_db::DDL; symbol == qname for every node in this universe).
 #[allow(dead_code)] // per-target helper
-pub fn make_crg_db(path: &Path, spec: &CrgDbSpec) -> rusqlite::Result<()> {
+pub fn make_graph_db(path: &Path, spec: &GraphDbSpec) -> rusqlite::Result<()> {
     let conn = Connection::open(path)?;
     conn.execute_batch(
         "CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT);

@@ -1,5 +1,5 @@
 //! R5-S4 chain_tour tests — mirrors of test_chain_tour case families on
-//! synthetic markdown + crg_db fixtures.
+//! synthetic markdown + graph_db fixtures.
 
 use code_reality::chain_tour::{
     best_ident, build_tours, parse_blocks, parse_frames, prefix_len, write_tours,
@@ -119,7 +119,7 @@ fn build_tours_with_graph_reanchor() {
     let db = repo.join(".code-reality").join("graph.db");
     std::fs::create_dir_all(db.parent().unwrap()).unwrap();
     let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
-    let mut spec = graph_db_fixture::CrgDbSpec::default();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
     // kernel at graph line 1 (same), boot at graph line 9 (moved +4)
     for (name, qname, line) in [
         ("kernel", "pkg/a.py::kernel", 1),
@@ -148,7 +148,7 @@ fn build_tours_with_graph_reanchor() {
         ));
         spec.node_lines.push((qname.into(), line));
     }
-    graph_db_fixture::make_crg_db(&db, &spec).unwrap();
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
     let st = build_tours(&chain, &repo, Some(&db)).unwrap();
     let g0 = st.g_counts.get("same").copied().unwrap_or(0);
     let g1 = st.g_counts.get("moved").copied().unwrap_or(0);
@@ -399,9 +399,9 @@ fn consumer_db_defaults_to_self_owned() {
     let repo_unresolved = tmp.path().join("repo");
     std::fs::create_dir_all(repo_unresolved.join(".code-reality")).unwrap();
     let repo = std::fs::canonicalize(&repo_unresolved).unwrap();
-    graph_db_fixture::make_crg_db(
+    graph_db_fixture::make_graph_db(
         &owned_db(&repo),
-        &graph_db_fixture::CrgDbSpec {
+        &graph_db_fixture::GraphDbSpec {
             nodes: vec![graph_db_fixture::NodeSeed {
                 name: "target".into(),
                 qname: "s1::target".into(),
@@ -439,9 +439,9 @@ fn anchor_tiebreak_is_deterministic_on_wider_candidate_set() {
     // two same-name nodes equidistant from line 10 (8 and 12) — the new
     // universe allows (name, file) duplicates; the pick must not depend
     // on rowid
-    graph_db_fixture::make_crg_db(
+    graph_db_fixture::make_graph_db(
         &owned_db(&repo),
-        &graph_db_fixture::CrgDbSpec {
+        &graph_db_fixture::GraphDbSpec {
             nodes: vec![
                 graph_db_fixture::NodeSeed {
                     name: "dup".into(),

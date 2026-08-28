@@ -307,7 +307,7 @@ fn repo_with_nodes(tag: &str, dup: bool) -> PathBuf {
     std::fs::write(&src, STRENTENUM_SRC).unwrap();
     let db = repo.join(".code-reality").join("graph.db");
     let abs = src.to_string_lossy().into_owned();
-    let mut spec = graph_db_fixture::CrgDbSpec::default();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
     spec.nodes.push(graph_db_fixture::NodeSeed {
         name: "Interval".into(),
         parent: None,
@@ -340,7 +340,7 @@ fn repo_with_nodes(tag: &str, dup: bool) -> PathBuf {
             },
         ));
     }
-    graph_db_fixture::make_crg_db(&db, &spec).unwrap();
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
     repo
 }
 
@@ -625,7 +625,7 @@ fn s2_repo(tag: &str) -> PathBuf {
     std::fs::create_dir_all(repo.join(".code-reality")).unwrap();
     let db = repo.join(".code-reality/graph.db");
     let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
-    let spec = graph_db_fixture::CrgDbSpec {
+    let spec = graph_db_fixture::GraphDbSpec {
         nodes: vec![
             graph_db_fixture::NodeSeed {
                 name: "Interval".into(),
@@ -680,7 +680,7 @@ fn s2_repo(tag: &str) -> PathBuf {
         ],
         ..Default::default()
     };
-    graph_db_fixture::make_crg_db(&db, &spec).unwrap();
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
     repo
 }
 

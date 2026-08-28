@@ -1,14 +1,14 @@
 //! S1 graph-engine substrate tests (ep-v1plus-engine-parity.md): loader
-//! ordering / filtering / adjacency semantics against the synthetic CRG
-//! fixture. Rowid (insertion) order is the parity contract with CRG's
-//! ORDER-BY-less `SELECT *` queries.
+//! ordering / filtering / adjacency semantics against the synthetic
+//! self-owned graph-db fixture. Rowid (insertion) order is the parity
+//! contract inherited from the CRG-era ORDER-BY-less `SELECT *` queries.
 
 mod graph_db_fixture;
 
 use code_reality::graph_engine::{load_edges, load_flow_adjacency, load_nodes, open};
-use graph_db_fixture::{make_crg_db, CrgDbSpec, NodeAttr, NodeSeed};
+use graph_db_fixture::{make_graph_db, GraphDbSpec, NodeAttr, NodeSeed};
 
-fn spec() -> CrgDbSpec {
+fn spec() -> GraphDbSpec {
     let nodes = vec![
         NodeSeed {
             name: "alpha".into(),
@@ -81,7 +81,7 @@ fn spec() -> CrgDbSpec {
             "/repo/src/a.rs::alpha".into(),
         ),
     ];
-    CrgDbSpec {
+    GraphDbSpec {
         nodes,
         node_attrs,
         edges,
@@ -93,7 +93,7 @@ fn spec() -> CrgDbSpec {
 fn load_nodes_excludes_files_and_keeps_rowid_order() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("graph.db");
-    make_crg_db(&db, &spec()).unwrap();
+    make_graph_db(&db, &spec()).unwrap();
     let conn = rusqlite::Connection::open(&db).unwrap();
 
     let nodes = load_nodes(&conn, true).unwrap();
@@ -112,7 +112,7 @@ fn load_nodes_excludes_files_and_keeps_rowid_order() {
 fn load_edges_keeps_rowid_order_and_all_kinds() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("graph.db");
-    make_crg_db(&db, &spec()).unwrap();
+    make_graph_db(&db, &spec()).unwrap();
     let conn = rusqlite::Connection::open(&db).unwrap();
 
     let edges = load_edges(&conn).unwrap();
@@ -127,7 +127,7 @@ fn load_edges_keeps_rowid_order_and_all_kinds() {
 fn flow_adjacency_calls_and_tested_by_semantics() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("graph.db");
-    make_crg_db(&db, &spec()).unwrap();
+    make_graph_db(&db, &spec()).unwrap();
     let conn = rusqlite::Connection::open(&db).unwrap();
 
     let adj = load_flow_adjacency(&conn).unwrap();
@@ -155,10 +155,10 @@ fn open_missing_db_fails_loud() {
 
 use code_reality::graph_engine::{find_bridge_nodes, find_hub_nodes};
 
-fn chain_spec() -> CrgDbSpec {
+fn chain_spec() -> GraphDbSpec {
     // directed chain a->b->c plus d->b; File node f isolated from kinds but
     // present; e is a zero-degree Function (must not appear in hub)
-    let mut spec = CrgDbSpec::default();
+    let mut spec = GraphDbSpec::default();
     let qn = |s: &str| format!("/repo/src/x.rs::{s}");
     spec.nodes = vec!["a", "b", "c", "d", "e", "f"]
         .into_iter()
@@ -205,7 +205,7 @@ fn chain_spec() -> CrgDbSpec {
 fn hub_counts_all_edge_rows_and_excludes_zero_degree() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("graph.db");
-    make_crg_db(&db, &chain_spec()).unwrap();
+    make_graph_db(&db, &chain_spec()).unwrap();
     let conn = rusqlite::Connection::open(&db).unwrap();
 
     let hubs = find_hub_nodes(&conn, 10).unwrap();
@@ -227,7 +227,7 @@ fn hub_counts_all_edge_rows_and_excludes_zero_degree() {
 fn bridge_brandes_directed_normalized_positive_only() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("graph.db");
-    make_crg_db(&db, &chain_spec()).unwrap();
+    make_graph_db(&db, &chain_spec()).unwrap();
     let conn = rusqlite::Connection::open(&db).unwrap();
 
     let bridges = find_bridge_nodes(&conn, 10).unwrap();
@@ -242,13 +242,13 @@ fn bridge_brandes_directed_normalized_positive_only() {
 
 use code_reality::graph_engine::{affected_flows, detect_entry_points, trace_flows};
 
-fn flows_spec() -> CrgDbSpec {
+fn flows_spec() -> GraphDbSpec {
     // main (name-pattern entry) -> a -> b -> c -> b (cycle); d is an
     // uncalled function with no outgoing (trivial flow, skipped);
     // "auth_handler" name hits a SECURITY_KEYWORD; ext target absent from
     // nodes (external call); file-source CALLS edge to "wired" must NOT
     // hide it as an entry (include_file_sources=False semantics).
-    let mut spec = CrgDbSpec::default();
+    let mut spec = GraphDbSpec::default();
     let qn = |s: &str| format!("/repo/src/f.rs::{s}");
     let names = [
         "main",
@@ -314,7 +314,7 @@ fn flows_spec() -> CrgDbSpec {
 fn trace_flows_entries_bfs_and_criticality() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("graph.db");
-    make_crg_db(&db, &flows_spec()).unwrap();
+    make_graph_db(&db, &flows_spec()).unwrap();
     let conn = rusqlite::Connection::open(&db).unwrap();
 
     // entry detection face: name-pattern (main), true roots (d,
@@ -366,7 +366,7 @@ fn trace_flows_entries_bfs_and_criticality() {
 fn affected_flows_filters_by_changed_files() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("graph.db");
-    make_crg_db(&db, &flows_spec()).unwrap();
+    make_graph_db(&db, &flows_spec()).unwrap();
     let conn = rusqlite::Connection::open(&db).unwrap();
 
     let all = trace_flows(&conn, 15, false).unwrap();
@@ -381,10 +381,10 @@ fn affected_flows_filters_by_changed_files() {
 
 use code_reality::graph_engine::impact_radius;
 
-fn impact_spec() -> CrgDbSpec {
-    let mut spec = CrgDbSpec::default();
+fn impact_spec() -> GraphDbSpec {
+    let mut spec = GraphDbSpec::default();
     let qn = |f: &str, s: &str| format!("/repo/{f}::{s}");
-    let push = |spec: &mut CrgDbSpec, file: &str, sym: &str| {
+    let push = |spec: &mut GraphDbSpec, file: &str, sym: &str| {
         spec.nodes.push(NodeSeed {
             name: sym.into(),
             parent: None,
@@ -433,7 +433,7 @@ fn impact_spec() -> CrgDbSpec {
 fn impact_radius_relaxation_scores_and_order() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("graph.db");
-    make_crg_db(&db, &impact_spec()).unwrap();
+    make_graph_db(&db, &impact_spec()).unwrap();
     let conn = rusqlite::Connection::open(&db).unwrap();
 
     let out = impact_radius(&conn, &["/repo/a.rs".to_string()], 2, 500).unwrap();
@@ -472,7 +472,7 @@ fn impact_radius_relaxation_scores_and_order() {
 fn impact_radius_cap_truncation() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("graph.db");
-    make_crg_db(&db, &impact_spec()).unwrap();
+    make_graph_db(&db, &impact_spec()).unwrap();
     let conn = rusqlite::Connection::open(&db).unwrap();
 
     let out = impact_radius(&conn, &["/repo/a.rs".to_string()], 2, 1).unwrap();
@@ -485,7 +485,7 @@ fn impact_radius_cap_truncation() {
 fn impact_radius_excludes_verilog_extra() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("graph.db");
-    make_crg_db(&db, &impact_spec()).unwrap();
+    make_graph_db(&db, &impact_spec()).unwrap();
     let conn = rusqlite::Connection::open(&db).unwrap();
     conn.execute(
         "UPDATE nodes SET extra='{\"verilog_kind\":\"module\"}' \
@@ -506,9 +506,9 @@ fn impact_radius_excludes_verilog_extra() {
 
 use code_reality::graph_engine::{architecture_overview, detect_communities};
 
-fn comm_spec() -> CrgDbSpec {
-    let mut spec = CrgDbSpec::default();
-    let node = |spec: &mut CrgDbSpec, qname: String, file: &str, kind: &'static str| {
+fn comm_spec() -> GraphDbSpec {
+    let mut spec = GraphDbSpec::default();
+    let node = |spec: &mut GraphDbSpec, qname: String, file: &str, kind: &'static str| {
         spec.nodes.push(NodeSeed {
             name: qname.rsplit("::").next().unwrap().into(),
             parent: None,
@@ -567,7 +567,7 @@ fn comm_spec() -> CrgDbSpec {
 fn communities_directory_grouping_naming_cohesion() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("graph.db");
-    make_crg_db(&db, &comm_spec()).unwrap();
+    make_graph_db(&db, &comm_spec()).unwrap();
     let conn = rusqlite::Connection::open(&db).unwrap();
 
     let comms = detect_communities(&conn, 2).unwrap();
@@ -604,7 +604,7 @@ fn communities_directory_grouping_naming_cohesion() {
 fn architecture_overview_cross_edges_and_warnings() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("graph.db");
-    make_crg_db(&db, &comm_spec()).unwrap();
+    make_graph_db(&db, &comm_spec()).unwrap();
     let conn = rusqlite::Connection::open(&db).unwrap();
 
     let out = architecture_overview(&conn, 100, false).unwrap();
@@ -637,9 +637,9 @@ fn parse_unified_diff_hunks() {
     );
 }
 
-fn risk_spec() -> (CrgDbSpec, Vec<String>) {
+fn risk_spec() -> (GraphDbSpec, Vec<String>) {
     let q = |s: &str| format!("/repo/src/r.rs::{s}");
-    let mut spec = CrgDbSpec::default();
+    let mut spec = GraphDbSpec::default();
     let names = ["victim", "caller1", "caller2", "helper", "tester"];
     spec.nodes = names
         .iter()
@@ -688,7 +688,7 @@ fn risk_score_six_factors_handcheck() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("graph.db");
     let (spec, _qns) = risk_spec();
-    make_crg_db(&db, &spec).unwrap();
+    make_graph_db(&db, &spec).unwrap();
     let conn = rusqlite::Connection::open(&db).unwrap();
     let nodes = load_nodes(&conn, true).unwrap();
     let victim = nodes.iter().find(|n| n.name == "victim").unwrap();
@@ -706,7 +706,7 @@ fn map_changes_overlap_and_suffix_fallback() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("graph.db");
     let (spec, _) = risk_spec();
-    make_crg_db(&db, &spec).unwrap();
+    make_graph_db(&db, &spec).unwrap();
     let conn = rusqlite::Connection::open(&db).unwrap();
     // exact path + overlap on victim (10..10 hits range (5,15))
     let mut ranges = std::collections::BTreeMap::new();
@@ -726,7 +726,7 @@ fn detect_changes_composition() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("graph.db");
     let (spec, _) = risk_spec();
-    make_crg_db(&db, &spec).unwrap();
+    make_graph_db(&db, &spec).unwrap();
     let conn = rusqlite::Connection::open(&db).unwrap();
     let mut ranges = std::collections::BTreeMap::new();
     ranges.insert("/repo/src/r.rs".to_string(), vec![(5, 15)]);
@@ -758,7 +758,7 @@ fn search_fts_then_like_fallback() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("graph.db");
     let (spec, _) = risk_spec();
-    make_crg_db(&db, &spec).unwrap();
+    make_graph_db(&db, &spec).unwrap();
     let conn = rusqlite::Connection::open(&db).unwrap();
     // the fixture ships an FTS table (production parity) -> fts5 face
     let (nodes, method) = search_nodes(&conn, "victim", 20).unwrap();
@@ -789,7 +789,7 @@ fn minimal_context_envelope() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("graph.db");
     let (spec, _) = risk_spec();
-    make_crg_db(&db, &spec).unwrap();
+    make_graph_db(&db, &spec).unwrap();
     let conn = rusqlite::Connection::open(&db).unwrap();
     let out = get_minimal_context(&conn, "review PR 42", &["/repo/src/r.rs".to_string()]).unwrap();
     assert!(out["summary"].as_str().unwrap().contains("nodes"));
@@ -805,7 +805,7 @@ fn review_context_structural_keys() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("graph.db");
     let (spec, _) = risk_spec();
-    make_crg_db(&db, &spec).unwrap();
+    make_graph_db(&db, &spec).unwrap();
     let conn = rusqlite::Connection::open(&db).unwrap();
     std::fs::write(dir.path().join("x.rs"), "line1\nline2\n").unwrap();
     let out = get_review_context(&conn, dir.path(), &["x.rs".to_string()], 2, true, 200).unwrap();
@@ -828,7 +828,7 @@ fn gq_repo_db() -> (tempfile::TempDir, std::path::PathBuf) {
     let graph_dir = dir.path().join(".code-reality");
     std::fs::create_dir_all(&graph_dir).unwrap();
     let (spec, _) = risk_spec();
-    make_crg_db(&graph_dir.join("graph.db"), &spec).unwrap();
+    make_graph_db(&graph_dir.join("graph.db"), &spec).unwrap();
     (dir, graph_dir.join("graph.db"))
 }
 
@@ -880,10 +880,10 @@ fn gq_run_hub_end_to_end() {
 
 use code_reality::graph_engine::{detect_communities_leiden, document_symbols_at};
 
-fn two_cluster_spec() -> CrgDbSpec {
+fn two_cluster_spec() -> GraphDbSpec {
     // two dense trios joined by one weak (CONTAINS) bridge edge
     let q = |f: &str, s: &str| format!("/repo/{f}::{s}");
-    let mut spec = CrgDbSpec::default();
+    let mut spec = GraphDbSpec::default();
     let syms = [
         ("a.rs", "a1"),
         ("a.rs", "a2"),
@@ -932,7 +932,7 @@ fn two_cluster_spec() -> CrgDbSpec {
 fn leiden_separates_clusters_and_is_deterministic() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("graph.db");
-    make_crg_db(&db, &two_cluster_spec()).unwrap();
+    make_graph_db(&db, &two_cluster_spec()).unwrap();
     let conn = rusqlite::Connection::open(&db).unwrap();
     let r1 = detect_communities_leiden(&conn, 2, 42).unwrap();
     let r2 = detect_communities_leiden(&conn, 2, 42).unwrap();

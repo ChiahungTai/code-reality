@@ -163,7 +163,7 @@ fn db_functions_kind_includes_test_and_resolves_path() {
     let db = repo.join(".code-reality").join("graph.db");
     std::fs::create_dir_all(db.parent().unwrap()).unwrap();
     let src = write_repo_file(&repo, "src/a.rs", "fn x() {}\n");
-    let mut spec = graph_db_fixture::CrgDbSpec::default();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
     for (kind, name, qname) in [
         ("Function", "x", "src/a.rs::x"),
         ("Test", "t_x", "src/a.rs::t_x"),
@@ -201,7 +201,7 @@ fn db_functions_kind_includes_test_and_resolves_path() {
             community_id: None,
         },
     ));
-    graph_db_fixture::make_crg_db(&db, &spec).unwrap();
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
     let conn = code_reality::common::connect_ro(&db).unwrap();
     let counts = db_functions(&conn, &src);
     assert_eq!(counts.get("x"), Some(&1));
@@ -240,7 +240,7 @@ impl U for T {
     let src = write_repo_file(&repo, "src/k.rs", body);
     let db = repo.join(".code-reality").join("graph.db");
     std::fs::create_dir_all(db.parent().unwrap()).unwrap();
-    let mut spec = graph_db_fixture::CrgDbSpec::default();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
     spec.nodes.push(graph_db_fixture::NodeSeed {
         name: "open".into(),
         parent: None,
@@ -256,7 +256,7 @@ impl U for T {
             community_id: None,
         },
     ));
-    graph_db_fixture::make_crg_db(&db, &spec).unwrap();
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
 
     let lookup = lookup_from(HashMap::from([("open".to_string(), 2usize)]));
     let (risk, audited, missing, errors, total_ra, warns) =
@@ -303,7 +303,7 @@ impl U for T {
     let _ = write_repo_file(&repo, "src/clean.rs", "fn alone() {}\n");
     let db = repo.join(".code-reality").join("graph.db");
     std::fs::create_dir_all(db.parent().unwrap()).unwrap();
-    graph_db_fixture::make_crg_db(&db, &graph_db_fixture::CrgDbSpec::default()).unwrap();
+    graph_db_fixture::make_graph_db(&db, &graph_db_fixture::GraphDbSpec::default()).unwrap();
     let lookup = lookup_from(HashMap::new());
     let (_, audited, _, _, _, _) = audit(&repo, &db, false, Some(&lookup)).unwrap();
     assert_eq!(audited, 1); // risk-file scope only
@@ -488,7 +488,7 @@ fn db_functions_dedupes_synthesized_shadow_rows() {
     std::fs::create_dir_all(repo.join(".code-reality")).unwrap();
     let file_a = repo.join("src/a.rs");
     let file_b = repo.join("src/b.rs");
-    let spec = graph_db_fixture::CrgDbSpec {
+    let spec = graph_db_fixture::GraphDbSpec {
         nodes: vec![
             // producer Function for shared_fn in a.rs
             graph_db_fixture::NodeSeed {
@@ -557,7 +557,7 @@ fn db_functions_dedupes_synthesized_shadow_rows() {
         ..Default::default()
     };
     let db = repo.join(".code-reality/graph.db");
-    graph_db_fixture::make_crg_db(&db, &spec).unwrap();
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
     let conn =
         rusqlite::Connection::open_with_flags(&db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
             .unwrap();
