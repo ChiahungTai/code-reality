@@ -23,15 +23,23 @@ per-repo SCIP index slots under `scip/<repo-basename>/`.
 ## Quickstart (AI harness enablement)
 
 ```
-cargo install --path crates/code-reality        # code-reality + code-reality-mcp on PATH
+cargo install --path crates/code-reality              # code-reality + code-reality-mcp (structural face)
+cargo install --path crates/pyrefly-producer          # pyrefly-index + pyrefly-lsp (Python producer + language server)
+cargo install --path crates/code-reality-lsp-bridge   # code-reality-lsp-bridge (type face: hover/diagnostics MCP)
 ```
 
 **ZCode / Claude Code plugin** (stdio MCP + usage skill, zero daemon):
 add this repo as a plugin marketplace (Settings → Plugin
 Management → Discover → `+` → Git URL or GitHub URL —
 the repo root carries
-`marketplace.json`), install `code-reality`. The MCP server mounts as
-`plugin:code-reality:code-reality` and spawns per session.
+`marketplace.json`), install `code-reality`. Two MCP servers mount per
+session: `plugin:code-reality:code-reality` (structural face) and
+`plugin:code-reality:code-reality-lsp-bridge` (Python type face —
+hover / check_file / edit_file / lsp_status tools; spawns the
+`pyrefly-lsp` backend lazily on the first tool call). Already-installed
+plugin caches are version-keyed: a content-only change under `plugin/`
+stays inert until `marketplace.json`/`plugin.json` are version-bumped
+and the plugin is refreshed — fresh installs get both servers directly.
 For local-path marketplaces, point at a clean slice
 (`scripts/dist-marketplace.sh` → `dist/marketplace`), never the repo
 root — directory sources mirror the whole tree, and a built `target/`
@@ -41,6 +49,12 @@ pollutes the plugin cache with gigabytes of build artifacts.
 
 ```json
 {"type": "stdio", "command": "code-reality-mcp", "args": ["--stdio"]}
+```
+
+and, for the Python type face,
+
+```json
+{"type": "stdio", "command": "code-reality-lsp-bridge", "args": ["--stdio"]}
 ```
 
 GUI-launched harnesses may lack `~/.cargo/bin` on PATH — give the
