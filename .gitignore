@@ -12,6 +12,9 @@ __pycache__/
 # Local scratch (agent tooling)
 .agent-tmp/
 
+# Review working notes (ephemeral — cleared per-branch after commit settlement)
+.review/
+
 # Rust build artifacts
 /target/
 # POC crates carry their own (untracked, detached) target dirs
