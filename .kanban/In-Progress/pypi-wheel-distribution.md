@@ -23,9 +23,9 @@
 ## 驗收標準
 
 1. 三 dist 上 PyPI；`uv tool install`＋`uvx` 陌生路徑實跑可用
-2. CI dry-run（workflow_dispatch）3 wheels（**macOS arm64×3 crate，
-   user 2026-08-28 縮編**；Linux 腿 deferred）全綠；
-   tag push 只在綠 build 發布
+2. CI dry-run ✅ DONE（2026-08-28 run `33182529285`：四腿全綠＝
+   縮編超集、publish gate skipped 正確、12 顆 artifacts tag 全驗；
+   Linux 編譯可行＝免費情報）；tag push 只在綠 build 發布
 3. 首發 workspace version `0.2.0`；版號三層條款生效（EP frozen 段）
 4. spawn 優先序翻轉後：ZCode 新 session 雙 server mount＋GUI 無
    PATH 場景可 spawn＋freshness WARN 兩通道各驗一次

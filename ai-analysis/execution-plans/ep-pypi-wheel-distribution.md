@@ -241,6 +241,15 @@ jobs:
 - `workflow_dispatch` dry-run 全綠；artifacts 下載後 `unzip -l` 驗
   平台 tag（`macosx_11_0_arm64` / `macosx_10_12_x86_64`（或 maturin
   實際給的 deployment target） / `manylinux_*_x86_64` / `_aarch64`）。
+
+**Dry-run 收案（2026-08-28，run `33182529285`，pre-narrow 全矩陣定義
+＝縮編範圍的嚴格超集）**：四腿全綠、publish gate 正確 skipped、
+artifacts 12 顆 tag 全驗——`macosx_11_0_arm64`（與本機 spike 逐字
+同）、`macosx_10_12_x86_64`（Apple cross 成立）、
+`manylinux_2_39_{x86_64,aarch64}`。**Linux 免費情報：pyrefly engine
+git-dep 於 Linux 兩架構編譯成功——原 kill-gate 問題答案＝可行**；
+manylinux_2_39 綁 ubuntu-24.04 的 glibc 2.39，未來重啟 Linux 腿時
+再評估舊 glibc 相容面（maturin cross-glibc 選項）。S2 驗證收案。
 - Linux wheel 取回一台 Linux 環境裝跑（或首次發布後以 uvx 驗）——
   本機無 Linux，標註未本地驗證項。
 - 已知未覆蓋：musllinux（NOT 清單）；Windows（NOT 清單）。
