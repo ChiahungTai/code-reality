@@ -55,6 +55,9 @@ fn main() -> ExitCode {
                 r.index_path.display(),
                 r.elapsed_secs,
             );
+            for p in &r.invalidated_sidecars {
+                println!("[OK] invalidated stale sidecar: {p}");
+            }
             if !r.skipped_no_ast.is_empty() {
                 eprintln!(
                     "[WARN] {} files produced no AST: {:?}",

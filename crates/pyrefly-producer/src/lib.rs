@@ -36,6 +36,11 @@ pub struct EmitReport {
     pub skipped_no_ast: Vec<String>,
     /// Config-finder errors from `Handles::all` (P-8 loud list).
     pub finder_errors: Vec<String>,
+    /// Sidecar artifacts (cache db / stamped meta) that existed beside
+    /// the slot and were superseded by this run — a stale lsp-harvest
+    /// cache left in place would be silently trusted by
+    /// `graph_db build`'s lsp fast-path (silent bad-db, 2026-08-28).
+    pub invalidated_sidecars: Vec<String>,
     pub index_path: PathBuf,
     pub elapsed_secs: f64,
 }
@@ -179,6 +184,28 @@ pub fn emit(repo_root: &Path, out: Option<&Path>) -> Result<EmitReport, String> 
         }
     }
     emitter.write(&index_path)?;
+    // Invalidate sidecar artifacts derived from the PREVIOUS index: the
+    // cache db, stamped meta, and fn-defs sidecar are all keyed to this
+    // slot, so leaving them behind hands every downstream consumer a
+    // superseded producer face. A concurrent remove of the same file is
+    // the target state, not an error (review R1).
+    for stale in [
+        code_reality::cache::sqlite_path(&index_path),
+        code_reality::engine::meta_path(&index_path),
+        code_reality::fndefs::fndefs_path(&index_path),
+    ] {
+        match std::fs::remove_file(&stale) {
+            Ok(()) => report.invalidated_sidecars.push(stale.display().to_string()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                return Err(format!(
+                    "remove {} (index 本身已寫入 {}: {e})",
+                    stale.display(),
+                    index_path.display()
+                ))
+            }
+        }
+    }
     report.elapsed_secs = t0.elapsed().as_secs_f64();
     Ok(report)
 }

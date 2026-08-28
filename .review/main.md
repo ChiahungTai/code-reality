@@ -3,6 +3,25 @@
 > 2026-08-28 post-build 階段 1-3。fresh（code-reviewer）＋primed（code-reviewer-primed）雙審查者。
 > 模式：uncommitted diff（baseline = HEAD `ef58b61`）。
 > （前弧 ep-type-face-lsp-bridge 的 review 記錄已隨該 EP commit 帶走）
+> W3 已 commit `3980fe1`。以下為同日 fix relay（ep-sidecar-invalidation）記錄。
+
+## Fix relay（sidecar 失效缺口）審查處置
+
+雙審查者（fresh Approved 5🟢 / primed PASS-with-findings 3 項）。Judge 裁決與落地：
+
+| 來源 | ID | 問題 | 決策 | 狀態 |
+|----|--------|------|------|------|
+| fresh R1 | 🟢 | remove_file TOCTOU：並發移同檔 NotFound 變 hard error（index 已寫好的事實被吞） | ✅ 採納：NotFound＝目標狀態容忍；真失敗訊息附「index 已寫入」 | fixed |
+| fresh R3 | 🟢 | 失效清單漏第三 sibling `index.scip.fndefs.db`（讀時有 guard、非 silent，屬對稱性） | ✅ 採納：`fndefs::fndefs_path` 入清單（測試斷言 3 檔） | fixed |
+| fresh R2 | 🟢 | gate 對 placeholder stat 失敗 hard error | ❌ 維持 fail-loud：harvest 恆寫 placeholder、缺席＝異常（`stale_reason` stat-fail=loud 先例）；記 EP | documented |
+| fresh R4 | 🟢 | 嚴格 `<` 在粗粒度 mtime 上漏抓（相等 pass） | 記 EP residual（APFS ns 粒度近理論值；雙邊契約本取 `>=`） | documented |
+| fresh R5 | 🟢 | unchanged repo 重跑 emit 仍失效有效 cache（重建成本） | ❌ 不採（digest-keyed skip 複雜度>收益）；記 EP | documented |
+| primed F1 | Low | `document_symbols_at` 無條件信 sidecar（outline 面 silent 過期） | 記 EP 已知過渡邊界（不建 db、producer fix 阻斷未來形成） | documented |
+| primed F2 | Info | .review 記 lsp trusted-path 測試 4 件→實為 5 件 | 本表修正 | fixed |
+
+覆蓋面自檢（沿用）：正路徑＝既有 lsp trusted-path 測試（5 件）＋producer 全量 end_to_end 未動全過；`--out` probe path keying 零互踩（fresh 驗證）；半失效狀態收斂 loud-or-safe（fresh 軸向 1）。
+
+
 
 ## Judge 決策與處置
 

@@ -407,6 +407,42 @@ fn import_legacy_merges_synthesizes_and_imports_edges() {
 }
 
 #[test]
+fn build_fails_loud_on_stale_lsp_sidecar_superseded_by_newer_index() {
+    // Silent bad-db relay (2026-08-28, W4 mosaic cleanup): a stale
+    // lsp-harvest cache db left beside a freshly written index.scip was
+    // silently trusted (CALLS 0 / REFERENCES-only db, no WARN). The lsp
+    // fast-path now fails loud on the mtime contradiction.
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = repo_dir(&tmp);
+    std::fs::create_dir_all(repo.join("src")).unwrap();
+    std::fs::write(repo.join("src/a.py"), "def target():\n    pass\n").unwrap();
+    let index = tmp.path().join("index.scip");
+    std::fs::write(&index, "lsp-harvest placeholder\n").unwrap();
+    let cache_db = code_reality::cache::sqlite_path(&index);
+    {
+        let c = Connection::open(&cache_db).unwrap();
+        c.execute_batch(code_reality::cache::SCHEMA_SQL).unwrap();
+        c.execute(
+            "INSERT INTO meta (key, value) VALUES ('producer', 'lsp-harvest-poc(pyright-langserver)')",
+            [],
+        )
+        .unwrap();
+        c.execute_batch(
+            "INSERT INTO occurrences (seq, symbol, rel_path, line, is_def) VALUES
+             (1, 'lsp python src/a.py target().', 'src/a.py', 1, 1);",
+        )
+        .unwrap();
+    }
+    // fresh producer run rewrote the index AFTER the cache was built
+    std::fs::write(&index, "fresh producer index bytes\n").unwrap();
+    let err = graph_db::build_from_cache_at(&repo, &index).unwrap_err();
+    assert!(
+        err.contains("已被較新的 index.scip 取代"),
+        "fail-loud on superseded lsp sidecar: {err}"
+    );
+}
+
+#[test]
 fn import_legacy_dry_run_is_read_only() {
     let tmp = tempfile::tempdir().unwrap();
     let repo = repo_dir(&tmp);

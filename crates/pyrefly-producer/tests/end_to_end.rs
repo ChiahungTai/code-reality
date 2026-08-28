@@ -318,3 +318,39 @@ fn emit_is_byte_deterministic() {
     );
     let _ = std::fs::remove_dir_all(&repo);
 }
+
+#[test]
+fn emit_invalidates_stale_sidecar_artifacts() {
+    // Silent bad-db relay (2026-08-28): a fresh pyrefly-index over a slot
+    // still holding an lsp-harvest-era cache db + stamped meta must not
+    // leave them behind — graph_db build's lsp fast-path would silently
+    // trust the superseded producer (CALLS 0 / REFERENCES-only db).
+    let repo = temp_repo_tagged("inval");
+    let index_path = repo.join("index.scip");
+    let cache_db = code_reality::cache::sqlite_path(&index_path);
+    let meta = code_reality::engine::meta_path(&index_path);
+    {
+        let c = rusqlite::Connection::open(&cache_db).unwrap();
+        c.execute_batch(code_reality::cache::SCHEMA_SQL).unwrap();
+        c.execute(
+            "INSERT INTO meta (key, value) VALUES ('producer', 'lsp-harvest-poc(pyright-langserver)')",
+            [],
+        )
+        .unwrap();
+    }
+    std::fs::write(&meta, "{\"stale\": true}\n").unwrap();
+    let fndefs_db = code_reality::fndefs::fndefs_path(&index_path);
+    std::fs::write(&fndefs_db, "stale fn-defs sidecar\n").unwrap();
+
+    let report = pyrefly_producer::emit(&repo, Some(&index_path)).expect("emit");
+    assert_eq!(
+        report.invalidated_sidecars.len(),
+        3,
+        "cache db + stamped meta + fn-defs sidecar removed: {:?}",
+        report.invalidated_sidecars
+    );
+    assert!(!cache_db.exists(), "stale cache db gone");
+    assert!(!meta.exists(), "stale stamped meta gone");
+    assert!(!fndefs_db.exists(), "stale fn-defs sidecar gone");
+    let _ = std::fs::remove_dir_all(&repo);
+}

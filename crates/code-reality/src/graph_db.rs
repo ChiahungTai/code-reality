@@ -436,6 +436,10 @@ pub fn build_from_cache_at(repo: &Path, index_path: &Path) -> Result<BuildReport
     // an existing cache with an lsp producer IS the authoritative face —
     // the open_face ladder would try parsing the placeholder on sub-second
     // mtime drift (bootstrap connected directly for the same reason).
+    // One contradiction still fails loud (silent bad-db relay,
+    // 2026-08-28): an index.scip NEWER than the lsp cache means a fresh
+    // producer run has already superseded this sidecar — trusting it
+    // silently built a CALLS-0 db off a stale lsp-harvest cache.
     let face = if cache_db.exists() {
         let probe = crate::common::connect_ro(&cache_db)?;
         let is_lsp: bool = probe
@@ -445,6 +449,21 @@ pub fn build_from_cache_at(repo: &Path, index_path: &Path) -> Result<BuildReport
             .map(|p| p.starts_with("lsp"))
             .unwrap_or(false);
         if is_lsp {
+            let cache_m = cache_db
+                .metadata()
+                .and_then(|m| m.modified())
+                .map_err(|e| format!("stat {}: {e}", cache_db.display()))?;
+            let idx_m = index_path
+                .metadata()
+                .and_then(|m| m.modified())
+                .map_err(|e| format!("stat {}: {e}", index_path.display()))?;
+            if cache_m < idx_m {
+                return Err(format!(
+                    "lsp-harvest 快取已被較新的 index.scip 取代（{} 舊於 {}）——殘留 sidecar 不可作為生產面：重跑 pyrefly-index（自動失效殘留 sidecar）再 build",
+                    cache_db.display(),
+                    index_path.display()
+                ));
+            }
             Face::Sqlite(probe)
         } else {
             drop(probe);
