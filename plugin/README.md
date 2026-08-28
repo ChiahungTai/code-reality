@@ -31,14 +31,20 @@ edits).
 
 ## Install
 
-The repo root doubles as the plugin marketplace (see
-`marketplace.json`): Settings → Plugin Management → Discover → `+` →
-this repo's local path, Git URL, or GitHub URL. The plugin
-appears under Personal → install. Both MCP servers mount under
-`plugin:code-reality:*` and the skill auto-loads. The
-type-face entry ships with this plugin's next version bump —
-already-installed caches are version-keyed (see Updating below);
-fresh installs get both servers.
+The plugin manifest lives at `plugin/.claude-plugin/plugin.json` — the
+Claude Code location. ZCode reads it through its CC-compatibility
+fallback (lookup order `.zcode-plugin/` → `.claude-plugin/`), so one
+manifest serves both harnesses; there is deliberately no
+`.zcode-plugin/` copy to drift against it.
+
+Two market files point at the same `./plugin` slice: the repo-root
+`marketplace.json` (ZCode format) and `.claude-plugin/marketplace.json`
+(Claude Code format, adds the required `owner` field). Register either
+market (ZCode: Settings → Plugin Management → Discover → `+` → this
+repo's local path, Git URL, or GitHub URL; Claude Code: `/plugin
+marketplace add ctai/code-reality`). The plugin appears under
+Personal → install. Both MCP servers mount under
+`plugin:code-reality:*` and the skill auto-loads.
 
 An HTTP resident mode also exists (launchd, port 8200) for
 multi-harness sharing on one machine — see the repo's `launchd/`.
@@ -47,6 +53,11 @@ Not needed for the plugin path.
 ## Updating the plugin
 
 Installed plugin caches do not pick up content-only changes under
-`plugin/` — bump `version` in `marketplace.json` whenever the slice
-changes so a marketplace refresh/reinstall is visible, and rerun
-`scripts/dist-marketplace.sh` for the directory-source slice.
+`plugin/` — bump `version` in all three places whenever the slice
+changes (the plugin manifest, the ZCode `marketplace.json` entry, the
+CC `.claude-plugin/marketplace.json` entry) so a marketplace
+refresh/reinstall is visible, and rerun
+`scripts/dist-marketplace.sh` for the directory-source slice. Version
+comparison reads the marketplace entry as "latest" and the plugin
+manifest as "installed" — a stale entry silently suppresses the update
+prompt.

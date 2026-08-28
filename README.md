@@ -36,10 +36,14 @@ Maintainers can auto-reinstall on commit: `git config core.hooksPath
 and `~/.mosaic` paths — adapt before opting in on another layout).
 
 **ZCode / Claude Code plugin** (stdio MCP + usage skill, zero daemon):
-add this repo as a plugin marketplace (Settings → Plugin
-Management → Discover → `+` → Git URL or GitHub URL —
-the repo root carries
-`marketplace.json`), install `code-reality`. Two MCP servers mount per
+the plugin manifest sits at the Claude Code location
+(`plugin/.claude-plugin/plugin.json`); ZCode reads it via its
+CC-compatibility fallback, so one manifest serves both harnesses. The
+repo root carries both market files — `marketplace.json` (ZCode) and
+`.claude-plugin/marketplace.json` (Claude Code). Add this repo as a
+plugin marketplace (ZCode: Settings → Plugin Management → Discover →
+`+` → Git URL or GitHub URL; Claude Code: `/plugin marketplace add
+ctai/code-reality`), install `code-reality`. Two MCP servers mount per
 session: `plugin:code-reality:code-reality` (structural face) and
 `plugin:code-reality:code-reality-lsp-bridge` (Python type face —
 hover / check_file / edit_file / lsp_status tools; spawns the

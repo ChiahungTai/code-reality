@@ -12,5 +12,7 @@ cd "$(dirname "$0")/.."
 rm -rf dist/marketplace
 mkdir -p dist/marketplace
 cp marketplace.json dist/marketplace/
+mkdir -p dist/marketplace/.claude-plugin
+cp .claude-plugin/marketplace.json dist/marketplace/.claude-plugin/
 cp -R plugin dist/marketplace/
 echo "[OK] dist/marketplace ready ($(du -sh dist/marketplace | cut -f1)) — register this path as the directory marketplace, not the repo root"
