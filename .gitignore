@@ -26,3 +26,6 @@ dist/
 
 # v1+ S4 self-owned graph db (dogfood; sibling of .code-review-graph/)
 .code-reality/
+
+# Last-session observation layer (local session state, not repo content)
+STATE.md
