@@ -43,6 +43,11 @@ CREATE INDEX idx_occurrences_symbol ON occurrences(symbol, is_def);
 pub struct Stats {
     pub symbols: usize,
     pub occurrences: usize,
+    /// Documents that carried occurrences in the SCIP index but lost
+    /// every one to the fn-tail gate (class/variable-only files — the
+    /// frozen R2-3 filter; s5-ceiling B8 evidence). Loud list so future
+    /// audits don't re-derive this by manual digging.
+    pub docs_fully_filtered: usize,
 }
 
 pub fn sqlite_path(index_path: &Path) -> PathBuf {
@@ -71,6 +76,7 @@ pub fn build_db(index: &Index, db_path: &Path, sidecar_head: &str) -> Result<Sta
         }
     }
     let mut count = 0usize;
+    let mut docs_fully_filtered = 0usize;
 
     let tmp = db_path.with_file_name(format!(
         "{}.tmp",
@@ -96,8 +102,10 @@ pub fn build_db(index: &Index, db_path: &Path, sidecar_head: &str) -> Result<Sta
         })
         .and_then(|_| {
             for d in &index.documents {
+                let mut kept_any = false;
                 for occ in &d.occurrences {
                     if tails.contains_key(&occ.symbol) {
+                        kept_any = true;
                         count += 1;
                         conn.execute(
                             "INSERT INTO occurrences (symbol, rel_path, line, is_def)\
@@ -110,6 +118,9 @@ pub fn build_db(index: &Index, db_path: &Path, sidecar_head: &str) -> Result<Sta
                             ],
                         )?;
                     }
+                }
+                if !kept_any && !d.occurrences.is_empty() {
+                    docs_fully_filtered += 1;
                 }
             }
             Ok(())
@@ -129,6 +140,7 @@ pub fn build_db(index: &Index, db_path: &Path, sidecar_head: &str) -> Result<Sta
     Ok(Stats {
         symbols: tails.len(),
         occurrences: count,
+        docs_fully_filtered,
     })
 }
 

@@ -487,7 +487,21 @@ fn build_cache_mode(index_path: &Path, stderr: &mut String) -> ToolOutput {
                                 stats.occurrences
                             ),
                         ),
-                        stderr: std::mem::take(stderr),
+                        stderr: {
+                            // Frozen-stdout parity face: the new counter
+                            // rides stderr (like the fn_defs sidecar
+                            // line) — zero keeps stdout byte-identical.
+                            if stats.docs_fully_filtered > 0 {
+                                stderr.push_str(&crate::msg_line(
+                                    "WARN",
+                                    &format!(
+                                        "{} docs fully filtered by fn-tail gate（class/variable-only——R2-3 設計行為，B8 列冊）",
+                                        stats.docs_fully_filtered
+                                    ),
+                                ));
+                            }
+                            std::mem::take(stderr)
+                        },
                         exit_code: 0,
                     }
                 }

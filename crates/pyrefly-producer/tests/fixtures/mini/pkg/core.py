@@ -14,15 +14,27 @@ class Greeter:
         return fn()
 
 
+class Plain:
+    label = "p"
+
+
+class Wrapper:
+    class Inner:
+        pass
+
+
 def top_fn(x):
     return x + CONSTANT
 
 
 def make():
     g = Greeter()
+    p = Plain()
+    inner = Wrapper.Inner()
 
     def inner_helper():
         return g.greet()
 
     inner_helper()
+    assert isinstance(p, Plain)
     return top_fn(g)

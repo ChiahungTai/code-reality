@@ -76,12 +76,21 @@ fn emit_build_cache_and_graph_db_on_fixture() {
     // The fixture is fixed content — pin exact counts (loose >= bounds
     // let regressions pass silently; the line off-by-one escaped that way).
     assert_eq!(report.files, 2, "pkg/core.py + main.py");
-    assert_eq!(report.defs, 10, "9 defs in core.py + run() in main.py");
+    assert_eq!(report.defs, 14, "11 real defs + 2 pseudo-ctor defs in core.py + run() in main");
     assert_eq!(
-        report.references, 4,
-        "2 imports + CONSTANT load + top_fn load (handler)"
+        report.references, 6,
+        "2 emitted imports (alias P import dropped by the refs-side guard) + CONSTANT load + top_fn load (handler) + Wrapper base load + isinstance Plain load"
     );
-    assert_eq!(report.call_sites, 6, "4 in core.py + 2 in main.py");
+    assert_eq!(report.call_sites, 9, "6 in core.py + 3 in main.py");
+    // B7b pseudo-constructor mint: three constructor call sites hit
+    // class-shaped targets (Plain(), Wrapper.Inner(), alias P()) and two
+    // distinct classes get the one-shot DEF backfill.
+    assert_eq!(report.minted_pseudo_ctor_refs, 3, "pseudo-ctor call refs");
+    assert_eq!(report.minted_pseudo_ctor_defs, 2, "Plain(). + Wrapper#Inner(). defs");
+    assert!(
+        report.minted_pseudo_ctor_refs >= report.minted_pseudo_ctor_defs,
+        "refs >= defs (idempotence)"
+    );
 
     let loaded = code_reality::engine::load_index(&index_path).expect("parse index");
     let symbols = all_symbols(&loaded.index);
@@ -116,6 +125,35 @@ fn emit_build_cache_and_graph_db_on_fixture() {
         symbols.contains(&format!("{disc}`pkg.core`/Greeter#__init__().")),
         "constructor target missing"
     );
+    // B7a guard (SM-10): a class WITH a corpus `__init__` must NOT also
+    // get a pseudo-constructor mint — the site keeps its method grain.
+    assert!(
+        !symbols.contains(&format!("{disc}`pkg.core`/Greeter().")),
+        "B7a site must not be pseudo-minted"
+    );
+
+    // B7b pseudo-constructor forms (SM-1/SM-12): plain class (no corpus
+    // `__init__`) and nested class minted in fn shape, def + call ref.
+    for pseudo in [
+        format!("{disc}`pkg.core`/Plain()."),
+        format!("{disc}`pkg.core`/Wrapper#Inner()."),
+    ] {
+        let occs: Vec<&scip::types::Occurrence> = loaded
+            .index
+            .documents
+            .iter()
+            .flat_map(|d| d.occurrences.iter())
+            .filter(|o| o.symbol == pseudo)
+            .collect();
+        assert!(
+            occs.iter().any(|o| o.symbol_roles & 1 != 0),
+            "pseudo-ctor {pseudo} needs a DEF occurrence (backfill): {occs:#?}"
+        );
+        assert!(
+            occs.iter().any(|o| o.symbol_roles & 1 == 0),
+            "pseudo-ctor {pseudo} needs a call ref: {occs:#?}"
+        );
+    }
 
     // Import sites in main.py reference the imported defs (Import role bit 2).
     let main_occs = occurrences_in(&loaded.index, "main.py");
@@ -140,7 +178,7 @@ fn emit_build_cache_and_graph_db_on_fixture() {
 
     // Line contract (dual-review F-1 regression pin): the protobuf carries
     // 0-based lines — `engine::ln` adds the +1 on read. `def top_fn` sits
-    // on physical line 17 of pkg/core.py → range[0] == 16.
+    // on physical line 26 of pkg/core.py → range[0] == 25.
     let top_fn_def = loaded
         .index
         .documents
@@ -149,10 +187,10 @@ fn emit_build_cache_and_graph_db_on_fixture() {
         .flat_map(|d| d.occurrences.iter())
         .find(|o| o.symbol.ends_with("`/top_fn().") && o.symbol_roles & 1 != 0)
         .expect("top_fn def occurrence");
-    assert_eq!(top_fn_def.range.first(), Some(&16), "0-based def line");
+    assert_eq!(top_fn_def.range.first(), Some(&25), "0-based def line");
     assert_eq!(
         top_fn_def.enclosing_range.first(),
-        Some(&16),
+        Some(&25),
         "0-based enclosing line"
     );
 
@@ -180,13 +218,15 @@ fn emit_build_cache_and_graph_db_on_fixture() {
     assert!(built.edges > 0, "edges: {}", built.edges);
 
     // CALLS-vs-REFERENCES split (occurrence EP S3-F2, build-side
-    // derivation): the fixture's 6 resolved call sites become CALLS
-    // edges (2 constructors via the class-segment fallback, greet,
-    // inner_helper, 2× top_fn) and the single `handler = top_fn` load
-    // stays REFERENCES — exact counts, a kind regression must fail.
+    // derivation): 8 of the 9 resolved call sites become CALLS edges
+    // (2 B7a constructors via the class-segment fallback, greet,
+    // inner_helper, 2× top_fn, Plain() + Wrapper.Inner() via tail match)
+    // while the alias site P() (syntactic mark "P" vs tail "Plain") and
+    // the `handler = top_fn` load stay REFERENCES — exact counts, a kind
+    // regression must fail.
     assert_eq!(
-        built.calls_edges, 6,
-        "CALLS edges (the 6 fixture call sites)"
+        built.calls_edges, 8,
+        "CALLS edges (8 of the 9 fixture call sites)"
     );
     {
         let conn = rusqlite::Connection::open_with_flags(
@@ -213,9 +253,38 @@ fn emit_build_cache_and_graph_db_on_fixture() {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(calls, 6, "graph CALLS edges");
-        assert_eq!(refs, 1, "graph REFERENCES edges (the handler load)");
+        // B7b: the pseudo-constructor node exists (def row) and its edge
+        // is CALLS; the alias site is the recorded REFERENCES residual.
+        let plain_calls: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM edges WHERE kind = 'CALLS' AND callee_symbol LIKE '%/Plain().'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let plain_node: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM nodes WHERE symbol LIKE '%/Plain().'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let inner_calls: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM edges WHERE kind = 'CALLS' AND callee_symbol LIKE '%/Wrapper#Inner().'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(calls, 8, "graph CALLS edges");
+        assert_eq!(
+            refs, 2,
+            "graph REFERENCES edges (handler load + alias P() residual)"
+        );
         assert!(nested_calls >= 1, "nested-fn CALLS edge: {nested_calls}");
+        assert_eq!(plain_calls, 1, "Plain(). pseudo-ctor CALLS edge");
+        assert_eq!(plain_node, 1, "Plain(). node exists exactly once");
+        assert_eq!(inner_calls, 1, "Wrapper#Inner(). pseudo-ctor CALLS edge");
     }
 
     let _ = std::fs::remove_dir_all(&repo);

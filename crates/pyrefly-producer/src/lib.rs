@@ -28,6 +28,11 @@ pub struct EmitReport {
     pub dropped_unchained: usize,
     pub unresolved_refs: usize,
     pub unresolved_calls: usize,
+    /// B7b: constructor calls minted in fn shape (`Cls().`). Split so
+    /// idempotence is machine-checkable — refs >= defs and defs equals
+    /// the number of distinct called classes.
+    pub minted_pseudo_ctor_refs: usize,
+    pub minted_pseudo_ctor_defs: usize,
     pub skipped_no_ast: Vec<String>,
     /// Config-finder errors from `Handles::all` (P-8 loud list).
     pub finder_errors: Vec<String>,
@@ -71,6 +76,33 @@ pub fn emit(repo_root: &Path, out: Option<&Path>) -> Result<EmitReport, String> 
     }
 
     let mut emitter = emit::IndexEmitter::new();
+
+    // Pass 1 (B7b) — pure data scan, no emission: collect the
+    // pseudo-constructor symbols of classes hit by a constructor call.
+    // A call site that also resolved to a corpus `__init__` (B7a shape)
+    // is excluded — its edge already exists in method grain and must not
+    // be double-minted.
+    let mut called_classes: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
+    for m in &driven.modules {
+        for c in &m.calls {
+            let (kept, _collapsed) = symbol::collapse_dunder(&c.targets);
+            let (targets, _dropped) =
+                mint_targets(&kept, &disc, repo_root, &def_nodes_by_path, true);
+            if targets
+                .iter()
+                .any(|t| t.kind == walk::DefKind::Function && t.name == "__init__")
+            {
+                continue;
+            }
+            for t in targets.iter().filter(|t| t.kind == walk::DefKind::Class) {
+                if let Some(pseudo) = symbol::pseudo_ctor_symbol(&t.symbol) {
+                    called_classes.insert(pseudo);
+                }
+            }
+        }
+    }
+
     for m in &driven.modules {
         let src = std::fs::read_to_string(repo_root.join(&m.rel_path))
             .map_err(|e| format!("read {}: {e}", m.rel_path))?;
@@ -86,27 +118,61 @@ pub fn emit(repo_root: &Path, out: Option<&Path>) -> Result<EmitReport, String> 
             let sym = symbol::def_symbol(&disc, &module_id, d);
             emitter.push_def(&sym, d.name_range, d.node_range);
             report.defs += 1;
+            // B7b def backfill: classes that receive a constructor call
+            // get ONE pseudo-constructor DEF occurrence so the minted
+            // call reference survives the graph build's def-symbol gate.
+            // Emission stays inside the defs loop — the set is membership
+            // -only (iterating it would leak HashSet order into the
+            // byte-determinism contract).
+            if d.kind == walk::DefKind::Class {
+                if let Some(pseudo) = symbol::pseudo_ctor_symbol(&sym) {
+                    if called_classes.contains(&pseudo) {
+                        emitter.push_def(&pseudo, d.name_range, d.node_range);
+                        report.minted_pseudo_ctor_defs += 1;
+                    }
+                }
+            }
         }
         for r in &m.refs {
             let (kept, collapsed) = symbol::collapse_dunder(&r.targets);
             report.collapsed_dunder_pairs += collapsed;
-            let (targets, dropped) = mint_targets(&kept, &disc, repo_root, &def_nodes_by_path);
+            let (targets, dropped) =
+                mint_targets(&kept, &disc, repo_root, &def_nodes_by_path, false);
             report.dropped_external_targets += dropped.external;
             report.dropped_local_bindings += dropped.local_binding;
             report.dropped_unchained += dropped.unchained;
-            for (sym, _def_range) in targets {
-                emitter.push_reference(&sym, r.range, r.kind);
+            for t in &targets {
+                emitter.push_reference(&t.symbol, r.range, r.kind);
                 report.references += 1;
             }
         }
         for c in &m.calls {
             let (kept, collapsed) = symbol::collapse_dunder(&c.targets);
             report.collapsed_dunder_pairs += collapsed;
-            let (targets, dropped) = mint_targets(&kept, &disc, repo_root, &def_nodes_by_path);
+            let (targets, dropped) =
+                mint_targets(&kept, &disc, repo_root, &def_nodes_by_path, true);
             report.dropped_external_targets += dropped.external;
             report.dropped_local_bindings += dropped.local_binding;
             report.dropped_unchained += dropped.unchained;
-            for (sym, _def_range) in targets {
+            let b7a_site = targets
+                .iter()
+                .any(|t| t.kind == walk::DefKind::Function && t.name == "__init__");
+            for t in &targets {
+                // B7b: a constructor call resolved to the class itself
+                // (dataclass / plain object-inherit — no corpus
+                // `__init__`) is minted in fn shape; a B7a site (corpus
+                // `__init__` present) keeps its method-grain edge.
+                let sym = if !b7a_site && t.kind == walk::DefKind::Class {
+                    match symbol::pseudo_ctor_symbol(&t.symbol) {
+                        Some(p) => {
+                            report.minted_pseudo_ctor_refs += 1;
+                            p
+                        }
+                        None => t.symbol.clone(),
+                    }
+                } else {
+                    t.symbol.clone()
+                };
                 emitter.push_call_reference(&sym, c.site.range);
                 report.call_sites += 1;
             }
@@ -125,6 +191,17 @@ pub fn module_of_rel(rel: &str) -> String {
     stem.replace('/', ".")
 }
 
+/// One in-corpus minted target of a reference/call site. `kind`/`name`
+/// ride along so the B7b constructor-mint can distinguish class targets
+/// (`Cls#`) from B7a initializer targets (`Cls#__init__().`).
+#[derive(Debug, Clone)]
+pub struct MintedTarget {
+    pub symbol: String,
+    pub def_range: TextRange,
+    pub kind: walk::DefKind,
+    pub name: String,
+}
+
 /// Drop-reason breakdown for the emit report — external targets,
 /// local-binding guard hits, and in-corpus positions with no collected
 /// def node are different phenomena and must not share one counter.
@@ -136,12 +213,15 @@ pub struct DropCounts {
 }
 
 /// Drop targets outside the corpus and mint SCIP symbols for the rest.
+/// `call_site` marks a CALL resolution: only there is a Class-kind
+/// display mismatch import aliasing (see the local-binding guard).
 fn mint_targets(
     targets: &[&api::ResolvedTarget],
     disc: &str,
     repo_root: &Path,
     def_nodes_by_path: &HashMap<&str, &Vec<(TextRange, walk::DefKind, String)>>,
-) -> (Vec<(String, TextRange)>, DropCounts) {
+    call_site: bool,
+) -> (Vec<MintedTarget>, DropCounts) {
     let mut out = Vec::new();
     let mut dropped = DropCounts::default();
     for t in targets {
@@ -176,17 +256,24 @@ fn mint_targets(
                 // differs from the innermost collected def (parameters,
                 // function locals, comprehension bindings) is not a
                 // reference to that def — minting it would fabricate a
-                // reference to the enclosing function.
+                // reference to the enclosing function. Exception, CALL
+                // SITES ONLY: a Class-kind innermost target on a call is
+                // import aliasing (`from m import Plain as P; P()`) —
+                // but a plain-load resolution landing anywhere in a
+                // class body (lambda/walrus/comprehension bindings are
+                // not def nodes) must stay dropped.
                 if let Some(dn) = t.display_name.as_deref() {
-                    if dn != name {
+                    if dn != name && !(call_site && kind == walk::DefKind::Class) {
                         dropped.local_binding += 1;
                         continue;
                     }
                 }
-                out.push((
-                    symbol::target_symbol(disc, &module_of_rel(rel), &chain, kind, &name),
-                    TextRange::new(t.def_start, t.def_start),
-                ));
+                out.push(MintedTarget {
+                    symbol: symbol::target_symbol(disc, &module_of_rel(rel), &chain, kind, &name),
+                    def_range: TextRange::new(t.def_start, t.def_start),
+                    kind,
+                    name: name.clone(),
+                });
             }
             // In-corpus module but the def position matches no collected
             // def node (e.g. a comprehension binding): count, don't

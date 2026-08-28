@@ -38,6 +38,7 @@ fn main() -> ExitCode {
             println!(
                 "[OK] pyrefly-index: {} files, {} defs, {} refs, {} call sites \
                  (dunder collapsed {}, external/local/unchained dropped {}/{}/{}, \
+                 pseudo-ctor refs/defs {}/{}, \
                  unresolved refs/calls {}/{}) -> {} in {:.2}s",
                 r.files,
                 r.defs,
@@ -47,6 +48,8 @@ fn main() -> ExitCode {
                 r.dropped_external_targets,
                 r.dropped_local_bindings,
                 r.dropped_unchained,
+                r.minted_pseudo_ctor_refs,
+                r.minted_pseudo_ctor_defs,
                 r.unresolved_refs,
                 r.unresolved_calls,
                 r.index_path.display(),

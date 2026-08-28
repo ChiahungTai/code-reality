@@ -8,10 +8,16 @@
 //! - class               `` `pkg.mod`/Class# ``
 //! - module variable     `` `pkg.mod`/NAME.NAME. ``
 //! - class attribute     `` `pkg.mod`/Class#NAME. ``
+//! - pseudo-constructor  `` `pkg.mod`/Class(). `` / `` `pkg.mod`/Outer#Inner(). ``
 //!
 //! Only functions/methods carry the `().` tail the fn_tail_name gate
 //! requires — classes and variables are filtered at ingest exactly like
-//! the scip-python face (R2-3 parity, deliberate).
+//! the scip-python face (R2-3 parity, deliberate). The pseudo-constructor
+//! is the deliberate exception (B7b): a constructor CALL resolved to a
+//! corpus class target is minted in fn shape so the edge survives the
+//! ingest gate and pairs with the legacy class node by (name, file);
+//! its graph node carries kind `Function` (graph_db hardcodes the kind
+//! for every fn-tailed symbol — a known, recorded trade-off).
 
 use crate::api::ResolvedTarget;
 use crate::walk::{DefKind, DefSite};
@@ -71,6 +77,15 @@ pub fn target_symbol(
     let module_var = kind == DefKind::Variable && chain.is_empty();
     s.push_str(&descriptor(kind, name, module_var));
     s
+}
+
+/// Pseudo-constructor form of a class-shaped symbol: swap the trailing
+/// `#` for `().` (`` `m`/Outer#Cls# `` → `` `m`/Outer#Cls(). ``). The
+/// tail stays the class name, so the fn_tail_name ingest gate passes and
+/// the minted node pairs with the legacy class node by (name, file).
+/// Returns None for non-class symbols.
+pub fn pseudo_ctor_symbol(sym: &str) -> Option<String> {
+    sym.strip_suffix('#').map(|head| format!("{head}()."))
 }
 
 /// Dunder-pair collapse (EP S1, validate POC-3: every multi-target call

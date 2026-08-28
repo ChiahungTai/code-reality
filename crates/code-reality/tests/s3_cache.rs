@@ -197,3 +197,34 @@ fn crash_leftover_tmp_is_cleaned_by_rebuild() {
     );
     assert!(db.exists());
 }
+
+#[test]
+fn docs_fully_filtered_counter_is_loud() {
+    // B8 evidence loud list (W2 EP S2): a document whose every occurrence
+    // is class/variable-shaped (fails the fn-tail gate) must be counted,
+    // not silently vanish — the 130-file s5 audit was manual digging.
+    let mut index = scip::types::Index::default();
+    for (path, symbols) in [
+        ("cls_only.py", vec!["`m`/Only#"]),
+        ("mixed.py", vec!["`m`/Fn().", "`m`/Cls#"]),
+    ] {
+        let mut doc = scip::types::Document {
+            relative_path: path.to_string(),
+            ..Default::default()
+        };
+        for s in symbols {
+            doc.occurrences.push(scip::types::Occurrence {
+                symbol: s.to_string(),
+                range: vec![0, 0, 0, 1],
+                symbol_roles: scip::types::SymbolRole::Definition as i32,
+                ..Default::default()
+            });
+        }
+        index.documents.push(doc);
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let db = tmp.path().join("count.scip.db");
+    let stats = build_db(&index, &db, "headsha").unwrap();
+    assert_eq!(stats.docs_fully_filtered, 1, "cls_only.py only");
+    assert_eq!(stats.occurrences, 1, "mixed.py keeps its Fn(). def");
+}
