@@ -3,13 +3,13 @@
     "code-reality": {
       "type": "stdio",
       "command": "/bin/sh",
-      "args": ["-c", "if [ -x \"${HOME}/.cargo/bin/code-reality-mcp\" ]; then exec \"${HOME}/.cargo/bin/code-reality-mcp\" --stdio; fi; exec code-reality-mcp --stdio"],
+      "args": ["-c", "if command -v code-reality-mcp >/dev/null 2>&1; then exec code-reality-mcp --stdio; fi; for d in \"$HOME/.local/bin\" \"$HOME/.cargo/bin\"; do if [ -x \"$d/code-reality-mcp\" ]; then export PATH=\"$d:$PATH\"; exec \"$d/code-reality-mcp\" --stdio; fi; done; echo \"code-reality-mcp not found on PATH, ~/.local/bin or ~/.cargo/bin — install: uv tool install code-reality\" >&2; exit 127"],
       "timeoutMs": 60000
     },
     "code-reality-lsp-bridge": {
       "type": "stdio",
       "command": "/bin/sh",
-      "args": ["-c", "if [ -x \"${HOME}/.cargo/bin/code-reality-lsp-bridge\" ]; then exec \"${HOME}/.cargo/bin/code-reality-lsp-bridge\" --stdio; fi; exec code-reality-lsp-bridge --stdio"],
+      "args": ["-c", "if command -v code-reality-lsp-bridge >/dev/null 2>&1; then exec code-reality-lsp-bridge --stdio; fi; for d in \"$HOME/.local/bin\" \"$HOME/.cargo/bin\"; do if [ -x \"$d/code-reality-lsp-bridge\" ]; then export PATH=\"$d:$PATH\"; exec \"$d/code-reality-lsp-bridge\" --stdio; fi; done; echo \"code-reality-lsp-bridge not found on PATH, ~/.local/bin or ~/.cargo/bin — install: uv tool install code-reality-lsp-bridge\" >&2; exit 127"],
       "timeoutMs": 60000
     }
   }

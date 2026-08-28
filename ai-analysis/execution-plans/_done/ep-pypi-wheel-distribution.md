@@ -371,6 +371,38 @@ pkg 段＝0.2.0 ✓；plugin 軸 0.1.3 獨立（兩軸關係文檔隨 S4）。�
   spawn。
 - freshness WARN 在 cargo-face 與 pip-face 各驗一次（SM-3）。
 
+**S4 收案（2026-08-29）**：裁決＝**候選 (b) 定案**——`plugin/.mcp.json`
+兩 wrapper 改為「`command -v` PATH 命中先用 → miss 依序試
+`~/.local/bin`（wheel 面）→ `~/.cargo/bin`（開發面）→ 全缺場
+fail-loud（stderr 安裝指引＋exit 127）」；fallback 順序 deliberate
+（pip stable 優於 cargo HEAD，與翻轉方向一致）。直接執行驗證三情境
+×兩 server：T1 PATH 命中（fake bin 證走 PATH 非 cargo 絕對路徑）、
+T2 `env -i`（無 PATH、HOME 在場——real binary 經 fallback spawn 成功
+，stdin 即關的 `[FAIL] connection closed` 為預期離場）、T3 全缺場
+（指引＋127）。freshness WARN 兩通道各一次：cargo face（T2 過程
+`installed aacebd6 != repo HEAD 3d2be88`）＋pip face（`uvx
+code-reality --version`＝`0.2.0+aacebd6`＋WARN）。**ZCode 新 session
+雙 mount 實呼＝user 端步驟**（marketplace refresh＋重裝 0.1.4 後），
+非本 session 可驗。`lsp_status` availability：`server.rs` 新增
+`backend_available`（std PATH 查找，無外部依賴）＋`status_line` 抽出
+——缺場 backend 印 `state=unavailable`＋安裝指引（SM-8）；Python
+backend 的 `install_hint` 翻轉為 `uv tool install pyrefly-producer`
+優先（spawn 錯誤訊息同步受益）；Y2 smoke test 落地
+`tests/lsp_status_availability.rs`（3/3 綠）。文檔四件：repo README
+Quickstart 雙路徑（uv/pip 消費者面在前、cargo 降 developer face）
+＋uvx `--from` 條款＋rust-analyzer 系統依賴行＋兩軸版號關係＋SM-10
+疊影辨識；plugin/README prerequisites wheel 塊；AGENTS.md Usage 段
+wheel 安裝。plugin `0.1.3→0.1.4` 三處 bump＋`dist-marketplace.sh`
+重跑（slice 內三檔 0.1.4＋新 wrapper 驗畢，Y3 條款滿足）。已知邊角
+（記錄不擴 scope）：freshness WARN 的 rerun 提示固定說 `cargo
+install --path`——pip-face binary 帶 checkout 的罕見組合下建議通道
+不匹配（身分標示功能不受影響）；`rustfmt` 1.9.0（2026-05-25）與
+repo 既有格式全面 drift（含未觸檔案）——判定環境級 drift，本弧只
+約束自己新增的行，不整批重排；`rust_backend.rs:112` unused var
+為預存項。收尾：Capabilities 兩行（新增 wheel 分發行＋MCP 行附註
+spawn 翻轉）＋kanban Done＋本 EP 歸檔；ai-rules `[cr-dist]` handoff
+prompt 隨收尾報告交付（口徑＝本段文檔條款）。
+
 ---
 
 ## 版號條款（frozen）

@@ -22,12 +22,39 @@ per-repo SCIP index slots under `scip/<repo-basename>/`.
 
 ## Quickstart (AI harness enablement)
 
+Consumer install — prebuilt PyPI wheels, no Rust toolchain needed
+(macOS arm64 is the published platform; `pipx` / `pip install --user`
+work the same, the wheels are pure binaries with no Python ABI
+dependency):
+
 ```
-cargo install --path crates/code-reality              # code-reality + code-reality-mcp (structural face)
-cargo install --path crates/pyrefly-producer          # pyrefly-index + pyrefly-lsp (Python producer + language server)
-cargo install --path crates/code-reality-lsp-bridge   # code-reality-lsp-bridge (type face: hover/diagnostics MCP, .py + .rs)
-rustup component add rust-analyzer                    # the Rust type-face backend (spawns with no flags)
+uv tool install code-reality              # code-reality + code-reality-mcp (structural face)
+uv tool install pyrefly-producer          # pyrefly-index + pyrefly-lsp (Python producer + language server)
+uv tool install code-reality-lsp-bridge   # code-reality-lsp-bridge (type face: hover/diagnostics MCP, .py + .rs)
+rustup component add rust-analyzer        # Rust type-face backend — system dependency, ships in no wheel (skip if you only use the .py face)
 ```
+
+One-shot use without installing: `uvx code-reality <tool> --repo
+<repo-root> [args]` (works where the dist name equals the bin name —
+`code-reality`, `code-reality-lsp-bridge`). The producer dist has no
+same-named bin, so use `uvx --from pyrefly-producer pyrefly-index
+--repo <repo-root>`.
+
+Developer face (builds from a checkout, tracks HEAD):
+
+```
+cargo install --path crates/code-reality
+cargo install --path crates/pyrefly-producer
+cargo install --path crates/code-reality-lsp-bridge
+```
+
+Version axes: the PyPI dists follow the workspace version (binary
+contract, released on `v*` tags); the plugin manifest and marketplace
+entries carry their own 0.1.x version (wiring axis — bumps when
+`plugin/` content changes). The two move independently by design; any
+binary self-identifies via `--version` (`<pkg>+<git rev>`) regardless
+of channel. With both faces installed the CLI name can shadow —
+`which code-reality` (or the absolute path) tells them apart.
 
 Every bin answers `--version` with `<pkg>+<git rev>` and warns on
 stderr when a local CR checkout has moved past the installed build.
@@ -68,9 +95,10 @@ and, for the Python type face,
 {"type": "stdio", "command": "code-reality-lsp-bridge", "args": ["--stdio"]}
 ```
 
-GUI-launched harnesses may lack `~/.cargo/bin` on PATH — give the
-absolute path to `code-reality-mcp` there (or reuse the `/bin/sh -c`
-wrapper from `plugin/.mcp.json`).
+GUI-launched harnesses may lack the install dirs on PATH — give the
+absolute path to `code-reality-mcp` there, or reuse the `/bin/sh -c`
+wrapper from `plugin/.mcp.json` (resolves via PATH first, then falls
+back to `~/.local/bin` and `~/.cargo/bin`).
 
 An HTTP resident mode also exists (`code-reality-mcp`, port 8200,
 launchd plist in `launchd/`) for multi-harness sharing on one machine —

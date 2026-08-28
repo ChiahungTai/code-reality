@@ -8,7 +8,7 @@
     {
       "name": "code-reality",
       "description": "code-reality: structural facts, governance audits, and narrative artifacts for AI coding sessions (Rust carrier)",
-      "version": "0.1.3",
+      "version": "0.1.4",
       "author": {
         "name": "Chia-hung Tai"
       },

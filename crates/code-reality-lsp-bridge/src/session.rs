@@ -78,7 +78,7 @@ impl LangSpec {
             // 20s: under parallel-test load (a dozen backends at once)
             // the recheck wave can overshoot 10s — headroom, not latency.
             slow_timeout_ms: 20_000,
-            install_hint: "cargo install --path <repo>/crates/pyrefly-producer",
+            install_hint: "uv tool install pyrefly-producer (or cargo install --path <checkout>/crates/pyrefly-producer)",
         }
     }
 

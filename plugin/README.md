@@ -13,16 +13,25 @@ daemon) and the usage skill:
 
 ## Prerequisites (the binaries)
 
+Prebuilt wheels — consumer path, no Rust toolchain:
+
 ```
-cargo install --path ~/Github/code-reality/crates/code-reality              # code-reality + code-reality-mcp
-cargo install --path ~/Github/code-reality/crates/pyrefly-producer          # pyrefly-index + pyrefly-lsp (Python backend)
-cargo install --path ~/Github/code-reality/crates/code-reality-lsp-bridge   # code-reality-lsp-bridge
-rustup component add rust-analyzer                                           # Rust backend
+uv tool install code-reality              # code-reality + code-reality-mcp
+uv tool install pyrefly-producer          # pyrefly-index + pyrefly-lsp (Python backend)
+uv tool install code-reality-lsp-bridge   # code-reality-lsp-bridge
+rustup component add rust-analyzer        # Rust backend — system dependency, ships in no wheel
 ```
 
-(or from a checkout of https://github.com/ChiahungTai/code-reality — the
+or build from a checkout of
+https://github.com/ChiahungTai/code-reality (developer face — the
 first three put their bins on PATH; missing backends surface as loud
-tool errors with install guidance)
+tool errors with install guidance):
+
+```
+cargo install --path ~/Github/code-reality/crates/code-reality
+cargo install --path ~/Github/code-reality/crates/pyrefly-producer
+cargo install --path ~/Github/code-reality/crates/code-reality-lsp-bridge
+```
 
 Freshness: `--version` on any bin prints `<pkg>+<git rev>`; when a CR
 checkout is present on the machine, invocations warn once on stderr if

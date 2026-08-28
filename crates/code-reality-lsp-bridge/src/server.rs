@@ -5,7 +5,7 @@
 //! the routed `LspSession` (serialized per backend), and blocking work
 //! runs on `spawn_blocking` so the async runtime stays free.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use rmcp::handler::server::router::tool::ToolRouter;
@@ -131,24 +131,11 @@ impl rmcp::ServerHandler for LspBridgeServer {
 }
 
 impl LspBridgeServer {
-    #[tool(description = "Bridge/backend health: per-backend server info, backend command, open-file count, liveness (py = pyrefly, rs = rust-analyzer)")]
+    #[tool(description = "Bridge/backend health: per-backend server info, backend command, open-file count, liveness (py = pyrefly, rs = rust-analyzer). A backend whose binary is missing from PATH reports state=unavailable with install guidance")]
     pub async fn lsp_status(&self) -> Result<CallToolResult, McpError> {
         let b = Arc::clone(&self.bridge);
         let text = tokio::task::spawn_blocking(move || {
-            let line = |tag: &str, s: &LspSession| {
-                format!(
-                    "{tag}: backend={} server={} open_files={} state={}",
-                    s.backend_cmd(),
-                    s.server_info(),
-                    s.open_files.lock().unwrap().len(),
-                    if s.is_dead() { "dead" } else { "alive" }
-                )
-            };
-            format!(
-                "{}\n{}",
-                line("py", &b.py),
-                line("rs", &b.rs),
-            )
+            format!("{}\n{}", status_line("py", &b.py), status_line("rs", &b.rs))
         })
         .await
         .map_err(|e| McpError::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
@@ -202,6 +189,55 @@ impl LspBridgeServer {
             .map_err(|e| McpError::new(ErrorCode::INTERNAL_ERROR, e, None))?;
         Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
     }
+}
+
+/// POSIX PATH lookup for one backend program — the same resolution
+/// `Command::new` would use, probed up front so `lsp_status` can tell
+/// "backend binary missing" (wheel machines without rust-analyzer,
+/// SM-8) from "not spawned yet". Bare names walk `PATH`; overrides
+/// containing a path separator are checked directly. No external
+/// `which` dependency.
+pub fn backend_available(cmd: &str) -> bool {
+    fn executable(p: &Path) -> bool {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::metadata(p)
+                .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+                .unwrap_or(false)
+        }
+        #[cfg(not(unix))]
+        {
+            p.is_file()
+        }
+    }
+    if cmd.contains('/') {
+        return executable(Path::new(cmd));
+    }
+    let Ok(search) = std::env::var("PATH") else {
+        return false;
+    };
+    std::env::split_paths(&search).any(|dir| executable(&dir.join(cmd)))
+}
+
+/// One `lsp_status` line: availability first (missing binary ⇒
+/// `state=unavailable` + the LangSpec install hint), then live session
+/// state once the backend exists.
+pub fn status_line(tag: &str, s: &LspSession) -> String {
+    if !backend_available(s.backend_cmd()) {
+        return format!(
+            "{tag}: backend={} server=n/a open_files=0 state=unavailable (binary not found; install: {})",
+            s.backend_cmd(),
+            s.lang.install_hint
+        );
+    }
+    format!(
+        "{tag}: backend={} server={} open_files={} state={}",
+        s.backend_cmd(),
+        s.server_info(),
+        s.open_files.lock().unwrap().len(),
+        if s.is_dead() { "dead" } else { "alive" }
+    )
 }
 
 pub fn hover_impl(s: &LspSession, file: &str, line: u32, character: u32) -> Result<String, String> {

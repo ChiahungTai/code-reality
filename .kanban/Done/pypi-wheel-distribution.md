@@ -6,7 +6,9 @@
 （ruff/pyrefly 模式）：`uv tool install` / `uvx` 消費者路徑、tag `v*`
 →CI matrix（macOS×2＋Linux×2）→trusted publishing 發布鏈、版號
 首發基準 0.2.0（workspace version 單源）、`.mcp.json` spawn 優先序
-翻轉（cargo HEAD 不再蓋 pip stable）。
+翻轉（PATH 在場照 PATH 順序；僅 GUI-no-PATH fallback 時 wheel 面
+優先於 cargo 面，且 fallback 目錄前插進 child PATH——backend child
+同場獲救）。
 
 ## 相關
 
@@ -30,8 +32,11 @@
    Linux 編譯可行＝免費情報）；tag push 只在綠 build 發布
 3. 首發 workspace version `0.2.0` ✅ DONE（版號條款生效：tag→綠
    build→publish；版號面盤點通過——PyPI＝workspace＝wheel＝--version）
-4. spawn 優先序翻轉後：ZCode 新 session 雙 server mount＋GUI 無
-   PATH 場景可 spawn＋freshness WARN 兩通道各驗一次
+4. spawn 優先序翻轉 ✅ DONE（2026-08-29 S4：候選 (b) 落地——PATH
+   優先→`~/.local/bin`→`~/.cargo/bin`→fail-loud 127；wrapper 三情境
+   ×兩 server 直接執行驗證；freshness WARN 兩通道（cargo 實體＋
+   uvx pip 面）各一次；ZCode 新 session 雙 mount 實呼＝user 端
+   marketplace refresh＋重裝 0.1.4 後補驗）
 5. Linux 腿 deferred（2026-08-28 縮編）；in-flight 全矩陣 dry-run
    `33182529285` 的 Linux 結果作未來重啟情報記錄
 
