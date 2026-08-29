@@ -516,8 +516,12 @@ exit 127
    CC marketplace add＋install 全程成功（CC 自身 npm ci 在 x64 npm
    下乾淨 skip arm64 套件——SM-2 機器形態由 CC 親測）＋剝離 PATH
    session 雙真 server `Successfully connected`（89ms／621ms）。
-3. interactive session 手驗（headless 已雙 session 實證；interactive
-   補最後一塊——user 下一個互動 session 叫一次工具即完成）。
+3. ~~interactive session 手驗~~ **DONE**（2026-08-29）——互動 session
+   實證：雙 server 工具以 `mcp__plugin_code-reality_` 前綴掛載＝經
+   plugin 載入；live 呼叫 `lsp_status`（pyrefly-lsp＋rust-analyzer 皆
+   alive、lazy not-spawned-yet 屬預期）與 `graph_query search`
+   （FTS5 命中＋keyword fallback 口徑一致）雙綠；本機 backend 走 uv
+   面（x64 npm 機器的設計行為）。
 4. ~~push＋github marketplace 最後一哩~~ **DONE**（2026-08-29）——
    push `3bd6215..5e8a204`；`claude plugin marketplace add
    ChiahungTai/code-reality`＋install 全程成功，**github 形態 root
