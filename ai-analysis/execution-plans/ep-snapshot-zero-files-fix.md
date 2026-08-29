@@ -1,4 +1,4 @@
-# EP: snapshot zero-files fix — kind-split file projection, WARN attribution, transition degenerate guard
+# EP: snapshot zero-files fix — kind-split file projection, WARN attribution, transition degenerate guard; lsp-bridge convergence-gate fix
 
 > **ep_type**: implementation
 > baseline: 63b42c85aa85d078ddd051d301b9ab4272552582
@@ -21,7 +21,10 @@ endpoints), and `transition` refuses to convert two degenerate
 snapshots into a false "無結構變化" conclusion. Truth source:
 `ai-analysis/reports/snapshot-zero-files-case.md` (symptom, mechanism,
 root-cause chain, blast radius, evidence anchors — all re-verified for
-this EP, see Segment 0).
+this EP, see Segment 0). S3 (appended 2026-08-29 by user adjudication —
+same session, fixed together): the lsp-bridge `check_file` convergence
+gates stop passing poisoned diag-cache entries; truth source
+`ai-analysis/reports/lsp-bridge-poisoned-cache-case.md`.
 
 Design already adjudicated by the user (do not re-litigate): layered
 fix — S1 = WARN attribution split + transition degenerate guard (one
@@ -33,10 +36,23 @@ derivation) is out of scope (see NOT).
 
 > 2026-08-29 獨立 agent 五維度審查（17 錨點獨立複核零 drift）＋主
 > session 對 critical 親證（delta_tour allow-list 消費——`delta_tour.rs:
-> 260-262`/`:267-271`/`:514-518`）後回寫。
+> 260-262`/`:267-271`/`:514-518`）後回寫。**S3 併入後同日補審**
+> （第二輪 agent，S3- 前綴）＋回寫——錨點 7/7 零 drift、hover 面
+> 正面排除、無振盪風險（reissued latch）。
 
 | ID | 嚴重度 | EP 段落 | 問題 | 建議 | 狀態 |
 |----|--------|---------|------|------|------|
+| S3-F1-1 | 🟡 重要 | S3 要點1/3 | `last_mutation` 只記 edit 路徑——`sync_open` 三 mutation 分支不記錄＝「check#1 燒 deadline→check#2 無 edit→basis=None→fresh=true→毒化過門」殘洞；要點3「無記錄即無毒化」論證不成立 | 記錄點涵蓋全部 mutation 發源地；論證改防禦性預設 | implemented |
+| S3-F3-1 | 🟡 重要 | S3 要點2/pseudo | F2 pseudo 的 `!fresh` 前置＋absent `unwrap_or(true)`＝**靜默移除缺席語義的既有恢復路徑**（entry/version 缺席→stalled→force_reopen，`server.rs:334-338`；rust-analyzer drop 案例） | 只換 `v < overlay_version` 一個比較；缺席→stalled 保留 | implemented |
+| S3-F3-3 | 🟡 重要 | 收尾 4 | 範圍寫死 T1-T10（本就 stale）；lsp-bridge 案件檔結案行漏列 | T 全矩陣＋兩份案件檔結案 | implemented |
+| S3-F4-1 | 🟡 重要 | T-matrix | 4 個既有 lsp-bridge 收斂測試未列冊（pre-declared 慣例） | T18-T21 補列（預期不動＋理由） | implemented |
+| S3-F1-2 | ℹ️ 提醒 | S3 pseudo | 記錄點寫在 `edit_file_impl` 誤導——實際拿不到 entry；落點＝`session.rs::apply_edit` 重建處（已回傳 Instant） | pseudo 註明實際落點＋5 個 literal 建構點 | implemented |
+| S3-F1-3 | ℹ️ 提醒 | S3 pseudo | `Option<Instant>` 無 `.max`（不可編譯）；`entry` 變數混用兩 map（overlay PathBuf 鍵 vs diag_cache URI 鍵、兩把 mutex） | 註明組合寫法與兩 entry 來源 | implemented |
+| S3-F2-1 | ℹ️ 提醒 | T15 | 注入條件未釘 `last_push` 語義——`Instant::now()` 注入＝測到宣告不修的 late-landing 變體 | 注入 `last_push` 早於 basis；late-landing 明言殘餘 | implemented |
+| S3-F3-2 | ℹ️ 提醒 | S3 要點2 | stalled 錨點 basis vs 現行 call-start；basis=None 未定義 | fallback=call_start＋行為差異註明 | implemented |
+| S3-F4-2 | ℹ️ 提醒 | T15 | 「真實 eviction 序列」法與 T17 實為同一件事 | 主法＝確定性注入；序列法降為 T17 切片說明 | implemented |
+| S3-F5-1 | ℹ️ 提醒 | SM-9/T16 | 「nudge 後收斂」是修前遺留（修後 check#1 即收斂）；T16 無觀察方法 | SM-9 改述＋T16 註明 seam（overlay version 重置/耗時） | implemented |
+| S3-F5-2 | ℹ️ 提醒 | S3 Context/NOT | 殘餘窗口（force_reopen 自毒化 race）未記錄；源頭過濾替代案無考慮痕跡 | 兩者如實記錄＋取捨理由 | implemented |
 | F3-1 | 🔴 必須修正 | S1/T4/SM-8/段落0 | 「delta_tour 零改動自動繼承」被 `build_tour` 的 allow-list 消費反駁——警示欄位在 `.tour` 面被靜默丟棄，T4 兩子句矛盾不可實現 | T4 降級為 transition json 面；`.tour` 面不透傳＝allow-list 邊界屬實記錄（option a） | implemented |
 | F3-2 | 🟡 重要 | S1/S2 | `kind_edge_count` 計數點 S1→S2 漂移（迴圈頂 vs 閘內解析後）——T1 釘的 root 分支會在 S2 二次翻轉 | 計數點入口化（kind 匹配即計、不論可解析）；T1 加 S2 後不再翻轉的回歸註記 | implemented |
 | F4-1 | 🟡 重要 | S1 Context | 「健康→退化 mass gone-files 假陽性」被 Context 列為止血對象但 degenerate_pair 只防兩側皆空 | degenerate_pair 擴為任一側空＋文案區分何側（option a） | implemented |
@@ -70,6 +86,7 @@ derivation) is out of scope (see NOT).
 | 能力 | 狀態 | 來源 | 影響 | 說明 |
 |------|------|------|------|------|
 | Boundary / export / narrative tool family | ✅ | AGENTS.md Capabilities | 更新 | snapshot files 面語義修復＋transition/delta_tour 退化防護（能力恢復，非新能力） |
+| Type face via LSP bridge（hover/diagnostics/check_file） | ✅ | AGENTS.md Capabilities | 更新 | check_file 收斂門修正——毒化 diag-cache 條目不再穿門（S3；真實呼叫者正確性，`lru_evict` 為其偵測器） |
 
 ### 新增 UC
 | 能力 | 狀態 | 實作路徑 |
@@ -88,6 +105,8 @@ derivation) is out of scope (see NOT).
 | SM-6 | 既有 0-file sidecar 清理後 | 刪 `22900069`/`63b42c85` 兩張退化 sidecar＋重產自倉 snapshot | transition 不再對退化 baseline diff；新 sidecar files>0＋帶 `files_face` | 無 | 同上 |
 | SM-7 | kind 匹配但端點不可解析（root 外端點 fixture） | fixture 製造 | root 分支 WARN（歸因保留「不同 root？」——此分支內屬實） | 無 | 同上 |
 | SM-8 | 任一側 files 空的 transition pair（退化 snapshot） | `transition`/`delta_tour` | WARN「退化快照」（文案區分何側——單側退化＝該側檔案清單不可信），**兩側皆空才抑制「無結構變化」結論**；防護在 transition 的 md/json 兩面生效——delta_tour 的 `.tour` 面是 allow-list 消費，警示不透傳（review F3-1 屬實記錄） | 無 | 同上 |
+| SM-9 | eviction→re-open→check 序列（毒化窗口，含兩次 check 無 edit 變體） | bridge `check_file` | 毒化條目不得通過 fresh/stalled 門——**check#1 即於 half-deadline 經 force_reopen 收斂於真 push**（nudge 不再需要——補審 F5-1）；不再回傳過期空 diagnostics | 無 | type face |
+| SM-10 | 收斂停滯（mutation 後無新 push） | bridge `check_file` | half-deadline 處 `force_reopen` 恢復（時間語義、版本無關），不燒滿 deadline | 無 | type face |
 
 > Lineage note: the parent scenario id **SM-8** in
 > ep-data-plane-unification (snapshot 0-files) is closed by this EP's
@@ -171,6 +190,13 @@ boundary itself agrees.)
 | T12 | `cli_ok_line_and_sidecar_schema` | `tests/s2_snapshot.rs:180-266` | **更新**：`_meta` key 清單釘樁（`:244-263`）尾部補 `files_face`（review F1-1）；`crg_raw_edges`/files 計數斷言不變 | S2 |
 | T13 | `truncation_over_twenty_appends_more_line` | `tests/s3_transition.rs:265-286` | **更新**：既有退化 pair fixture（兩側空 files＋sb 帶 25 邊）——渲染契約：警示＝附加段、變化段照渲染、兩側皆空才抑制結論（review F1-2） | S1 |
 | T14 | `cli_baseline_log_and_profileless_warn` / `cli_missing_ep_crashes_exit_1` | `tests/s3_transition.rs:336-363` / `:365-388` | **不動**（前者 stdout-only 斷言、後者渲染前 crash——已核不受影響；review F1-3 列冊） | — |
+| T15 | 毒化場景回歸（新） | lsp-bridge tests 新增 | **新增**：注入 `DiagEntry { version: Some(v+1), diagnostics: vec![], last_push: <早於 basis，如 now-1s> }`（seam：`diag_cache`/`DiagEntry` 全 pub，`bridge.rs:243-248` dbg_state 先例——補審 F2-1：`last_push` 晚於 basis＝宣告不修的 late-landing 殘餘，勿用 `Instant::now()` 注入）→ edit→check 收斂於真 push 而非 count=0。「真實 8-filler eviction 序列」＝T17 的單次切片（說明文字，非平行方法——補審 F4-2） | S3 |
+| T16 | stalled 半限期恢復（新） | lsp-bridge tests 新增 | **新增**：mutation 後無新 push 超半限期 → `force_reopen` 觸發（時間語義、毒化版本不干擾）；**觀察 seam**（補審 F5-1）：檢查後 `s.overlay` 該檔 version 重置 1（pub 欄位）或耗時 < deadline | S3 |
+| T17 | `lru_evict_preserves_overlay_edits` 穩定性 | `tests/bridge.rs:212`（既有） | **驗證**（非新增）：連跑 ≥20 次零失敗——修前基準 4/35 失敗（~11%，低負載亦中）；原斷言保留（它是偵測器） | S3 |
+| T18 | `check_repeat_without_edit_returns_cache_immediately` | `tests/bridge.rs:165-181` | **不動**（`basis=None → fresh` 防禦性預設的直接釘樁者——補審 F4-1 列冊；F1/F2 與它互動但語義保留） | — |
+| T19 | `check_file_timeout_path_warns` | `tests/bridge.rs:323-344` | **列冊驗證**（F2 half-deadline 行為直接觸及——S3 build 時核對斷言面；預期不動） | S3 |
+| T20 | `rust_edit_then_check_native_diagnostics` | `tests/rust_backend.rs:70-103` | **不動**（edit→check 收斂＋version 在場釘樁——F1 後更穩） | — |
+| T21 | `edit_then_check_reflects_new_content` | `tests/bridge.rs:186-209` | **不動**（F1 修後收斂更快） | — |
 
 ## 段落 S1：止血——WARN 歸因分流＋transition 退化防護（一個 commit）
 
@@ -323,6 +349,103 @@ for (kind, src_q, dst_q) in rows {
 - 全套 `cargo test` 綠；S2 commit 訊息附四 repo 實跑 files 數＋mosaic
   增量。
 
+## 段落 S3：lsp-bridge 收斂門修正——毒化 diag-cache 不再穿門（一個 commit；user 2026-08-29 併入裁決）
+
+**Context**：`check_file` 的收斂門（fresh/stalled）可被 LRU eviction
+的毒化快取條目擊敗——pyrefly didClose 的 version+1 空 push 晚到落網
+（`session.rs:533` remove 後重插）＋re-open didOpen 被
+`subsequent_mutation` 跳過發布 → nudge 後 `mutation_at=None` 使
+`fresh` 無條件放行（`server.rs:317`）、`stalled` 版本比較恆不觸發
+（`:333-338`）→ **回傳過期空 diagnostics 當收斂答案**。這是真實
+呼叫者的正確性問題（check_file 是型別面權威查詢）；
+`lru_evict_preserves_overlay_edits` 是其偵測器（重現 4/35、低負載
+亦中——「負載 flake」是誤判，見案件檔排除項）。真相源：
+`ai-analysis/reports/lsp-bridge-poisoned-cache-case.md`。UC 引用：
+更新「Type face via LSP bridge」。獨立 crate（lsp-bridge）——與
+S1/S2 零檔案交集。
+- 依賴錨點：`server.rs:317`（fresh 門）/:333-338（stalled 門）/
+  :386-394（edit 丟棄 mutation Instant——F1 根因）/:300-301
+  （deadline）；`session.rs:510-516`（re-open 版本重置）/:526-534
+  （LRU cap 8＋evict didClose）
+- 語義約束：**不改對外工具合約**——`check_file`/`hover`/
+  `edit_file` 的參數與回傳形狀不變（只修收斂判斷的內部基準）；
+  LRU cap 與 quiesce 參數不動（穩定性由 T17 迴圈釘）
+- Invariant Impact：**觸及 silent-wrong-answer path**——毒化結果
+  靜默通過收斂門污染下游判斷（bug 不 crash 而污染）。驗證對齊：
+  T15（毒化不穿門）/T16（半限期恢復）/T17（偵測器穩定性歸零）。
+
+**要點**：
+1. **F1（根因）**：mutation Instant 跨 call 可見——`OverlayEntry`
+   增 `last_mutation: Option<Instant>`。**記錄點在 session 側**
+   （補審 F1-2）：`apply_edit` 重建 entry 處順手填（它已回傳
+   `Result<Instant, String>`——`session.rs:541`，丟棄點在
+   `server.rs:389` 的 `?`），且 **`sync_open` 的三個 mutation 分支
+   都要記**（首開 didOpen `session.rs:479-484`／disk 變更
+   didChange `:494-501`／re-open didOpen `:506-518`——補審 F1-1：
+   只記 edit 路徑留下「check#1 燒 deadline→check#2 無 edit→
+   basis=None→fresh=true→毒化過門」殘洞）。`check_file_impl` 的
+   freshness 基準＝自身 mutation 與 overlay `last_mutation` 的
+   較新者（`Option<Instant>` 無 `.max`——需 `zip(..).map(..).or(a)
+   .or(b)` 組合，補審 F1-3；`last_mutation` 在 overlay map
+   〔PathBuf 鍵〕、`last_push` 在 diag_cache map〔URI 鍵〕——
+   兩把獨立 mutex）——nudge 後不再瞬間收斂於毒化條目，既有
+   retry gate（f82b274）自然生效。
+2. **F2**：`stalled` 的**版本比較**（`v < overlay_version`，
+   `server.rs:336-337`）換成**時間語義**——無 `last_push > basis`
+   的 push 超過 half-window 即 stalled→`force_reopen`（毒化
+   version+1 擊敗任何版本比較）。**缺席語義保留**（entry 缺席或
+   version 缺席 → stalled——`server.rs:334-338` 現行
+   `unwrap_or(true)`，補審 F3-1：這是「後端丟掉 re-open push」
+   的既有恢復路徑〔rust-analyzer drop 案例〕，不得移除）。basis
+   =None 的 fallback＝call start（補審 F3-2；錨點從 call-start
+   移到 basis 屬行為變更——對舊停滯首輪即恢復，如實記錄）。
+3. `basis=None → fresh` 的 `unwrap_or(true)` 保留——**防禦性預設**
+   而非「無記錄即無毒化」（補審 F1-1 撤回原論證：eviction
+   didClose 是 bridge 自發 mutation；記錄點涵蓋 sync_open 三分支
+   後此路徑僅存理論殘餘）。`check_repeat_without_edit_returns_
+   cache_immediately` 釘住的既有語義不變（T18）。
+4. 上游 pyrefly（批次尾 didClose 不補跑延後驗證）——**回報不修**
+   （bridge 免疫後不依賴上游行為；見 NOT）。
+5. **殘餘窗口（如實記錄，S3 不宣稱關閉——補審 F5-2）**：
+   `force_reopen` 自身的 didClose 也誘發上游 version+1 空 push
+   （`session.rs:569`），真 push 延遲超過「空 push＋quiesce」時
+   仍收斂於空——pre-existing race，非本段迴歸；late-landing
+   毒化變體（push 晚於 basis 落地）同理不在修復面。
+6. **替代案已慮（補審 F5-2）**：session 側對 recently-closed
+   URI 的 `version=last+1` 空 push 直接過濾——源頭攔截、一次關
+   閉原毒化/自毒化/late-landing 三面且不動收斂門。取捨＝機制
+   特異攔截 vs F1/F2 的收斂**語義**修復（對任何來源的過期 push
+   有抵抗力）。兩者不互斥——本 EP 走 F1/F2，過濾留作未來強化。
+
+**Pseudo Code**：
+```rust
+// session.rs — F1: every mutation origin stamps the entry
+struct OverlayEntry { /* … */ last_mutation: Option<Instant> }   // NEW
+//   （apply_edit 重建 entry 處填入；sync_open 三分支同——5 個
+//    struct literal 建構點 :481/:499/:515/:556/:587 一併改）
+// server.rs — check_file_impl（兩個 entry 來源、兩把 mutex）
+let overlay_mut = s.overlay.lock().unwrap().get(&path)           // PathBuf 鍵
+    .and_then(|e| e.last_mutation);
+let basis = mutation_at.zip(overlay_mut).map(|(a, b)| a.max(b))
+    .or(mutation_at).or(overlay_mut);                            // Option 組合
+let fresh = entry.last_push                                       // diag_cache 條目（URI 鍵）
+    .map(|p| basis.map(|b| p > b).unwrap_or(false))
+    .unwrap_or(true);                                             // basis=None → fresh（防禦性預設）
+// F2: stalled＝時間語義（版本比較退役）＋缺席語義保留
+let stalled = match entry_opt {
+    None => true,                                                 // 既有恢復路徑（保留）
+    Some(e) if e.version.is_none() => true,                       // 同上
+    Some(_) => !fresh && now >= basis.unwrap_or(call_start) + deadline / 2,
+};
+if stalled && !reissued { force_reopen(/* … */); }                // reissued latch 不變
+```
+
+**驗證策略**：
+- DEPTH-MIN：T15/T16 綠（毒化注入最小法：內部 API 直注
+  `(Some(v+1), 0)` 條目，或真實 8-filler eviction 序列）。
+- DEPTH-SAMPLE：T17——`lru_evict` 連跑 ≥20 次零失敗（修前 4/35）。
+- 全套 `cargo test` 綠；S3 commit 訊息附 T17 迴圈結果。
+
 ## NOT（out of scope——防 scope creep 再議）
 
 - **L3 Rust CALLS 衍生**（build-side Rust call scanner）——歸 R4w watch
@@ -336,11 +459,15 @@ for (kind, src_q, dst_q) in rows {
 - **snapshot sidecar schema 除 `files_face` 欄位外不動**——
   `files`/`module_edges`/`_meta` 既有欄位合約不變（transition 欄位消費
   面零改動）。
+- **上游 pyrefly 修改**（`subsequent_mutation` 補跑／批次尾 didClose
+  補驗證）——回報 upstream、非本 EP 依賴（bridge 側 F1/F2 後免疫）。
 
 ## 整合策略
 
 - 順序：S1 → S2（S1 先行止血、零語義風險；S2 依賴 S1 的
-  `kind_edge_count` 欄位）。各自獨立 commit（已裁決）。
+  `kind_edge_count` 欄位）。各自獨立 commit（已裁決）。S3 與 S1/S2
+  零檔案交集（獨立 crate）——**同 session 一起修**（user 2026-08-29
+  併入裁決），自己一個 commit。
 - 開工前置：ep-data-plane-unification 的 commit 先落地（baseline 疊加
   註記）；本 EP code 變更與其未 commit 檔案（`snapshot.rs` 等）同檔修
   改須在其 commit 之後進行。
@@ -351,12 +478,13 @@ for (kind, src_q, dst_q) in rows {
 ## 收尾步驟
 
 1. Capabilities＋Kanban：root `AGENTS.md` narrative family 行補 files
-   面語義註記（全 kind 參與＋退化防護）；`.kanban/Backlog/
+   面語義註記（全 kind 參與＋退化防護）＋「Type face via LSP
+   bridge」行補收斂門修正註記（S3）；`.kanban/Backlog/
    snapshot-zero-files-fix.md` 搬 `.kanban/Done/`（原子操作）；從
    Scenario Matrix 提煉自包含消費場景句入卡片描述
 2. SYSTEM-MAP：無此檔，跳過
 3. instruction 檔：`crates/AGENTS.md` 若述及 snapshot files 面語義則同步
    （兩面分離＋`files_face`）；`snapshot.rs` 模組註解已是行內文檔面
-4. `/audit-test` 對 T1-T10 測試組（更新＋新增面）；案件檔
-   `ai-analysis/reports/snapshot-zero-files-case.md` 補結案狀態行
-   （Status: open → closed by this EP）
+4. `/audit-test` 對**全部 T-matrix 項（T1-T21）**測試組（更新＋新增
+   面）；兩份案件檔補結案狀態行（Status: open → closed by this EP）
+   ——`snapshot-zero-files-case.md`＋`lsp-bridge-poisoned-cache-case.md`
