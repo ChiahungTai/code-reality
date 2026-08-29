@@ -142,6 +142,25 @@ Authoring procedure for a new repo (four fixed steps):
    (back to step 1). The profile file lives at the repo root;
    committing it is that repo's decision.
 
+Repos with a registry auto-discovery mechanism (classes registered by a
+scan rather than by direct callers) add one `[[hazard_registry]]`
+block. Registration is invisible to caller edges — nobody calls the
+constructor directly — so this block teaches the hub_refs hazard layer
+to treat matching definitions as referenced:
+
+```toml
+[[hazard_registry]]  # file under package_prefix + name suffix => presumed registered
+package_prefix = "src/mylib/rules/"
+suffix = "Rule"
+register_fn = "auto_register_rules"
+registry = "RULE_REGISTRY"
+evidence = "src/mylib/rules/discovery.py:42"  # optional — display pointer into the registration chain
+```
+
+A definition file under `package_prefix` whose name ends with `suffix`
+is presumed registered via `register_fn` into `registry`; `evidence`
+is optional and display-only.
+
 ## Reading claims output (delta_tour)
 
 - The claims regex derives from `[[module]]` prefixes — only path
