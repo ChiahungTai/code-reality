@@ -199,8 +199,10 @@ on any new repo.
   nothing.
 - SCIP DEFs cover functions and methods only: struct/trait/type names
   are not resolvable query keys — query one of their methods instead.
-  Python classes behave the same (class name → "查無 DEF"; use
-  `Module/Class#method()` keys — mosaic_alpha relay verified 2026-08-29);
+  Python classes behave the same (class name → "查無 DEF"; query a
+  method instead — bare name or `Class.method` dot form both match;
+  the `Class#method()` hash form is the DISPLAY format, not a query
+  key — mosaic_alpha relay verified 2026-08-29);
   caveat: dataclass-style classes (constructor call with no corpus
   `__init__`) mint a pseudo-constructor DEF, so the bare class name DOES
   resolve for those (B7b).
