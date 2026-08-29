@@ -3,9 +3,9 @@
 //!
 //! Usage: pyrefly-index --repo <repo-root> [--out <index.scip>]
 //!
-//! The default output is the repo-keyed sidecar slot
-//! (`~/.mosaic/code-reality/scip/<repo-basename>/index.scip`); `--out`
-//! lets probe runs write beside the primary slot without cutover.
+//! The default output is the in-repo slot
+//! (`<repo>/.code-reality/scip/index.scip`); `--out` lets probe runs
+//! write beside the primary slot without cutover.
 
 use std::path::Path;
 use std::process::ExitCode;

@@ -17,8 +17,11 @@ Tools: `snapshot` `transition` `hub_refs` `runtime_edges` `boundary_build`
 `boundary` `delta_tour` `chain_tour` `tour_validate` `tour_upgrade`
 `tour_manifest` `graph_audit` `scip_refs` `graph_query` `graph_db`
 
-Sidecar home (frozen at migration): `~/.mosaic/code-reality/` — including the
-per-repo SCIP index slots under `scip/<repo-basename>/`.
+Sidecar home: `<repo>/.code-reality/` — SCIP index slots under `scip/`
+(alongside `graph.db`). The data dir self-ignores via its own single-`*`
+`.gitignore` (zero consumer gitignore setup). Legacy `~/.mosaic/
+code-reality/` slots migrate with `code-reality sidecar_migrate --repo
+<repo>`.
 
 ## Quickstart (AI harness enablement)
 
@@ -59,8 +62,9 @@ of channel. With both faces installed the CLI name can shadow —
 Every bin answers `--version` with `<pkg>+<git rev>` and warns on
 stderr when a local CR checkout has moved past the installed build.
 Maintainers can auto-reinstall on commit: `git config core.hooksPath
-.githooks` (the shipped post-commit hook uses `~/Github/code-reality`
-and `~/.mosaic` paths — adapt before opting in on another layout).
+.githooks` (the shipped post-commit hook assumes the `~/Github/
+code-reality` layout and logs under its `.agent-tmp/` — adapt before
+opting in on another machine layout).
 
 **ZCode / Claude Code plugin** (stdio MCP + usage skill, zero daemon):
 the plugin manifest sits at the Claude Code location
@@ -105,7 +109,7 @@ launchd plist in `launchd/`) for multi-harness sharing on one machine —
 not needed for the plugin path.
 
 Per-repo prerequisites for the query tools: a SCIP index
-(`rust-analyzer scip <repo>` → `~/.mosaic/code-reality/scip/<basename>/index.scip`;
+(`rust-analyzer scip <repo>` → `<repo>/.code-reality/scip/index.scip`;
 Python repos use the Rust-native pyrefly producer —
 `cargo run --release -p pyrefly-producer --bin pyrefly-index -- --repo <repo>`
 emits the same slot, then `--stamp-meta`/`--build-cache` as usual; the
@@ -118,9 +122,10 @@ refresh chain is purely producer-side (the CRG-era `.code-review-graph/`
 import face was fully removed with the W5 legacy-db cleanup).
 `graph_db ensure_indexes --repo <repo>` is an idempotent follow-up that
 adds the engine read-chain indexes to dbs built before that schema
-revision. The `.code-reality/` directory is repo-local data — add it to
-the repo's `.gitignore` if you don't want it tracked (that choice
-belongs to each repo).
+revision. The `.code-reality/` directory is repo-local derived data
+that self-ignores via its own single-`*` `.gitignore` — zero gitignore
+setup on the consumer side (a root-level ignore entry also works if a
+repo prefers one).
 
 ## Tests
 

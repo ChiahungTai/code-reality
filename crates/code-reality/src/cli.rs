@@ -16,7 +16,6 @@ use crate::argparse::looks_like_option;
 use crate::cache::{open_face, Face};
 use crate::engine::{
     default_index_path, expand_home, git_head, load_index, meta_path, source_line, utc_now_iso,
-    DEFAULT_INDEX_ROOT,
 };
 use crate::ToolOutput;
 use scip::types::Index;
@@ -263,7 +262,7 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         Some(p) => (PathBuf::from(p), false),
         None => match &args.repo {
             None => {
-                return ToolOutput::fail("需 --index（或 --repo 解析 repo-keyed 預設 slot）");
+                return ToolOutput::fail("需 --index（或 --repo 解析 in-repo 預設 slot）");
             }
             Some(repo) => match default_index_path(Path::new(repo)) {
                 Ok(p) => (p, true),
@@ -276,7 +275,7 @@ pub fn run(argv: &[&str]) -> ToolOutput {
     if !index_path.exists() {
         let mut msg = if default_resolved {
             format!(
-                "預設索引不在：{}（--repo {} → repo-keyed slot；生成命令或搬遷見 docstring）",
+                "預設索引不在：{}（--repo {} → in-repo slot；生成命令見 docstring）",
                 index_path.display(),
                 args.repo.as_deref().unwrap_or_default()
             )
@@ -284,17 +283,32 @@ pub fn run(argv: &[&str]) -> ToolOutput {
             format!("索引不在：{}", index_path.display())
         };
         if default_resolved {
-            let legacy = expand_home(DEFAULT_INDEX_ROOT).join("index.scip");
-            if legacy.exists() {
+            // Transitional bridge (data-plane unification SM-9): the
+            // retired home sidecar keyed by basename — point its
+            // orphans at migration instead of the dead global-slot hint.
+            let repo = Path::new(args.repo.as_deref().unwrap_or_default());
+            let home = expand_home(crate::sidecar_migrate::RETIRED_HOME_ROOT);
+            if let Some(old) = crate::sidecar_migrate::old_slot_index(&home, repo) {
                 msg.push_str(&format!(
-                    "\n  既有全局 slot 索引可搬遷（免重生成；僅當該索引生成自 --repo 指定的 repo——搬錯 repo 的索引會全域查無）：mkdir -p {} && mv {} {}/",
-                    index_path.parent().unwrap().display(),
-                    legacy.display(),
-                    index_path.parent().unwrap().display()
+                    "\n  偵測到舊 home slot（{}）——先跑 code-reality sidecar_migrate --repo {}",
+                    old.display(),
+                    args.repo.as_deref().unwrap_or_default()
                 ));
             }
         }
         return ToolOutput::fail(msg.trim_end());
+    }
+
+    // Write modes of the manual rust flow (stamp / build-cache) ensure
+    // the data-dir self-ignore on the DEFAULT slot — the capability's
+    // "zero consumer gitignore setup" covers this flow too. An explicit
+    // --index target is the user's choice and is never touched.
+    if default_resolved && (args.stamp_meta || args.build_cache) {
+        if let Some(root) = index_path.parent().and_then(|p| p.parent()) {
+            if let Err(e) = crate::engine::write_data_dir_gitignore(root) {
+                return ToolOutput::crash(format!("資料目錄自帶 ignore 失敗：{e}"));
+            }
+        }
     }
 
     if args.stamp_meta {

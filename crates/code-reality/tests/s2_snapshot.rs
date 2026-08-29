@@ -452,3 +452,24 @@ fn export_resolves_symbols_via_nodes_with_dangling_fallback() {
         "symbol endpoints resolve via nodes"
     );
 }
+
+#[test]
+fn default_out_dir_is_in_repo_and_self_ignored() {
+    let tmp = tempfile::tempdir().unwrap();
+    let d = code_reality::snapshot::default_out_dir(tmp.path()).unwrap();
+    assert_eq!(
+        d,
+        tmp.path()
+            .canonicalize()
+            .unwrap()
+            .join(".code-reality")
+            .join("snapshots")
+    );
+    let gi = d.parent().unwrap().join(".gitignore");
+    assert!(
+        gi.is_file(),
+        "data-dir gitignore written by default_out_dir"
+    );
+    let body = std::fs::read_to_string(&gi).unwrap();
+    assert!(body.trim_end().ends_with('*') && !body.contains('!'));
+}

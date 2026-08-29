@@ -258,3 +258,24 @@ fn cli_build_and_query() {
     // default sidecar dir missing → crash
     assert_eq!(out3.exit_code, 1);
 }
+
+#[test]
+fn default_out_dir_is_in_repo_and_self_ignored() {
+    let tmp = tempfile::tempdir().unwrap();
+    let d = code_reality::boundary_build::default_out_dir(tmp.path()).unwrap();
+    assert_eq!(
+        d,
+        tmp.path()
+            .canonicalize()
+            .unwrap()
+            .join(".code-reality")
+            .join("boundary")
+    );
+    let gi = d.parent().unwrap().join(".gitignore");
+    assert!(
+        gi.is_file(),
+        "data-dir gitignore written by default_out_dir"
+    );
+    let body = std::fs::read_to_string(&gi).unwrap();
+    assert!(body.trim_end().ends_with('*') && !body.contains('!'));
+}

@@ -3,7 +3,6 @@
 //! sidecar. Same-name double declarations list all edges (not an error);
 //! not-found exits 1 with disambiguation candidates.
 
-use crate::boundary_build::DEFAULT_OUT_DIR;
 use crate::common::{assert_db_unchanged, connect_ro, db_mtime_ns};
 use crate::ToolOutput;
 use rusqlite::Connection;
@@ -73,7 +72,7 @@ pub fn load_sidecar(
     dbs.sort();
     if dbs.is_empty() {
         return Err(ToolOutput::crash(format!(
-            "boundary sidecar 不存在：{}——先跑 `uv run python -m code_reality.boundary_build`",
+            "boundary sidecar 不存在：{}——先跑 `code-reality boundary_build --repo <repo>`；legacy home db（~/.mosaic/code-reality/boundary/）可用 --sidecar-dir 指回",
             sidecar_dir.display()
         )));
     }
@@ -362,11 +361,15 @@ pub fn run(argv: &[&str]) -> ToolOutput {
     let Some(repo) = values.get("--repo").and_then(|v| v.clone()) else {
         return ToolOutput::fail("the following arguments are required: --repo");
     };
-    let sidecar_dir = values
-        .get("--sidecar-dir")
-        .and_then(|v| v.clone())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| crate::engine::expand_home(DEFAULT_OUT_DIR));
+    // Query face resolves read-only — the self-ignore ensure belongs to
+    // the writer (boundary_build), never to a query (a failed ensure
+    // must not preempt the sidecar-existence check).
+    let sidecar_dir = match values.get("--sidecar-dir").and_then(|v| v.clone()) {
+        Some(v) => PathBuf::from(v),
+        None => crate::engine::resolve_repo(Path::new(&repo))
+            .join(".code-reality")
+            .join("boundary"),
+    };
     let (sc, warn) = match load_sidecar(Path::new(&repo), &sidecar_dir, None) {
         Ok(v) => v,
         Err(out) => return out,

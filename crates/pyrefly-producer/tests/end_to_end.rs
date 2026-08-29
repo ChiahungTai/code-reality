@@ -76,7 +76,10 @@ fn emit_build_cache_and_graph_db_on_fixture() {
     // The fixture is fixed content — pin exact counts (loose >= bounds
     // let regressions pass silently; the line off-by-one escaped that way).
     assert_eq!(report.files, 2, "pkg/core.py + main.py");
-    assert_eq!(report.defs, 14, "11 real defs + 2 pseudo-ctor defs in core.py + run() in main");
+    assert_eq!(
+        report.defs, 14,
+        "11 real defs + 2 pseudo-ctor defs in core.py + run() in main"
+    );
     assert_eq!(
         report.references, 6,
         "2 emitted imports (alias P import dropped by the refs-side guard) + CONSTANT load + top_fn load (handler) + Wrapper base load + isinstance Plain load"
@@ -86,7 +89,10 @@ fn emit_build_cache_and_graph_db_on_fixture() {
     // class-shaped targets (Plain(), Wrapper.Inner(), alias P()) and two
     // distinct classes get the one-shot DEF backfill.
     assert_eq!(report.minted_pseudo_ctor_refs, 3, "pseudo-ctor call refs");
-    assert_eq!(report.minted_pseudo_ctor_defs, 2, "Plain(). + Wrapper#Inner(). defs");
+    assert_eq!(
+        report.minted_pseudo_ctor_defs, 2,
+        "Plain(). + Wrapper#Inner(). defs"
+    );
     assert!(
         report.minted_pseudo_ctor_refs >= report.minted_pseudo_ctor_defs,
         "refs >= defs (idempotence)"
@@ -387,4 +393,57 @@ fn pyrefly_lsp_version_face_carries_rev() {
         stdout.contains("(engine: pinned git rev 1d64c4b)"),
         "engine rev still reported: {stdout}"
     );
+}
+
+/// EP data-plane-unification S1: the default slot resolves in-repo, the
+/// data dir self-ignores (single `*`, no negation), and a real git repo
+/// stays porcelain-clean through the producer→cache→graph_db chain on
+/// default paths.
+#[test]
+fn default_slot_chain_is_in_repo_and_git_clean() {
+    let d = temp_repo_tagged("inrepo");
+    let git = |args: &[&str]| {
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(&d)
+            .args(args)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .status()
+            .expect("spawn git")
+    };
+    assert!(git(&["init", "-q"]).success());
+    assert!(git(&["add", "-A"]).success());
+    assert!(git(&["commit", "-qm", "init"]).success());
+
+    let report = pyrefly_producer::emit(&d, None).expect("emit");
+    let canon = d.canonicalize().unwrap();
+    let slot = canon.join(".code-reality").join("scip").join("index.scip");
+    assert_eq!(report.index_path, slot);
+    let gi = canon.join(".code-reality").join(".gitignore");
+    assert!(gi.is_file());
+    let body = std::fs::read_to_string(&gi).unwrap();
+    assert!(body.trim_end().ends_with('*') && !body.contains('!'));
+
+    // reader side on default paths: cache + graph db consume the in-repo slot
+    let loaded = code_reality::engine::load_index(&slot).expect("load_index");
+    let db_path = code_reality::cache::sqlite_path(&slot);
+    code_reality::cache::build_db(&loaded.index, &db_path, "e2ehead").expect("build_db");
+    code_reality::graph_db::build_from_cache(&d).expect("graph_db build");
+    assert!(canon.join(".code-reality").join("graph.db").is_file());
+
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&d)
+        .args(["status", "--porcelain"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "",
+        "data dir must be fully ignored"
+    );
+    let _ = std::fs::remove_dir_all(&d);
 }

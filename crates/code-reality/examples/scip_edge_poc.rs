@@ -22,7 +22,7 @@ type Row = (String, String, i64);
 
 fn main() {
     let index_path = PathBuf::from(format!(
-        "{}/.mosaic/code-reality/scip/nautilus_trader/index.scip",
+        "{}/Github/nautilus_trader/.code-reality/scip/index.scip",
         std::env::var("HOME").expect("HOME")
     ));
     let out_dir =

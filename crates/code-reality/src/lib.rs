@@ -73,6 +73,7 @@ pub mod profile;
 pub mod py_calls;
 pub mod runtime_edges;
 pub mod scip_edges;
+pub mod sidecar_migrate;
 pub mod snapshot;
 pub mod tour_manifest;
 pub mod tour_upgrade;

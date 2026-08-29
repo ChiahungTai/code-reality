@@ -41,6 +41,7 @@ fn route(argv: &[&str]) -> code_reality::ToolOutput {
         Some(&"runtime_edges") => code_reality::runtime_edges::run(argv),
         Some(&"graph_query") => code_reality::graph_engine::run(argv),
         Some(&"graph_db") => code_reality::graph_db::run(argv),
+        Some(&"sidecar_migrate") => code_reality::sidecar_migrate::run(argv),
         Some(&"tour_validate") => code_reality::tour_validate::run(argv),
         Some(&"tour_upgrade") => code_reality::tour_upgrade::run(argv),
         Some(&"--version") | Some(&"-V") => ToolOutput {
@@ -64,7 +65,7 @@ fn route(argv: &[&str]) -> code_reality::ToolOutput {
     }
 }
 
-const SUBCOMMANDS: [&str; 15] = [
+const SUBCOMMANDS: [&str; 16] = [
     "scip_refs",
     "snapshot",
     "transition",
@@ -80,4 +81,5 @@ const SUBCOMMANDS: [&str; 15] = [
     "runtime_edges",
     "graph_query",
     "graph_db",
+    "sidecar_migrate",
 ];

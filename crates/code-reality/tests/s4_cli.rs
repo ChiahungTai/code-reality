@@ -54,7 +54,7 @@ fn index_resolution_failures() {
     assert_eq!(out.exit_code, 2);
     assert_eq!(
         out.stderr,
-        "[FAIL] 需 --index（或 --repo 解析 repo-keyed 預設 slot）\n"
+        "[FAIL] 需 --index（或 --repo 解析 in-repo 預設 slot）\n"
     );
 
     // explicit --index missing
@@ -70,7 +70,26 @@ fn index_resolution_failures() {
     let out = run(&argv(&["q", "--repo", &repo]));
     assert_eq!(out.exit_code, 2);
     assert!(out.stderr.contains("預設索引不在："));
-    assert!(out.stderr.contains("repo-keyed slot"));
+    assert!(out.stderr.contains("in-repo slot"));
+}
+
+#[test]
+fn stamp_meta_on_default_slot_ensures_data_dir_ignore() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path().to_path_buf();
+    let slot = repo.join(".code-reality/scip/index.scip");
+    std::fs::create_dir_all(slot.parent().unwrap()).unwrap();
+    std::fs::copy(fixture_src(), &slot).unwrap();
+    let repo_s = repo.to_string_lossy().to_string();
+    // non-git tempdir: stamp itself fails on HEAD, but the write-mode
+    // ensure has already self-ignored the data dir (capability: zero
+    // consumer gitignore setup)
+    let out = run(&argv(&["--repo", &repo_s, "--stamp-meta"]));
+    assert_ne!(out.exit_code, 0);
+    let gi = repo.join(".code-reality/.gitignore");
+    assert!(gi.is_file(), "write modes self-ignore the data dir");
+    let body = std::fs::read_to_string(gi).unwrap();
+    assert!(body.trim_end().ends_with('*') && !body.contains('!'));
 }
 
 #[test]

@@ -27,7 +27,7 @@ Responses embed `[SRC]` provenance lines (index version/commit) and a
 
 - `refs`/`callers`/`closure`/`audit` need a SCIP index:
   `rust-analyzer scip <repo>` output saved under
-  `~/.mosaic/code-reality/scip/<repo-basename>/index.scip`
+  `<repo>/.code-reality/scip/index.scip`
 - Python repos generate the same slot with the Rust-native pyrefly
   producer: `cargo run --release -p pyrefly-producer --bin
   pyrefly-index -- --repo <repo>` (no Node.js, no venv — bundled

@@ -2,7 +2,7 @@
 
 The Rust-native Python occurrence producer for code-reality: a linked
 [Pyrefly](https://github.com/facebook/pyrefly) engine (pinned git rev)
-emitting repo-keyed SCIP indexes, plus `pyrefly-lsp` — the same engine
+emitting in-repo SCIP indexes (`<repo>/.code-reality/scip/`), plus `pyrefly-lsp` — the same engine
 hosted as a stdio language server (the Python backend of the
 code-reality-lsp-bridge type face).
 

@@ -195,21 +195,62 @@ fn report_empty_defs_is_warn_exit_1() {
 }
 
 #[test]
-fn slot_resolution_is_repo_basename_keyed() {
+fn slot_resolution_is_in_repo() {
     let tmp = tempfile::tempdir().unwrap();
     let p = default_index_path(tmp.path()).unwrap();
-    let base = tmp
-        .path()
-        .file_name()
-        .unwrap()
-        .to_string_lossy()
-        .to_string();
     assert_eq!(
         p,
-        expand_home(DEFAULT_INDEX_ROOT)
-            .join(base)
+        tmp.path()
+            .canonicalize()
+            .unwrap()
+            .join(".code-reality")
+            .join("scip")
             .join("index.scip")
     );
+}
+
+#[test]
+fn resolve_repo_boundary_semantics() {
+    // empty → cwd (absolute)
+    let cwd = std::env::current_dir().unwrap();
+    assert_eq!(resolve_repo(std::path::Path::new("")), cwd);
+    // nonexistent relative path passes through unchanged (still relative;
+    // downstream exists() checks resolve it against cwd)
+    assert_eq!(
+        resolve_repo(std::path::Path::new("no/such/repo")),
+        std::path::PathBuf::from("no/such/repo")
+    );
+    // existing path canonicalizes
+    let tmp = tempfile::tempdir().unwrap();
+    assert_eq!(resolve_repo(tmp.path()), tmp.path().canonicalize().unwrap());
+}
+
+#[test]
+fn data_dir_gitignore_is_single_star_and_idempotent() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join(".code-reality");
+    write_data_dir_gitignore(&root).unwrap();
+    let g = root.join(".gitignore");
+    let body = std::fs::read_to_string(&g).unwrap();
+    let lines: Vec<&str> = body.lines().filter(|l| !l.trim().is_empty()).collect();
+    assert_eq!(
+        lines.last(),
+        Some(&"*"),
+        "last rule must be a bare star: {body}"
+    );
+    assert!(!body.contains('!'), "negations re-include files: {body}");
+    // pre-existing ignore content is never overwritten
+    std::fs::write(&g, "custom\n").unwrap();
+    write_data_dir_gitignore(&root).unwrap();
+    assert_eq!(std::fs::read_to_string(&g).unwrap(), "custom\n");
+}
+
+#[test]
+fn data_dir_gitignore_fails_loud_when_root_blocked() {
+    let tmp = tempfile::tempdir().unwrap();
+    let blocker = tmp.path().join("blocker");
+    std::fs::write(&blocker, "x").unwrap();
+    assert!(write_data_dir_gitignore(&blocker.join(".code-reality")).is_err());
 }
 
 #[test]

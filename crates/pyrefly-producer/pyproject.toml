@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "pyrefly-producer"
-description = "Rust-native Python occurrence producer (Pyrefly engine link, SCIP face): pyrefly-index emits repo-keyed SCIP indexes, pyrefly-lsp hosts the engine as a stdio language server"
+description = "Rust-native Python occurrence producer (Pyrefly engine link, SCIP face): pyrefly-index emits in-repo SCIP indexes, pyrefly-lsp hosts the engine as a stdio language server"
 requires-python = ">=3.9"
 license = "MIT"
 readme = "README.md"

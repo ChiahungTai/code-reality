@@ -2729,8 +2729,9 @@ pub fn document_symbols(repo_root: &Path, file_rel: &str) -> Result<Value, Strin
     document_symbols_at(&index, file_rel)
 }
 
-/// Core over an explicit index path (test seam; the repo-keyed home is
-/// global by basename — delta-review F4).
+/// Core over an explicit index path (test seam; the default face
+/// resolves the in-repo slot — the home basename key retired
+/// 2026-08-29; delta-review F4 history).
 pub fn document_symbols_at(index_path: &Path, file_rel: &str) -> Result<Value, String> {
     let cache_db = crate::cache::sqlite_path(index_path);
     if !cache_db.exists() {

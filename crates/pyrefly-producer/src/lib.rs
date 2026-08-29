@@ -1,7 +1,7 @@
 //! pyrefly-producer — Rust-native Python occurrence producer (EP
 //! ep-pyrefly-native-producer S1). Reads a repo with the linked Pyrefly
 //! engine, resolves every def / reference / call site, and emits a SCIP
-//! protobuf index into the repo-keyed sidecar slot; the existing
+//! protobuf index into the in-repo slot; the existing
 //! `--stamp-meta` → `--build-cache` → `graph_db build` pipeline consumes
 //! it unchanged (SCIP face — cache schema untouched).
 
@@ -67,7 +67,17 @@ pub fn emit(repo_root: &Path, out: Option<&Path>) -> Result<EmitReport, String> 
 
     let index_path = match out {
         Some(p) => p.to_path_buf(),
-        None => code_reality::engine::default_index_path(repo_root)?,
+        None => {
+            let p = code_reality::engine::default_index_path(repo_root)?;
+            // The default slot lives in the repo's data dir — make the
+            // dir self-ignoring on first write.
+            let data_root = p
+                .parent()
+                .and_then(|slot| slot.parent())
+                .ok_or_else(|| format!("slot 路徑異常（{}）", p.display()))?;
+            code_reality::engine::write_data_dir_gitignore(data_root)?;
+            p
+        }
     };
 
     let mut report = EmitReport {
@@ -94,8 +104,7 @@ pub fn emit(repo_root: &Path, out: Option<&Path>) -> Result<EmitReport, String> 
     // A call site that also resolved to a corpus `__init__` (B7a shape)
     // is excluded — its edge already exists in method grain and must not
     // be double-minted.
-    let mut called_classes: std::collections::HashSet<String> =
-        std::collections::HashSet::new();
+    let mut called_classes: std::collections::HashSet<String> = std::collections::HashSet::new();
     for m in &driven.modules {
         for c in &m.calls {
             let (kept, _collapsed) = symbol::collapse_dunder(&c.targets);
@@ -202,7 +211,9 @@ pub fn emit(repo_root: &Path, out: Option<&Path>) -> Result<EmitReport, String> 
         code_reality::fndefs::fndefs_path(&index_path),
     ] {
         match std::fs::remove_file(&stale) {
-            Ok(()) => report.invalidated_sidecars.push(stale.display().to_string()),
+            Ok(()) => report
+                .invalidated_sidecars
+                .push(stale.display().to_string()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => {
                 return Err(format!(

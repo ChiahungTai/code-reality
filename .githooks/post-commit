@@ -1,14 +1,14 @@
 #!/bin/sh
 # post-commit — background reinstall of changed crates (EP
 # ep-binary-freshness-face). Keeps ~/.cargo/bin in sync with HEAD so the
-# freshness WARN never lingers. Maintainer-layout paths (~/Github/
-# code-reality, ~/.mosaic): external users must adapt before opting in
+# freshness WARN never lingers. Maintainer-layout path (~/Github/
+# code-reality): external users must adapt before opting in
 # via `git config core.hooksPath .githooks`.
 # Matching is per-line (POSIX case patterns anchor both ends — a
 # whole-string `*Cargo.toml` arm would only fire when the sorted diff
 # happens to END with the root manifest, i.e. never alongside
 # lowercase paths; review R1).
-log_dir="$HOME/.mosaic/code-reality"
+log_dir="$HOME/Github/code-reality/.agent-tmp"
 mkdir -p "$log_dir"
 log="$log_dir/install.log"
 changed=$(git diff --name-only HEAD~1 HEAD 2>/dev/null) || changed="all"

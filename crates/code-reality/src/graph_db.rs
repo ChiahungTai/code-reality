@@ -419,7 +419,7 @@ fn attribute_nearest(
 /// Build the self-owned db from any producer cache (rust-analyzer SCIP,
 /// the pyrefly producer, or the LSP-harvest golden face — one schema, one
 /// edge ontology). Core over an explicit index path; the CLI face
-/// resolves the repo-keyed slot.
+/// resolves the in-repo slot.
 pub fn build_from_cache_at(repo: &Path, index_path: &Path) -> Result<BuildReport, String> {
     let cache_db = cache::sqlite_path(index_path);
     if !cache_db.exists() && !index_path.exists() {
@@ -541,6 +541,8 @@ pub fn build_from_cache_at(repo: &Path, index_path: &Path) -> Result<BuildReport
     let db = db_path(repo);
     let dir = db.parent().unwrap_or_else(|| Path::new("."));
     std::fs::create_dir_all(dir).map_err(|e| format!("目錄建立失敗（{}）：{e}", dir.display()))?;
+    crate::engine::write_data_dir_gitignore(dir)
+        .map_err(|e| format!("graph_db 資料目錄自帶 ignore 失敗：{e}"))?;
     let tmp_db = dir.join("graph.db.tmp-build");
     if let Err(e) = std::fs::remove_file(&tmp_db) {
         if e.kind() != std::io::ErrorKind::NotFound {
@@ -675,7 +677,7 @@ pub fn build_from_cache_at(repo: &Path, index_path: &Path) -> Result<BuildReport
     })
 }
 
-/// CLI face: resolves the repo-keyed default slot.
+/// CLI face: resolves the in-repo default slot.
 pub fn build_from_cache(repo: &Path) -> Result<BuildReport, String> {
     let index = crate::engine::default_index_path(repo)?;
     build_from_cache_at(repo, &index)
@@ -798,7 +800,7 @@ const HELP: &str = concat!(
     "\n",
     "options:\n",
     "  -h, --help            show this help message and exit\n",
-    "  --repo REPO           repo root（解析 repo-keyed 預設 index slot）\n",
+    "  --repo REPO           repo root（解析 in-repo 預設 index slot）\n",
     "  --json                報告 JSON 面\n",
 );
 

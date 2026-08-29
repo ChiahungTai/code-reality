@@ -2,7 +2,7 @@
 //! PyO3 boundary extractor. Scans the target repo's crates `*.rs` pyo3
 //! declarations and reconciles them against the Python `.pyi` contract
 //! tree, writing a commit-anchored sidecar DB
-//! (`~/.mosaic/code-reality/boundary/<nt-short-sha>.db`, idempotent
+//! (`<nt-repo>/.code-reality/boundary/<nt-short-sha>.db`, idempotent
 //! overwrite). Query consumer: `boundary.rs`.
 //!
 //! Known Gaps are documented in the frozen module and carried as-is
@@ -16,7 +16,19 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 pub const TOOL: &str = "code_reality.boundary_build";
-pub const DEFAULT_OUT_DIR: &str = "~/.mosaic/code-reality/boundary";
+/// In-repo boundary sidecar dir: `<repo>/.code-reality/boundary/`
+/// (sha-keyed dbs live inside). Ensures the self-contained data-dir
+/// gitignore; explicit `--out-dir` bypasses both.
+pub fn default_out_dir(repo: &Path) -> Result<PathBuf, String> {
+    let dir = crate::engine::resolve_repo(repo)
+        .join(".code-reality")
+        .join("boundary");
+    let data_root = dir
+        .parent()
+        .ok_or_else(|| format!("路徑異常（{}）", dir.display()))?;
+    crate::engine::write_data_dir_gitignore(data_root)?;
+    Ok(dir)
+}
 
 fn re_fn() -> &'static regex::Regex {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
@@ -1262,11 +1274,13 @@ pub fn run(argv: &[&str]) -> ToolOutput {
     let Some(repo) = values.get("--repo").and_then(|v| v.clone()) else {
         return ToolOutput::fail("the following arguments are required: --repo");
     };
-    let out_dir = values
-        .get("--out-dir")
-        .and_then(|v| v.clone())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| crate::engine::expand_home(DEFAULT_OUT_DIR));
+    let out_dir = match values.get("--out-dir").and_then(|v| v.clone()) {
+        Some(v) => PathBuf::from(v),
+        None => match default_out_dir(Path::new(&repo)) {
+            Ok(d) => d,
+            Err(e) => return ToolOutput::crash(e),
+        },
+    };
     let db = match build_sidecar(Path::new(&repo), &out_dir) {
         Ok(p) => p,
         Err(e) => return ToolOutput::crash(e),

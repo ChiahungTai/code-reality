@@ -179,8 +179,12 @@ fn build_is_idempotent_and_leaves_no_temp() {
         .unwrap()
         .read_dir()
         .unwrap();
-    let files: Vec<_> = dir.filter_map(|e| e.ok()).map(|e| e.file_name()).collect();
-    assert_eq!(files.len(), 1, "no temp leftover: {files:?}");
+    let mut files: Vec<_> = dir.filter_map(|e| e.ok()).map(|e| e.file_name()).collect();
+    files.sort();
+    // graph.db + the self-contained single-`*` .gitignore (S1)
+    assert_eq!(files.len(), 2, "no temp leftover: {files:?}");
+    assert_eq!(files[0], ".gitignore");
+    assert_eq!(files[1], "graph.db");
 }
 
 #[test]

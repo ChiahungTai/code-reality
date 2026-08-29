@@ -57,7 +57,8 @@ tests are the sole gate face.
 - **role**: Rust-native Python occurrence producer (ep-pyrefly-native-
   producer) — links the Pyrefly engine as a git-dep (pinned rev
   `1d64c4b…`; crates.io carries only a placeholder) and emits a SCIP
-  protobuf index into the repo-keyed sidecar slot. SCIP face: the
+  protobuf index into the in-repo slot (`<repo>/.code-reality/scip/`).
+  SCIP face: the
   existing `--stamp-meta` → `--build-cache` → `graph_db build` pipeline
   consumes it unchanged — no cache-schema writes.
 - **layering**: `api.rs` is the single-point isolation of every Pyrefly
@@ -131,7 +132,10 @@ tests are the sole gate face.
   thin-wrap `cli::run` in-process with spawn_blocking + catch_unwind
   per-request isolation [SM-14]; bin `code-reality-mcp`) / `cli` (assembly —
   argv surface, mode routing incl. `--callers`/`--closure`/`--depth`
-  1-10000, and the in-process `--audit` two-pass).
+  1-10000, and the in-process `--audit` two-pass) / `sidecar_migrate`
+  (one-shot migration of the retired home sidecar face — leaf on
+  argparse/engine; boundary dbs and basename-collision slots are
+  knowingly not auto-attributed, EP data-plane-unification).
 - **lib API contract**: functions return `ToolOutput {stdout, stderr,
   exit_code}` data — the lib never prints and never exits; the bin owns
   printing/exiting (compile-time premise of CLI/MCP single-backend

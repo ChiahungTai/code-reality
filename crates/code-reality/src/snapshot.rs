@@ -16,7 +16,18 @@ use serde_json::{json, Value};
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
-pub const DEFAULT_OUT_DIR: &str = "~/.mosaic/code-reality/snapshots";
+/// In-repo snapshots dir: `<repo>/.code-reality/snapshots/`. Ensures the
+/// self-contained data-dir gitignore; explicit `--out-dir` bypasses both.
+pub fn default_out_dir(repo: &Path) -> Result<std::path::PathBuf, String> {
+    let dir = crate::engine::resolve_repo(repo)
+        .join(".code-reality")
+        .join("snapshots");
+    let data_root = dir
+        .parent()
+        .ok_or_else(|| format!("路徑異常（{}）", dir.display()))?;
+    crate::engine::write_data_dir_gitignore(data_root)?;
+    Ok(dir)
+}
 
 const SPEC: ToolSpec = ToolSpec {
     flags: &[
@@ -437,12 +448,14 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         .map(PathBuf::from)
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     // user values pass through verbatim (Python type=Path never expands
-    // `~`); only the default constant is home-expanded at use time
-    let out_dir = values
-        .get("--out-dir")
-        .and_then(|v| v.clone())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| crate::engine::expand_home(DEFAULT_OUT_DIR));
+    // `~`); the default resolves in-repo and self-ignores its data dir
+    let out_dir = match values.get("--out-dir").and_then(|v| v.clone()) {
+        Some(v) => PathBuf::from(v),
+        None => match default_out_dir(&repo) {
+            Ok(d) => d,
+            Err(e) => return ToolOutput::crash(e),
+        },
+    };
     let label = values.get("--label").and_then(|v| v.clone());
 
     let snap = match build_snapshot(&repo, label.as_deref()) {
