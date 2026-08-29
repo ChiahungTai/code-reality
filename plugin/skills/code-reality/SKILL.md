@@ -214,11 +214,36 @@ on any new repo.
 
 The MCP face covers the SCIP family. The same binary carries the full
 toolchain: `code-reality <scip_refs|snapshot|graph_audit|
-hub_refs|boundary|boundary_build|chain_tour|delta_tour|
+hub_refs|boundary|boundary_build|build|chain_tour|delta_tour|
 tour_manifest|tour_validate|tour_upgrade|runtime_edges|
-graph_query|graph_db> --repo <root>`. (Diff consumption runs through
+graph_query|graph_db|project> --repo <root>`. (Diff consumption runs through
 `delta_tour` — the transition CLI retired; snapshot sidecar pairs feed
 delta_tour directly.)
+
+### Projection plans (`project`)
+
+`code-reality project --repo <root> --plan <plan.toml>` compiles an EP's
+declared future into a projected graph (the spawned `overlay-gen` bin
+from the `pyrefly-producer` dist does the minting) and reports graft surface,
+new-symbol reverse chains, and integration-claim verdicts. The plan
+(TOML) declares `[meta]` (`name`, `project`/`version` mirroring the
+target repo's pyproject identity — the SCIP symbol prefix keys on it,
+plus optional `graph_rev`), `[[symbols]]` (planned defs), `[[edges]]`
+(declared call edges: `file` + `needle` locate the call in the planned
+source under `<plan dir>/sources/`; the gate fails loud when the
+declared edge is not an actual call site), and `[[claims]]`
+(integration claims checked against the projection: `[HOLE]` = has DEF
+but no call edge from the planned files, `[MISSING]` = symbol absent).
+Every line is labeled `[projected]` and the report counts hypothetical
+edges — **projected edges are declarations, not evidence**; a wrong
+mental model projects a wrong world, so findings feed ep-review as
+leads to verify, never as proof. Reruns are idempotent; the real
+`scip/index.scip` / `graph.db` are never touched (the projection lives
+only under `.code-reality/projections/<stem>/`). Location caveats:
+`needle` binds its FIRST occurrence in the planned file (a non-call
+first occurrence fails the gate loud), and planned symbol names must
+not appear earlier in the file than their def (docstring/comment
+mentions would misplace the DEF).
 
 Install (main face): `uv tool install code-reality` (plus
 pyrefly-producer and code-reality-lsp-bridge — or let the plugin's

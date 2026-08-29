@@ -41,6 +41,7 @@ fn route(argv: &[&str]) -> code_reality::ToolOutput {
         Some(&"graph_query") => code_reality::graph_engine::run(argv),
         Some(&"graph_db") => code_reality::graph_db::run(argv),
         Some(&"sidecar_migrate") => code_reality::sidecar_migrate::run(argv),
+        Some(&"project") => code_reality::project::run(argv),
         Some(&"build") => code_reality::build::run(argv),
         Some(&"tour_validate") => code_reality::tour_validate::run(argv),
         Some(&"tour_upgrade") => code_reality::tour_upgrade::run(argv),
@@ -65,7 +66,7 @@ fn route(argv: &[&str]) -> code_reality::ToolOutput {
     }
 }
 
-const SUBCOMMANDS: [&str; 16] = [
+const SUBCOMMANDS: [&str; 17] = [
     "scip_refs",
     "snapshot",
     "graph_audit",
@@ -82,4 +83,5 @@ const SUBCOMMANDS: [&str; 16] = [
     "graph_query",
     "graph_db",
     "sidecar_migrate",
+    "project",
 ];

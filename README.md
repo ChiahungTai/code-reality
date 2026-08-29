@@ -34,7 +34,7 @@ dependency):
 
 ```
 uv tool install code-reality              # code-reality + code-reality-mcp (structural face)
-uv tool install pyrefly-producer          # pyrefly-index + pyrefly-lsp (Python producer + language server)
+uv tool install pyrefly-producer          # pyrefly-index + pyrefly-lsp + overlay-gen (Python producer + language server)
 uv tool install code-reality-lsp-bridge   # code-reality-lsp-bridge (type face: hover/diagnostics MCP, .py + .rs)
 rustup component add rust-analyzer        # Rust type-face backend — system dependency, ships in no wheel (skip if you only use the .py face)
 ```

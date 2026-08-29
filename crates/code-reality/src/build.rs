@@ -153,7 +153,7 @@ pub fn resolve_bin(name: &str, roots: &[PathBuf], hint: &str) -> Result<PathBuf,
     Err(format!("{name} 找不到（已試：{}）——{hint}", tried.join("、")))
 }
 
-fn producer_roots() -> Vec<PathBuf> {
+pub(crate) fn producer_roots() -> Vec<PathBuf> {
     let mut roots = Vec::new();
     if let Some(path) = std::env::var_os("PATH") {
         roots.extend(std::env::split_paths(&path));
@@ -249,7 +249,7 @@ fn rust_leg(repo: &Path, out_path: &Path, rep: &mut Report, roots: &[PathBuf]) -
 /// Protobuf same-type message concatenation: repeated fields stack, so
 /// `read(slot) ++ read(part)` written back is a legal merged Index.
 /// Temp-sibling + rename (atomic, graph_db build precedent).
-fn concat_scip(slot: &Path, part: &Path) -> Result<(), String> {
+pub(crate) fn concat_scip(slot: &Path, part: &Path) -> Result<(), String> {
     let a = std::fs::read(slot).map_err(|e| format!("讀 {} 失敗：{e}", slot.display()))?;
     let b = std::fs::read(part).map_err(|e| format!("讀 {} 失敗：{e}", part.display()))?;
     let tmp = slot.with_file_name(".merge-tmp.scip");

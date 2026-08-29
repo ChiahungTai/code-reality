@@ -75,7 +75,11 @@ tests are the sole gate face.
 - depends on the code-reality lib for `engine::default_index_path`
   (slot resolution) and `freshness::stale_binary_warn`; the main
   binary stays free of the pyrefly dep tree.
-- **bins**: `pyrefly-index` (occurrence index) + `pyrefly-lsp` (thin
+- **bins**: `pyrefly-index` (occurrence index) + `overlay-gen`
+  (declarative projection-plan compiler — single-source symbol minting
+  via `emit`/`symbol`, declared-edge consistency gate via `py_calls`;
+  spawned by the umbrella `project`; never WARN-wired, pyrefly-lsp
+  precedent) + `pyrefly-lsp` (thin
   stdio host calling upstream `LspArgs::run` from the same pinned-rev
   engine — the type-face backend the lsp-bridge spawns; engine-version
   parity between the two faces is a lockfile guarantee, not a config).
@@ -143,7 +147,12 @@ tests are the sole gate face.
   face → spawn pyrefly-index / `rust-analyzer scip` (sibling bins,
   separate dists) → in-process graph_db build + ensure_indexes; mixed
   repos cat-merge both SCIP indexes into one dual-language graph;
-  `BuildError::{Env,Core}` maps fail(2)/crash(1)).
+  `BuildError::{Env,Core}` maps fail(2)/crash(1)) / `project`
+  (orchestration leaf — projected-graph overlay: spawn overlay-gen,
+  cat-merge onto the real index into `.code-reality/projections/<stem>/`,
+  protobuf-face graft/HOLE/MISSING report labeled `[projected]`
+  (declaration-not-evidence); `ProjectError::{Env,Core}` mirrors the
+  build exit semantics; the real slot stays byte-identical).
 - **lib API contract**: functions return `ToolOutput {stdout, stderr,
   exit_code}` data — the lib never prints and never exits; the bin owns
   printing/exiting (compile-time premise of CLI/MCP single-backend

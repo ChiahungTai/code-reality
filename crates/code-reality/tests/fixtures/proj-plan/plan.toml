@@ -1,0 +1,36 @@
+[meta]
+name = "graft-demo"
+graph_rev = "unstamped"
+project = "proj-fixture"
+version = "0.1.0"
+
+[[symbols]]
+rel_path = "fixmod/planned_coordinator.py"
+kind = "class"
+name = "PlannedCoordinator"
+scope = []
+
+[[symbols]]
+rel_path = "fixmod/planned_coordinator.py"
+kind = "function"
+name = "snapshot"
+scope = [{ name = "PlannedCoordinator", class = true }]
+
+[[edges]]
+file = "fixmod/planned_coordinator.py"
+needle = "compute(points)"
+to_module = "fixmod.calc"
+to_kind = "function"
+to_name = "compute"
+
+[[claims]]
+to_module = "fixmod.calc"
+to_kind = "function"
+to_name = "untouched_helper"
+note = "claimed integration; planned code never calls it (HOLE demo)"
+
+[[claims]]
+to_module = "fixmod.calc"
+to_kind = "function"
+to_name = "no_such_symbol"
+note = "claim pointing at a symbol absent from the index (MISSING demo)"
