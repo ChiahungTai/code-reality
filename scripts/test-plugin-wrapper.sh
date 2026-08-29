@@ -1,112 +1,139 @@
 #!/usr/bin/env bash
-# Wrapper regression for plugin/.mcp.json (EP: ep-npm-embedded-face S3).
+# Wrapper regression for plugin/.mcp.json (npm-face retirement arc:
+# deferred uv bootstrap replaces the embedded face; node_modules stays
+# as a deprecation-grace rescue when uv is missing).
 #
-# Runs the ACTUAL wrapper strings extracted from plugin/.mcp.json via jq
-# — not a copy: if the JSON changes, this test follows it or fails. Each
-# server entry is exercised through the full candidate chain under a
-# controlled environment (env -i):
+# Runs the ACTUAL wrapper strings extracted via jq — not a copy. The
+# pin under test is extracted from the wrapper string itself, so a
+# bump that touches only one surface fails here.
 #
-#   Q1  PATH has the bin            -> PATH face (no prepend)
-#   Q2  only plugin node_modules    -> embedded face (PATH prepended with
-#                                      node_modules/.bin — the lsp-bridge
-#                                      backend resolution depends on it)
-#   Q3  only ~/.local/bin           -> uv fallback face (PATH prepended)
-#   Q4  nothing anywhere            -> fail-loud guidance, exit 127
-#   Q4b as Q4 but CLAUDE_PLUGIN_ROOT unset (the ZCode shape — empty
-#                                      expansion degrades identically)
-#   Q5  PATH and node_modules both  -> PATH wins (uv main face precedence)
+# Lockstep guard v2: wrapper pin == plugin version == workspace version.
 #
-# An unset/empty CLAUDE_PLUGIN_ROOT must degrade gracefully (ZCode has no
-# expansion mechanism — Q3/Q4 cover that path).
+#   T1 pin matches on PATH              -> direct exec, uv never invoked
+#   T2 stale bin on PATH + uv           -> bootstrap: --force <pkg>==<pin>
+#                                          for all three dists, then exec
+#   T3 nothing + no uv + no embedded    -> 127 + uv install guidance
+#   T4 CODE_REALITY_BOOTSTRAP=off       -> stale bin exec'd, uv untouched
+#   T5 no uv + embedded node_modules    -> grace exec + deprecation notice
+#   B1 bridge on PATH                   -> direct exec
+#   B2 bridge nowhere + no uv           -> 127 fast (no wait loop)
+#   B3 bridge via embedded node_modules -> direct exec
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MCP="$ROOT/plugin/.mcp.json"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
-
-# Lockstep guard (forced-sync adjudication 2026-08-29): the embedded-face
-# pin must equal the plugin version — a plugin bump that forgets the pin
-# silently serves old binaries via npm ci.
-pin="$(jq -r '.optionalDependencies["code-reality-darwin-arm64"]' "$ROOT/plugin/package.json")"
-pver="$(jq -r '.version' "$ROOT/plugin/.claude-plugin/plugin.json")"
-if [ "$pin" != "$pver" ]; then
-  echo "FAIL: npm pin=$pin != plugin version=$pver (lockstep drift)"
-  exit 1
-fi
-printf 'pin==plugin lockstep guard: ok (%s)\n' "$pin"
 pass=0
 fail=0
 
-# mkfake <dir> <name>: executable that identifies itself and the PATH head
-# it was exec'd with (asserts the wrapper's PATH prepend behavior).
+wrap="$(jq -r '.mcpServers["code-reality"].args | last' "$MCP")"
+wrapb="$(jq -r '.mcpServers["code-reality-lsp-bridge"].args | last' "$MCP")"
+[ -n "$wrap" ] && [ -n "$wrapb" ] || { echo "no wrapper strings in $MCP"; exit 1; }
+
+# Lockstep guard v2: pin (in the wrapper) == plugin version == workspace
+pin="$(printf '%s' "$wrap" | sed -n 's/.*want=\([0-9][0-9.]*\).*/\1/p')"
+pver="$(jq -r .version "$ROOT/plugin/.claude-plugin/plugin.json")"
+wver="$(sed -n 's/^version = "\(.*\)"$/\1/p' "$ROOT/Cargo.toml" | head -1)"
+if [ -n "$pin" ] && [ "$pin" = "$pver" ] && [ "$pin" = "$wver" ]; then
+  pass=$((pass + 1)); printf '  ok   lockstep pin==plugin==workspace (%s)\n' "$pin"
+else
+  fail=$((fail + 1)); printf '  FAIL lockstep pin=%s plugin=%s workspace=%s\n' "$pin" "$pver" "$wver"
+fi
+
+# mkfake <dir> <name> <ver>: bin whose every invocation prints "<ver>+rev"
 mkfake() {
   mkdir -p "$1"
-  printf '#!/bin/sh\necho "FAKE %s HEAD=${PATH%%:*}"\n' "$2" > "$1/$2"
+  printf '#!/bin/sh\necho "%s+rev"\n' "$3" > "$1/$2"
   chmod +x "$1/$2"
 }
 
-# expect <label> <want_out> <want_rc> <actual_out> <actual_rc> <err>
-expect() {
+# uv stub: records argv; tests assert on the log (or its emptiness)
+mkdir -p "$WORK/uvbin"
+printf '#!/bin/sh\necho "uv $*" >> "%s/uv.log"\n' "$WORK" > "$WORK/uvbin/uv"
+chmod +x "$WORK/uvbin/uv"
+: > "$WORK/uv.log"
+
+expect() { # <label> <want_out> <want_rc> <actual_out> <actual_rc> <err>
   if [ "$5" = "$3" ] && printf '%s' "$4" | grep -q "$2"; then
     pass=$((pass + 1)); printf '  ok   %s\n' "$1"
   else
-    fail=$((fail + 1))
-    printf '  FAIL %s — want rc=%s out~%s got rc=%s out=%s err=%s\n' \
+    fail=$((fail + 1)); printf '  FAIL %s — want rc=%s out~%s got rc=%s out=%s err=%s\n' \
       "$1" "$3" "$2" "$5" "$4" "$6"
   fi
 }
 
-for server in code-reality code-reality-lsp-bridge; do
-  case "$server" in
-    code-reality)          bin=code-reality-mcp ;;
-    code-reality-lsp-bridge) bin=code-reality-lsp-bridge ;;
-  esac
-  wrapper="$(jq -r --arg s "$server" '.mcpServers[$s].args | last' "$MCP")"
-  [ -n "$wrapper" ] || { echo "no wrapper string for $server in $MCP"; exit 1; }
-
-  # fixtures
-  fakepath="$WORK/pathbin";  mkfake "$fakepath" "$bin"
-  proot="$WORK/proot";       mkfake "$proot/node_modules/.bin" "$bin"
-  fakehome="$WORK/home";     mkfake "$fakehome/.local/bin" "$bin"
-  emptyhome="$WORK/emptyhome"; mkdir -p "$emptyhome"
-
-  out="$(env -i PATH="$fakepath" HOME="$emptyhome" CLAUDE_PLUGIN_ROOT="$WORK/none" \
-    /bin/sh -c "$wrapper" 2>"$WORK/err")"; rc=$?
-  expect "$server Q1 PATH face"        "FAKE $bin HEAD=$fakepath" 0 "$out" "$rc" "$(cat "$WORK/err")"
-
-  out="$(env -i PATH=/nonexistent HOME="$emptyhome" CLAUDE_PLUGIN_ROOT="$proot" \
-    /bin/sh -c "$wrapper" 2>"$WORK/err")"; rc=$?
-  expect "$server Q2 node_modules face" "FAKE $bin HEAD=$proot/node_modules/.bin" 0 "$out" "$rc" "$(cat "$WORK/err")"
-
-  out="$(env -i PATH=/nonexistent HOME="$fakehome" CLAUDE_PLUGIN_ROOT="$WORK/none" \
-    /bin/sh -c "$wrapper" 2>"$WORK/err")"; rc=$?
-  expect "$server Q3 ~/.local/bin face" "FAKE $bin HEAD=$fakehome/.local/bin" 0 "$out" "$rc" "$(cat "$WORK/err")"
-
-  out="$(env -i PATH=/nonexistent HOME="$emptyhome" CLAUDE_PLUGIN_ROOT="$WORK/none" \
-    /bin/sh -c "$wrapper" 2>"$WORK/err")"; rc=$?
-  err="$(cat "$WORK/err")"
-  if [ "$rc" = 127 ] && printf '%s' "$err" | grep -q "uv tool install" \
-     && printf '%s' "$err" | grep -q "update the code-reality plugin"; then
-    pass=$((pass + 1)); printf '  ok   %s\n' "$server Q4 fail-loud"
+uv_untouched() { # <label>
+  if [ -s "$WORK/uv.log" ]; then
+    fail=$((fail + 1)); printf '  FAIL %s — uv was invoked: %s\n' "$1" "$(cat "$WORK/uv.log")"
   else
-    fail=$((fail + 1)); printf '  FAIL %s — rc=%s err=%s\n' "$server Q4 fail-loud" "$rc" "$err"
+    pass=$((pass + 1)); printf '  ok   %s (uv untouched)\n' "$1"
   fi
+}
 
-  # Q4b: same, but CLAUDE_PLUGIN_ROOT genuinely unset (ZCode shape)
-  out="$(env -i PATH=/nonexistent HOME="$emptyhome" \
-    /bin/sh -c "$wrapper" 2>"$WORK/err")"; rc=$?
-  err="$(cat "$WORK/err")"
-  if [ "$rc" = 127 ] && printf '%s' "$err" | grep -q "uv tool install"; then
-    pass=$((pass + 1)); printf '  ok   %s\n' "$server Q4b fail-loud (unset)"
+mkdir -p "$WORK/home"
+
+# T1: PATH bin at the pin -> direct exec, no bootstrap
+mkfake "$WORK/match" code-reality-mcp "$pin"
+out="$(env -i PATH="$WORK/match:$WORK/uvbin" HOME="$WORK/home" /bin/sh -c "$wrap" 2>"$WORK/err")"; rc=$?
+expect "T1 pin match -> direct exec" "$pin+rev" 0 "$out" "$rc" "$(cat "$WORK/err")"
+uv_untouched "T1"
+
+# T2: stale bin -> bootstrap all three dists at the pin, then exec
+mkfake "$WORK/stale" code-reality-mcp 0.0.0
+: > "$WORK/uv.log"
+out="$(env -i PATH="$WORK/stale:$WORK/uvbin" HOME="$WORK/home" /bin/sh -c "$wrap" 2>"$WORK/err")"; rc=$?
+expect "T2 stale -> bootstrap + exec" "0.0.0+rev" 0 "$out" "$rc" "$(cat "$WORK/err")"
+for spec in "code-reality==$pin" "code-reality-lsp-bridge==$pin" "pyrefly-producer==$pin"; do
+  if grep -q -- "--force $spec" "$WORK/uv.log"; then
+    pass=$((pass + 1)); printf '  ok   T2 uv --force %s\n' "$spec"
   else
-    fail=$((fail + 1)); printf '  FAIL %s — rc=%s err=%s\n' "$server Q4b fail-loud (unset)" "$rc" "$err"
+    fail=$((fail + 1)); printf '  FAIL T2 uv missing --force %s\n' "$spec"
   fi
-
-  # Q5: PATH and node_modules both present -> PATH face wins (SM-4)
-  out="$(env -i PATH="$fakepath" HOME="$emptyhome" CLAUDE_PLUGIN_ROOT="$proot" \
-    /bin/sh -c "$wrapper" 2>"$WORK/err")"; rc=$?
-  expect "$server Q5 PATH beats node_modules" "FAKE $bin HEAD=$fakepath" 0 "$out" "$rc" "$(cat "$WORK/err")"
 done
+
+# T3: nothing anywhere, no uv -> loud 127 + install guidance
+out="$(env -i PATH=/nonexistent HOME="$WORK/home" /bin/sh -c "$wrap" 2>"$WORK/err")"; rc=$?
+err="$(cat "$WORK/err")"
+if [ "$rc" = 127 ] && printf '%s' "$err" | grep -q "uv not found" && printf '%s' "$err" | grep -q "astral.sh/uv"; then
+  pass=$((pass + 1)); printf '  ok   T3 no-uv loud 127 + guidance\n'
+else
+  fail=$((fail + 1)); printf '  FAIL T3 rc=%s err=%s\n' "$rc" "$err"
+fi
+
+# T4: dev escape — stale bin exec'd as-is, no install
+: > "$WORK/uv.log"
+out="$(env -i PATH="$WORK/stale:$WORK/uvbin" CODE_REALITY_BOOTSTRAP=off HOME="$WORK/home" /bin/sh -c "$wrap" 2>"$WORK/err")"; rc=$?
+expect "T4 BOOTSTRAP=off -> exec as-is" "0.0.0+rev" 0 "$out" "$rc" "$(cat "$WORK/err")"
+uv_untouched "T4"
+
+# T5: no uv but the retired embedded face is populated -> grace exec
+mkfake "$WORK/proot/node_modules/.bin" code-reality-mcp 0.3.0
+out="$(env -i PATH=/nonexistent CLAUDE_PLUGIN_ROOT="$WORK/proot" HOME="$WORK/home" /bin/sh -c "$wrap" 2>"$WORK/err")"; rc=$?
+err="$(cat "$WORK/err")"
+if [ "$rc" = 0 ] && printf '%s' "$out" | grep -q "0.3.0+rev" && printf '%s' "$err" | grep -q "deprecation grace"; then
+  pass=$((pass + 1)); printf '  ok   T5 embedded grace exec + notice\n'
+else
+  fail=$((fail + 1)); printf '  FAIL T5 rc=%s out=%s err=%s\n' "$rc" "$out" "$err"
+fi
+
+# B1: bridge on PATH -> direct exec
+mkfake "$WORK/bdir" code-reality-lsp-bridge "$pin"
+out="$(env -i PATH="$WORK/bdir" HOME="$WORK/home" /bin/sh -c "$wrapb" 2>"$WORK/err")"; rc=$?
+expect "B1 bridge on PATH" "$pin+rev" 0 "$out" "$rc" "$(cat "$WORK/err")"
+
+# B2: bridge nowhere + no uv -> fast 127 (the wait loop needs uv)
+out="$(env -i PATH=/nonexistent HOME="$WORK/home" /bin/sh -c "$wrapb" 2>"$WORK/err")"; rc=$?
+err="$(cat "$WORK/err")"
+if [ "$rc" = 127 ] && printf '%s' "$err" | grep -q "code-reality server installs it"; then
+  pass=$((pass + 1)); printf '  ok   B2 bridge fast 127\n'
+else
+  fail=$((fail + 1)); printf '  FAIL B2 rc=%s err=%s\n' "$rc" "$err"
+fi
+
+# B3: bridge via the embedded grace path
+mkfake "$WORK/proot/node_modules/.bin" code-reality-lsp-bridge 0.3.0
+out="$(env -i PATH=/nonexistent CLAUDE_PLUGIN_ROOT="$WORK/proot" HOME="$WORK/home" /bin/sh -c "$wrapb" 2>"$WORK/err")"; rc=$?
+expect "B3 bridge embedded grace" "0.3.0+rev" 0 "$out" "$rc" "$(cat "$WORK/err")"
 
 printf 'wrapper regression: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" = 0 ]

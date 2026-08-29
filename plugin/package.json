@@ -1,8 +1,0 @@
-{
-  "name": "code-reality-plugin",
-  "version": "0.3.1",
-  "private": true,
-  "optionalDependencies": {
-    "code-reality-darwin-arm64": "0.3.1"
-  }
-}
