@@ -9,6 +9,9 @@ __pycache__/
 # Instruction-init scan artifact (regenerable via scan-project)
 .project-snapshot.json
 
+# lsp_harvest sample-mode answer key (generated output, never an input)
+scripts/lsp_answers.json
+
 # Local scratch (agent tooling)
 .agent-tmp/
 
