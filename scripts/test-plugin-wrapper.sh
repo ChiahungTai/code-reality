@@ -12,6 +12,9 @@
 #                                      backend resolution depends on it)
 #   Q3  only ~/.local/bin           -> uv fallback face (PATH prepended)
 #   Q4  nothing anywhere            -> fail-loud guidance, exit 127
+#   Q4b as Q4 but CLAUDE_PLUGIN_ROOT unset (the ZCode shape — empty
+#                                      expansion degrades identically)
+#   Q5  PATH and node_modules both  -> PATH wins (uv main face precedence)
 #
 # An unset/empty CLAUDE_PLUGIN_ROOT must degrade gracefully (ZCode has no
 # expansion mechanism — Q3/Q4 cover that path).
@@ -31,8 +34,8 @@ mkfake() {
   chmod +x "$1/$2"
 }
 
-# run_case <name> <bin> <wrapper> <env assignments...> via env -i
-expect() { # <label> <want_out> <want_rc> <actual_out> <actual_rc> <err>
+# expect <label> <want_out> <want_rc> <actual_out> <actual_rc> <err>
+expect() {
   if [ "$5" = "$3" ] && printf '%s' "$4" | grep -q "$2"; then
     pass=$((pass + 1)); printf '  ok   %s\n' "$1"
   else
@@ -77,6 +80,21 @@ for server in code-reality code-reality-lsp-bridge; do
   else
     fail=$((fail + 1)); printf '  FAIL %s — rc=%s err=%s\n' "$server Q4 fail-loud" "$rc" "$err"
   fi
+
+  # Q4b: same, but CLAUDE_PLUGIN_ROOT genuinely unset (ZCode shape)
+  out="$(env -i PATH=/nonexistent HOME="$emptyhome" \
+    /bin/sh -c "$wrapper" 2>"$WORK/err")"; rc=$?
+  err="$(cat "$WORK/err")"
+  if [ "$rc" = 127 ] && printf '%s' "$err" | grep -q "uv tool install"; then
+    pass=$((pass + 1)); printf '  ok   %s\n' "$server Q4b fail-loud (unset)"
+  else
+    fail=$((fail + 1)); printf '  FAIL %s — rc=%s err=%s\n' "$server Q4b fail-loud (unset)" "$rc" "$err"
+  fi
+
+  # Q5: PATH and node_modules both present -> PATH face wins (SM-4)
+  out="$(env -i PATH="$fakepath" HOME="$emptyhome" CLAUDE_PLUGIN_ROOT="$proot" \
+    /bin/sh -c "$wrapper" 2>"$WORK/err")"; rc=$?
+  expect "$server Q5 PATH beats node_modules" "FAKE $bin HEAD=$fakepath" 0 "$out" "$rc" "$(cat "$WORK/err")"
 done
 
 printf 'wrapper regression: %d passed, %d failed\n' "$pass" "$fail"

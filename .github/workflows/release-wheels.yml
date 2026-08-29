@@ -183,6 +183,12 @@ jobs:
             unzip -j -o "$whl" '*.data/scripts/*' -d npm/code-reality-darwin-arm64/bin/
           done
           chmod +x npm/code-reality-darwin-arm64/bin/*
+          # Partial extraction or a wheel bin-name drift must not reach
+          # pack/publish (a missing pyrefly-lsp only fails soft at the
+          # consumer): assert all five landed, executable.
+          for b in code-reality code-reality-mcp pyrefly-index pyrefly-lsp code-reality-lsp-bridge; do
+            test -x "npm/code-reality-darwin-arm64/bin/$b" || { echo "missing bin: $b"; exit 1; }
+          done
       - name: Pack (dry-run list check, then real tarball)
         working-directory: npm/code-reality-darwin-arm64
         run: |

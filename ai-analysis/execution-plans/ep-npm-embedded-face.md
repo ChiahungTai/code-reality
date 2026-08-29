@@ -475,35 +475,61 @@ exit 127
   job id 與 artifact 名未變）、lsp-bridge 行號位移；EP 內版號字面
   與 action majors 已隨之更新。
 
-### 執行邊界（2026-08-29 裁決；同日帳號就位後解鎖修訂）
+### 執行結算（2026-08-29 deep-work；含 EOTP 後狀態修訂）
 
-**可執行（deep-work /implement＋/post-build）**：
-- S2 全部 repo 面：npm/ 套件資產、workflow npm-pack/npm-publish job、
-  版號 guard、`.gitignore` 兩條、S2-POC（x64 npm 本機驗 optionalDep
-  skip 語義；正向安裝以 `--os/--cpu` override 驗，不行則標註留 CI）、
-  本地組裝 tarball＋`npm pack --dry-run` 清單驗證。
-- **bootstrap `npm publish` 0.3.0**——帳號/2FA/`NPM_TOKEN` secret/本機
-  login 已就位並驗證（`npm whoami`=chiahungtai、token 建立
-  2026-08-29）。AUTH: user said 「授權 publish」（AskUserQuestion
-  選項原文，2026-08-29）。OTP 提示屬 2FA 正常流程。
-- S3 全部：wrapper 改寫（`.mcp.json`）、
-  `scripts/test-plugin-wrapper.sh` 四象限、dist 再生排除 node_modules、
-  版號三處 bump 0.3.0、**lockfile 生成**（publish 後 registry 可解析）
-  ＋**SM-1 真 server probe**（local marketplace 形態，S1 probe 方法：
-  來源 npm ci 重現 root parity＋fresh session 判讀）＋usage-gate
-  headless 驗證（第二 session 觀察）。
-- S4 除「usage-gate 對策定案句」外全部（該句等 interactive 手驗後
-  從「待驗證」改「定案」）。
-- 收尾鏈照 /post-build；commit 全 local——**push 未授權，留 user**。
+**已執行（證據）**：
+- S2 全部 repo 面：npm/ 三檔、workflow npm-pack/npm-publish（含
+  review F3 補的五 bin 完整性斷言）、版號 guard **雙向實測**
+  （一致 PASS／drift loud-fail）、`.gitignore` 三條（`node_modules/`
+  ＋`npm/*/bin/`＋`npm/*/*.tgz`）。
+- S2-POC 雙向：x64 npm＋arm64-only optionalDep → **skip 非 fail**
+  （SM-2 語義）；`--os=darwin --cpu=arm64` override → 五 bin 落地、
+  `.bin/` symlink 指 native binary 本體。
+- bootstrap 組裝：PyPI 0.3.0 三 wheels → 五 bin（Mach-O arm64 實證）
+  → tarball 35.2MB（`.agent-tmp/npm-bootstrap/bootstrap.sh` 可重現
+  路徑）。
+- **bootstrap publish：被 EOTP 擋下**——web-login token 需一次性
+  密碼；繞過 OTP 的 granular token 只存在 gh secret（不可讀）。
+  registry 實測 E404（未發布）。
+- S3：wrapper 改寫、`scripts/test-plugin-wrapper.sh`（四象限＋Q4b
+  unset＋Q5 PATH-beats-node_modules，**掛載** `crates/code-reality/
+  tests/plugin_wrapper.rs` 進 cargo test 唯一測試面——review F2）、
+  dist 排除、版號六處 0.3.0、**plugin.json schema 修復**
+  （skills/mcpServers 需 path-form——原裸名使 CC 2.1.251 fresh
+  install 全炸，`claude plugin validate` 綠）。
+- **SM-1 probe（file: staging 偏差形態）**：probe 副本以 file:
+  tarball＋override 旗標裝真 bin、剝離 PATH 強制 embedded face →
+  fresh session **雙真 server `Successfully connected`**（code-reality
+  673ms／lsp-bridge 1193ms，rmcp 3.1.4、hasTools:true）；第二 session
+  照樣連線——**S1 usage-gate 判讀修正為 spawn-failure backoff**
+  （成功連線不觸發）。registry 解析形態的 probe 留給 publish 後。
+- S4：plugin/README 雙面、AGENTS.md Capabilities（🟡 標注未完結）。
+- 驗證閘門：全量 `cargo test` rerun **exit 0**（43 test-result-ok、
+  零 FAILED；首跑單一失敗＝平行 session f82b274 記錄的 starvation
+  flake，隔離 32/32 綠＋本弧零 .rs 歸因）。
 
-**PENDING-user（解鎖後僅剩）**：
-1. interactive session usage-gate 手驗（deep-work 只能 headless 驗）
-   ——開一個互動 session 裝 plugin 叫一次工具即完成。
-2. push＋github marketplace 最後一哩（`claude plugin marketplace add
-   ChiahungTai/code-reality` 實裝驗證）。
-3. 首發後 token 輪替：granular 從 All packages 縮到只釘
-   `code-reality-darwin-arm64`＋更新 `NPM_TOKEN` secret（npmjs UI
-   操作；90 天效期到期換發同路徑）。
+**PENDING-user（依序）**：
+1. **bootstrap publish**（10 秒）：`npm publish
+   /Users/ctai/Github/code-reality/npm/code-reality-darwin-arm64/
+   code-reality-darwin-arm64-0.3.0.tgz --otp=<authenticator code>`
+   ——AUTH 已錄（「授權 publish」）；執行後 `npm view
+   code-reality-darwin-arm64` 應見 0.3.0。
+2. **lockfile＋registry probe**（publish 後）：`cd plugin && npm
+   install --package-lock-only --ignore-scripts` 提交 lockfile；
+   SM-1 probe 以 registry 形態（真 marketplace 安裝）複驗一次。
+3. interactive session 手驗（headless 已雙 session 實證；interactive
+   補最後一塊）。
+4. push＋github marketplace 最後一哩（`claude plugin marketplace add
+   ChiahungTai/code-reality` 實裝；含 GH environment `release-npm`
+   確認——workflow 首次 tag run 前須存在或可自動建立）。
+5. token 輪替：首發後 granular 縮 scope 到只釘
+   `code-reality-darwin-arm64`＋更新 `NPM_TOKEN`；**或評估遷移 OIDC
+   trusted publishing**（2025-07-31 GA——`id-token: write`＋npm 端
+   linked publisher，消除 90 天輪替義務；user 裁決）。
+
+**tree 紀律**：`scripts/lsp_answers.json` 是非本 EP 的未 commit 檔——
+不審不改不納入 commit；本 EP 相關 commit 只 add 指名檔案（EP、kanban
+卡、npm/、workflow、plugin/、scripts/、.gitignore、AGENTS.md）。
 
 **tree 紀律**：`scripts/lsp_answers.json` 是非本 EP 的未 commit 檔——
 不審不改不納入 commit；本 EP 相關 commit 只 add 指名檔案（EP、kanban
