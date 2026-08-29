@@ -34,10 +34,8 @@ fn normalize(hover: &str) -> String {
 
 #[test]
 fn rust_hover_roundtrip_vs_frozen_baseline() {
-    let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/ra_equivalence");
-    let baseline_raw =
-        std::fs::read_to_string(fixture_dir.join("ra_hover_baseline.json")).unwrap();
+    let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ra_equivalence");
+    let baseline_raw = std::fs::read_to_string(fixture_dir.join("ra_hover_baseline.json")).unwrap();
     let baseline: serde_json::Value = serde_json::from_str(&baseline_raw).unwrap();
 
     let session = Arc::new(LspSession::new(

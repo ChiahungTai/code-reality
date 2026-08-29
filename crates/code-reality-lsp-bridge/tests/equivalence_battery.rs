@@ -93,8 +93,7 @@ fn normalize(hover: &str) -> String {
 
 #[test]
 fn hover_parity_vs_pyright_baseline() {
-    let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/equivalence");
+    let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/equivalence");
     // Copy into a temp dir: the fixture must not sit inside the repo's
     // gitignore reach, and pyrefly must see it as a plain project dir.
     let tmp = tempfile::tempdir().unwrap();

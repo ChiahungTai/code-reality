@@ -33,7 +33,12 @@ fn strict_fixture() -> (tempfile::TempDir, PathBuf) {
 }
 
 fn session_at(dir: &std::path::Path) -> Arc<LspSession> {
-    Arc::new(LspSession::new(&backend_bin(), dir.to_path_buf(), 300, LangSpec::python()))
+    Arc::new(LspSession::new(
+        &backend_bin(),
+        dir.to_path_buf(),
+        300,
+        LangSpec::python(),
+    ))
 }
 
 // ---- S1: lifecycle -------------------------------------------------
@@ -200,7 +205,10 @@ fn edit_then_check_reflects_new_content() {
     let after = check_file_impl(&s, &file).unwrap();
     assert!(after.starts_with("count=2"), "got: {after}");
     assert!(after.contains("bad-return"), "new error missing: {after}");
-    assert!(!after.contains("8:13"), "stale pre-edit diagnostic served: {after}");
+    assert!(
+        !after.contains("8:13"),
+        "stale pre-edit diagnostic served: {after}"
+    );
 
     // Hover reflects the edited signature too (version-gated
     // convergence must not serve the pre-edit hover).
@@ -244,7 +252,11 @@ fn lru_evict_preserves_overlay_edits() {
         let uri = LspSession::file_uri(&sample);
         let ov = s.overlay.lock().unwrap().get(&sample).cloned();
         let ce = s.diag_cache.lock().unwrap().get(&uri).cloned();
-        format!("overlay={:?} cache={:?}", ov.map(|e| e.version), ce.map(|e| (e.version, e.diagnostics.len())))
+        format!(
+            "overlay={:?} cache={:?}",
+            ov.map(|e| e.version),
+            ce.map(|e| (e.version, e.diagnostics.len()))
+        )
     };
 
     // Re-check: overlay content (edited) — bad-return present, the
@@ -267,8 +279,135 @@ fn lru_evict_preserves_overlay_edits() {
         !out.contains("[WARN] not converged"),
         "still starved after the nudge retry: {out}"
     );
-    assert!(out.contains("bad-return"), "overlay edits lost ({dbg_state}): {out}");
-    assert!(!out.contains("8:13"), "served disk-state diagnostics: {out}");
+    assert!(
+        out.contains("bad-return"),
+        "overlay edits lost ({dbg_state}): {out}"
+    );
+    assert!(
+        !out.contains("8:13"),
+        "served disk-state diagnostics: {out}"
+    );
+}
+
+#[test]
+fn poisoned_cache_entry_does_not_converge() {
+    // T15 (SM-9): an eviction-style poisoned entry — version+1 EMPTY
+    // push, landed late (last_push PREDATES the mutation basis; the
+    // late-landing variant where the push postdates the basis is the
+    // declared-unfixed residual) — must NOT pass the fresh gate.
+    // Deterministic construction: the mutation is stamped directly on
+    // the overlay (no LSP traffic ⇒ no real push can race in), so the
+    // ONLY convergent path is the force_reopen'd real push — the
+    // poisoned count=0 can never be the answer.
+    let (dir, sample) = strict_fixture();
+    let s = Arc::new(LspSession::new(
+        &backend_bin(),
+        dir.path().to_path_buf(),
+        300,
+        {
+            let mut lang = LangSpec::python();
+            lang.slow_timeout_ms = 8_000; // half-window recovery at ~4s
+            lang
+        },
+    ));
+    let file = sample.to_string_lossy().to_string();
+    let before = check_file_impl(&s, &file).unwrap();
+    assert!(before.starts_with("count=2"));
+
+    // simulate a mutation whose push will never come: stamp the overlay
+    // directly (the seam dbg_state established; pub fields)
+    {
+        let mut ov = s.overlay.lock().unwrap();
+        let e = ov.get_mut(&sample).unwrap();
+        e.version += 1;
+        e.last_mutation = Some(std::time::Instant::now());
+    }
+    // overwrite the healthy cache entry with the poisoned eviction
+    // shape: version+1 (≥ overlay version — defeats version gates),
+    // EMPTY diagnostics, older than the fabricated basis
+    {
+        let uri = LspSession::file_uri(&sample);
+        let v = s.overlay.lock().unwrap().get(&sample).unwrap().version;
+        s.diag_cache.lock().unwrap().insert(
+            uri,
+            code_reality_lsp_bridge::session::DiagEntry {
+                version: Some(v + 1),
+                diagnostics: vec![],
+                last_push: std::time::Instant::now() - Duration::from_secs(1),
+            },
+        );
+    }
+    let out = check_file_impl(&s, &file).unwrap();
+    assert!(
+        !out.starts_with("count=0"),
+        "converged on the poisoned empty entry: {out}"
+    );
+    assert!(out.starts_with("count=2"), "real content missing: {out}");
+    assert!(
+        !out.contains("[WARN]"),
+        "should converge via recovery: {out}"
+    );
+}
+
+#[test]
+fn stalled_half_window_recovers_via_force_reopen() {
+    // T16 (SM-10): no push newer than the basis past the half-window ⇒
+    // stalled ⇒ force_reopen — time semantics only; the poisoned
+    // version+1 (which defeats any version comparison) does not
+    // interfere. Same deterministic fabrication as T15 (no LSP traffic
+    // ⇒ no racing real push). Observation seam: the reopened overlay
+    // entry is back at version 1 and the check stays under deadline.
+    let (dir, sample) = strict_fixture();
+    let s = Arc::new(LspSession::new(
+        &backend_bin(),
+        dir.path().to_path_buf(),
+        300,
+        {
+            let mut lang = LangSpec::python();
+            lang.slow_timeout_ms = 8_000;
+            lang
+        },
+    ));
+    let file = sample.to_string_lossy().to_string();
+    check_file_impl(&s, &file).unwrap(); // established: open + cached push
+    {
+        let mut ov = s.overlay.lock().unwrap();
+        let e = ov.get_mut(&sample).unwrap();
+        e.version += 1;
+        e.last_mutation = Some(std::time::Instant::now());
+    }
+    {
+        let uri = LspSession::file_uri(&sample);
+        let v = s.overlay.lock().unwrap().get(&sample).unwrap().version;
+        s.diag_cache.lock().unwrap().insert(
+            uri,
+            code_reality_lsp_bridge::session::DiagEntry {
+                version: Some(v + 1),
+                diagnostics: vec![],
+                last_push: std::time::Instant::now() - Duration::from_secs(1),
+            },
+        );
+    }
+    let start = std::time::Instant::now();
+    let out = check_file_impl(&s, &file).unwrap();
+    let elapsed = start.elapsed();
+    assert!(
+        out.starts_with("count=2"),
+        "recovery did not converge: {out}"
+    );
+    assert!(
+        !out.contains("[WARN]"),
+        "not converged within deadline: {out}"
+    );
+    assert!(
+        elapsed < Duration::from_millis(8_000),
+        "half-window recovery expected, burned {elapsed:?}"
+    );
+    assert_eq!(
+        s.overlay.lock().unwrap().get(&sample).unwrap().version,
+        1,
+        "force_reopen should have reset the overlay version"
+    );
 }
 
 // ---- review-fix regression pins (post-build findings) ---------------
@@ -316,7 +455,10 @@ fn busy_channel_does_not_break_other_file_convergence() {
 
     // A's answer comes straight from its cache entry, unpolluted by B.
     let a_again = check_file_impl(&s, &a).unwrap();
-    assert_eq!(a_first, a_again, "A's per-URI answer changed under B's storm");
+    assert_eq!(
+        a_first, a_again,
+        "A's per-URI answer changed under B's storm"
+    );
 }
 
 #[test]

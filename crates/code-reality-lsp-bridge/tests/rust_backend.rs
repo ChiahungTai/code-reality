@@ -90,7 +90,11 @@ fn rust_edit_then_check_native_diagnostics() {
         eprintln!(
             "[DEBUG] cache={:?} overlay_ver={:?}",
             cache.map(|e| (e.version, e.diagnostics.len())),
-            s.overlay.lock().unwrap().get(&framing_rs()).map(|e| e.version)
+            s.overlay
+                .lock()
+                .unwrap()
+                .get(&framing_rs())
+                .map(|e| e.version)
         );
     }
     assert!(!out.contains("[WARN]"), "should converge: {out}");
@@ -120,9 +124,8 @@ fn mixed_language_sessions_are_independent() {
     // interaction locks mean ra's load blocks nobody else.
     let rs = Arc::clone(&s_rs);
     let rs_file = framing_rs().to_string_lossy().to_string();
-    let handle = std::thread::spawn(move || {
-        hover_impl(&rs, &rs_file, READ_MSG.0, READ_MSG.1).unwrap()
-    });
+    let handle =
+        std::thread::spawn(move || hover_impl(&rs, &rs_file, READ_MSG.0, READ_MSG.1).unwrap());
     std::thread::sleep(Duration::from_millis(200)); // let the rs load start
     let t0 = Instant::now();
     let h_py = hover_impl(&s_py, &sample.to_string_lossy(), 3, 4).unwrap();
@@ -144,9 +147,18 @@ fn rust_backend_death_leaves_python_alive() {
     let b = bridge_at(dir.path());
     let (s_py, _) = b.session_for(&sample.to_string_lossy()).unwrap();
     let (s_rs, _) = b.session_for(&framing_rs().to_string_lossy()).unwrap();
-    let _ = hover_impl(&s_rs, &framing_rs().to_string_lossy(), READ_MSG.0, READ_MSG.1).unwrap();
+    let _ = hover_impl(
+        &s_rs,
+        &framing_rs().to_string_lossy(),
+        READ_MSG.0,
+        READ_MSG.1,
+    )
+    .unwrap();
     let pid = s_rs.backend_pid().expect("ra spawned");
-    let _ = std::process::Command::new("kill").arg("-9").arg(pid.to_string()).status();
+    let _ = std::process::Command::new("kill")
+        .arg("-9")
+        .arg(pid.to_string())
+        .status();
     for _ in 0..100 {
         if s_rs.is_dead() {
             break;
@@ -154,8 +166,13 @@ fn rust_backend_death_leaves_python_alive() {
         std::thread::sleep(Duration::from_millis(50));
     }
     assert!(s_rs.is_dead(), "ra death not detected");
-    let err = hover_impl(&s_rs, &framing_rs().to_string_lossy(), READ_MSG.0, READ_MSG.1)
-        .unwrap_err();
+    let err = hover_impl(
+        &s_rs,
+        &framing_rs().to_string_lossy(),
+        READ_MSG.0,
+        READ_MSG.1,
+    )
+    .unwrap_err();
     assert!(err.contains("died"), "got: {err}");
     // pyrefly unaffected.
     let h = hover_impl(&s_py, &sample.to_string_lossy(), 3, 4).unwrap();

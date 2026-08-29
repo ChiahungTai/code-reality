@@ -47,6 +47,13 @@ pub struct OverlayEntry {
     /// (mtime, size) of the disk file at the moment this content was
     /// sourced; used to detect out-of-band disk edits (SM-12).
     pub stamp: Option<(std::time::SystemTime, u64)>,
+    /// Instant of the last LSP mutation that produced this entry
+    /// (didOpen/didChange/force-reopen replay) — the freshness basis for
+    /// check_file's convergence gate. F1: stamped at EVERY mutation
+    /// origin on the session side, so the gate survives the caller
+    /// discarding the returned Instant (a nudge-path check used to run
+    /// with mutation_at=None and pass poisoned stale entries).
+    pub last_mutation: Option<Instant>,
 }
 
 /// Per-language backend profile: everything the generic LspSession
@@ -128,8 +135,26 @@ fn file_uri(path: &Path) -> String {
     let mut out = String::from("file://");
     for &b in s.as_bytes() {
         match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' | b'!'
-            | b'$' | b'&' | b'\'' | b'(' | b')' | b'*' | b'+' | b',' | b';' | b'=' | b':'
+            b'A'..=b'Z'
+            | b'a'..=b'z'
+            | b'0'..=b'9'
+            | b'-'
+            | b'_'
+            | b'.'
+            | b'~'
+            | b'/'
+            | b'!'
+            | b'$'
+            | b'&'
+            | b'\''
+            | b'('
+            | b')'
+            | b'*'
+            | b'+'
+            | b','
+            | b';'
+            | b'='
+            | b':'
             | b'@' => out.push(b as char),
             _ => out.push_str(&format!("%{b:02X}")),
         }
@@ -171,11 +196,7 @@ impl LspSession {
     /// Test hook: the backend child's pid (None before spawn).
     #[doc(hidden)]
     pub fn backend_pid(&self) -> Option<u32> {
-        self.backend
-            .lock()
-            .unwrap()
-            .as_ref()
-            .map(|b| b.child.id())
+        self.backend.lock().unwrap().as_ref().map(|b| b.child.id())
     }
 
     pub fn server_info(&self) -> String {
@@ -369,7 +390,9 @@ impl LspSession {
         let msg = json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
         {
             let mut g = self.backend.lock().unwrap();
-            let b = g.as_mut().ok_or_else(|| "backend not spawned".to_string())?;
+            let b = g
+                .as_mut()
+                .ok_or_else(|| "backend not spawned".to_string())?;
             write_message(&mut b.stdin, &msg).map_err(err_str)?;
         }
         let resp = rx
@@ -386,7 +409,9 @@ impl LspSession {
         let _i = self.interaction.lock().unwrap();
         self.check_alive()?;
         let mut g = self.backend.lock().unwrap();
-        let b = g.as_mut().ok_or_else(|| "backend not spawned".to_string())?;
+        let b = g
+            .as_mut()
+            .ok_or_else(|| "backend not spawned".to_string())?;
         let msg = json!({"jsonrpc": "2.0", "method": method, "params": params});
         write_message(&mut b.stdin, &msg).map_err(err_str)?;
         Ok(())
@@ -402,10 +427,7 @@ impl LspSession {
         {
             let mut g = self.backend.lock().unwrap();
             if let Some(b) = g.as_mut() {
-                let _ = write_message(
-                    &mut b.stdin,
-                    &json!({"jsonrpc": "2.0", "method": "exit"}),
-                );
+                let _ = write_message(&mut b.stdin, &json!({"jsonrpc": "2.0", "method": "exit"}));
             }
         }
         let deadline = Instant::now() + Duration::from_secs(10);
@@ -466,7 +488,10 @@ impl LspSession {
         match overlay.get(path).cloned() {
             None => {
                 let text = std::fs::read_to_string(path).map_err(|e| {
-                    format!("cannot read {}: {e} — the file must exist on disk (absolute path)", path.display())
+                    format!(
+                        "cannot read {}: {e} — the file must exist on disk (absolute path)",
+                        path.display()
+                    )
                 })?;
                 let stamp = Self::disk_stamp(path);
                 let t = Instant::now();
@@ -478,7 +503,12 @@ impl LspSession {
                 )?;
                 overlay.insert(
                     path.to_path_buf(),
-                    OverlayEntry { content: text, version: 1, stamp },
+                    OverlayEntry {
+                        content: text,
+                        version: 1,
+                        stamp,
+                        last_mutation: Some(t),
+                    },
                 );
                 open.push(path.to_path_buf());
                 mutation = Some(t);
@@ -488,15 +518,22 @@ impl LspSession {
                 if open.iter().any(|p| p == path) {
                     // Open on the server: pick up out-of-band disk edits.
                     if stamp.is_some() && stamp != entry.stamp {
-                        let text = std::fs::read_to_string(path).map_err(|e| {
-                            format!("cannot read {}: {e}", path.display())
-                        })?;
+                        let text = std::fs::read_to_string(path)
+                            .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
                         let v = entry.version + 1;
                         let t = Instant::now();
-                        self.notify("textDocument/didChange", full_change(&uri, v, &entry.content, &text))?;
+                        self.notify(
+                            "textDocument/didChange",
+                            full_change(&uri, v, &entry.content, &text),
+                        )?;
                         overlay.insert(
                             path.to_path_buf(),
-                            OverlayEntry { content: text, version: v, stamp },
+                            OverlayEntry {
+                                content: text,
+                                version: v,
+                                stamp,
+                                last_mutation: Some(t),
+                            },
                         );
                         mutation = Some(t);
                     }
@@ -512,7 +549,12 @@ impl LspSession {
                     )?;
                     overlay.insert(
                         path.to_path_buf(),
-                        OverlayEntry { content: entry.content, version: 1, stamp: entry.stamp },
+                        OverlayEntry {
+                            content: entry.content,
+                            version: 1,
+                            stamp: entry.stamp,
+                            last_mutation: Some(t),
+                        },
                     );
                     open.push(path.to_path_buf());
                     mutation = Some(t);
@@ -553,7 +595,12 @@ impl LspSession {
         )?;
         overlay.insert(
             path.to_path_buf(),
-            OverlayEntry { content: content.to_string(), version: v, stamp: entry.stamp },
+            OverlayEntry {
+                content: content.to_string(),
+                version: v,
+                stamp: entry.stamp,
+                last_mutation: Some(t),
+            },
         );
         Ok(t)
     }
@@ -566,7 +613,10 @@ impl LspSession {
     pub fn force_reopen(&self, path: &Path) -> Result<Instant, String> {
         let uri = file_uri(path);
         let t = Instant::now();
-        self.notify("textDocument/didClose", json!({"textDocument": {"uri": uri.clone()}}))?;
+        self.notify(
+            "textDocument/didClose",
+            json!({"textDocument": {"uri": uri.clone()}}),
+        )?;
         self.diag_cache.lock().unwrap().remove(&uri);
         let entry = self
             .overlay
@@ -584,7 +634,12 @@ impl LspSession {
         )?;
         self.overlay.lock().unwrap().insert(
             path.to_path_buf(),
-            OverlayEntry { content: entry.content, version: 1, stamp: entry.stamp },
+            OverlayEntry {
+                content: entry.content,
+                version: 1,
+                stamp: entry.stamp,
+                last_mutation: Some(t),
+            },
         );
         Ok(t)
     }

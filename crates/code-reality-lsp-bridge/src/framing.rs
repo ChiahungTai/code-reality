@@ -36,7 +36,10 @@ pub fn read_message<R: BufRead>(r: &mut R) -> std::io::Result<Option<Value>> {
         }
     }
     let len = content_length.ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::InvalidData, "missing Content-Length header")
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "missing Content-Length header",
+        )
     })?;
     // A corrupt header with a huge value must fail as a protocol error,
     // not attempt a giant allocation (F8).
