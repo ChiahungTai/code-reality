@@ -7,7 +7,9 @@
 # pin under test is extracted from the wrapper string itself, so a
 # bump that touches only one surface fails here.
 #
-# Lockstep guard v2: wrapper pin == plugin version == workspace version.
+# Lockstep guard v3: wrapper pin == plugin version == workspace version
+# == BOTH marketplace listings (root marketplace.json is what ZCode reads —
+# v2 missed it and the 0.5.0 release shipped with a stale market face).
 #
 #   T1 pin matches on PATH              -> direct exec, uv never invoked
 #   T2 stale bin on PATH + uv           -> bootstrap: --force <pkg>==<pin>
@@ -30,14 +32,17 @@ wrap="$(jq -r '.mcpServers["code-reality"].args | last' "$MCP")"
 wrapb="$(jq -r '.mcpServers["code-reality-lsp-bridge"].args | last' "$MCP")"
 [ -n "$wrap" ] && [ -n "$wrapb" ] || { echo "no wrapper strings in $MCP"; exit 1; }
 
-# Lockstep guard v2: pin (in the wrapper) == plugin version == workspace
+# Lockstep guard v3: pin (in the wrapper) == plugin version == workspace
+# == marketplace (ZCode) == marketplace (CC)
 pin="$(printf '%s' "$wrap" | sed -n 's/.*want=\([0-9][0-9.]*\).*/\1/p')"
 pver="$(jq -r .version "$ROOT/plugin/.claude-plugin/plugin.json")"
 wver="$(sed -n 's/^version = "\(.*\)"$/\1/p' "$ROOT/Cargo.toml" | head -1)"
-if [ -n "$pin" ] && [ "$pin" = "$pver" ] && [ "$pin" = "$wver" ]; then
-  pass=$((pass + 1)); printf '  ok   lockstep pin==plugin==workspace (%s)\n' "$pin"
+mver="$(jq -r '.plugins[0].version' "$ROOT/marketplace.json")"
+cver="$(jq -r '.plugins[0].version' "$ROOT/.claude-plugin/marketplace.json")"
+if [ -n "$pin" ] && [ "$pin" = "$pver" ] && [ "$pin" = "$wver" ] && [ "$pin" = "$mver" ] && [ "$pin" = "$cver" ]; then
+  pass=$((pass + 1)); printf '  ok   lockstep pin==plugin==workspace==marketplaces (%s)\n' "$pin"
 else
-  fail=$((fail + 1)); printf '  FAIL lockstep pin=%s plugin=%s workspace=%s\n' "$pin" "$pver" "$wver"
+  fail=$((fail + 1)); printf '  FAIL lockstep pin=%s plugin=%s workspace=%s mkt=%s cc=%s\n' "$pin" "$pver" "$wver" "$mver" "$cver"
 fi
 
 # mkfake <dir> <name> <ver>: bin whose every invocation prints "<ver>+rev"
