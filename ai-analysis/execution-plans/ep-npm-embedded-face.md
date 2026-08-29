@@ -508,24 +508,24 @@ exit 127
   零 FAILED；首跑單一失敗＝平行 session f82b274 記錄的 starvation
   flake，隔離 32/32 綠＋本弧零 .rs 歸因）。
 
-**PENDING-user（依序）**：
-1. **bootstrap publish**（10 秒）：`npm publish
-   /Users/ctai/Github/code-reality/npm/code-reality-darwin-arm64/
-   code-reality-darwin-arm64-0.3.0.tgz --otp=<authenticator code>`
-   ——AUTH 已錄（「授權 publish」）；執行後 `npm view
-   code-reality-darwin-arm64` 應見 0.3.0。
-2. **lockfile＋registry probe**（publish 後）：`cd plugin && npm
-   install --package-lock-only --ignore-scripts` 提交 lockfile；
-   SM-1 probe 以 registry 形態（真 marketplace 安裝）複驗一次。
+**PENDING-user（依序；①② 已於 2026-08-29 完成）**：
+1. ~~bootstrap publish~~ **DONE**——registry 實證 `npm view
+   code-reality-darwin-arm64` → 0.3.0。
+2. ~~lockfile＋registry probe~~ **DONE**——lockfile（registry 解析＋
+   integrity，與 tarball shasum 同源）已提交；registry 形態 probe：
+   CC marketplace add＋install 全程成功（CC 自身 npm ci 在 x64 npm
+   下乾淨 skip arm64 套件——SM-2 機器形態由 CC 親測）＋剝離 PATH
+   session 雙真 server `Successfully connected`（89ms／621ms）。
 3. interactive session 手驗（headless 已雙 session 實證；interactive
    補最後一塊）。
 4. push＋github marketplace 最後一哩（`claude plugin marketplace add
    ChiahungTai/code-reality` 實裝；含 GH environment `release-npm`
    確認——workflow 首次 tag run 前須存在或可自動建立）。
 5. token 輪替：首發後 granular 縮 scope 到只釘
-   `code-reality-darwin-arm64`＋更新 `NPM_TOKEN`；**或評估遷移 OIDC
-   trusted publishing**（2025-07-31 GA——`id-token: write`＋npm 端
-   linked publisher，消除 90 天輪替義務；user 裁決）。
+   `code-reality-darwin-arm64`＋更新 `NPM_TOKEN`；**或遷移 OIDC
+   trusted publishing**（npmjs 網頁 Settings→Trusted Publishing 掛
+   `ChiahungTai/code-reality` release workflow——消除 90 天輪替義務；
+   user 裁決）。
 
 **tree 紀律**：`scripts/lsp_answers.json` 是非本 EP 的未 commit 檔——
 不審不改不納入 commit；本 EP 相關 commit 只 add 指名檔案（EP、kanban
