@@ -200,7 +200,10 @@ on any new repo.
 - SCIP DEFs cover functions and methods only: struct/trait/type names
   are not resolvable query keys — query one of their methods instead.
   Python classes behave the same (class name → "查無 DEF"; use
-  `Module/Class#method()` keys — mosaic_alpha relay verified 2026-08-29).
+  `Module/Class#method()` keys — mosaic_alpha relay verified 2026-08-29);
+  caveat: dataclass-style classes (constructor call with no corpus
+  `__init__`) mint a pseudo-constructor DEF, so the bare class name DOES
+  resolve for those (B7b).
 - `delta_tour --out-dir` resolves against the executing cwd, not the
   `--repo` root — run it from the repo (or pass an absolute path), or
   the tours land in the caller's `.tours/delta/`.

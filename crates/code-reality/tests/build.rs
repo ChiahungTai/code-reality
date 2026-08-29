@@ -120,11 +120,7 @@ fn t3_run_usage_and_producer_validation() {
     assert!(o.stdout.contains("--producer"));
 }
 
-#[test]
-fn t4_python_leg_e2e_and_idempotent_rerun() {
-    let t = tempfile::tempdir().unwrap();
-    let repo = mkrepo(&t, &[("app.py", "def f():\n    return 1\n")]);
-    // stamp-meta needs a git HEAD — make the fixture a real (tiny) repo
+fn git_init(repo: &Path) {
     for args in [
         vec!["init", "-q"],
         vec!["-c", "user.email=t@t", "-c", "user.name=t", "add", "-A"],
@@ -132,11 +128,18 @@ fn t4_python_leg_e2e_and_idempotent_rerun() {
     ] {
         let st = std::process::Command::new("git")
             .args(&args)
-            .current_dir(&repo)
+            .current_dir(repo)
             .status()
             .unwrap();
         assert!(st.success(), "git {args:?} failed");
     }
+}
+
+#[test]
+fn t4_python_leg_e2e_and_idempotent_rerun() {
+    let t = tempfile::tempdir().unwrap();
+    let repo = mkrepo(&t, &[("app.py", "def f():\n    return 1\n")]);
+    git_init(&repo);
     let bindir = tempfile::tempdir().unwrap();
     fake_pyrefly(bindir.path());
     let roots = vec![bindir.path().to_path_buf()];
@@ -156,6 +159,10 @@ fn t4_python_leg_e2e_and_idempotent_rerun() {
     assert!(rep2.graph_rebuilt, "second run rebuilds");
     assert_eq!(rep2.indexes_created, 0);
     assert!(rep2.indexes_skipped > 0);
+    assert!(
+        code_reality::engine::meta_path(&slot_of(&repo)).exists(),
+        "meta survives idempotent rerun"
+    );
 }
 
 #[test]
@@ -173,6 +180,7 @@ fn t5_rust_empty_index_guard() {
 fn t6_rust_leg_e2e() {
     let t = tempfile::tempdir().unwrap();
     let repo = mkrepo(&t, &[("src/lib.rs", "pub fn f() {}\n")]);
+    git_init(&repo);
     let bindir = tempfile::tempdir().unwrap();
     fake_rust_analyzer(bindir.path(), false);
     let roots = vec![bindir.path().to_path_buf()];
@@ -180,6 +188,10 @@ fn t6_rust_leg_e2e() {
     assert_eq!(rep.face, "rust-face");
     assert!(rep.nodes > 0);
     assert!(rep.producers.iter().any(|p| p.contains("fake-ra")));
+    assert!(
+        code_reality::engine::meta_path(&slot_of(&repo)).exists(),
+        "rust path stamps too"
+    );
 }
 
 #[test]
@@ -255,6 +267,38 @@ fn t11_empty_repo_env_fail() {
     std::fs::write(t.path().join("notes.txt"), "no code").unwrap();
     let err = build_repo(t.path(), None, &[]).unwrap_err();
     assert!(matches!(err, BuildError::Env(ref m) if m.contains("找不到 .py 或 .rs")), "{err:?}");
+}
+
+#[test]
+fn t12_edge_dedupe_doubled_index_converges() {
+    // The NT cold-start transient shape: the same index concatenated
+    // twice (protobuf same-type merge stacks occurrences). Edge counts
+    // must converge — dedupe at the materialization boundary.
+    // rich_callers carries attributed refs (rich.scip is defs-only)
+    let single = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/rich_callers.scip"
+    ))
+    .unwrap();
+    let mk = |bytes: Vec<u8>| {
+        let t = tempfile::tempdir().unwrap();
+        let slot_dir = t.path().join(".code-reality/scip");
+        std::fs::create_dir_all(&slot_dir).unwrap();
+        let idx = slot_dir.join("index.scip");
+        std::fs::write(&idx, bytes).unwrap();
+        (t, idx)
+    };
+    let (t1, i1) = mk(single.clone());
+    let g1 = code_reality::graph_db::build_from_cache_at(t1.path(), &i1).unwrap();
+    let (t2, i2) = mk([single.clone(), single].concat());
+    let g2 = code_reality::graph_db::build_from_cache_at(t2.path(), &i2).unwrap();
+    assert!(g1.edges > 0);
+    assert_eq!(
+        g1.edges, g2.edges,
+        "doubled index must converge: single={} doubled={}",
+        g1.edges, g2.edges
+    );
+    assert_eq!(g1.nodes, g2.nodes);
 }
 
 fn graph_db_path(repo: &Path) -> PathBuf {

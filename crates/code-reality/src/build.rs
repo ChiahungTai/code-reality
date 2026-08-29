@@ -351,8 +351,15 @@ pub fn build_repo(
     let repo_str = resolved.display().to_string();
     let stamp = crate::cli::run(&["scip_refs", "--repo", &repo_str, "--stamp-meta"]);
     if stamp.exit_code != 0 {
-        rep.notes
-            .push("stamp-meta 失敗——[SRC] 缺 index 版本（手動補：scip_refs --stamp-meta）".to_string());
+        let why = stamp
+            .stderr
+            .lines()
+            .map(str::trim)
+            .find(|s| !s.is_empty())
+            .unwrap_or("原因不明");
+        rep.notes.push(format!(
+            "stamp-meta 失敗（{why}）——手動補：code-reality scip_refs --repo {repo_str} --stamp-meta"
+        ));
     }
 
     if matches!(kind, RepoKind::Mixed { .. }) && (run_py ^ run_rs) {

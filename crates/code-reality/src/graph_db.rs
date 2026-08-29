@@ -622,6 +622,14 @@ pub fn build_from_cache_at(repo: &Path, index_path: &Path) -> Result<BuildReport
     }
     let mut edges = 0usize;
     let mut calls_edges = 0usize;
+    // Construct immunity against producer-side occurrence duplication:
+    // the edge fact is the natural key (kind, caller, callee, file,
+    // line) — a repeated occurrence is the same edge, counted once.
+    // NT cold-start relay 2026-08-29 saw exactly-2x edge rows once
+    // (nodes constant, reruns converged; producers since proven
+    // byte-deterministic — unreproducible transient, deduped here
+    // regardless of cause).
+    let mut seen_edges = std::collections::HashSet::new();
     {
         let mut stmt = tx
             .prepare(
@@ -644,13 +652,21 @@ pub fn build_from_cache_at(repo: &Path, index_path: &Path) -> Result<BuildReport
                 .is_some_and(|t| call_marks.contains(&(rel.clone(), *line, t.to_string())));
             let class_match = class_segment(callee)
                 .is_some_and(|c| call_marks.contains(&(rel.clone(), *line, c.to_string())));
-            let kind = if tail_match || class_match {
-                calls_edges += 1;
-                "CALLS"
-            } else {
-                "REFERENCES"
-            };
+            let is_calls = tail_match || class_match;
+            let kind = if is_calls { "CALLS" } else { "REFERENCES" };
             let file_abs = resolve(&repo_abs.join(rel));
+            if !seen_edges.insert((
+                kind,
+                caller.clone(),
+                callee.clone(),
+                file_abs.display().to_string(),
+                *line,
+            )) {
+                continue;
+            }
+            if is_calls {
+                calls_edges += 1;
+            }
             stmt.execute(rusqlite::params![
                 caller,
                 callee,
