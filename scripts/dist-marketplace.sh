@@ -15,4 +15,7 @@ cp marketplace.json dist/marketplace/
 mkdir -p dist/marketplace/.claude-plugin
 cp .claude-plugin/marketplace.json dist/marketplace/.claude-plugin/
 cp -R plugin dist/marketplace/
+# The plugin dir may carry a local node_modules/ from lockfile testing —
+# never ship it into the slice (ZCode mirrors the whole directory).
+rm -rf dist/marketplace/plugin/node_modules
 echo "[OK] dist/marketplace ready ($(du -sh dist/marketplace | cut -f1)) — register this path as the directory marketplace, not the repo root"

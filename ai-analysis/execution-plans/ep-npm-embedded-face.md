@@ -21,11 +21,14 @@ plugin、零 uv」值得開路。**uv/PyPI 主通道不動**；本 EP 是 CC 消
 
 **S1 附帶發現（已吸收進 S2/S3 設計）**：
 
-1. **usage-gate**：`.claude.json > pluginUsage` 條目存在且
-   `usageCount: 0` ⇒ 後續 session **跳過**該 plugin 的 MCP 連線（雞生蛋：
-   首 session 未用工具→之後工具永不上線）。安裝後**首 session**（無
-   stats）eager connect；刪 stats 條目可恢復。headless 實證、interactive
-   未測。對策→S3。
+1. **spawn-failure backoff**（S1 原判讀「usage-gate」經 S3 probe 修正）：
+   plugin MCP server **hard spawn failure 後**，後續 session 跳過重試
+   （S1 run1 ENOENT→run2-4 跳過；刪 `pluginUsage` 條目可清除）。成功
+   連線則**每 session 穩定 eager connect**——S3 SM-1 probe 實證：
+   `usageCount: 0` 下第二 session 照樣 `Successfully connected`（雙
+   server）。雞生蛋風險降級：殘留風險＝「首 session 炸掉→環境修好
+   （如補裝 uv）→backoff 殘留」——對策：README 註記重裝 plugin 即
+   重置。
 2. **local-marketplace root 錯位**：directory-source 的
    `${CLAUDE_PLUGIN_ROOT}`＝**來源目錄**、CC npm ci 落 **cache**——probe
    以「來源目錄自行 npm ci」等價重現生產形態。github marketplace（生產
@@ -115,7 +118,7 @@ PyPI wheels 在線（審查時驗 0.2.0；複驗時三 dist 已 0.3.0——boots
 | SM-4 | 兩面並存（uv＋內嵌） | 使用者兩者都裝 | **PATH-first**：uv 面（可獨立升級）優先，node_modules 是零 uv 救援；優先序文件化；freshness WARN 照常（rev 嵌入與載體無關） | S3 | freshness face |
 | SM-5 | ZCode 使用者裝同 plugin | install | 無 node_modules（機制缺席）→ placeholder 展開為空→路徑不存在→graceful 落 PATH/fallback——**行為不變**；文檔明示兩家差異 | S3/S4 | 新增 UC |
 | SM-6 | bin/ 路線子驗證 | P1 probe | （已結算）Bash PATH 可見 ✅／MCP spawn 不可見 ❌——各自記錄，S3 不走 bin/ 面 | S1 ✅ | 新增 UC |
-| SM-7 | usage-gate 首 session | 裝完第一個 session 沒用到工具 | 後續 session MCP 靜默不上線（headless 實證）→ README 教「裝完先叫一次工具」＋S3 驗 interactive 行為 | S3 | 新增 UC |
+| SM-7 | spawn-failure backoff | 首 session server 炸掉（如 x64-npm 空 node_modules） | 後續 session 跳過重試（backoff）；環境修好後**重裝 plugin** 即重置——README 註記。成功連線則每 session 穩定連（S3 probe 雙 session 實證） | S3/S4 | 新增 UC |
 | SM-8 | 零 uv 機器上的 type face | lsp-bridge spawn pyrefly-lsp backend | wrapper 命中 node_modules 時 **prepend `node_modules/.bin` 進 child PATH** → backend 找到內嵌 pyrefly-lsp；rust-analyzer 維持 system dep（缺席則 lsp_status 報 unavailable＋指引） | S3 | 新增 UC |
 | SM-9 | npm 面使用 CLI 工具 | session 用 Bash 跑 `code-reality` CLI | **v1 邊界**：npm 面=MCP 工具面（查詢/審計）；CLI 面（graph_db build、snapshot、pyrefly-index 產製）歸 uv 主面——plugin/README 明示（不 ship bin/ symlink：ZCode 端 dangling symlink 有 shadow 風險） | S4 | 新增 UC |
 
