@@ -124,6 +124,19 @@ fn t3_run_usage_and_producer_validation() {
 fn t4_python_leg_e2e_and_idempotent_rerun() {
     let t = tempfile::tempdir().unwrap();
     let repo = mkrepo(&t, &[("app.py", "def f():\n    return 1\n")]);
+    // stamp-meta needs a git HEAD — make the fixture a real (tiny) repo
+    for args in [
+        vec!["init", "-q"],
+        vec!["-c", "user.email=t@t", "-c", "user.name=t", "add", "-A"],
+        vec!["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x"],
+    ] {
+        let st = std::process::Command::new("git")
+            .args(&args)
+            .current_dir(&repo)
+            .status()
+            .unwrap();
+        assert!(st.success(), "git {args:?} failed");
+    }
     let bindir = tempfile::tempdir().unwrap();
     fake_pyrefly(bindir.path());
     let roots = vec![bindir.path().to_path_buf()];
@@ -133,6 +146,11 @@ fn t4_python_leg_e2e_and_idempotent_rerun() {
     assert!(rep.nodes > 0, "nodes={}", rep.nodes);
     assert!(graph_db_path(&repo).exists());
     assert!(rep.producers.iter().any(|p| p.contains("fake-pyrefly")));
+    // umbrella stamps index provenance in-process (relay Finding B)
+    assert!(
+        code_reality::engine::meta_path(&slot_of(&repo)).exists(),
+        "index.scip.meta missing after build"
+    );
 
     let rep2 = build_repo(&repo, None, &roots).expect("rerun");
     assert!(rep2.graph_rebuilt, "second run rebuilds");

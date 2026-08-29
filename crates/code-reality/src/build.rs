@@ -344,6 +344,17 @@ pub fn build_repo(
         }
     }
 
+    // Stamp index provenance in-process — the one-shot face must not
+    // leave the [SRC] index-version guard half-blind (relay Finding B:
+    // every scip_refs query warned "index meta 未 stamp" after build).
+    // Non-fatal on failure: provenance, not core data.
+    let repo_str = resolved.display().to_string();
+    let stamp = crate::cli::run(&["scip_refs", "--repo", &repo_str, "--stamp-meta"]);
+    if stamp.exit_code != 0 {
+        rep.notes
+            .push("stamp-meta 失敗——[SRC] 缺 index 版本（手動補：scip_refs --stamp-meta）".to_string());
+    }
+
     if matches!(kind, RepoKind::Mixed { .. }) && (run_py ^ run_rs) {
         rep.notes.push(format!(
             "未索引：{}（--producer 切換）",
