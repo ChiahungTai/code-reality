@@ -1,13 +1,15 @@
 # EP — v1+ 圖引擎裁決弧（B1/B2）：SCIP×CRG 邊集互補、注入與引擎評估
 
-> Status: **active**（已入庫 `711d6e8`；S1 邊面形態裁決＝**(A) sidecar**——原 (a)
+> Status: **done（2026-08-29 歸檔；閉弧＝完成被吸收）**（已入庫 `711d6e8`；S1 邊面形態裁決＝**(A) sidecar**——原 (a)
 > 寫入之「下游立即受益」動機經雙審查否證，judge 委任改判 2026-08-26，user 可推翻；
 > S3 裁決完成＋user 門①②③全採納（2026-08-26）；**deep-work 全弧終結（同日）**：
 > 引擎 parity 子 EP（`_done/ep-v1plus-engine-parity.md`）S1-S10 全落地——含 S10
 > Leiden、S5-mapper union 整合（NT impact +2,544）、LSP document_symbols 面；
 > **S4 評估完成**＝引擎層退役 READY（`ai-analysis/reports/s4-crg-retirement-readiness.md`；
-> 剩 tree-sitter producer＋deferred embeddings＋ai-rules 消費端 cutover）；
-> S5 剩餘＝Python producer POC（scip-python）未做）
+> 消費端 cutover DONE 2026-08-26；embeddings＝S3 裁決 deferred；
+> tree-sitter producer 由 `_done/ep-pyrefly-native-producer.md` 承接——
+> scip-python 降為 fallback）；
+> S5 剩餘＝Python producer POC（scip-python）未做——同由 pyrefly producer EP 承接）
 > **EP Review（2026-08-26，雙獨立審查＋judge 覆核）**：🔴×1＋🟡×10 已回寫＋第二
 > 審查補遺 5 項入表（rows 12-16）；REFERENCES 語義 gate 已結（S1 裁決塊）；
 > verdict＝**可執行**（S1 邊面 sidecar／S2 節點面照舊／S3/S5 不變）。
