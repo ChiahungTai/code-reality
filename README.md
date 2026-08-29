@@ -114,7 +114,10 @@ Per-repo prerequisites for the query tools: a SCIP index
 (`rust-analyzer scip <repo>` → `<repo>/.code-reality/scip/index.scip`;
 Python repos use the Rust-native pyrefly producer —
 `cargo run --release -p pyrefly-producer --bin pyrefly-index -- --repo <repo>`
-emits the same slot, then `--stamp-meta`/`--build-cache` as usual; the
+emits the same slot, then `--stamp-meta`/`--build-cache` as usual
+(going straight to `graph_db build` after pyrefly-index alone is also
+safe — the write invalidates superseded sidecar artifacts, and the
+build fails loud on a cache db older than `index.scip`); the
 Node-based scip-python fork is the retained fallback, not the default
 face. All graph-reading
 tools (engine, audit, chain_tour, hub_refs/hazard, snapshot) read a
