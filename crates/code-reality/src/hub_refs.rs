@@ -165,6 +165,12 @@ pub fn resolve_qualified(symbol: &str, repo_root: &Path) -> Result<String, ToolO
             "graph.db 不存在（.code-reality/graph.db）——先跑 `code-reality graph_db build --repo <repo>`",
         ));
     };
+    // hazard-stage staleness guard (2026-08-29 battery): scip_refs faces
+    // carry [SRC] drift guards; hub_refs used to run a stale graph.db
+    // silently — same WARN face here
+    if let Some(w) = crate::graph_db::stale_head_warn(&db_path, repo_root) {
+        eprintln!("{w}");
+    }
     let profile = match load_profile(repo_root) {
         Ok(p) => p,
         Err(e) => return Err(ToolOutput::crash(e)),
@@ -204,6 +210,17 @@ pub fn resolve_qualified(symbol: &str, repo_root: &Path) -> Result<String, ToolO
     }
     if kept.is_empty() && symbol.contains("::") {
         // qualified passthrough — dangling/legacy keys still queryable
+        return Ok(symbol.to_string());
+    }
+    if kept.is_empty()
+        && !symbol.contains('.')
+        && crate::hazard::fs_resolve_class_file(symbol, repo_root, profile.as_ref()).is_some()
+    {
+        // pyrefly-graph regression guard (2026-08-29): a bare name that
+        // uniquely fs-defines a class passes through with zero static
+        // callers so the hazard safety net still runs — registry classes
+        // are never called directly, graph-invisibility is their normal
+        // state, and "symbol not found" would silently disable the net
         return Ok(symbol.to_string());
     }
     Err(ToolOutput {

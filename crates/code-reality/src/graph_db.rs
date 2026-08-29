@@ -369,6 +369,27 @@ fn stamp_snapshot_metadata(conn: &Connection, repo: &Path) {
     }
 }
 
+/// Staleness WARN face for graph.db consumers: the build-time
+/// `git_head_sha` stamp vs the repo's current HEAD — the same
+/// `[SRC]`-style drift guard scip_refs carries for its index. None when
+/// the db carries no stamp (legacy build) or the repo has no HEAD.
+pub fn stale_head_warn(db_path: &Path, repo_root: &Path) -> Option<String> {
+    let conn = crate::common::connect_ro(db_path).ok()?;
+    let stamped: String = conn
+        .query_row(
+            "SELECT value FROM metadata WHERE key = 'git_head_sha'",
+            [],
+            |r| r.get(0),
+        )
+        .ok()?;
+    let head = crate::common::git_rev_parse_head(repo_root).ok()?;
+    (stamped != head).then(|| {
+        format!(
+            "[WARN] graph.db 建於 {stamped}，repo HEAD 已前移至 {head}——查詢結果可能過期，重跑 `code-reality graph_db build --repo <repo>`"
+        )
+    })
+}
+
 fn now_ts() -> f64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

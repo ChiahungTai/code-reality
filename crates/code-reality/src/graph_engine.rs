@@ -2079,30 +2079,21 @@ fn risk_band(score: f64) -> &'static str {
 }
 
 fn task_suggestions(task: &str) -> Vec<&'static str> {
+    // tool names must match the MCP roster / graph_query ops — the
+    // 2026-08-29 battery caught dead names here (get_architecture_overview
+    // et al. resolved to nothing)
     let t = task.to_lowercase();
     let hit = |ws: &[&str]| ws.iter().any(|w| t.contains(w));
     if hit(&["review", "pr", "merge", "diff"]) {
-        vec!["detect_changes", "get_affected_flows", "get_review_context"]
+        vec!["detect_changes", "affected_flows", "review_context"]
     } else if hit(&["debug", "bug", "error", "fix"]) {
-        vec!["semantic_search_nodes", "query_graph", "get_flow"]
+        vec!["search", "symbols", "flows"]
     } else if hit(&["refactor", "rename", "dead", "clean"]) {
-        vec![
-            "refactor",
-            "find_large_functions",
-            "get_architecture_overview",
-        ]
+        vec!["detect_changes", "hub", "arch_overview"]
     } else if hit(&["onboard", "understand", "explore", "arch"]) {
-        vec![
-            "get_architecture_overview",
-            "list_communities",
-            "list_flows",
-        ]
+        vec!["arch_overview", "communities", "flows"]
     } else {
-        vec![
-            "detect_changes",
-            "semantic_search_nodes",
-            "get_architecture_overview",
-        ]
+        vec!["detect_changes", "search", "arch_overview"]
     }
 }
 
@@ -2260,7 +2251,7 @@ pub fn get_review_context(
             "source_snippets": snippets,
             "review_guidance": guidance,
         },
-        "next_tool_suggestions": ["detect_changes", "get_affected_flows", "semantic_search_nodes"],
+        "next_tool_suggestions": ["detect_changes", "affected_flows", "search"],
     }))
 }
 

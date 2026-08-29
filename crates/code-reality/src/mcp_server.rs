@@ -204,7 +204,10 @@ fn map_tool_output(out: crate::ToolOutput) -> Result<CallToolResult, McpError> {
     // Per-request isolation (SM-14): exit != 0 maps to an MCP tool error
     // (loud, per-request) — the daemon itself stays alive.
     if out.exit_code != 0 {
-        let mut text = String::new();
+        // WARN/FAIL faces print to stdout (e.g. "[WARN] 查無 DEF：<sym>") —
+        // an error text built from stderr alone surfaces as an empty
+        // reason (2026-08-29 battery)
+        let mut text = out.stdout;
         if !out.stderr.is_empty() {
             text.push_str("[STDERR]\n");
             text.push_str(&out.stderr);

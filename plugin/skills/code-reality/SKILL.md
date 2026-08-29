@@ -188,6 +188,17 @@ segment. Non-NT layouts crash (loud) by design and the reconciliation
 semantics are unverified for them — smoke first (small manual sample)
 on any new repo.
 
+## Query-shape notes
+
+- `search` works as a single keyword per query — multi-word queries
+  fall through to whole-phrase LIKE matching and typically return
+  nothing.
+- SCIP DEFs cover functions and methods only: struct/trait/type names
+  are not resolvable query keys — query one of their methods instead.
+- `delta_tour --out-dir` resolves against the executing cwd, not the
+  `--repo` root — run it from the repo (or pass an absolute path), or
+  the tours land in the caller's `.tours/delta/`.
+
 ## CLI surface (broader)
 
 The MCP face covers the SCIP family. The same binary carries the full

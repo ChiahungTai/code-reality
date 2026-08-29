@@ -742,3 +742,133 @@ fn resolve_qualified_dotted_producer_key_retries_qname_lookup() {
     let resolved = code_reality::hub_refs::resolve_qualified(&q, &repo).unwrap();
     assert_eq!(resolved, q, "producer qname resolves onto its symbol key");
 }
+
+// ---------- fs class-definition fallback (pyrefly no-Class-DEF regression) ----------
+
+fn repo_fn_only_graph(tag: &str) -> PathBuf {
+    // pyrefly-graph shape: every node Function, no class DEFs — a class
+    // name like DeltaCondition is graph-invisible end to end
+    let tmp = tempfile::tempdir().unwrap().keep();
+    let repo = std::fs::canonicalize(&tmp).unwrap().join(tag);
+    std::fs::create_dir_all(repo.join("conditions")).unwrap();
+    std::fs::create_dir_all(repo.join(".code-reality")).unwrap();
+    std::fs::write(
+        repo.join("conditions/delta.py"),
+        "class DeltaCondition:\n    pass\n",
+    )
+    .unwrap();
+    let fn_src = repo.join("conditions/other.py");
+    std::fs::write(&fn_src, "def unrelated(): pass\n").unwrap();
+    let abs = fn_src.to_string_lossy().into_owned();
+    let db = repo.join(".code-reality/graph.db");
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    spec.nodes.push(graph_db_fixture::NodeSeed {
+        name: "unrelated".into(),
+        parent: None,
+        qname: format!("{abs}::unrelated"),
+        file_path: abs.clone(),
+    });
+    spec.node_attrs.push((
+        format!("{abs}::unrelated"),
+        graph_db_fixture::NodeAttr {
+            kind: "Function",
+            language: "python",
+            is_test: 0,
+            community_id: None,
+        },
+    ));
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    repo
+}
+
+#[test]
+fn fs_fallback_restores_class_facts_and_registry_hazard() {
+    let repo = repo_fn_only_graph("fsfb");
+    let profile = Profile {
+        modules: vec![],
+        exclude: vec![".venv/".into()],
+        scan_roots: vec![],
+        hazard_registries: vec![HazardRegistry {
+            package_prefix: "conditions/".into(),
+            suffix: "Condition".into(),
+            register_fn: "auto_register".into(),
+            registry: "REGISTRY".into(),
+            evidence: String::new(),
+        }],
+    };
+    // graph-invisible class: facts would degrade to name-only without the
+    // filesystem fallback — rel_path and is_class must be restored
+    let f = symbol_facts("DeltaCondition", &repo, Some(&profile)).unwrap();
+    assert_eq!(f.rel_path.as_deref(), Some("conditions/delta.py"));
+    assert!(f.is_class);
+    assert_eq!(f.kind.as_deref(), Some("Class"));
+    // the registry rule (the M3 textbook safety net) fires again
+    let findings = resident_findings(&f, &profile.hazard_registries);
+    assert!(
+        findings.iter().any(|x| x.kind == "registry-auto-discovery"),
+        "registry-auto-discovery must fire for the fs-resolved class"
+    );
+    // and the hub_refs resolution passes through so the CLI reaches the
+    // hazard stage instead of exiting on "symbol not found"
+    let key = resolve_qualified("DeltaCondition", &repo).unwrap();
+    assert_eq!(key, "DeltaCondition");
+}
+
+#[test]
+fn fs_fallback_ambiguous_or_missing_stays_degraded() {
+    let repo = repo_fn_only_graph("fsamb");
+    // a second file defining the same class name -> ambiguity declines
+    std::fs::write(
+        repo.join("conditions/delta2.py"),
+        "class DeltaCondition:\n    pass\n",
+    )
+    .unwrap();
+    let profile = profile_fixture();
+    let f = symbol_facts("DeltaCondition", &repo, Some(&profile)).unwrap();
+    assert!(f.rel_path.is_none() && !f.is_class);
+    assert!(resolve_qualified("DeltaCondition", &repo).is_err());
+    // no definition anywhere -> unchanged degrade
+    let f2 = symbol_facts("Missing", &repo, Some(&profile)).unwrap();
+    assert!(f2.rel_path.is_none() && !f2.is_class);
+}
+
+#[test]
+fn stale_head_warn_faces() {
+    // no stamp / no git repo -> silent (legacy dbs never warn)
+    let repo = repo_fn_only_graph("stale0");
+    let db = repo.join(".code-reality/graph.db");
+    assert!(code_reality::graph_db::stale_head_warn(&db, &repo).is_none());
+    // a real HEAD + a foreign stamped sha -> WARN with both shas
+    assert!(std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(&repo)
+        .status()
+        .unwrap()
+        .success());
+    assert!(std::process::Command::new("git")
+        .args([
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "x",
+            "-q"
+        ])
+        .current_dir(&repo)
+        .status()
+        .unwrap()
+        .success());
+    let conn = rusqlite::Connection::open(&db).unwrap();
+    conn.execute(
+        "INSERT OR REPLACE INTO metadata (key, value) VALUES ('git_head_sha', 'deadbeef')",
+        [],
+    )
+    .unwrap();
+    drop(conn);
+    let w = code_reality::graph_db::stale_head_warn(&db, &repo).unwrap();
+    assert!(w.starts_with("[WARN]"), "{w}");
+    assert!(w.contains("deadbeef"), "{w}");
+}

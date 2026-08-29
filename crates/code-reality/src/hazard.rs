@@ -596,6 +596,28 @@ pub fn symbol_facts(
         }
     }
     if pairs.len() != 1 {
+        // producers without class DEFs (pyrefly SCIP, 2026-08-29 regression)
+        // leave class names graph-invisible, silently disabling every
+        // class-shaped hazard rule — fall back to a unique filesystem
+        // `class <name>` definition before degrading. Ambiguity (multiple
+        // graph nodes) still degrades: the graph knows the symbol there.
+        if pairs.is_empty() {
+            // fires for ANY graph-invisible name, not only class queries:
+            // a function whose bare name coincides with a unique `class`
+            // elsewhere would adopt class facts — accepted (empty pairs
+            // means the graph knows nothing; the name coincidence is
+            // rare and the AST parse still grounds the facts)
+            if let Some(rel) = fs_resolve_class_file(cls_name, repo_root, profile) {
+                let source = std::fs::read_to_string(repo_root.join(&rel)).unwrap_or_default();
+                let mut parsed = parse_symbol_facts(&source, cls_name);
+                if parsed.is_class {
+                    parsed.rel_path = Some(rel.clone());
+                    parsed.module = Some(rel.trim_end_matches(".py").replace('/', "."));
+                    parsed.kind = Some("Class".to_string());
+                    return Ok(parsed);
+                }
+            }
+        }
         return Ok(facts);
     }
     let (_, rel, kind) = pairs.pop().unwrap();
@@ -693,5 +715,36 @@ pub fn make_rg_runner(repo_root: &Path) -> impl Fn(&[&str]) -> Result<Vec<RgLine
             }
         }
         Ok(lines)
+    }
+}
+
+/// Filesystem fallback: the single non-test, non-excluded `.py` file
+/// whose source declares `class <name>`. Zero or multiple matches →
+/// None (caller degrades). Grounds class-shaped hazard rules when the
+/// graph has no node for the name (pyrefly SCIP carries no class DEFs,
+/// 2026-08-29 regression: registry classes are never called directly,
+/// so they are exactly the graph-invisible queries).
+pub fn fs_resolve_class_file(
+    cls_name: &str,
+    repo_root: &Path,
+    profile: Option<&Profile>,
+) -> Option<String> {
+    let rg = make_rg_runner(repo_root);
+    let pattern = format!(r"^\s*class {}\b", regex::escape(cls_name));
+    let lines = rg(&[&pattern]).ok()?;
+    let mut files: Vec<String> = lines
+        .iter()
+        .map(|ln| ln.split(':').next().unwrap_or("").to_string())
+        .filter(|f| f.ends_with(".py") && !f.starts_with("tests/"))
+        .collect();
+    files.sort();
+    files.dedup();
+    let mut kept: Vec<String> = files
+        .into_iter()
+        .filter(|rel| !is_excluded(rel, profile))
+        .collect();
+    match kept.len() {
+        1 => kept.pop(),
+        _ => None,
     }
 }

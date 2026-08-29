@@ -796,7 +796,7 @@ fn minimal_context_envelope() {
     assert!(out["summary"].as_str().unwrap().contains("Risk:"));
     assert_eq!(
         out["next_tool_suggestions"],
-        serde_json::json!(["detect_changes", "get_affected_flows", "get_review_context"])
+        serde_json::json!(["detect_changes", "affected_flows", "review_context"])
     );
 }
 
