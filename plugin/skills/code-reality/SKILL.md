@@ -213,5 +213,8 @@ graph_query|graph_db> --repo <root>`. (Diff consumption runs through
 `delta_tour` — the transition CLI retired; snapshot sidecar pairs feed
 delta_tour directly.)
 
-Install/upgrade: `cargo install --path <this-repo>/crates/code-reality`.
+Install (main face): `uv tool install code-reality` (plus
+pyrefly-producer and code-reality-lsp-bridge — or let the plugin's
+MCP wrapper bootstrap all three on first session). Developer face:
+`cargo install --path <this-repo>/crates/code-reality`.
 Full docs: the repo README.
