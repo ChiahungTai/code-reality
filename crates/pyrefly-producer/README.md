@@ -6,7 +6,7 @@ emitting in-repo SCIP indexes (`<repo>/.code-reality/scip/`), plus `pyrefly-lsp`
 hosted as a stdio language server (the Python backend of the
 code-reality-lsp-bridge type face).
 
-Ships two binaries: `pyrefly-index` (index producer → sidecar SCIP
+Ships three binaries: `pyrefly-index` (index producer → sidecar SCIP
 slot; invalidates superseded sidecar artifacts on write) and
 `pyrefly-lsp` (LSP host). Byte-deterministic output; the scip-python
 fork remains only as a retained fallback.

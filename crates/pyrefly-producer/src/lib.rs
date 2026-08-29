@@ -55,20 +55,26 @@ pub fn report_stale_binary() {
 /// Emit a SCIP index for `repo_root` into its sidecar slot (or `out`).
 pub fn emit(repo_root: &Path, out: Option<&Path>) -> Result<EmitReport, String> {
     let t0 = Instant::now();
+    // Canonicalize before anything: the engine reports ABSOLUTE module
+    // paths, so a relative --repo makes every corpus strip_prefix fail
+    // and silently drops all cross-module refs to "external" (found via
+    // the projected-graph EP fixture work, 2026-08-29).
+    let repo_root = std::fs::canonicalize(repo_root)
+        .map_err(|e| format!("repo {} 無效：{e}", repo_root.display()))?;
     let mut files = Vec::new();
-    collect_py_files(repo_root, &mut files);
+    collect_py_files(&repo_root, &mut files);
     if files.is_empty() {
         return Err(format!("no .py files under {}", repo_root.display()));
     }
-    let (project, version) = project_identity(repo_root);
+    let (project, version) = project_identity(&repo_root);
     let disc = symbol::discriminator(&project, &version);
 
-    let driven = api::drive(repo_root, files)?;
+    let driven = api::drive(&repo_root, files)?;
 
     let index_path = match out {
         Some(p) => p.to_path_buf(),
         None => {
-            let p = code_reality::engine::default_index_path(repo_root)?;
+            let p = code_reality::engine::default_index_path(&repo_root)?;
             // The default slot lives in the repo's data dir — make the
             // dir self-ignoring on first write.
             let data_root = p
@@ -109,7 +115,7 @@ pub fn emit(repo_root: &Path, out: Option<&Path>) -> Result<EmitReport, String> 
         for c in &m.calls {
             let (kept, _collapsed) = symbol::collapse_dunder(&c.targets);
             let (targets, _dropped) =
-                mint_targets(&kept, &disc, repo_root, &def_nodes_by_path, true);
+                mint_targets(&kept, &disc, &repo_root, &def_nodes_by_path, true);
             if targets
                 .iter()
                 .any(|t| t.kind == walk::DefKind::Function && t.name == "__init__")
@@ -158,7 +164,7 @@ pub fn emit(repo_root: &Path, out: Option<&Path>) -> Result<EmitReport, String> 
             let (kept, collapsed) = symbol::collapse_dunder(&r.targets);
             report.collapsed_dunder_pairs += collapsed;
             let (targets, dropped) =
-                mint_targets(&kept, &disc, repo_root, &def_nodes_by_path, false);
+                mint_targets(&kept, &disc, &repo_root, &def_nodes_by_path, false);
             report.dropped_external_targets += dropped.external;
             report.dropped_local_bindings += dropped.local_binding;
             report.dropped_unchained += dropped.unchained;
@@ -171,7 +177,7 @@ pub fn emit(repo_root: &Path, out: Option<&Path>) -> Result<EmitReport, String> 
             let (kept, collapsed) = symbol::collapse_dunder(&c.targets);
             report.collapsed_dunder_pairs += collapsed;
             let (targets, dropped) =
-                mint_targets(&kept, &disc, repo_root, &def_nodes_by_path, true);
+                mint_targets(&kept, &disc, &repo_root, &def_nodes_by_path, true);
             report.dropped_external_targets += dropped.external;
             report.dropped_local_bindings += dropped.local_binding;
             report.dropped_unchained += dropped.unchained;
