@@ -13,7 +13,10 @@ fn rev_mismatch_table() {
     // same commit: abbreviated embedded prefixes the full head hash
     assert!(!code_reality::freshness::rev_mismatch("2442692", HEAD));
     // dirty install is not a stale one
-    assert!(!code_reality::freshness::rev_mismatch("2442692-dirty", HEAD));
+    assert!(!code_reality::freshness::rev_mismatch(
+        "2442692-dirty",
+        HEAD
+    ));
     // abbreviation-length drift (8-char embed of the same commit)
     assert!(!code_reality::freshness::rev_mismatch("24426925", HEAD));
     // different commit
@@ -39,10 +42,7 @@ fn umbrella_version_face_carries_rev() {
             || line.starts_with(concat!(env!("CARGO_PKG_VERSION"), "+")),
         "pkg or pkg+rev face (git-less builds fall back to pkg-only): {line}"
     );
-    assert!(
-        !line.contains(' '),
-        "no spaces in the version face: {line}"
-    );
+    assert!(!line.contains(' '), "no spaces in the version face: {line}");
 }
 
 #[test]
@@ -63,10 +63,7 @@ fn mcp_version_face_carries_rev() {
             || line.starts_with(concat!(env!("CARGO_PKG_VERSION"), "+")),
         "pkg or pkg+rev face (git-less builds fall back to pkg-only): {line}"
     );
-    assert!(
-        !line.contains(' '),
-        "no spaces in the version face: {line}"
-    );
+    assert!(!line.contains(' '), "no spaces in the version face: {line}");
 }
 
 #[test]
