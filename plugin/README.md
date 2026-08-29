@@ -13,25 +13,48 @@ daemon) and the usage skill:
 
 ## Prerequisites (the binaries)
 
-Prebuilt wheels — consumer path, no Rust toolchain:
+Three acquisition faces; the MCP servers resolve them through a
+candidate chain (PATH → the plugin's `node_modules/.bin` →
+`~/.local/bin` → `~/.cargo/bin` → fail-loud guidance), so any face
+works and better-installed faces win:
 
-```
-uv tool install code-reality              # code-reality + code-reality-mcp
-uv tool install pyrefly-producer          # pyrefly-index + pyrefly-lsp (Python backend)
-uv tool install code-reality-lsp-bridge   # code-reality-lsp-bridge
-rustup component add rust-analyzer        # Rust backend — system dependency, ships in no wheel
-```
+1. **Claude Code plugin (embedded face, zero uv)** — the plugin ships a
+   `package.json` whose `optionalDependencies` pull
+   `code-reality-darwin-arm64` from npm. On install Claude Code runs
+   `npm ci` and the five binaries land in the plugin's
+   `node_modules/.bin` — no uv, no Rust toolchain. **macOS arm64 with
+   an arm64 npm only** (on an x64 npm — e.g. Rosetta Homebrew node —
+   npm skips the package and the chain falls through to the faces
+   below). Both distribution faces (npm and PyPI wheels) are macOS
+   arm64 only.
+2. **PyPI wheels (main face)** — consumer path, no Rust toolchain,
+   works everywhere the plugin runs (required on ZCode, which has no
+   npm-install mechanism):
 
-or build from a checkout of
-https://github.com/ChiahungTai/code-reality (developer face — the
-first three put their bins on PATH; missing backends surface as loud
-tool errors with install guidance):
+   ```
+   uv tool install code-reality              # code-reality + code-reality-mcp
+   uv tool install pyrefly-producer          # pyrefly-index + pyrefly-lsp (Python backend)
+   uv tool install code-reality-lsp-bridge   # code-reality-lsp-bridge
+   rustup component add rust-analyzer        # Rust backend — system dependency, ships in no wheel
+   ```
 
-```
-cargo install --path ~/Github/code-reality/crates/code-reality
-cargo install --path ~/Github/code-reality/crates/pyrefly-producer
-cargo install --path ~/Github/code-reality/crates/code-reality-lsp-bridge
-```
+   The embedded face covers the MCP tool surface; CLI-heavy workflows
+   (`graph_db build`, `snapshot`, `pyrefly-index` production) stay on
+   this face.
+3. **cargo (developer face)** — build from a checkout of
+   https://github.com/ChiahungTai/code-reality (puts bins on PATH;
+   missing backends surface as loud tool errors with install guidance):
+
+   ```
+   cargo install --path ~/Github/code-reality/crates/code-reality
+   cargo install --path ~/Github/code-reality/crates/pyrefly-producer
+   cargo install --path ~/Github/code-reality/crates/code-reality-lsp-bridge
+   ```
+
+If a server failed to start right after install and you have since
+fixed the environment (e.g. installed the uv face), reinstall the
+plugin — Claude Code backs off retrying servers that failed to spawn,
+and a reinstall resets that.
 
 Freshness: `--version` on any bin prints `<pkg>+<git rev>`; when a CR
 checkout is present on the machine, invocations warn once on stderr if
