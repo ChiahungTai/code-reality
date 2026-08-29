@@ -24,6 +24,13 @@ poc/**/target/
 # Local marketplace slice (regenerable via scripts/dist-marketplace.sh)
 dist/
 
+# npm embedded face: local lockfile testing in plugin/, and binaries
+# assembled from wheels (npm/*/bin/ is CI/bootstrap-generated, never
+# committed — the repo carries only package.json/README/LICENSE)
+node_modules/
+npm/*/bin/
+npm/*/*.tgz
+
 # v1+ S4 self-owned graph db (dogfood)
 .code-reality/
 
