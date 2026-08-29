@@ -73,7 +73,7 @@ exposes no transition tool (`mcp_server.rs:10` doc comment only).
 | F4-2 | ℹ️ 提醒 | S2 sidecar 清理 | 外部 repo（NT、ai-rules）退化 sidecar 未在清單也未明示 out of scope | L4 實跑順手刪同 repo 退化檔（跨 repo 不代刪） | implemented |
 | F4-3 | ℹ️ 提醒 | S2 文檔清單 | `common.rs:15-16` EDGE_KINDS doc comment 的「projection filter in snapshot」半句 S2 後過時 | S2 要點 4 補此項 | implemented |
 | F1-3 | ℹ️ 提醒 | T-matrix | 兩個退化 pair 相鄰測試未列冊 | 增列 T14（不動＋理由） | implemented |
-| F2-1 | ℹ️ 提醒 | EP 語言 | EP 中英混合與「全英」裁決表述張力（root AGENTS.md English scope 未含 ai-analysis；既有 EP 慣例中文主體） | user 裁決 ai-analysis/ 語言豁免與否 | needs-confirmation |
+| F2-1 | ℹ️ 提醒 | EP 語言 | EP 中英混合與「全英」裁決表述張力（root AGENTS.md English scope 未含 ai-analysis；既有 EP 慣例中文主體） | user 裁決（2026-08-29）：**ai-analysis/（含 .kanban/）豁免全英**——內部不公開工作檔，中文主體為慣例；已回寫 root AGENTS.md 語言條款 | implemented |
 
 ## UC 盤點
 

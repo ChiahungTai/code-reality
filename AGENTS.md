@@ -11,14 +11,18 @@ in `_done/`.
 
 **Repo facts belong to each repo** — the scanned repo's `.code-reality.toml`
 profile owns module/exclusion/registry knowledge; the tool layer embeds no
-repo-specific special cases. Tool semantics / when-to-run truth source:
-ai-rules `skills/code-reality/SKILL.md` (deployed via symlink to four
+repo-specific special cases. Tool facts & pitfalls:
+`plugin/skills/code-reality/SKILL.md` (versioned with the plugin,
+standalone-consumer face); wiring / when-to-run: ai-rules
+`skills/code-reality/SKILL.md` (deployed via symlink to four
 harnesses).
 
 This repo is public-facing (open source, remote GitHub) — **all authored
 content is English**: code comments, docstrings, README, AGENTS.md, commit
 messages. (Chinese OUTPUT strings are the frozen CLI byte-parity face,
-preserved verbatim.)
+preserved verbatim. Exempt per user adjudication 2026-08-29: `ai-analysis/`
+— EPs, reports — and `.kanban/` are internal non-published working docs;
+Chinese body is the convention there.)
 
 ## Usage (from any repo cwd)
 
@@ -56,8 +60,10 @@ via `code-reality sidecar_migrate --repo <repo>`.
   (engine/callers/cache/fndefs/common/profile/argparse + graph/tour/boundary/
   hazard families + sidecar_migrate + mcp_server), exit-semantics table,
   parity history
-- Tool semantics: ai-rules `skills/code-reality/SKILL.md` (the cross-repo
-  truth source — this repo no longer duplicates it)
+- Tool semantics split: standalone tool facts & pitfalls live in
+  `plugin/skills/code-reality/SKILL.md` (versioned with the plugin —
+  carries the drift-discipline header); consumer-ecosystem wiring
+  ("when to run") stays in ai-rules `skills/code-reality/SKILL.md`
 
 ## Capabilities
 
