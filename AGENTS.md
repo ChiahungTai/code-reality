@@ -58,7 +58,7 @@ via `code-reality sidecar_migrate --repo <repo>`.
 
 - [crates/AGENTS.md](crates/AGENTS.md) — the Rust carrier: lib layering
   (engine/callers/cache/fndefs/common/profile/argparse + graph/tour/boundary/
-  hazard families + sidecar_migrate + mcp_server), exit-semantics table,
+  hazard families + sidecar_migrate + build + mcp_server), exit-semantics table,
   parity history
 - Tool semantics split: standalone tool facts & pitfalls live in
   `plugin/skills/code-reality/SKILL.md` (versioned with the plugin —
@@ -87,6 +87,7 @@ via `code-reality sidecar_migrate --repo <repo>`.
 | PyPI platform-wheel distribution (cargo-free consumer install) | `uv tool install code-reality` / `uv tool install pyrefly-producer` / `uv tool install code-reality-lsp-bridge` — wheels on PyPI (macOS arm64; v0.2.0 first release 2026-08-28); release path: `.github/workflows/release-wheels.yml` on `v*` tags via trusted publishing (three per-dist GitHub environments). One-shot use: `uvx code-reality <tool> ...` where dist name = bin name; the producer dist needs `uvx --from pyrefly-producer <bin>`. rust-analyzer stays a system dependency (`rustup component add rust-analyzer`); `lsp_status` reports missing backends as `state=unavailable` with install guidance. **Single binary layer** — the npm platform-package face is retired (2026-08-29; registry entry frozen at 0.3.1, deprecation pending) and the plugin wrapper bootstraps the exact plugin-pinned version from PyPI (row below); the wrapper test enforces pin == plugin == workspace version | ✅ |
 | First-session uv bootstrap (both harnesses; npm embedded face retired) | `plugin/.mcp.json` spawn wrapper: prefix-compares the bin's `--version` (`<ver>+<rev>`) against the plugin pin and, when missing/stale, runs `uv tool install --force code-reality==<pin>` for all three dists (five bins land in `~/.local/bin`) then execs — MCP and CLI both track the plugin's pinned release; `CODE_REALITY_BOOTSTRAP=off` for dev checkouts; no uv → loud 127 + guidance, with the retired embedded `node_modules` as a deprecation-grace rescue; the lsp-bridge wrapper pure-resolves with a bounded first-session wait for the twin bootstrap. Supersedes the npm face & the a1bce6b wait-for-parity stance (2026-08-29: npm face was CC-only + darwin-arm64-only + a second-registry lockstep burden, agent-verified; npm package frozen at 0.3.1, `npm deprecate` pending) | ✅ |
 | Unified in-repo data plane (sidecar home retired) | default slots `<repo>/.code-reality/{scip,boundary,snapshots}/` resolved by `engine::default_index_path` / the `default_out_dir` family; the data dir self-writes a single-`*` `.gitignore` (zero consumer gitignore setup); legacy `~/.mosaic/code-reality/` slots migrate one-shot via `code-reality sidecar_migrate --repo <repo>` (retired 2026-08-29; five repos migrated byte-identical) | ✅ |
+| 新 repo 數據面一鍵準備（build 傘形） | `code-reality build --repo <repo> [--producer rust\|python] [--json]` — 偵測語言面 → spawn producer（`pyrefly-index`／`rust-analyzer scip <repo-dir>`＋`current_dir` toolchain pin；<128B 空索引守衛擋 Cargo.toml 形式靜默空產）→ in-process `graph_db build`＋`ensure_indexes`；**mixed repo 兩腿 cat-merge**（protobuf 同型訊息串接＝合法合併——單一 graph 雙語言可查，POC＋自倉 L4 實證）；env 類錯 `fail(2)`／graph 核心 `crash(1)`；fake-bin 注入式整合測試（11 場景）＋dogfood 三標的（ai-rules python 面／自倉混合合一 1011 nodes／NT 混合 66,820 nodes 雙語言合一） | ✅ |
 
 ## Tests
 

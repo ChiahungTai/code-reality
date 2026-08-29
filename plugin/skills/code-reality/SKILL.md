@@ -44,6 +44,10 @@ Responses embed `[SRC]` provenance lines (index version/commit) and a
 
 ### Python repos (pyrefly producer)
 
+- One-shot: `code-reality build --repo <repo>` runs the whole chain
+  (detect → producer → `graph_db build` → `ensure_indexes`); mixed
+  repos run both producers and cat-merge the indexes into one
+  dual-language graph
 - Generate the same slot with the Rust-native producer: `cargo run
   --release -p pyrefly-producer --bin pyrefly-index -- --repo <repo>`
   (no Node.js, no venv — bundled typeshed), then `code-reality

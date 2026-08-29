@@ -110,21 +110,25 @@ An HTTP resident mode also exists (`code-reality-mcp`, port 8200,
 launchd plist in `launchd/`) for multi-harness sharing on one machine —
 not needed for the plugin path.
 
-Per-repo prerequisites for the query tools: a SCIP index
-(`rust-analyzer scip <repo>` → `<repo>/.code-reality/scip/index.scip`;
-Python repos use the Rust-native pyrefly producer —
-`cargo run --release -p pyrefly-producer --bin pyrefly-index -- --repo <repo>`
-emits the same slot, then `--stamp-meta`/`--build-cache` as usual
-(going straight to `graph_db build` after pyrefly-index alone is also
-safe — the write invalidates superseded sidecar artifacts, and the
-build fails loud on a cache db older than `index.scip`); the
-Node-based scip-python fork is the retained fallback, not the default
-face. All graph-reading
-tools (engine, audit, chain_tour, hub_refs/hazard, snapshot) read a
-self-owned db at `<repo>/.code-reality/graph.db` — produce it with
-`code-reality graph_db build --repo <repo>` (any producer cache); the
-refresh chain is purely producer-side (the CRG-era `.code-review-graph/`
-import face was fully removed with the W5 legacy-db cleanup).
+Per-repo prerequisites for the query tools: run
+`code-reality build --repo <repo>` — it detects the language face
+(.py/.rs), spawns the matching producer (pyrefly-index /
+`rust-analyzer scip <repo-dir>`), then runs `graph_db build` +
+`ensure_indexes` in-process. Mixed repos run BOTH producers and
+cat-merge the two SCIP indexes into one slot — a single graph serves
+both languages. `--producer rust|python` overrides the detection.
+Manual chain (equivalent, for debugging): `rust-analyzer scip <repo>`
+or `pyrefly-index --repo <repo>` →
+(`code-reality scip_refs --stamp-meta`/`--build-cache` optional
+accelerators — going straight to `graph_db build` after pyrefly-index
+alone is safe: the write invalidates superseded sidecar artifacts and
+the build fails loud on a cache db older than `index.scip`); all
+graph-reading tools (engine, audit, chain_tour, hub_refs/hazard,
+snapshot) read a self-owned db at `<repo>/.code-reality/graph.db` —
+produce it with `code-reality graph_db build --repo <repo>` (any
+producer cache); the refresh chain is purely producer-side (the
+CRG-era `.code-review-graph/` import face was fully removed with the
+W5 legacy-db cleanup).
 `graph_db ensure_indexes --repo <repo>` is an idempotent follow-up that
 adds the engine read-chain indexes to dbs built before that schema
 revision. The `.code-reality/` directory is repo-local derived data

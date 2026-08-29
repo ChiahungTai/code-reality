@@ -138,7 +138,12 @@ tests are the sole gate face.
   1-10000, and the in-process `--audit` two-pass) / `sidecar_migrate`
   (one-shot migration of the retired home sidecar face — leaf on
   argparse/engine; boundary dbs and basename-collision slots are
-  knowingly not auto-attributed, EP data-plane-unification).
+  knowingly not auto-attributed, EP data-plane-unification) / `build`
+  (orchestration leaf — one-shot data-plane bootstrap: detect language
+  face → spawn pyrefly-index / `rust-analyzer scip` (sibling bins,
+  separate dists) → in-process graph_db build + ensure_indexes; mixed
+  repos cat-merge both SCIP indexes into one dual-language graph;
+  `BuildError::{Env,Core}` maps fail(2)/crash(1)).
 - **lib API contract**: functions return `ToolOutput {stdout, stderr,
   exit_code}` data — the lib never prints and never exits; the bin owns
   printing/exiting (compile-time premise of CLI/MCP single-backend
