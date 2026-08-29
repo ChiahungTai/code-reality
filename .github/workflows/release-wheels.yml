@@ -55,7 +55,7 @@ jobs:
           #   cross: false
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install pinned toolchain and target (rust-toolchain.toml)
         # rustup show activates/installs the toolchain pinned by
@@ -65,7 +65,12 @@ jobs:
           rustup show
           rustup target add ${{ matrix.target }}
 
-      - uses: astral-sh/setup-uv@v5
+      # cache off: uv here installs ONE pinned tool (maturin) — the
+      # default cache keys on uv.lock, which this Rust repo never has,
+      # so it would never invalidate (the CI warning this silences)
+      - uses: astral-sh/setup-uv@v6
+        with:
+          cache: false
 
       - name: Install maturin
         run: uv tool install maturin==${{ env.MATURIN_VERSION }}
@@ -79,7 +84,7 @@ jobs:
       - name: List built wheels
         run: ls -lh target/wheels/
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: wheels-${{ matrix.target }}
           path: target/wheels/*.whl
@@ -98,7 +103,7 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           path: wheels
           merge-multiple: true
@@ -116,7 +121,7 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           path: wheels
           merge-multiple: true
@@ -134,7 +139,7 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           path: wheels
           merge-multiple: true
