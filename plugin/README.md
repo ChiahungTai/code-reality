@@ -26,7 +26,12 @@ works and better-installed faces win:
    an arm64 npm only** (on an x64 npm — e.g. Rosetta Homebrew node —
    npm skips the package and the chain falls through to the faces
    below). Both distribution faces (npm and PyPI wheels) are macOS
-   arm64 only.
+   arm64 only. ZCode runs no install-time `npm ci` today, so the
+   embedded face is CC-only for now; the wrapper already honors
+   `${CLAUDE_PLUGIN_ROOT}` and degrades gracefully, so if ZCode adopts
+   the CC plugin-install conventions the embedded face lights up
+   unchanged — no ZCode-specific install machinery is planned (uv
+   stays the ZCode face meanwhile).
 2. **PyPI wheels (main face)** — consumer path, no Rust toolchain,
    works everywhere the plugin runs (required on ZCode, which has no
    npm-install mechanism):
