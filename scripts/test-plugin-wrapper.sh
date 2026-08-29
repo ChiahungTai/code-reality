@@ -23,6 +23,17 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MCP="$ROOT/plugin/.mcp.json"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
+
+# Lockstep guard (forced-sync adjudication 2026-08-29): the embedded-face
+# pin must equal the plugin version — a plugin bump that forgets the pin
+# silently serves old binaries via npm ci.
+pin="$(jq -r '.optionalDependencies["code-reality-darwin-arm64"]' "$ROOT/plugin/package.json")"
+pver="$(jq -r '.version' "$ROOT/plugin/.claude-plugin/plugin.json")"
+if [ "$pin" != "$pver" ]; then
+  echo "FAIL: npm pin=$pin != plugin version=$pver (lockstep drift)"
+  exit 1
+fi
+printf 'pin==plugin lockstep guard: ok (%s)\n' "$pin"
 pass=0
 fail=0
 
