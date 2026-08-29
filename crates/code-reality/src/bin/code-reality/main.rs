@@ -30,7 +30,6 @@ fn route(argv: &[&str]) -> code_reality::ToolOutput {
     match argv.first() {
         Some(&"scip_refs") => code_reality::cli::run(argv),
         Some(&"snapshot") => code_reality::snapshot::run(argv),
-        Some(&"transition") => code_reality::transition::run(argv),
         Some(&"graph_audit") => code_reality::graph_audit::run(argv),
         Some(&"hub_refs") => code_reality::hub_refs::run(argv),
         Some(&"tour_manifest") => code_reality::tour_manifest::run(argv),
@@ -65,10 +64,9 @@ fn route(argv: &[&str]) -> code_reality::ToolOutput {
     }
 }
 
-const SUBCOMMANDS: [&str; 16] = [
+const SUBCOMMANDS: [&str; 15] = [
     "scip_refs",
     "snapshot",
-    "transition",
     "graph_audit",
     "hub_refs",
     "boundary",

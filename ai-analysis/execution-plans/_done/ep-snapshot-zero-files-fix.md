@@ -30,7 +30,18 @@ Design already adjudicated by the user (do not re-litigate): layered
 fix — S1 = WARN attribution split + transition degenerate guard (one
 commit, bleeding-stop); S2 = files/module_edges kind-set split with the
 kind decision moved into `snapshot.rs` (one commit). L3 (Rust CALLS
-derivation) is out of scope (see NOT).
+derivation) is out of scope (see NOT). S4 (appended 2026-08-29 by user
+adjudication, second increment): the transition CLI/report face
+retires — delta_tour becomes the sole diff interface; the degenerate
+guard moves from the render layer to `summarize`; `build_tour`
+consumes the degenerate marking (S1's "delta_tour zero-change" claim
+formally retires — in-EP coherent evolution). Consumer-face mechanics
+verified 2026-08-29 by the build session: sole dispatch entry
+`main.rs:33` + SUBCOMMANDS `:71`; `render_json_value` consumed by
+`delta_tour.rs:700` (**stays** — S1's json field is S4's transport);
+`render_report`/`extract_baseline`/`meta_commit8` have no production
+consumer beyond `transition::run` (die with the CLI); the MCP surface
+exposes no transition tool (`mcp_server.rs:10` doc comment only).
 
 ## EP Review Findings
 
@@ -107,6 +118,7 @@ derivation) is out of scope (see NOT).
 | SM-8 | 任一側 files 空的 transition pair（退化 snapshot） | `transition`/`delta_tour` | WARN「退化快照」（文案區分何側——單側退化＝該側檔案清單不可信），**兩側皆空才抑制「無結構變化」結論**；防護在 transition 的 md/json 兩面生效——delta_tour 的 `.tour` 面是 allow-list 消費，警示不透傳（review F3-1 屬實記錄） | 無 | 同上 |
 | SM-9 | eviction→re-open→check 序列（毒化窗口，含兩次 check 無 edit 變體） | bridge `check_file` | 毒化條目不得通過 fresh/stalled 門——**check#1 即於 half-deadline 經 force_reopen 收斂於真 push**（nudge 不再需要——補審 F5-1）；不再回傳過期空 diagnostics | 無 | type face |
 | SM-10 | 收斂停滯（mutation 後無新 push） | bridge `check_file` | half-deadline 處 `force_reopen` 恢復（時間語義、版本無關），不燒滿 deadline | 無 | type face |
+| SM-11 | transition diff 消費（CLI 退役後） | `delta_tour a.json b.json --repo <repo>` | 唯一 diff 介面；退化 pair 的 tour description 帶「退化快照」警示、不下無變化結論；變化 steps 照渲染 | 無 | narrative family |
 
 > Lineage note: the parent scenario id **SM-8** in
 > ep-data-plane-unification (snapshot 0-files) is closed by this EP's
@@ -197,6 +209,10 @@ boundary itself agrees.)
 | T19 | `check_file_timeout_path_warns` | `tests/bridge.rs:323-344` | **列冊驗證**（F2 half-deadline 行為直接觸及——S3 build 時核對斷言面；預期不動） | S3 |
 | T20 | `rust_edit_then_check_native_diagnostics` | `tests/rust_backend.rs:70-103` | **不動**（edit→check 收斂＋version 在場釘樁——F1 後更穩） | — |
 | T21 | `edit_then_check_reflects_new_content` | `tests/bridge.rs:186-209` | **不動**（F1 修後收斂更快） | — |
+| T22 | `summarize` 退化標記（新） | s3_transition.rs 改寫 | **新增**：`Summary.degenerate` 兩側空＋單側兩方向（T3 契約的 summarize 層平移） | S4 |
+| T23 | delta_tour 退化警示（新） | s5_delta_tour.rs 新增 | **新增**：退化 pair → build_tour description 含「退化快照」警示＋no-change 結論抑制（T4 契約的新介面落點） | S4 |
+| T24 | T13 契約新落點（新） | s5_delta_tour.rs 新增 | **新增**：警示＝附加、變化 steps 照渲染（build_tour 面） | S4 |
+| T25 | CLI 面測試退役清單 | s3_transition.rs | **刪除/平移列冊**：`cli_ok_and_log_lines`/`cli_baseline_log_and_profileless_warn`/`cli_missing_ep_crashes_exit_1`/`cli_usage_errors_exit_2` 刪（CLI 面隨 dispatch 死）；`files_only_change_counts_as_changed_module` 平移為 render_json_value 模組測試；T3/T4/T13/T8 的 render_report 斷言隨 md 面退役（契約由 T22/T23/T24 承接）；`extract_baseline_bold_literal_required` 隨函式刪 | S4 |
 
 ## 段落 S1：止血——WARN 歸因分流＋transition 退化防護（一個 commit）
 
@@ -318,6 +334,13 @@ falsification）。
    `crates/AGENTS.md`（若述及 files 面語義）、**`common.rs:15-16`
    `EDGE_KINDS` doc comment**（「the projection filter in snapshot」
    半句過時——改寫為 transition 邊界＋module_edges 面閘，review F4-3）。
+5. **WARN 分流漣漪（build session 2026-08-29 發現，規劃未預見）**：
+   files 面放寬後 branch 1（kind 分布）人口改變——in-root
+   REFERENCES-only repo 不再空集合（WARN 不觸發，正是修復目標）；
+   觸發者只剩「非結構邊全數無法解析進 root 或被排除」——文案去掉
+   「scip Rust／lsp-harvest 常態」括註、改如實歸因；T2 fixture 同步
+   改 root 外端點。root 分支（T1）與空 db 分支 bytes 不變（F3-2
+   保留）。
 
 **Pseudo Code**：
 ```rust
@@ -446,6 +469,94 @@ if stalled && !reissued { force_reopen(/* … */); }                // reissued 
 - DEPTH-SAMPLE：T17——`lru_evict` 連跑 ≥20 次零失敗（修前 4/35）。
 - 全套 `cargo test` 綠；S3 commit 訊息附 T17 迴圈結果。
 
+## 段落 S4：transition CLI 退役——delta_tour 為唯一 diff 介面（一個 commit；user 2026-08-29 第二增量裁決）
+
+**Context**：transition CLI/報告面無真實消費者——完整報告的獨立讀者≈0
+（消費紀律鬆動的實證：SM-8 bug 存活一天多無人回報＝無人讀其輸出）；
+弧模式要的機械對照（claims 三態＋changed_modules）delta_tour 輸出已涵蓋
+（其 build_tour 本來就是對 summarize/json 的 allow-list 投影——「不用
+完整呈現」是現狀非目標）。`transition.rs` 模組＝domain
+（load_snapshot/summarize/degenerate_pair/claims——`delta_tour.rs:10`
+只依賴這些）；CLI 面＝多餘 adapter——砍 adapter 留 domain。順帶消滅
+`--output-prefix` 預設 CWD 的輸出污染（不需 `.code-reality/transitions/`
+歸位提案）；delta_tour 的 `.tours/` 家不動（CodeTour 擴充要求 committed
+位置）。S1 的「delta_tour 零改動＝allow-list 邊界屬實記錄」至此正式退場
+——S4 讓 `build_tour` 主動讀取退化標記（EP 內自洽演化，出處本段）。
+- 依賴：S1 的 `degenerate_pair`（函式本體不動）＋json
+  `degenerate_warning` 欄位（S1 產物＝S4 傳輸帶——`render_json_value`
+  由 `delta_tour.rs:700` 消費，**保留不動**）
+- 語義約束：`summarize` 返回型別變更（tuple → struct 帶 degenerate
+  標記）；`degenerate_pair` 本體與 `render_json_value` 簽名零改動
+  （後者內部自算 degenerate_pair——純函式，零 drift 面）
+- 依賴錨點：`main.rs:33`（dispatch）/:71（SUBCOMMANDS）；
+  `delta_tour.rs:699-705`（summarize 消費＋render_json_value 餵料）；
+  `build_tour` 的 nc_reason 機制（`:287`/`:348`）與 tour description
+  組裝（`:516` 一帶）
+- Invariant Impact：對外工具面縮減（transition CLI 退役）——退化 pair
+  在 delta_tour 面不得靜默成「無變化」（T23 釘）；sm-degenerate 契約
+  在新介面完整承接（T22/T24）。
+
+**要點**：
+1. **刪**：`main.rs` 的 transition dispatch＋SUBCOMMANDS 條目；
+   `transition.rs` 的 `run()`/SPEC/HELP/`--output-prefix` 機制＋
+   `render_report`（md 面——生產消費者僅 run()）＋
+   `extract_baseline`/`meta_commit8`/`meta_str`（隨 run() 死的
+   helpers；delta_tour 不用）＋`common.rs::py_list_repr`（同批
+   孤兒——消費者唯一是 render_report，post-build 補列）。
+2. **移**：退化防護落點 render 層 → `summarize` 層——返回
+   `Summary { diff, new_files, gone_files, degenerate }`（載入兩張
+   snapshot 後即標記——delta_tour 與任何未來消費者自動繼承）。
+3. **注入**：`build_tour` allow-list 新增讀取
+   `data["degenerate_warning"]` → tour description 前置「退化快照」
+   警示（結論抑制以 description prefix 實現——build_tour 無獨立
+   結論面，summary 行即結論面；post-build 補註）＋**同時讀取
+   `data["files_face_warning"]` 前置「跨面 files」警示**（post-build
+   R2：SM-5 在唯一介面可觀察）；T13 契約（警示＝附加、變化段照
+   渲染）在新注入點成立（T24 釘雙 prefix）。
+4. **文檔（in-repo）**：root AGENTS.md narrative family 行（transition
+   CLI 移除＋delta_tour 為 diff 介面）＋「Type face via LSP
+   bridge」行 S3 註記；`crates/AGENTS.md` 若述及
+   transition CLI；`mcp_server.rs:10` doc comment；`plugin/skills/
+   code-reality/SKILL.md`（plugin 發行面——build session 查證補列，
+   增量未列）；`README.md` 工具清單（post-build 補列）；snapshot
+   WARN 文案「下游 transition」→「下游 diff（delta_tour）」（S4
+   溯及漣漪，post-build R1）。**回執（跨 repo 不代做）**：ai-rules
+   三檔——
+   `skills/code-reality/SKILL.md`（工具表 `:40`＋使用表 `:25-26`＋
+   時點條件 `:33`＋口徑限制 `:111`）、`skills/code-review/SKILL.md`
+   （模式 B 資料源）、`skills/implement/SKILL.md`（階段 6 EP 對照
+   資料源）——transition CLI → delta_tour；commit 後重跑
+   `scripts/dist-marketplace.sh`（dist 切片仍廣告 transition，
+   post-build R11）。
+
+**Pseudo Code**：
+```rust
+// transition.rs — domain 留存，adapter 退役
+pub struct Summary { pub diff: EdgeDiff, pub new_files: Vec<String>,
+                     pub gone_files: Vec<String>,
+                     pub degenerate: Option<String> }  // NEW: mark at load
+pub fn summarize(sa, sb) -> Summary {
+    Summary { diff: diff_edges(&sa.module_edges, &sb.module_edges),
+              new_files: .., gone_files: ..,
+              degenerate: degenerate_pair(sa, sb) }   // 本體不動（S1）
+}
+// delta_tour.rs run(): destructure Summary（:699-705 平移，render_json_value 餵料不變）
+// delta_tour.rs build_tour(): allow-list 新增——
+if let Some(w) = data.get("degenerate_warning") {
+    // tour description 前置退化警示；no-change 結論抑制（nc_reason 同級）
+}
+// main.rs: "transition" dispatch + SUBCOMMANDS 條目刪除
+```
+
+**驗證策略**：
+- DEPTH-MIN：T22 / T23 / T24——fixture 層全綠。
+- 消費端驗收（機械）：`rg '"transition"' crates/code-reality/src/bin/
+  code-reality/main.rs` → 0 hits；既有模組測試（claims/diff/summarize）
+  全綠；全套 `cargo test` 綠；delta_tour 對真實退化 sidecar pair 實跑
+  → tour description 帶警示（L4 實景）。
+- 回執清單交付（ai-rules 三檔條文變更——user 端執行，本 EP 列冊即責任
+  完成）。
+
 ## NOT（out of scope——防 scope creep 再議）
 
 - **L3 Rust CALLS 衍生**（build-side Rust call scanner）——歸 R4w watch
@@ -464,10 +575,18 @@ if stalled && !reissued { force_reopen(/* … */); }                // reissued 
 
 ## 整合策略
 
-- 順序：S1 → S2（S1 先行止血、零語義風險；S2 依賴 S1 的
+- 順序：S1 → S2 → S3 → S4（S1 先行止血、零語義風險；S2 依賴 S1 的
   `kind_edge_count` 欄位）。各自獨立 commit（已裁決）。S3 與 S1/S2
   零檔案交集（獨立 crate）——**同 session 一起修**（user 2026-08-29
-  併入裁決），自己一個 commit。
+  併入裁決），自己一個 commit。S4 疊於 S1-S3 commits 之上（依賴 S1
+  的 `degenerate_pair`＋json 欄位做 build_tour 注入；user 2026-08-29
+  第二增量裁決），自己一個 commit——**四個 commit**。
+  **Post-build 重新裁決（2026-08-29，R9）**：user 改指示「全部實作完
+  再一起跑 post-build→commit」後，S1 與 S4 在 `transition.rs`/
+  `common.rs`/s3 測試同檔交錯——無 hunk-level staging 下四段不可
+  分割。實際分組＝**依 crate 邊界**：(1) code-reality（S1+S2+S4
+  一體＋文檔）、(2) lsp-bridge（S3＋fmt drift）；EP 裁決的四 commit
+  假設（逐段 gate）已被 user 後續指示取代。
 - 開工前置：ep-data-plane-unification 的 commit 先落地（baseline 疊加
   註記）；本 EP code 變更與其未 commit 檔案（`snapshot.rs` 等）同檔修
   改須在其 commit 之後進行。
@@ -485,6 +604,24 @@ if stalled && !reissued { force_reopen(/* … */); }                // reissued 
 2. SYSTEM-MAP：無此檔，跳過
 3. instruction 檔：`crates/AGENTS.md` 若述及 snapshot files 面語義則同步
    （兩面分離＋`files_face`）；`snapshot.rs` 模組註解已是行內文檔面
-4. `/audit-test` 對**全部 T-matrix 項（T1-T21）**測試組（更新＋新增
+4. `/audit-test` 對**全部 T-matrix 項（T1-T25）**測試組（更新＋新增
    面）；兩份案件檔補結案狀態行（Status: open → closed by this EP）
    ——`snapshot-zero-files-case.md`＋`lsp-bridge-poisoned-cache-case.md`
+5. S4 回執：ai-rules 三檔條文變更清單（`skills/code-reality/SKILL.md`
+   ＋`skills/code-review/SKILL.md`＋`skills/implement/SKILL.md`——
+   transition CLI → delta_tour）交付 user 端執行
+
+## Post-Build Review（2026-08-29，dual-context：fresh-eyes＋primed 平行）
+
+| ID | 嚴重度 | 位置 | 問題 | 決策 |
+|----|--------|------|------|------|
+| R1 | 🟡 | snapshot WARN ×2 分支＋pins | 「下游 transition」溯及失效（S4 退役）＋三分支措辭不一致 | ✅ 統一「下游 diff（delta_tour）」＋pins 同步 |
+| R2 | 🟡 | files_face_warning | delta_tour 不讀、json 不落盤——SM-5 在唯一介面不可觀察 | ✅ build_tour 比照注入 description prefix（T24 釘雙 prefix） |
+| R3 | 🟡 | AGENTS.md Type face 行 | S3 收斂門註記漏補（收尾清單明列項） | ✅ 補註記 |
+| R4 | 🟡 | Summary.degenerate | 生產零消費＋doc 與資料流相反（render_json_value 重算） | ✅ render_json_value 改收 &Summary（單一推導源） |
+| R5-R8 | ℹ️ | EP 補列×3＋模組頭/HELP | py_list_repr/README/S4 形態註記/兩面語義一句 | ✅ 全補 |
+| R9 | ℹ️ | 四 commit 不可分割 | S1/S4 同檔交錯（user 指示改變逐段 gate 假設） | ✅ 重新裁決 crate 邊界分組（整合策略段） |
+| R10 | ℹ️ | server.rs basis 鏈 | 組合鏈＝Option::max；fresh 同 iteration 重算 | ✅ 簡化＋上提 |
+| R11 | ℹ️ | dist/marketplace | 切片仍廣告 transition（gitignored regenerable） | ✅ commit 後重跑 dist 腳本（回執清單） |
+| R12 | ℹ️ | face_mismatch 異值臂 | (Some,Some) 異值無測試 | ✅ 補斷言 |
+| R13 | ℹ️ | sync_open 鎖跨 I/O | 既有結構債（非本弧引入、無鎖序環） | ❌ 不採納——watch note |

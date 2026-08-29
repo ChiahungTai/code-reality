@@ -1,5 +1,8 @@
-//! `snapshot` — the frozen `code_reality/snapshot.py` contract: CRG
-//! module-edge export as a commit-anchored sidecar (`snapshot.py:1-283`).
+//! `snapshot` — the frozen `code_reality/snapshot.py` contract: the
+//! participating-file + module-edge export as a commit-anchored sidecar
+//! (`snapshot.py:1-283`). Two faces since the S2 all-kinds widening:
+//! `files` = participating files of ANY edge kind; `module_edges` =
+//! structural kinds only (the transition boundary).
 //!
 //! stdout faces (byte gate): stale WARN, empty-set WARN, `[OK]`, `[LOG]`.
 //! Crashes (missing db, non-CRG db, git failures, tear) map to the
@@ -57,7 +60,7 @@ const HELP: &str = concat!(
     "usage: snapshot [-h] [--repo REPO] [--label LABEL]\n",
     "                [--out-dir OUT_DIR]\n",
     "\n",
-    "弧 snapshot——CRG module-edge 集導出為 commit 錨定 sidecar。\n",
+    "弧 snapshot——參與檔案集（全 kind）＋module-edge 集導出為 commit 錨定 sidecar。\n",
     "\n",
     "options:\n",
     "  -h, --help         show this help message and exit\n",
@@ -70,6 +73,11 @@ pub struct EdgeExport {
     pub files: Vec<String>,
     pub module_edges: Vec<Vec<String>>,
     pub raw_edge_count: i64,
+    /// Kind-matched row count (structural kinds), tallied at the loop
+    /// entry — a row counts whether or not its endpoints resolve into
+    /// the repo root (the S1→S2 invariant: the count's semantics do not
+    /// flip when S2 moves the kind gate to the consumer side).
+    pub kind_edge_count: usize,
 }
 
 fn repo_rel_qualified(qualified: &str, repo_root: &Path) -> Option<String> {
@@ -91,12 +99,15 @@ fn endpoint_rel(
     repo_rel_qualified(symbol, repo_root)
 }
 
-/// Full module-edge export (`snapshot.py:53-86`): `files` = the files
-/// participating in edges (same-module ends still counted — `files.update`
-/// happens before the `src_mod != dst_mod` check); excluded/repo-outside
-/// skipped; sorted output; raw count over ALL edge kinds (the self-owned
-/// db includes producer REFERENCES edges — a documented, expected
-/// divergence from the legacy CRG-era count).
+/// Two-face edge export (all-kinds widening, S2): `files` = the files
+/// participating in edges of ANY kind (the participating-file universe —
+/// REFERENCES-only dbs keep a non-empty face); `module_edges` = the
+/// structural-kinds subset only (the `EDGE_KINDS` consumer-side gate —
+/// structural boundary semantics stay frozen; same-module ends still
+/// counted in `files` before the `src_mod != dst_mod` check);
+/// excluded/repo-outside skipped; sorted output; `kind_edge_count` =
+/// structural rows matched (loop-entry tally, resolvability aside);
+/// `raw_edge_count` over ALL edge kinds.
 pub fn export_module_edges(
     conn: &Connection,
     repo_root: &Path,
@@ -118,13 +129,15 @@ pub fn export_module_edges(
     }
     let mut edges: BTreeSet<(String, String, String)> = BTreeSet::new();
     let mut files: BTreeSet<String> = BTreeSet::new();
-    let sql = "SELECT kind, caller_symbol, callee_symbol FROM edges WHERE kind IN (?1,?2,?3)";
-    let kinds = crate::common::EDGE_KINDS;
+    let mut kind_edge_count: usize = 0;
+    // one pass over ALL kinds — the snapshot-owned kind decision lives
+    // here (bounded context), NOT in the shared EDGE_KINDS query filter
+    let sql = "SELECT kind, caller_symbol, callee_symbol FROM edges";
     let mut stmt = conn
         .prepare(sql)
         .map_err(|e| format!("edges 查詢失敗：{}", e))?;
     let rows = stmt
-        .query_map(kinds, |r| {
+        .query_map([], |r| {
             Ok((
                 r.get::<_, String>(0)?,
                 r.get::<_, String>(1)?,
@@ -134,6 +147,12 @@ pub fn export_module_edges(
         .map_err(|e| format!("edges 查詢失敗：{}", e))?;
     for row in rows {
         let (kind, src_q, dst_q) = row.map_err(|e| format!("edges 讀取失敗：{}", e))?;
+        let structural = crate::common::EDGE_KINDS.contains(&kind.as_str());
+        if structural {
+            // loop-entry tally: kind-matched regardless of resolvability
+            // (stable across the S1→S2 gate move)
+            kind_edge_count += 1;
+        }
         let (Some(src_rel), Some(dst_rel)) = (
             endpoint_rel(&src_q, &symbol_files, &repo_root),
             endpoint_rel(&dst_q, &symbol_files, &repo_root),
@@ -145,9 +164,11 @@ pub fn export_module_edges(
         }
         files.insert(src_rel.clone());
         files.insert(dst_rel.clone());
-        let (src_mod, dst_mod) = (module_of(&src_rel, profile), module_of(&dst_rel, profile));
-        if src_mod != dst_mod {
-            edges.insert((src_mod, dst_mod, kind));
+        if structural {
+            let (src_mod, dst_mod) = (module_of(&src_rel, profile), module_of(&dst_rel, profile));
+            if src_mod != dst_mod {
+                edges.insert((src_mod, dst_mod, kind));
+            }
         }
     }
     let raw_edge_count: i64 = conn
@@ -157,6 +178,7 @@ pub fn export_module_edges(
         files: files.into_iter().collect(),
         module_edges: edges.into_iter().map(|(s, d, k)| vec![s, d, k]).collect(),
         raw_edge_count,
+        kind_edge_count,
     })
 }
 
@@ -310,6 +332,9 @@ pub struct Snapshot {
     pub meta: serde_json::Map<String, Value>,
     pub files: Vec<String>,
     pub module_edges: Vec<Vec<String>>,
+    /// Kind-matched edge count carried for the CLI WARN face only — never
+    /// serialized into the sidecar (schema is frozen except `files_face`).
+    pub kind_edge_count: usize,
 }
 
 impl Snapshot {
@@ -413,10 +438,14 @@ pub fn build_snapshot(repo_root: &Path, label: Option<&str>) -> Result<Snapshot,
             .unwrap_or(Value::Null),
     );
     meta.insert("crg_raw_edges".into(), json!(exported.raw_edge_count));
+    // face-version marker: "all-kinds" since the S2 widening; absent ≡
+    // the old structural-only face (transition cross-face guard reads it)
+    meta.insert("files_face".into(), json!("all-kinds"));
     Ok(Snapshot {
         meta,
         files: exported.files,
         module_edges: exported.module_edges,
+        kind_edge_count: exported.kind_edge_count,
     })
 }
 
@@ -473,14 +502,34 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         ));
     }
     if snap.files.is_empty() {
+        // three-way attribution: which empty-set cause is it? The kind
+        // split keeps the two numbers in the WARN from different queries
+        // honest — kind_edge_count (kind-filtered) vs crg_raw_edges (full
+        // table). raw==0 implies kind_edge_count==0 (subset), so the
+        // branches are exhaustive.
         let raw = snap
             .meta
             .get("crg_raw_edges")
-            .cloned()
-            .unwrap_or(json!(null));
-        stdout.push_str(&format!(
-            "[WARN] snapshot 空集合（0 files，db raw {raw} 邊）——graph.db 與 --repo 不同 root？下游 transition 會誤報無結構變化\n"
-        ));
+            .and_then(Value::as_i64)
+            .unwrap_or(0);
+        let kind_n = snap.kind_edge_count;
+        let warn = if kind_n == 0 && raw > 0 {
+            // post-S2 population: every raw edge is non-structural AND
+            // failed to resolve/pass (in-root non-structural edges land
+            // in the files face now) — no "norm" framing, no root denial
+            format!(
+                "[WARN] snapshot 空集合（0 files，db raw {raw} 邊）——結構 kind 匹配 0 邊、raw 全數非結構 kind 且無法解析進 repo root 或被 profile 排除；下游 diff 會誤報無結構變化\n"
+            )
+        } else if raw == 0 {
+            format!(
+                "[WARN] snapshot 空集合（0 files，db 零邊——空 build？）——先 `code-reality graph_db build --repo <repo>`；下游 diff（delta_tour）會誤報無結構變化\n"
+            )
+        } else {
+            format!(
+                "[WARN] snapshot 空集合（0 files，db raw {raw} 邊）——結構 kind 匹配 {kind_n} 邊但全數無法解析進 repo root 或被 profile 排除：graph.db 與 --repo 不同 root？下游 diff（delta_tour）會誤報無結構變化\n"
+            )
+        };
+        stdout.push_str(&warn);
     }
     stdout.push_str(&format!(
         "[OK] snapshot: {} files, {} module edges -> {}\n",

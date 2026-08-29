@@ -103,7 +103,10 @@ tests are the sole gate face.
   interop, stale guards, face selection with protobuf fallback, audit
   target double-key attribution) / `fndefs` (adapter — fn-span sidecar
   `*.fndefs.db`, the sqlite carrier for callers/closure spans; ladder
-  mirrors cache) / `snapshot` / `transition` / `graph_audit` (graph
+  mirrors cache) / `snapshot` / `transition` (domain module — the
+  snapshot-diff domain: load/summarize/claims/json render; its CLI/report
+  face retired 2026-08-29, S4 — delta_tour is the sole diff interface) /
+  `graph_audit` (graph
   family — one module per frozen Python tool; cargo-test gated) /
   `scip_edges` (v1+ derivation lib — SCIP reference edges, spans-based
   attribution; CLI/inject/sidecar faces retired at v1+ S4, the module
@@ -140,13 +143,14 @@ tests are the sole gate face.
   exit_code}` data — the lib never prints and never exits; the bin owns
   printing/exiting (compile-time premise of CLI/MCP single-backend
   drift-freedom).
-- **Exit semantics (D3, per-tool — not uniform)**: snapshot/transition
-  crashes = exit 1 + empty stdout (uncaught-Python alignment);
+- **Exit semantics (D3, per-tool — not uniform)**: snapshot crashes =
+  exit 1 + empty stdout (uncaught-Python alignment);
   graph_audit env errors and argparse usage errors = exit 2; `--json`
   faces print with a trailing newline (Python `print`).
 - **Subcommand names mirror Python module names verbatim** (`scip_refs`,
-  `snapshot`, `transition`, `graph_audit`; not kebab-case) —
-  relay minimal-diff contract.
+  `snapshot`, `graph_audit`; not kebab-case) —
+  relay minimal-diff contract. (`transition` left the CLI surface at S4 —
+  the module stays as the diff domain delta_tour consumes.)
 - **Schema interop**: the derived db keeps the frozen three-table DDL +
   `SCHEMA_VERSION`; extensions (fn_defs, R3) live in separate sidecars —
   never in the shared db (guard would ping-pong rebuilds). All consumer

@@ -1,13 +1,13 @@
-//! S3 transition tests — direct ports of the frozen `test_transition.py`
-//! case families (post-sync 281e07e) plus the no-oracle truncation case
-//! pinned from source.
+//! S3 transition tests — module-level faces of the transition domain
+//! (load/summarize/diff/claims/json render). The CLI/report face
+//! retired in S4 (delta_tour is the sole diff interface): the md-face
+//! and CLI-byte tests went with it; the tour-level contracts live in
+//! s5_delta_tour.rs.
 
 use code_reality::profile::load_profile;
 use code_reality::transition::{
-    diff_edges, extract_baseline, extract_ep_claims, load_snapshot, path_token_claims,
-    render_report, run, summarize,
+    diff_edges, extract_ep_claims, load_snapshot, path_token_claims, render_json_value, summarize,
 };
-use code_reality::ToolOutput;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -165,68 +165,135 @@ fn write_profile(repo: &Path) -> PathBuf {
 }
 
 #[test]
-fn extract_baseline_bold_literal_required() {
+fn summarize_marks_degenerate_pairs() {
+    // T22 (S4): the degenerate guard lives at the summarize layer —
+    // every consumer (delta_tour and future ones) inherits the marking
     let tmp = tempfile::tempdir().unwrap();
-    let ep = tmp.path().join("ep.md");
-    std::fs::write(
-        &ep,
-        "baseline: aabbccddeeff\nsome **baseline**: 0123456789ab\n",
-    )
-    .unwrap();
-    // the bare line must NOT match; the bold one must
+    let a = tmp.path().join("a.json");
+    let b = tmp.path().join("b.json");
+    let healthy = tmp.path().join("h.json");
+    write_snap(&a, "r", "aaaa1111", &[], &[]);
+    write_snap(&b, "r", "bbbb2222", &[], &[]);
+    write_snap(
+        &healthy,
+        "r",
+        "cccc3333",
+        &["f.py"],
+        &[("m/a", "m/b", "CALLS")],
+    );
+    let sa = load_snapshot(&a).unwrap();
+    let sb = load_snapshot(&b).unwrap();
+    let sh = load_snapshot(&healthy).unwrap();
+    let both = summarize(&sa, &sb);
     assert_eq!(
-        extract_baseline(&ep).unwrap().as_deref(),
-        Some("0123456789ab")
+        both.degenerate.as_deref(),
+        Some("兩側 snapshot files 皆空（退化快照）——diff 無意義，勿下「無結構變化」結論")
+    );
+    assert!(both.new_files.is_empty() && both.gone_files.is_empty());
+    let before_empty = summarize(&sa, &sh);
+    assert_eq!(
+        before_empty.degenerate.as_deref(),
+        Some("before 側 snapshot files 空（退化）——gone-files 清單不可信")
+    );
+    assert_eq!(before_empty.new_files, vec!["f.py".to_string()]);
+    let after_empty = summarize(&sh, &sb);
+    assert_eq!(
+        after_empty.degenerate.as_deref(),
+        Some("after 側 snapshot files 空（退化）——added-files 清單不可信")
+    );
+    assert_eq!(after_empty.gone_files, vec!["f.py".to_string()]);
+    let healthy_pair = summarize(&sh, &sh);
+    assert!(healthy_pair.degenerate.is_none());
+    assert_eq!(healthy_pair.diff.added.len(), 0);
+}
+
+#[test]
+fn degenerate_json_face_warning() {
+    // T4 (ported off the retired CLI): the json face carries
+    // degenerate_warning — the transport delta_tour's build_tour reads
+    let tmp = tempfile::tempdir().unwrap();
+    let a = tmp.path().join("a.json");
+    let b = tmp.path().join("b.json");
+    write_snap(&a, "r", "aaaa1111", &[], &[]);
+    write_snap(&b, "r", "bbbb2222", &[], &[]);
+    let sa = load_snapshot(&a).unwrap();
+    let sb = load_snapshot(&b).unwrap();
+    let s = summarize(&sa, &sb);
+    let j = render_json_value(&sa, &sb, &s, None, None);
+    assert_eq!(
+        j["degenerate_warning"],
+        serde_json::json!(
+            "兩側 snapshot files 皆空（退化快照）——diff 無意義，勿下「無結構變化」結論"
+        )
     );
 }
 
 #[test]
-fn report_no_change_and_claims_faces() {
+fn cross_face_files_diff_warns() {
+    // T10 (ported): old-face sidecar (no files_face) vs all-kinds
+    // sidecar — the files diff is cross-face incomparable; module_edges
+    // stay comparable; same-face pairs do not warn (SM-5)
     let tmp = tempfile::tempdir().unwrap();
-    let sa_path = tmp.path().join("a.json");
-    let sb_path = tmp.path().join("b.json");
-    write_snap(
-        &sa_path,
-        "r",
-        "aaaa1111",
-        &["f.py"],
-        &[("m/a", "m/b", "CALLS")],
+    let mk = |p: &Path, commit: &str, face: Option<&str>| {
+        let mut meta = serde_json::Map::new();
+        meta.insert("repo".into(), serde_json::json!("r"));
+        meta.insert("commit".into(), serde_json::json!(commit));
+        if let Some(f) = face {
+            meta.insert("files_face".into(), serde_json::json!(f));
+        }
+        let v = serde_json::json!({
+            "_meta": meta,
+            "files": ["f.py"],
+            "module_edges": [["m/a", "m/b", "CALLS"]],
+        });
+        std::fs::write(p, serde_json::to_string(&v).unwrap()).unwrap();
+    };
+    let a = tmp.path().join("a.json"); // old structural-only face
+    let b = tmp.path().join("b.json"); // all-kinds face
+    let c = tmp.path().join("c.json"); // all-kinds face (control)
+    let d = tmp.path().join("d.json"); // different explicit face (R12 arm)
+    mk(&a, "aaaa1111", None);
+    mk(&b, "bbbb2222", Some("all-kinds"));
+    mk(&c, "cccc3333", Some("all-kinds"));
+    mk(&d, "dddd4444", Some("structural-only"));
+    let sa = load_snapshot(&a).unwrap();
+    let sb = load_snapshot(&b).unwrap();
+    let sc = load_snapshot(&c).unwrap();
+    let sd = load_snapshot(&d).unwrap();
+    let s = summarize(&sa, &sb);
+    let j = render_json_value(&sa, &sb, &s, None, None);
+    assert!(
+        j["files_face_warning"]
+            .as_str()
+            .unwrap()
+            .contains("files 面跨版本不可比"),
+        "cross-face warning missing: {j}"
     );
-    write_snap(
-        &sb_path,
-        "r",
-        "bbbb2222",
-        &["f.py"],
-        &[("m/a", "m/b", "CALLS")],
+    // both faces PRESENT but different values — the first match arm
+    // (R12: the None-vs-Some direction alone left it unpinned)
+    let s_d = summarize(&sb, &sd);
+    let j_d = render_json_value(&sb, &sd, &s_d, None, None);
+    let w = j_d["files_face_warning"].as_str().unwrap();
+    assert!(w.contains("files 面不同"), "value-mismatch arm: {w}");
+    assert!(w.contains("before=all-kinds") && w.contains("after=structural-only"));
+    let s2 = summarize(&sb, &sc);
+    let j2 = render_json_value(&sb, &sc, &s2, None, None);
+    assert!(
+        j2.get("files_face_warning").is_none(),
+        "same-face pair must not warn: {j2}"
     );
-    let sa = load_snapshot(&sa_path).unwrap();
-    let sb = load_snapshot(&sb_path).unwrap();
-    let (diff, nf, gf) = summarize(&sa, &sb);
-    let md = render_report(&sa, &sb, None, &diff, &nf, &gf, None);
-    assert!(md.contains("## 無結構變化"));
-    assert!(md.contains("兩 snapshot 邊集與檔案集相同（同 commit 或無結構變動）。"));
-    assert!(md.ends_with("。\n"));
-    // claims faces (need a non-empty diff: the no-change early return
-    // precedes the claims section in the frozen renderer)
-    let mut sb2 = sb.clone();
-    sb2.module_edges
-        .insert(("m/a".into(), "m/c".into(), "CALLS".into()));
-    let (diff2, nf2, gf2) = summarize(&sa, &sb2);
-    let none_md = render_report(&sa, &sb2, Some(&BTreeSet::new()), &diff2, &nf2, &gf2, None);
-    assert!(none_md.contains("claims: **NONE**——EP 內無 profile prefix 路徑 mention。"));
-    assert!(none_md.contains("實際變動模組（供判讀，無宣稱可比對）：['m/a', 'm/c']"));
-    let no_ep = render_report(&sa, &sb2, None, &diff2, &nf2, &gf2, None);
-    assert!(no_ep.contains("未提供 `--ep`（EP 宣稱模組路徑對照省略）。"));
 }
 
 #[test]
 fn files_only_change_counts_as_changed_module() {
+    // (ported off the retired CLI): a files-only change still counts as
+    // a changed module in the json face
     let tmp = tempfile::tempdir().unwrap();
-    let sa_path = tmp.path().join("a.json");
-    let sb_path = tmp.path().join("b.json");
-    write_snap(&sa_path, "r", "aaaa1111", &["mosaic_alpha/a.py"], &[]);
+    let a = tmp.path().join("a.json");
+    let b = tmp.path().join("b.json");
+    write_snap(&a, "r", "aaaa1111", &["mosaic_alpha/a.py"], &[]);
     write_snap(
-        &sb_path,
+        &b,
         "r",
         "bbbb2222",
         &["mosaic_alpha/a.py", "mosaic_alpha/conditions/new.py"],
@@ -238,18 +305,11 @@ fn files_only_change_counts_as_changed_module() {
         "[[module]]\nprefix = \"mosaic_alpha/\"\n",
     )
     .unwrap();
-    let out = run_cli(&[
-        "transition",
-        &sa_path.to_string_lossy(),
-        &sb_path.to_string_lossy(),
-        "--repo",
-        &tmp.path().to_string_lossy(),
-        "-o",
-        &tmp.path().join("t").to_string_lossy(),
-    ]);
-    assert_eq!(out.exit_code, 0, "{}", out.stderr);
-    let j: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(tmp.path().join("t.json")).unwrap()).unwrap();
+    let sa = load_snapshot(&a).unwrap();
+    let sb = load_snapshot(&b).unwrap();
+    let profile = load_profile(tmp.path()).unwrap();
+    let s = summarize(&sa, &sb);
+    let j = render_json_value(&sa, &sb, &s, None, profile.as_ref());
     assert_eq!(
         j["changed_modules"],
         serde_json::json!(["mosaic_alpha/conditions"])
@@ -259,142 +319,4 @@ fn files_only_change_counts_as_changed_module() {
         j["new_files"],
         serde_json::json!(["mosaic_alpha/conditions/new.py"])
     );
-}
-
-#[test]
-fn truncation_over_twenty_appends_more_line() {
-    let tmp = tempfile::tempdir().unwrap();
-    let sa_path = tmp.path().join("a.json");
-    let sb_path = tmp.path().join("b.json");
-    let mut many: Vec<(&str, &str, &str)> = Vec::new();
-    for i in 0..25 {
-        many.push((
-            "m/src",
-            Box::leak(format!("m/d{i:02}").into_boxed_str()),
-            "CALLS",
-        ));
-    }
-    write_snap(&sa_path, "r", "aaaa1111", &[], &[]);
-    write_snap(&sb_path, "r", "bbbb2222", &[], &many);
-    let sa = load_snapshot(&sa_path).unwrap();
-    let sb = load_snapshot(&sb_path).unwrap();
-    let (diff, nf, gf) = summarize(&sa, &sb);
-    let md = render_report(&sa, &sb, None, &diff, &nf, &gf, None);
-    assert!(md.contains("### added (25)"));
-    assert!(md.contains("- ... +5 more"));
-    assert!(!md.contains("m/d24")); // the 21st entry is truncated away
-}
-
-fn run_cli(args: &[&str]) -> ToolOutput {
-    run(args)
-}
-
-#[test]
-fn cli_ok_and_log_lines() {
-    let tmp = tempfile::tempdir().unwrap();
-    let sa_path = tmp.path().join("a.json");
-    let sb_path = tmp.path().join("b.json");
-    write_snap(
-        &sa_path,
-        "r",
-        "aaaa11112222",
-        &["x.py"],
-        &[("m/a", "m/b", "CALLS")],
-    );
-    write_snap(
-        &sb_path,
-        "r",
-        "bbbb33334444",
-        &[],
-        &[("m/b", "m/a", "CALLS")],
-    );
-    let out = run_cli(&[
-        "transition",
-        &sa_path.to_string_lossy(),
-        &sb_path.to_string_lossy(),
-        "-o",
-        &tmp.path().join("out").to_string_lossy(),
-    ]);
-    assert_eq!(out.exit_code, 0, "{}", out.stderr);
-    let md = tmp.path().join("out.md");
-    let js = tmp.path().join("out.json");
-    assert_eq!(
-        out.stdout,
-        format!(
-            "[OK] transition aaaa1111 -> bbbb3333: +1 / -1 / reversed 1 -> {md} + {js}\n[LOG] rg 'changed_not_claimed' {js}\n",
-            md = md.display(),
-            js = js.display()
-        )
-    );
-    // B1 direction visible in the md
-    let body = std::fs::read_to_string(&md).unwrap();
-    assert!(body.contains("### reversed (1)——added 方向"));
-    assert!(body.contains("`m/b <-> m/a`"));
-}
-
-#[test]
-fn cli_baseline_log_and_profileless_warn() {
-    let tmp = tempfile::tempdir().unwrap();
-    let sa_path = tmp.path().join("a.json");
-    let sb_path = tmp.path().join("b.json");
-    write_snap(&sa_path, "r", "aaaa1111", &[], &[]);
-    write_snap(&sb_path, "r", "bbbb2222", &[], &[]);
-    let ep = tmp.path().join("ep.md");
-    std::fs::write(&ep, "# EP\n\n**baseline**: aaaaaaa111\n\nbody\n").unwrap();
-    let out = run_cli(&[
-        "transition",
-        &sa_path.to_string_lossy(),
-        &sb_path.to_string_lossy(),
-        "--ep",
-        &ep.to_string_lossy(),
-        "--repo",
-        &tmp.path().to_string_lossy(),
-        "-o",
-        &tmp.path().join("t").to_string_lossy(),
-    ]);
-    assert_eq!(out.exit_code, 0, "{}", out.stderr);
-    assert!(out.stdout.contains(
-        "[WARN] claims 恆 NONE——--repo 未指到含 .code-reality.toml 的 repo，宣稱對照不生效（--repo 預設 cwd）\n"
-    ));
-    assert!(out
-        .stdout
-        .contains("[LOG] EP baseline=aaaaaaa111（diff before 應錨定此 commit）\n"));
-}
-
-#[test]
-fn cli_missing_ep_crashes_exit_1() {
-    let tmp = tempfile::tempdir().unwrap();
-    let sa_path = tmp.path().join("a.json");
-    let sb_path = tmp.path().join("b.json");
-    write_snap(&sa_path, "r", "aaaa1111", &[], &[]);
-    write_snap(&sb_path, "r", "bbbb2222", &[], &[]);
-    let out = run_cli(&[
-        "transition",
-        &sa_path.to_string_lossy(),
-        &sb_path.to_string_lossy(),
-        "--ep",
-        &tmp.path().join("nope.md").to_string_lossy(),
-    ]);
-    assert_eq!(out.exit_code, 1);
-    // profile-less repo (default cwd): the WARN precedes the crash and
-    // SURVIVES it — Python prints WARN to stdout before the assert fires
-    assert_eq!(
-        out.stdout,
-        "[WARN] claims 恆 NONE——--repo 未指到含 .code-reality.toml 的 repo，宣稱對照不生效（--repo 預設 cwd）\n"
-    );
-    assert!(out.stderr.contains("EP 檔不存在"), "{}", out.stderr);
-}
-
-#[test]
-fn cli_usage_errors_exit_2() {
-    let out = run_cli(&["transition", "a.json"]);
-    assert_eq!(out.exit_code, 2);
-    assert!(out.stdout.is_empty());
-    let out = run_cli(&["transition"]);
-    assert_eq!(out.exit_code, 2);
-    let out = run_cli(&["transition", "-h"]);
-    assert_eq!(out.exit_code, 0);
-    assert!(out
-        .stdout
-        .starts_with("usage: transition [-h] [--ep EP] [--repo REPO]\n"));
 }

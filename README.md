@@ -13,9 +13,11 @@ repo-specific special cases.
 code-reality <tool> --repo <repo-root> [args]
 ```
 
-Tools: `snapshot` `transition` `hub_refs` `runtime_edges` `boundary_build`
+Tools: `snapshot` `hub_refs` `runtime_edges` `boundary_build`
 `boundary` `delta_tour` `chain_tour` `tour_validate` `tour_upgrade`
 `tour_manifest` `graph_audit` `scip_refs` `graph_query` `graph_db`
+(diff consumption runs through `delta_tour` — the transition CLI retired;
+its module lives on as the snapshot-diff domain)
 
 Sidecar home: `<repo>/.code-reality/` — SCIP index slots under `scip/`
 (alongside `graph.db`). The data dir self-ignores via its own single-`*`

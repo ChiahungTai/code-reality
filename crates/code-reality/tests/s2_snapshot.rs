@@ -70,11 +70,18 @@ fn db_with_edges(repo: &Path) -> PathBuf {
             q("mosaic_alpha/domain/a.py", "A"),
             q(".venv/pkg/v.py", "V"),
         ),
-        // non-structural kind: not exported, still in raw count
+        // non-structural kinds: participate in the files face (S2 all-kind),
+        // never in module_edges; d.py joins ONLY through its REFERENCES edge
+        // (the explicit two-face separation pin, T5)
         (
             "REFERENCES",
             q("mosaic_alpha/infra/b.py", "B"),
             q("mosaic_alpha/domain/a.py", "A2"),
+        ),
+        (
+            "REFERENCES",
+            q("mosaic_alpha/infra/b.py", "B"),
+            q("mosaic_alpha/infra/d.py", "D"),
         ),
     ] {
         spec.edges.push((kind.into(), s, t));
@@ -96,6 +103,9 @@ fn export_counts_same_module_files_and_skips_excluded() {
             "mosaic_alpha/domain/a.py".to_string(),
             "mosaic_alpha/domain/c.py".to_string(),
             "mosaic_alpha/infra/b.py".to_string(),
+            // d.py participates ONLY via the REFERENCES edge — in the
+            // all-kind files face, absent from module_edges (T5)
+            "mosaic_alpha/infra/d.py".to_string(),
         ]
     );
     assert_eq!(
@@ -106,7 +116,14 @@ fn export_counts_same_module_files_and_skips_excluded() {
             "IMPORTS_FROM".to_string(),
         ]]
     );
-    assert_eq!(out.raw_edge_count, 4); // all kinds counted raw
+    assert_eq!(out.raw_edge_count, 5); // all kinds counted raw
+                                       // two-face separation: the REFERENCES-only file never leaks into the
+                                       // structural face (module edge set has no infra->infra row for it)
+    assert!(out
+        .module_edges
+        .iter()
+        .all(|e| !e.iter().any(|c| c.contains("d.py"))));
+    assert_eq!(out.kind_edge_count, 3); // IMPORTS_FROM + CALLS + INHERITS rows
 }
 
 #[test]
@@ -209,7 +226,7 @@ fn cli_ok_line_and_sidecar_schema() {
     assert_eq!(out.exit_code, 0, "{}", out.stderr);
     assert!(out.stderr.is_empty());
     let want_ok = format!(
-        "[OK] snapshot: 3 files, 1 module edges -> {}\n",
+        "[OK] snapshot: 4 files, 1 module edges -> {}\n",
         out_dir
             .join(format!(
                 "{}-{}.json",
@@ -258,11 +275,17 @@ fn cli_ok_line_and_sidecar_schema() {
             "stale",
             "crg_last_updated",
             "crg_last_build_type",
-            "crg_raw_edges"
+            "crg_raw_edges",
+            // face-version marker (T12 tail addition; T10 value pin)
+            "files_face"
         ]
     );
-    assert_eq!(sidecar["_meta"]["crg_raw_edges"], serde_json::json!(4));
-    assert_eq!(sidecar["files"].as_array().unwrap().len(), 3);
+    assert_eq!(sidecar["_meta"]["crg_raw_edges"], serde_json::json!(5));
+    assert_eq!(
+        sidecar["_meta"]["files_face"],
+        serde_json::json!("all-kinds")
+    );
+    assert_eq!(sidecar["files"].as_array().unwrap().len(), 4);
 }
 
 #[test]
@@ -349,12 +372,166 @@ fn cli_empty_set_warn() {
         &repo.join("snaps").to_string_lossy(),
     ]);
     assert_eq!(out.exit_code, 0);
+    // root branch: kind-matched rows exist but none resolve into the repo
+    // root — the "different root?" attribution is truthful HERE (S1 T1;
+    // bytes must not flip again in S2 — the count is kind-matched rows
+    // at the loop entry either way)
     assert!(out.stdout.contains(
-        "[WARN] snapshot 空集合（0 files，db raw 1 邊）——graph.db 與 --repo 不同 root？下游 transition 會誤報無結構變化\n"
+        "[WARN] snapshot 空集合（0 files，db raw 1 邊）——結構 kind 匹配 1 邊但全數無法解析進 repo root 或被 profile 排除：graph.db 與 --repo 不同 root？下游 diff（delta_tour）會誤報無結構變化\n"
     ));
     assert!(out
         .stdout
         .contains("[OK] snapshot: 0 files, 0 module edges -> "));
+}
+
+#[test]
+fn cli_empty_set_warn_zero_edge_db() {
+    // zero-edge db (an aborted/empty build): the third WARN branch with
+    // its rebuild guidance — pins the branch both other empty-set tests
+    // cannot reach (kind_n==0 ∧ raw==0; review F1/R-1)
+    let repo = repo_fixture("cli_empty_zero");
+    let db = repo.join(".code-reality").join("graph.db");
+    std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    // metadata must be present (load_metadata crashes on a half-set db —
+    // that is a different failure family); zero edges is the point here
+    spec.metadata.push(("git_head_sha".into(), "x".into()));
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let out = run_cli(&[
+        "snapshot",
+        "--repo",
+        &repo.to_string_lossy(),
+        "--out-dir",
+        &repo.join("snaps").to_string_lossy(),
+    ]);
+    assert_eq!(out.exit_code, 0);
+    assert!(out.stdout.contains(
+        "[WARN] snapshot 空集合（0 files，db 零邊——空 build？）——先 `code-reality graph_db build --repo <repo>`；下游 diff（delta_tour）會誤報無結構變化\n"
+    ));
+    assert!(out
+        .stdout
+        .contains("[OK] snapshot: 0 files, 0 module edges -> "));
+}
+
+#[test]
+fn cli_empty_set_warn_kind_distribution() {
+    // non-structural edges that ALL fail to resolve into the repo root:
+    // post-S2 the in-root REFERENCES fixture yields files>0 (that is the
+    // fix, pinned by export_files_face_is_all_kinds) — this branch's
+    // remaining population is out-of-root/excluded non-structural edges
+    // (T2, reworked in S2 per the recorded EP ripple note)
+    let repo = repo_fixture("cli_empty_kind");
+    let db = repo.join(".code-reality").join("graph.db");
+    std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    spec.metadata.push(("git_head_sha".into(), "x".into()));
+    for (s, t) in [
+        ("/elsewhere/r1.py::A", "/elsewhere/r2.py::B"),
+        ("/elsewhere/r3.py::C", "/elsewhere/r4.py::D"),
+    ] {
+        spec.edges.push(("REFERENCES".into(), s.into(), t.into()));
+    }
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let out = run_cli(&[
+        "snapshot",
+        "--repo",
+        &repo.to_string_lossy(),
+        "--out-dir",
+        &repo.join("snaps").to_string_lossy(),
+    ]);
+    assert_eq!(out.exit_code, 0);
+    assert!(out.stdout.contains(
+        "[WARN] snapshot 空集合（0 files，db raw 2 邊）——結構 kind 匹配 0 邊、raw 全數非結構 kind 且無法解析進 repo root 或被 profile 排除；下游 diff 會誤報無結構變化\n"
+    ));
+    assert!(out
+        .stdout
+        .contains("[OK] snapshot: 0 files, 0 module edges -> "));
+}
+
+#[test]
+fn export_files_face_is_all_kinds() {
+    // the S2 headline (T7): a REFERENCES-only db with in-repo endpoints
+    // yields a NON-empty participating file set — the snapshot-owned kind
+    // decision (files face = all kinds) pinned at the export level
+    let repo = repo_fixture("all_kinds");
+    let db = repo.join(".code-reality").join("graph.db");
+    std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    spec.metadata.push(("git_head_sha".into(), "x".into()));
+    let q = |rel: &str, sym: &str| graph_db_fixture::qualified(&repo, rel, sym);
+    for (s, t) in [
+        (
+            q("mosaic_alpha/domain/a.py", "A"),
+            q("mosaic_alpha/infra/b.py", "B"),
+        ),
+        (
+            q("mosaic_alpha/domain/c.py", "C"),
+            q("mosaic_alpha/infra/b.py", "B2"),
+        ),
+    ] {
+        spec.edges.push(("REFERENCES".into(), s, t));
+    }
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let conn = code_reality::common::connect_ro(&db).unwrap();
+    let profile = code_reality::profile::load_profile(&repo).unwrap();
+    let out = export_module_edges(&conn, &repo, profile.as_ref()).unwrap();
+    assert_eq!(
+        out.files,
+        vec![
+            "mosaic_alpha/domain/a.py".to_string(),
+            "mosaic_alpha/domain/c.py".to_string(),
+            "mosaic_alpha/infra/b.py".to_string(),
+        ],
+        "REFERENCES-only participating files must be exported (all-kind face)"
+    );
+    assert!(out.module_edges.is_empty());
+    assert_eq!(out.kind_edge_count, 0); // zero structural rows matched
+    assert_eq!(out.raw_edge_count, 2);
+}
+
+#[test]
+fn mixed_kind_files_union_module_edges_structural() {
+    // T9: CALLS + REFERENCES db — files = the cross-kind union,
+    // module_edges = the structural subset only
+    let repo = repo_fixture("mixed_kinds");
+    let db = repo.join(".code-reality").join("graph.db");
+    std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    spec.metadata.push(("git_head_sha".into(), "x".into()));
+    let q = |rel: &str, sym: &str| graph_db_fixture::qualified(&repo, rel, sym);
+    spec.edges.push((
+        "CALLS".into(),
+        q("mosaic_alpha/domain/a.py", "A"),
+        q("mosaic_alpha/infra/b.py", "B"),
+    ));
+    spec.edges.push((
+        "REFERENCES".into(),
+        q("mosaic_alpha/infra/b.py", "B"),
+        q("mosaic_alpha/infra/d.py", "D"),
+    ));
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let conn = code_reality::common::connect_ro(&db).unwrap();
+    let profile = code_reality::profile::load_profile(&repo).unwrap();
+    let out = export_module_edges(&conn, &repo, profile.as_ref()).unwrap();
+    assert_eq!(
+        out.files,
+        vec![
+            "mosaic_alpha/domain/a.py".to_string(),
+            "mosaic_alpha/infra/b.py".to_string(),
+            "mosaic_alpha/infra/d.py".to_string(),
+        ],
+        "files = union across kinds"
+    );
+    assert_eq!(
+        out.module_edges,
+        vec![vec![
+            "mosaic_alpha/domain".to_string(),
+            "mosaic_alpha/infra".to_string(),
+            "CALLS".to_string()
+        ]],
+        "module_edges = structural subset only"
+    );
+    assert_eq!(out.kind_edge_count, 1);
 }
 
 #[test]

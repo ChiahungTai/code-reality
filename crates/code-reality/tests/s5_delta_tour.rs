@@ -196,6 +196,63 @@ fn claims_three_states() {
 }
 
 #[test]
+fn degenerate_pair_tour_carries_warning() {
+    // T23 (SM-11): a degenerate pair's tour description carries the
+    // 退化快照 warning UP FRONT — the "+0/−0" counts must never read as
+    // a silent no-structural-change conclusion
+    let (repo, before, after) = repo_fixture("degen");
+    let mut stderr = String::new();
+    let mut j = trans_json(&before, &after);
+    j.as_object_mut().unwrap().insert(
+        "degenerate_warning".into(),
+        json!("兩側 snapshot files 皆空（退化快照）——diff 無意義，勿下「無結構變化」結論"),
+    );
+    let tour = build_tour(&j, &repo, None, "t", &mut stderr).unwrap();
+    let desc = tour["steps"][0]["description"].as_str().unwrap();
+    let warn_at = desc
+        .find("退化快照警示")
+        .expect("warning missing from description");
+    let counts_at = desc.find("before `").expect("counts line missing");
+    assert!(
+        warn_at < counts_at,
+        "warning must precede the counts: {desc}"
+    );
+    assert!(desc.contains("兩側 snapshot files 皆空"));
+}
+
+#[test]
+fn degenerate_warning_is_additive_steps_still_render() {
+    // T24 (T13 contract at the new injection point): the warning is an
+    // ADDITIVE prefix — the change steps from the range still render.
+    // The cross-face files warning rides the same prefix (post-build R2:
+    // SM-5 must stay observable on the sole interface)
+    let (repo, before, after) = repo_fixture("degen2");
+    let mut stderr = String::new();
+    let mut j = trans_json(&before, &after);
+    let obj = j.as_object_mut().unwrap();
+    obj.insert(
+        "degenerate_warning".into(),
+        json!("兩側 snapshot files 皆空（退化快照）——diff 無意義，勿下「無結構變化」結論"),
+    );
+    obj.insert(
+        "files_face_warning".into(),
+        json!("files 面跨版本不可比（一方缺 files_face＝舊 structural-only 面）——files diff 不可信；module_edges 仍可比（kind 集不變）"),
+    );
+    let tour = build_tour(&j, &repo, None, "t", &mut stderr).unwrap();
+    let steps = tour["steps"].as_array().unwrap();
+    assert!(steps.len() >= 5, "change steps must still render: {tour}");
+    let desc = steps[0]["description"].as_str().unwrap();
+    let degen_at = desc
+        .find("退化快照警示")
+        .expect("degenerate prefix missing");
+    let face_at = desc
+        .find("跨面 files 警示")
+        .expect("cross-face prefix missing");
+    let counts_at = desc.find("before `").expect("counts line missing");
+    assert!(degen_at < counts_at && face_at < counts_at, "{desc}");
+}
+
+#[test]
 fn kebab_and_cleanup() {
     assert_eq!(kebab("My EP Name"), "my-ep-name");
     assert_eq!(kebab("ep.r4-測試"), "ep-r4");

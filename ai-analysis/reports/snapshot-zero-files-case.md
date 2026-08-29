@@ -1,10 +1,15 @@
 # Case: snapshot exports 0 files on REFERENCES-only graph dbs
 
-> Status: open (independent case — carved out of ep-data-plane-unification
-> S3 / SM-8 per its NOT boundary; the in-repo migration does not and
-> cannot fix this). Investigated 2026-08-29 by an independent read-only
-> agent; mechanism first isolated by the EP session, then independently
-> confirmed and extended.
+> Status: **closed by `ai-analysis/execution-plans/
+> ep-snapshot-zero-files-fix.md`** (S1+S2+S4, 2026-08-29) — files face
+> widened to all kinds (`_meta.files_face` marker), empty-set WARN
+> attributes its true cause, transition degenerate guard lives at the
+> summarize layer with delta_tour the sole diff interface (tour
+> description carries the warning). L4: self 70 / NT 1955 / ai-rules 7
+> files; mosaic ×3 same-commit increment +5/+6/+26. Originally
+> investigated 2026-08-29 by an independent read-only agent; mechanism
+> first isolated by the EP session, then independently confirmed and
+> extended.
 
 ## Symptom
 

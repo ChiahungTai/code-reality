@@ -389,8 +389,27 @@ pub fn build_tour(
         .and_then(Value::as_array)
         .map(|a| a.len())
         .unwrap_or(0);
+    // S4: a degenerate pair's warning rides the tour description UP
+    // FRONT — the +0/−0 counts must never read as a silent
+    // no-structural-change conclusion (the md conclusion face retired
+    // with the transition CLI; this description is the diff conclusion
+    // face now). The cross-face files warning rides the same prefix
+    // (SM-5 observable on the sole interface).
+    let mut degenerate_prefix = data
+        .get("degenerate_warning")
+        .and_then(Value::as_str)
+        .map(|w| format!("⚠️ 退化快照警示——{w}\n\n"))
+        .unwrap_or_default();
+    degenerate_prefix.push_str(
+        &data
+            .get("files_face_warning")
+            .and_then(Value::as_str)
+            .map(|w| format!("⚠️ 跨面 files 警示——{w}\n\n"))
+            .unwrap_or_default(),
+    );
     let summary = format!(
-        "before `{}` → after `{}`：+{}/−{} 模組邊、{} 新檔、{} 改名、{} 修改、{} 刪檔。\n\n{}\n\n之後每步一個變動檔（修改錨第一個 hunk、新檔錨第一個宣告行）。",
+        "{}before `{}` → after `{}`：+{}/−{} 模組邊、{} 新檔、{} 改名、{} 修改、{} 刪檔。\n\n{}\n\n之後每步一個變動檔（修改錨第一個 hunk、新檔錨第一個宣告行）。",
+        degenerate_prefix,
         before.chars().take(8).collect::<String>(),
         after.chars().take(8).collect::<String>(),
         added_n,
@@ -696,16 +715,8 @@ pub fn run(argv: &[&str]) -> ToolOutput {
             Err(e) => return ToolOutput::crash(e),
         },
     };
-    let (diff, new_files, gone_files) = summarize(&sa, &sb);
-    let data = render_json_value(
-        &sa,
-        &sb,
-        claims.as_ref(),
-        &diff,
-        &new_files,
-        &gone_files,
-        profile.as_ref(),
-    );
+    let summary = summarize(&sa, &sb);
+    let data = render_json_value(&sa, &sb, &summary, claims.as_ref(), profile.as_ref());
     let tour = match build_tour(&data, &repo, ep.as_deref(), &task, &mut stderr) {
         Ok(t) => t,
         Err(e) => return ToolOutput::crash(e),

@@ -7,8 +7,8 @@
 //! hostile sidecars are caught at the handler boundary (SM-14) so one
 //! poisoned repo never takes the daemon down.
 //!
-//! Tool surface v0 (the SCIP family four — snapshot/transition/tours
-//! stay CLI; skills subprocess-consume them, YAGNI):
+//! Tool surface v0 (the SCIP family four — snapshot/tours stay CLI;
+//! skills subprocess-consume them, YAGNI):
 //! `refs(symbol, repo_root)` / `callers(symbol, repo_root)` /
 //! `closure(symbol, repo_root, depth)` / `audit(repo_root)`.
 //! Responses carry `[SRC]` passthrough and a `[STDERR]` section.

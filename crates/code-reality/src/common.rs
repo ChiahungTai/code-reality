@@ -13,7 +13,9 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 
 /// Structural edge kinds (`common.py:18`) — the "no structural change"
-/// boundary in transition and the projection filter in snapshot.
+/// boundary in transition and the module_edges-face gate in snapshot's
+/// export (the snapshot files face is all-kind since the S2 widening;
+/// the kind decision lives consumer-side in `snapshot.rs`).
 pub const EDGE_KINDS: [&str; 3] = ["IMPORTS_FROM", "CALLS", "INHERITS"];
 
 /// Anchor line → literal-ish line regex (`common.py:21-37`):
@@ -143,14 +145,6 @@ pub fn git_rev_parse_head(repo_root: &Path) -> Result<String, String> {
         ));
     }
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
-}
-
-/// Python list repr for message/report faces: `['a', 'b']`. Module names
-/// in practice contain no quotes (single-quote-only shape recorded as a
-/// known boundary).
-pub fn py_list_repr(items: &[String]) -> String {
-    let inner: Vec<String> = items.iter().map(|s| format!("'{}'", s)).collect();
-    format!("[{}]", inner.join(", "))
 }
 
 /// Ordered `_meta` block (`common.py:93-115`): repo/commit/created_at/tool

@@ -1,10 +1,17 @@
 # Case: lsp-bridge check_file convergence gates pass poisoned diag-cache entries
 
-> Status: open — folded into `ai-analysis/execution-plans/
-> ep-snapshot-zero-files-fix.md` as segment S3 (user adjudication
-> 2026-08-29). Investigated 2026-08-29 by an independent read-only
-> agent with reproduction (4 failures in 35 isolated runs, one at
-> 1-min load 5.74 — the race window is resident, load only amplifies).
+> Status: **closed by `ai-analysis/execution-plans/
+> ep-snapshot-zero-files-fix.md` segment S3** (2026-08-29) — F1
+> (mutation Instant stamped at every origin, basis = newer of both) +
+> F2 (stalled recast in time semantics) landed; T15/T16 deterministic
+> poison-injection tests green; the detector (`lru_evict`) 20/20
+> consecutive runs zero failures (pre-fix 4/35). Declared residuals:
+> late-landing poison (push after basis) and force_reopen's own
+> self-poisoning race — pre-existing, documented in the EP. Originally
+> folded into the EP as S3 (user adjudication 2026-08-29); investigated
+> 2026-08-29 by an independent read-only agent with reproduction (4
+> failures in 35 isolated runs, one at 1-min load 5.74 — the race
+> window is resident, load only amplifies).
 
 ## Symptom
 
