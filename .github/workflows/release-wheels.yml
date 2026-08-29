@@ -65,12 +65,13 @@ jobs:
           rustup show
           rustup target add ${{ matrix.target }}
 
-      # cache off: uv here installs ONE pinned tool (maturin) — the
+      # enable-cache off (v6 input name — plain `cache:` warns as
+      # unexpected): uv here installs ONE pinned tool (maturin); the
       # default cache keys on uv.lock, which this Rust repo never has,
       # so it would never invalidate (the CI warning this silences)
       - uses: astral-sh/setup-uv@v6
         with:
-          cache: false
+          enable-cache: false
 
       - name: Install maturin
         run: uv tool install maturin==${{ env.MATURIN_VERSION }}
@@ -221,7 +222,8 @@ jobs:
       # OIDC trusted publishing: no NODE_AUTH_TOKEN — npm exchanges the
       # Actions id-token with the registry. npm versions are
       # publish-once: re-running this job for an already-published
-      # version fails loudly (the bootstrap 0.3.0 was published manually
-      # from the same-tag PyPI wheels — the first automated npm release
-      # is the next tag).
-      - run: npm publish tgz/code-reality-darwin-arm64-*.tgz
+      # version fails loudly (0.3.0 and 0.3.1 were both published
+      # manually — 0.3.1 hit the git-shorthand path bug fixed by the ./
+      # prefix below; the first fully automated npm release is the next
+      # tag).
+      - run: npm publish ./tgz/code-reality-darwin-arm64-*.tgz
