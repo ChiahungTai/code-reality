@@ -6,7 +6,7 @@
       "name": "code-reality",
       "source": "./plugin",
       "description": "Symbol truth queries, caller edges/closures, completeness audits — per-call repo_root, stdio MCP (zero daemon)",
-      "version": "0.6.1",
+      "version": "0.6.2",
       "category": "developer-tools",
       "tags": [
         "code-analysis",
