@@ -26,6 +26,12 @@ to_name = "compute"
 [[claims]]
 to_module = "fixmod.calc"
 to_kind = "function"
+to_name = "compute"
+note = "claimed integration wired via the planned edge (WIRED demo)"
+
+[[claims]]
+to_module = "fixmod.calc"
+to_kind = "function"
 to_name = "untouched_helper"
 note = "claimed integration; planned code never calls it (HOLE demo)"
 
