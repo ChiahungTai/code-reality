@@ -73,6 +73,7 @@ pub mod mcp_server;
 pub mod profile;
 pub mod project;
 pub mod py_calls;
+pub mod refresh;
 pub mod runtime_edges;
 pub mod scip_edges;
 pub mod sidecar_migrate;

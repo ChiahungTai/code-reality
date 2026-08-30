@@ -280,7 +280,6 @@ pub fn open_face(index_path: &Path) -> Result<(Face, Vec<String>), String> {
     let db_path = sqlite_path(index_path);
     if !db_path.exists() {
         let loaded = load_index(index_path)?;
-        stderr.push(loaded.stderr);
         return Ok((
             Face::Protobuf {
                 index: loaded.index,
@@ -297,7 +296,6 @@ pub fn open_face(index_path: &Path) -> Result<(Face, Vec<String>), String> {
                     e
                 ));
                 let loaded = load_index(index_path)?;
-                stderr.push(loaded.stderr);
                 Ok((
                     Face::Protobuf {
                         index: loaded.index,
@@ -310,7 +308,6 @@ pub fn open_face(index_path: &Path) -> Result<(Face, Vec<String>), String> {
             stderr.push(format!("[WARN] 衍生 db 過期（{}）——自動重建\n", reason));
             let loaded = load_index(index_path)?; // parse once — feeds fallback too
             let head = sidecar_head(index_path);
-            stderr.push(loaded.stderr); // <100-docs WARN prints on this path too
             let built = build_db(&loaded.index, &db_path, &head);
             let face = match (built, open_ro(&db_path)) {
                 (Ok(_stats), Ok(conn)) => {

@@ -15,8 +15,9 @@
 //! (non-pollution invariant, test-pinned).
 
 use crate::argparse::{parse, FlagSpec, Kind, Outcome, ToolSpec};
-use crate::build::{concat_scip, producer_roots, resolve_bin};
+use crate::build::{concat_scip, producer_roots};
 use crate::callers;
+use crate::common::resolve_bin;
 use crate::engine::{self, default_index_path};
 use crate::ToolOutput;
 use std::collections::{BTreeMap, BTreeSet};
@@ -96,12 +97,7 @@ fn parse_report(text: &str) -> Result<Report, String> {
             .map(|arr| {
                 arr.iter()
                     .filter_map(|e| e.as_table())
-                    .filter_map(|tt| {
-                        Some((
-                            tbl_str(tt, "module")?,
-                            tbl_str(tt, "name")?,
-                        ))
-                    })
+                    .filter_map(|tt| Some((tbl_str(tt, "module")?, tbl_str(tt, "name")?)))
                     .collect()
             })
             .unwrap_or_default()
@@ -153,7 +149,11 @@ fn load_query_face(index_path: &Path) -> Result<QueryFace, String> {
 /// whose tail equals the name, so same-named symbols across modules
 /// would pollute the verdicts without the `` `module`/ `` prefix filter
 /// (review CR-1).
-fn callers_of(face: &QueryFace, name: &str, module: Option<&str>) -> Option<callers::CallersResult> {
+fn callers_of(
+    face: &QueryFace,
+    name: &str,
+    module: Option<&str>,
+) -> Option<callers::CallersResult> {
     let parsed = engine::Query::parse(name);
     let defs_all = engine::find_defs(&face.index, &parsed);
     let defs: std::collections::BTreeMap<String, Vec<String>> = match module {
@@ -193,7 +193,9 @@ fn site_map(res: &callers::CallersResult) -> BTreeMap<(String, i64), String> {
 // ---------- core ----------
 
 fn valid_stem(s: &str) -> bool {
-    !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
+    !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
 }
 
 /// Claim note rendered inline when present (provenance for the verdict).
@@ -301,7 +303,11 @@ pub fn project_repo(
         .touched
         .iter()
         .map(|(m, n)| (m.clone(), n.clone()))
-        .chain(rep.claims.iter().map(|c| (c.to_module.clone(), c.to_name.clone())));
+        .chain(
+            rep.claims
+                .iter()
+                .map(|c| (c.to_module.clone(), c.to_name.clone())),
+        );
     for (module, name) in probes {
         let parsed = engine::Query::parse(&name);
         let defs = engine::find_defs(&real_face.index, &parsed);
@@ -329,7 +335,9 @@ pub fn project_repo(
         let proj = callers_of(&proj_face, name, Some(module));
         let real_sites_res = callers_of(&real_face, name, Some(module));
         let Some(proj) = proj else {
-            graft_lines.push(format!("[projected][MISSING] {module}/{name} — 不在投影 index（touched 目標無 DEF）"));
+            graft_lines.push(format!(
+                "[projected][MISSING] {module}/{name} — 不在投影 index（touched 目標無 DEF）"
+            ));
             graft_json.push(serde_json::json!({
                 "symbol": name, "module": module, "verdict": "MISSING",
             }));
@@ -369,7 +377,9 @@ pub fn project_repo(
     for (module, name) in &rep.symbols {
         match callers_of(&proj_face, name, Some(module)) {
             None => {
-                reverse_lines.push(format!("[projected][MISSING] {module}/{name} — 投影 index 無 DEF"));
+                reverse_lines.push(format!(
+                    "[projected][MISSING] {module}/{name} — 投影 index 無 DEF"
+                ));
                 reverse_json.push(serde_json::json!({
                     "symbol": name, "module": module, "verdict": "MISSING",
                 }));
@@ -422,7 +432,7 @@ pub fn project_repo(
                     }));
                 } else {
                     claim_lines.push(format!(
-                        "[projected] {} — 已接線（{} 個計畫檔 site）",
+                        "[projected][WIRED] {} — 已接線（{} 個計畫檔 site）",
                         c.to_name,
                         wired.len()
                     ));

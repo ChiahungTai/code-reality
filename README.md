@@ -117,6 +117,11 @@ Per-repo prerequisites for the query tools: run
 `ensure_indexes` in-process. Mixed repos run BOTH producers and
 cat-merge the two SCIP indexes into one slot — a single graph serves
 both languages. `--producer rust|python` overrides the detection.
+scip_refs-family queries also self-heal a stale index before answering
+(opt out with `CODE_REALITY_AUTOHEAL=off`), and `code-reality hook
+install --repo <repo>` opts a repo into a post-commit background
+`code-reality refresh` (docs-only commits re-stamp provenance instead
+of re-producing).
 Manual chain (equivalent, for debugging): `rust-analyzer scip <repo>`
 or `pyrefly-index --repo <repo>` →
 (`code-reality scip_refs --stamp-meta`/`--build-cache` optional

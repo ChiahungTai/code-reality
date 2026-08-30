@@ -78,6 +78,23 @@ Responses embed `[SRC]` provenance lines (index version/commit) and a
   repo and still exits 0; on fatal errors a partial index is still
   written, so the exit code is the failure signal
 
+### Query-time self-heal & commit-granularity refresh (opt-in)
+
+- scip_refs-family queries (query / --callers / --closure / --audit) on
+  a stale slot rebuild it before answering — single-flight across
+  concurrent sessions through `.code-reality/scip/.heal.lock`. A rebuild
+  that still leaves the slot behind warns once and serves (detection vs
+  corpus mismatch never loops). `CODE_REALITY_AUTOHEAL=off` reverts to
+  warn-only; explicit `--index` paths and the write modes are never
+  healed. The manual chain above stays for explicit maintenance.
+- `code-reality refresh --repo <repo>` is the post-commit background
+  face (full re-produce when sources moved; docs-only commits re-stamp
+  provenance only). `code-reality hook install --repo <repo>` wires the
+  opt-in `.githooks/post-commit`; install refuses loudly over unmanaged
+  hooks, a foreign `core.hooksPath`, or active `.git/hooks/*` entries,
+  and the script pins the resolved absolute bin path (GUI-no-PATH safe),
+  logging to `.code-reality/refresh.log`.
+
 ### Slot discipline
 
 - One producer per slot — don't mix producers in the same

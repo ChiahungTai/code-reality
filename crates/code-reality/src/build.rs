@@ -16,11 +16,14 @@
 //! the <128-byte guard below.
 
 use crate::argparse::{parse, FlagSpec, Kind, Outcome, ToolSpec};
+use crate::common::{first_output_line, resolve_bin};
 use crate::engine::{default_index_path, resolve_repo};
 use crate::graph_db;
 use crate::ToolOutput;
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::{Duration, Instant};
 
 const SPEC: ToolSpec = ToolSpec {
     flags: &[
@@ -32,7 +35,9 @@ const SPEC: ToolSpec = ToolSpec {
         FlagSpec {
             long: "--producer",
             short: None,
-            kind: Kind::Value { metavar: "rust|python" },
+            kind: Kind::Value {
+                metavar: "rust|python",
+            },
         },
         FlagSpec {
             long: "--json",
@@ -54,10 +59,6 @@ const HELP: &str = "usage: code-reality build --repo <repo> [--producer rust|pyt
 /// (the Cargo.toml-form trap produced 102-122 bytes; a legal minimal
 /// crate index is 725 bytes — POC- calibrated).
 const EMPTY_INDEX_BYTES: u64 = 128;
-
-/// Walk-skipped directory names (mirrors the pyrefly producer's
-/// SKIP_DIRS plus Rust build output).
-const SKIP_DIRS: &[&str] = &["__pycache__", "venv", "node_modules", "target"];
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum RepoKind {
@@ -99,16 +100,21 @@ impl BuildError {
 }
 
 pub fn count_sources(repo: &Path) -> Result<(usize, usize), String> {
+    // Composed (not duplicated) from the shared corpus list; the build
+    // detector additionally skips `target` (OUT_DIR artifacts are not
+    // source — the staleness walk keeps .py there for the python face).
+    let mut skips: Vec<&str> = crate::engine::SKIP_DIRS.to_vec();
+    skips.push("target");
     let mut stack = vec![repo.to_path_buf()];
     let (mut py, mut rs) = (0usize, 0usize);
     while let Some(dir) = stack.pop() {
-        let entries = std::fs::read_dir(&dir)
-            .map_err(|e| format!("讀取 {} 失敗：{e}", dir.display()))?;
+        let entries =
+            std::fs::read_dir(&dir).map_err(|e| format!("讀取 {} 失敗：{e}", dir.display()))?;
         for ent in entries.flatten() {
             let Ok(ft) = ent.file_type() else { continue };
             let name = ent.file_name().to_string_lossy().into_owned();
             if ft.is_dir() {
-                if name.starts_with('.') || SKIP_DIRS.contains(&name.as_str()) {
+                if name.starts_with('.') || skips.contains(&name.as_str()) {
                     continue;
                 }
                 stack.push(ent.path());
@@ -136,23 +142,6 @@ fn detect_kind(repo: &Path) -> Result<RepoKind, BuildError> {
     }
 }
 
-/// PATH-style resolution over injectable roots (tests pass synthetic
-/// roots instead of mutating the process-global PATH — cargo-test
-/// parallelism would otherwise race). Unix exec-bit checked.
-pub fn resolve_bin(name: &str, roots: &[PathBuf], hint: &str) -> Result<PathBuf, String> {
-    use std::os::unix::fs::PermissionsExt;
-    let mut tried = Vec::new();
-    for root in roots {
-        let cand = root.join(name);
-        tried.push(cand.display().to_string());
-        let Ok(md) = std::fs::metadata(&cand) else { continue };
-        if md.is_file() && md.permissions().mode() & 0o111 != 0 {
-            return Ok(cand);
-        }
-    }
-    Err(format!("{name} 找不到（已試：{}）——{hint}", tried.join("、")))
-}
-
 pub(crate) fn producer_roots() -> Vec<PathBuf> {
     let mut roots = Vec::new();
     if let Some(path) = std::env::var_os("PATH") {
@@ -164,19 +153,6 @@ pub(crate) fn producer_roots() -> Vec<PathBuf> {
         roots.push(home.join(".cargo/bin"));
     }
     roots
-}
-
-fn first_output_line(bin: &Path, args: &[&str]) -> Option<String> {
-    let out = Command::new(bin).args(args).output().ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .next()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
 }
 
 fn python_leg(repo: &Path, rep: &mut Report, roots: &[PathBuf]) -> Result<(), BuildError> {
@@ -207,9 +183,18 @@ fn python_leg(repo: &Path, rep: &mut Report, roots: &[PathBuf]) -> Result<(), Bu
     Ok(())
 }
 
-fn rust_leg(repo: &Path, out_path: &Path, rep: &mut Report, roots: &[PathBuf]) -> Result<(), BuildError> {
-    let bin = resolve_bin("rust-analyzer", roots, "安裝：rustup component add rust-analyzer")
-        .map_err(|e| BuildError::Env(format!("{e}\n")))?;
+fn rust_leg(
+    repo: &Path,
+    out_path: &Path,
+    rep: &mut Report,
+    roots: &[PathBuf],
+) -> Result<(), BuildError> {
+    let bin = resolve_bin(
+        "rust-analyzer",
+        roots,
+        "安裝：rustup component add rust-analyzer",
+    )
+    .map_err(|e| BuildError::Env(format!("{e}\n")))?;
     if let Some(v) = first_output_line(&bin, &["--version"]) {
         rep.producers.push(v);
     }
@@ -254,7 +239,8 @@ pub(crate) fn concat_scip(slot: &Path, part: &Path) -> Result<(), String> {
     let b = std::fs::read(part).map_err(|e| format!("讀 {} 失敗：{e}", part.display()))?;
     let tmp = slot.with_file_name(".merge-tmp.scip");
     std::fs::write(&tmp, [a, b].concat()).map_err(|e| format!("寫 {} 失敗：{e}", tmp.display()))?;
-    std::fs::rename(&tmp, slot).map_err(|e| format!("rename {} → {} 失敗：{e}", tmp.display(), slot.display()))
+    std::fs::rename(&tmp, slot)
+        .map_err(|e| format!("rename {} → {} 失敗：{e}", tmp.display(), slot.display()))
 }
 
 /// Core orchestration. `roots` is the bin-search path list (injectable
@@ -316,7 +302,23 @@ pub fn build_repo(
         }
         (false, true) => {
             rep.face = "rust-face".to_string();
-            rust_leg(&resolved, &slot, &mut rep, roots)?;
+            // The leg always writes the sibling part; the single-leg face
+            // lands it on the slot via rename so concurrent readers never
+            // see a torn index (rust-analyzer would otherwise write the
+            // slot in place — the mixed path already had rename via
+            // concat_scip).
+            let rs_part = slot_dir.join(".rust-part.scip");
+            if let Err(e) = rust_leg(&resolved, &rs_part, &mut rep, roots) {
+                let _ = std::fs::remove_file(&rs_part);
+                return Err(e);
+            }
+            std::fs::rename(&rs_part, &slot).map_err(|e| {
+                BuildError::Core(format!(
+                    "rename {} → {} 失敗：{e}",
+                    rs_part.display(),
+                    slot.display()
+                ))
+            })?;
             if slot_existed {
                 rep.notes
                     .push("覆蓋既有 index.scip（slot 單檔——先前面目已取代）".to_string());
@@ -335,7 +337,8 @@ pub fn build_repo(
             }
             concat_scip(&slot, &rs_part).map_err(BuildError::Core)?;
             let _ = std::fs::remove_file(&rs_part);
-            rep.notes.push("雙語言合一 graph（rust+python 串接）".to_string());
+            rep.notes
+                .push("雙語言合一 graph（rust+python 串接）".to_string());
         }
         (false, false) => {
             return Err(BuildError::Env(
@@ -344,21 +347,24 @@ pub fn build_repo(
         }
     }
 
-    // Stamp index provenance in-process — the one-shot face must not
-    // leave the [SRC] index-version guard half-blind (relay Finding B:
-    // every scip_refs query warned "index meta 未 stamp" after build).
-    // Non-fatal on failure: provenance, not core data.
-    let repo_str = resolved.display().to_string();
-    let stamp = crate::cli::run(&["scip_refs", "--repo", &repo_str, "--stamp-meta"]);
-    if stamp.exit_code != 0 {
-        let why = stamp
-            .stderr
-            .lines()
-            .map(str::trim)
-            .find(|s| !s.is_empty())
-            .unwrap_or("原因不明");
+    // Stamp index provenance in-process with the legs that actually ran
+    // (face-accurate producer string; relay Finding B's no-unstamped-slot
+    // goal — direct lib call, no cli::run indirection so the query-path
+    // heal hook cannot re-enter at all).
+    let producer = rep.producers.join("; ");
+    if let Err(e) = crate::engine::stamp_meta_core(
+        &resolved,
+        &slot,
+        roots,
+        if producer.is_empty() {
+            None
+        } else {
+            Some(&producer)
+        },
+    ) {
         rep.notes.push(format!(
-            "stamp-meta 失敗（{why}）——手動補：code-reality scip_refs --repo {repo_str} --stamp-meta"
+            "stamp-meta 失敗（{e}）——手動補：code-reality scip_refs --repo {} --stamp-meta",
+            resolved.display()
         ));
     }
 
@@ -378,6 +384,268 @@ pub fn build_repo(
     rep.indexes_created = ir.created;
     rep.indexes_skipped = ir.skipped;
     Ok(rep)
+}
+
+// ---------- query-time index heal (S3, ep-index-query-time-self-heal) ----------
+
+/// Outcome of a pre-query freshness check. `Fresh` covers "nothing to do"
+/// (including head-drift-only — that WARN is source_line's single
+/// source); `ServeStale` means the caller answers from the existing
+/// index with a loud WARN — a heal failure never blocks the query
+/// (open_face "answering beats a traceback" philosophy, one layer up).
+#[derive(Debug, Clone, PartialEq)]
+pub enum HealOutcome {
+    Fresh,
+    Healed {
+        secs: f64,
+        nodes: usize,
+        notes: Vec<String>,
+    },
+    HealedByPeer {
+        waited_secs: f64,
+    },
+    ServeStale(Vec<String>),
+}
+
+/// Single-flight lock beside the slot: one healer at a time across the
+/// query heal and the post-commit refresh. Drop releases.
+struct HealLock {
+    path: PathBuf,
+}
+
+impl Drop for HealLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+/// Lock age beyond which a crashed holder's lock is stealable (producer
+/// runs are seconds-to-a-minute; 10min is generous).
+const HEAL_LOCK_MAX_AGE: Duration = Duration::from_secs(600);
+/// Wait budget for a peer healer before serving stale.
+const HEAL_WAIT_BUDGET: Duration = Duration::from_secs(120);
+const HEAL_POLL: Duration = Duration::from_millis(200);
+
+fn acquire_heal_lock(slot_dir: &Path) -> Result<Option<HealLock>, String> {
+    let p = slot_dir.join(".heal.lock");
+    loop {
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&p)
+        {
+            Ok(mut f) => {
+                use std::io::Write;
+                let _ = writeln!(f, "{} {}", std::process::id(), crate::engine::utc_now_iso());
+                return Ok(Some(HealLock { path: p }));
+            }
+            Err(e) => {
+                if !p.exists() {
+                    // creation failed with no lock present (read-only dir
+                    // etc.) — an environment failure, NOT "held"; surfacing
+                    // it as held would spin the wait budget for nothing
+                    return Err(format!("無法建立 heal lock（{}）：{e}", slot_dir.display()));
+                }
+                // held — steal only an abandoned lock (mtime past max age)
+                let abandoned = p
+                    .metadata()
+                    .and_then(|m| m.modified())
+                    .ok()
+                    .and_then(|m| m.elapsed().ok())
+                    .is_some_and(|age| age > HEAL_LOCK_MAX_AGE);
+                if !abandoned || std::fs::remove_file(&p).is_err() {
+                    return Ok(None);
+                }
+                // stolen — retry the create (a fresh racer just wins it)
+            }
+        }
+    }
+}
+
+/// Flagged-path-only producer drift note (the steady-state query path is
+/// zero-spawn by rule): stamped producer vs installed — an upgrade
+/// signal, never a rebuild trigger (rebuilding with the same stale
+/// producer changes nothing).
+fn producer_drift_note(slot: &Path, roots: &[PathBuf]) -> Option<String> {
+    let stamped = crate::engine::load_meta(slot)
+        .0
+        .and_then(|m| m["producer"].as_str().map(str::to_string))
+        .filter(|s| !s.is_empty() && s != "<unresolved>")?;
+    // Only the pyrefly segment is compared: the stamp records the legs
+    // that actually ran ("pyrefly-index X; rust-analyzer Y"), and
+    // rust-analyzer's version floats with the toolchain — a rust-face
+    // stamp carries no pyrefly segment and never warns here.
+    let stamped_py = stamped
+        .split("; ")
+        .find(|seg| seg.starts_with("pyrefly-index "))?
+        .to_string();
+    let stamped_v = stamped_py
+        .strip_prefix("pyrefly-index ")
+        .unwrap_or(&stamped_py);
+    let current = crate::common::producer_version("pyrefly-index", roots)?;
+    (stamped_v != current).then(|| {
+        format!(
+            "[WARN] producer 版本錯配（stamp pyrefly-index {stamped_v} ≠ 現裝 {current}）——升級：uv tool install -U pyrefly-producer\n"
+        )
+    })
+}
+
+/// Post-rebuild-error outcome (SM-17 half-success): the rebuild failed
+/// AFTER the producer may have landed a fresh index — re-evaluate before
+/// serving stale, so a graph-only failure is not mislabeled. Public for
+/// direct testing (the graph step is not injectable through fake bins).
+pub fn heal_outcome_after_rebuild_err(
+    repo: &Path,
+    slot: &Path,
+    err: String,
+) -> Result<HealOutcome, String> {
+    let snap = crate::engine::evaluate_staleness(repo, slot)?;
+    if !snap.source_newer {
+        Ok(HealOutcome::Healed {
+            secs: 0.0,
+            nodes: 0,
+            notes: vec![format!("[WARN] graph 未重建（{err}）——下次顯式 build 補\n")],
+        })
+    } else {
+        Ok(HealOutcome::ServeStale(vec![format!(
+            "[WARN] {err}——本次查詢以現存索引作答\n"
+        )]))
+    }
+}
+
+fn run_heal_locked(
+    repo: &Path,
+    slot: &Path,
+    roots: &[PathBuf],
+    _lock: HealLock,
+    t0: Instant,
+) -> Result<HealOutcome, String> {
+    match build_repo(repo, None, roots) {
+        Err(e) => {
+            let mut out = heal_outcome_after_rebuild_err(repo, slot, e.msg().to_string())?;
+            if let HealOutcome::ServeStale(lines) = &mut out {
+                lines.extend(producer_drift_note(slot, roots));
+            }
+            Ok(out)
+        }
+        Ok(rep) => {
+            // Loop guard (SM-9): a rebuild that still leaves the slot
+            // behind warns once and serves — never loops.
+            let snap = crate::engine::evaluate_staleness(repo, slot)?;
+            if snap.source_newer {
+                let mut lines = vec![
+                    "[WARN] heal 期間原始碼又變動——本次查詢以現存索引作答（下次查詢自動再癒）\n"
+                        .to_string(),
+                ];
+                lines.extend(producer_drift_note(slot, roots));
+                return Ok(HealOutcome::ServeStale(lines));
+            }
+            let delta = match crate::engine::load_index(slot) {
+                Ok(loaded) => {
+                    let docs: BTreeSet<String> = loaded
+                        .index
+                        .documents
+                        .iter()
+                        .map(|d| d.relative_path.clone())
+                        .collect();
+                    let walk = crate::engine::walk_sources(repo)?;
+                    Some(crate::engine::doc_set_delta(&docs, &walk))
+                }
+                // unparseable fresh output is the build's own failure face
+                Err(_) => None,
+            };
+            if let Some(d) = &delta {
+                if d.missing > 0 {
+                    let mut lines = vec![format!(
+                        "[WARN] 偵測與 producer 語料不一致（false-stale：missing={}，例：{}）——不迴圈，本次查詢以現存索引作答\n",
+                        d.missing,
+                        d.examples.join("、")
+                    )];
+                    lines.extend(producer_drift_note(slot, roots));
+                    return Ok(HealOutcome::ServeStale(lines));
+                }
+            }
+            let notes = producer_drift_note(slot, roots).into_iter().collect();
+            Ok(HealOutcome::Healed {
+                secs: t0.elapsed().as_secs_f64(),
+                nodes: rep.nodes,
+                notes,
+            })
+        }
+    }
+}
+
+fn wait_peer_and_reevaluate(
+    repo: &Path,
+    slot: &Path,
+    roots: &[PathBuf],
+    t0: Instant,
+) -> Result<HealOutcome, String> {
+    let lock_path = slot
+        .parent()
+        .unwrap_or_else(|| Path::new(""))
+        .join(".heal.lock");
+    loop {
+        if !lock_path.exists() {
+            let snap = crate::engine::evaluate_staleness(repo, slot)?;
+            if !snap.source_newer {
+                return Ok(HealOutcome::HealedByPeer {
+                    waited_secs: t0.elapsed().as_secs_f64(),
+                });
+            }
+            // peer released without fixing it — become the healer
+            let slot_dir = slot.parent().unwrap_or_else(|| Path::new("."));
+            return match acquire_heal_lock(slot_dir) {
+                Ok(Some(lock)) => run_heal_locked(repo, slot, roots, lock, t0),
+                Ok(None) => {
+                    std::thread::sleep(HEAL_POLL); // raced again; keep polling
+                    continue;
+                }
+                Err(e) => Ok(HealOutcome::ServeStale(vec![format!(
+                    "[WARN] {e}——本次查詢以現存索引作答\n"
+                )])),
+            };
+        }
+        if t0.elapsed() > HEAL_WAIT_BUDGET {
+            let mut lines = vec![
+                "[WARN] heal lock 等待逾時（併發 healer 未釋放）——本次查詢以現存索引作答\n"
+                    .to_string(),
+            ];
+            lines.extend(producer_drift_note(slot, roots));
+            return Ok(HealOutcome::ServeStale(lines));
+        }
+        std::thread::sleep(HEAL_POLL);
+    }
+}
+
+/// Pre-query freshness gate (S3). `Err` = the staleness CHECK itself
+/// failed (walk/stat) — the caller warns and answers from the existing
+/// index. Missing slot → `Fresh` so the caller's own missing-index FAIL
+/// path stays authoritative (SM-11, no bootstrap-on-miss).
+pub fn ensure_fresh(repo: &Path, roots: &[PathBuf]) -> Result<HealOutcome, String> {
+    let repo = resolve_repo(repo);
+    let slot = default_index_path(&repo)?;
+    if !slot.exists() {
+        return Ok(HealOutcome::Fresh);
+    }
+    let snap = crate::engine::evaluate_staleness(&repo, &slot)?;
+    if !snap.source_newer {
+        return Ok(HealOutcome::Fresh);
+    }
+    let t0 = Instant::now();
+    let slot_dir = slot
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| repo.join(".code-reality/scip"));
+    match acquire_heal_lock(&slot_dir) {
+        Ok(Some(lock)) => run_heal_locked(&repo, &slot, roots, lock, t0),
+        Ok(None) => wait_peer_and_reevaluate(&repo, &slot, roots, t0),
+        Err(e) => {
+            let mut lines = vec![format!("[WARN] {e}——本次查詢以現存索引作答\n")];
+            lines.extend(producer_drift_note(&slot, roots));
+            Ok(HealOutcome::ServeStale(lines))
+        }
+    }
 }
 
 fn render(rep: Report, json: bool) -> ToolOutput {

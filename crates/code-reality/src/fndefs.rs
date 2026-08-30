@@ -232,7 +232,7 @@ pub type SpansWithStderr = (BTreeMap<String, Vec<FnSpan>>, Vec<String>);
 fn resolve_idx<'a>(
     index: Option<&'a Index>,
     owned: &'a mut Option<Index>,
-    stderr: &mut Vec<String>,
+    _stderr: &mut Vec<String>,
     index_path: &Path,
 ) -> Result<&'a Index, String> {
     match index {
@@ -240,7 +240,6 @@ fn resolve_idx<'a>(
         None => {
             if owned.is_none() {
                 let l = engine::load_index(index_path)?;
-                stderr.push(l.stderr);
                 *owned = Some(l.index);
             }
             Ok(owned.as_ref().unwrap())

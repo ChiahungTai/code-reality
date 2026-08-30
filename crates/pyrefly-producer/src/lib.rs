@@ -359,7 +359,10 @@ fn enclosing_chain(
 /// non-dot dependency dirs (`venv`-shaped envs, `node_modules`) whose
 /// inclusion would flood the corpus with site-packages definitions.
 pub fn collect_py_files(root: &Path, out: &mut Vec<PathBuf>) {
-    const SKIP_DIRS: [&str; 3] = ["__pycache__", "venv", "node_modules"];
+    // Skip list single-sourced in code-reality (engine::SKIP_DIRS): the
+    // staleness detection walk mirrors this corpus, so both sides must
+    // share one list.
+    use code_reality::engine::SKIP_DIRS;
     let Ok(entries) = std::fs::read_dir(root) else {
         return;
     };

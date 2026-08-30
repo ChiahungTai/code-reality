@@ -62,6 +62,20 @@ fn occurrences_in(index: &scip::types::Index, rel: &str) -> Vec<(String, i32)> {
 }
 
 #[test]
+fn write_is_atomic_no_tmp_residue() {
+    // tmp-sibling + rename write: no `.index.scip.tmp` survives and the
+    // slot parses (torn-write structural guard — see emit::write).
+    let repo = temp_repo_tagged("atomic");
+    let index_path = repo.join("index.scip");
+    pyrefly_producer::emit(&repo, Some(&index_path)).expect("emit");
+    assert!(
+        !repo.join(".index.scip.tmp").exists(),
+        "tmp sibling must not survive a successful write"
+    );
+    assert!(code_reality::engine::load_index(&index_path).is_ok());
+}
+
+#[test]
 fn emit_build_cache_and_graph_db_on_fixture() {
     let repo = temp_repo();
     let index_path = repo.join("index.scip");

@@ -10,7 +10,9 @@ use code_reality::project::project_repo;
 use std::path::{Path, PathBuf};
 
 fn fixture(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(name)
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(name)
 }
 
 /// Shell fake overlay-gen: copies the pre-minted overlay + report to the
@@ -81,7 +83,10 @@ fn fake_overlay_gen_wrong_identity(dir: &Path) -> PathBuf {
         &report,
         std::fs::read_to_string(fixture("proj_overlay_report.toml"))
             .unwrap()
-            .replace("project = \"proj-fixture\"", "project = \"proj-fixture-dogfood\""),
+            .replace(
+                "project = \"proj-fixture\"",
+                "project = \"proj-fixture-dogfood\"",
+            ),
     )
     .unwrap();
     let content = format!(
@@ -133,14 +138,15 @@ fn walk_files(root: &Path) -> Vec<PathBuf> {
 // The lib-level entry keeps ToolOutput semantics without bin spawning.
 fn lib_run(repo: &Path, plan: &Path, roots: &[PathBuf]) -> Result<String, String> {
     project_repo(repo, plan, roots, false).map_err(|e| match e {
-        code_reality::project::ProjectError::Env(m) | code_reality::project::ProjectError::Core(m) => m,
+        code_reality::project::ProjectError::Env(m)
+        | code_reality::project::ProjectError::Core(m) => m,
     })
 }
 
 #[test]
 fn happy_path_graft_hole_missing_labels() {
     let tmp = tempfile::tempdir().unwrap();
-    let bin = fake_overlay_gen(tmp.path());
+    fake_overlay_gen(tmp.path());
     let (repo, plan) = repo_with_plan(&tmp, "graft-demo.toml");
     let roots = vec![tmp.path().to_path_buf()];
     let out = lib_run(&repo, &plan, &roots).unwrap();
@@ -152,9 +158,11 @@ fn happy_path_graft_hole_missing_labels() {
         "{out}"
     );
     assert!(
-        out.contains("+ fixmod/planned_coordinator.py:6 ← ") && out.contains("PlannedCoordinator#snapshot"),
+        out.contains("+ fixmod/planned_coordinator.py:6 ← ")
+            && out.contains("PlannedCoordinator#snapshot"),
         "{out}"
     );
+    assert!(out.contains("[projected][WIRED] compute"), "{out}");
     assert!(out.contains("[projected][HOLE] untouched_helper"), "{out}");
     assert!(out.contains("[projected][MISSING] no_such_symbol"), "{out}");
     assert!(out.contains("slot: "), "{out}");
@@ -171,7 +179,10 @@ fn real_slot_stays_byte_identical_and_rerun_idempotent() {
 
     let first = lib_run(&repo, &plan, &roots).unwrap();
     let after = std::fs::read(&real_index).unwrap();
-    assert_eq!(before, after, "non-pollution: real index bytes must not move");
+    assert_eq!(
+        before, after,
+        "non-pollution: real index bytes must not move"
+    );
     // No sidecars sneak in beside the real slot either.
     let scip_dir = real_index.parent().unwrap();
     let entries: Vec<_> = std::fs::read_dir(scip_dir).unwrap().flatten().collect();
@@ -234,10 +245,12 @@ fn missing_real_index_gives_build_guidance() {
 /// absent — env-coupled skip-on-drift pattern).
 #[test]
 fn real_overlay_gen_e2e_when_built() {
-    let bin = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/release/overlay-gen");
+    let bin = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/release/overlay-gen");
     if !bin.is_file() {
-        eprintln!("[skip] {} 不在——cargo build --release -p pyrefly-producer 後重跑", bin.display());
+        eprintln!(
+            "[skip] {} 不在——cargo build --release -p pyrefly-producer 後重跑",
+            bin.display()
+        );
         return;
     }
     let tmp = tempfile::tempdir().unwrap();
@@ -288,7 +301,11 @@ fn run_arg_faces() {
 fn wrong_plan_identity_fails_loud_with_real_prefix() {
     let tmp = tempfile::tempdir().unwrap();
     let _ = fake_overlay_gen_wrong_identity(tmp.path());
-    std::fs::rename(tmp.path().join("overlay-gen-wid"), tmp.path().join("overlay-gen")).unwrap();
+    std::fs::rename(
+        tmp.path().join("overlay-gen-wid"),
+        tmp.path().join("overlay-gen"),
+    )
+    .unwrap();
     let (repo, plan) = repo_with_plan(&tmp, "wid.toml");
     let err = lib_run(&repo, &plan, &[tmp.path().to_path_buf()]).unwrap_err();
     assert!(err.contains("前綴不符"), "{err}");

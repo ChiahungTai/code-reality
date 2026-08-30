@@ -115,6 +115,11 @@ impl IndexEmitter {
         vec![l1, c1, l2, c2]
     }
 
+    /// Atomic slot write: tmp-sibling + rename. Concurrent readers (the
+    /// query-time heal makes concurrent producers routine) must see either
+    /// the old or the new index, never a torn write (`cache.rs build_db` /
+    /// `concat_scip` precedent). The dot prefix keeps walk faces away; a
+    /// leftover tmp from a crashed run is removed defensively first.
     pub fn write(&self, path: &Path) -> Result<(), String> {
         use protobuf::Message;
         if let Some(parent) = path.parent() {
@@ -125,7 +130,22 @@ impl IndexEmitter {
             .index
             .write_to_bytes()
             .map_err(|e| format!("protobuf encode: {e:?}"))?;
-        std::fs::write(path, bytes).map_err(|e| format!("write {}: {e}", path.display()))
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let tmp = path.with_file_name(format!(".{name}.tmp"));
+        let _ = std::fs::remove_file(&tmp);
+        std::fs::write(&tmp, bytes).map_err(|e| format!("write {}: {e}", tmp.display()))?;
+        if let Err(e) = std::fs::rename(&tmp, path) {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(format!(
+                "rename {} → {}: {e}",
+                tmp.display(),
+                path.display()
+            ));
+        }
+        Ok(())
     }
 }
 

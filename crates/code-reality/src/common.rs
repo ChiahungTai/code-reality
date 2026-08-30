@@ -182,6 +182,53 @@ pub fn make_meta(
     Ok(map)
 }
 
+// ---------- bin resolution + version probe (moved from build.rs — S2) ----------
+// Shared by the producer legs (build), the stamp face (cli), and the
+// heal/refresh faces: PATH-style resolution over injectable roots so
+// tests pass synthetic dirs instead of mutating the process-global PATH.
+
+/// PATH-style resolution over injectable roots. Unix exec-bit checked.
+pub fn resolve_bin(name: &str, roots: &[PathBuf], hint: &str) -> Result<PathBuf, String> {
+    use std::os::unix::fs::PermissionsExt;
+    let mut tried = Vec::new();
+    for root in roots {
+        let cand = root.join(name);
+        tried.push(cand.display().to_string());
+        let Ok(md) = std::fs::metadata(&cand) else {
+            continue;
+        };
+        if md.is_file() && md.permissions().mode() & 0o111 != 0 {
+            return Ok(cand);
+        }
+    }
+    Err(format!(
+        "{name} 找不到（已試：{}）——{hint}",
+        tried.join("、")
+    ))
+}
+
+/// First non-empty stdout line of a successful `bin args…` run.
+pub fn first_output_line(bin: &Path, args: &[&str]) -> Option<String> {
+    let out = std::process::Command::new(bin).args(args).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .next()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+/// `--version` first line of a producer bin, if resolvable. Consumed by
+/// the stamp face (meta provenance) and the heal's flagged-path drift
+/// note — never on the steady-state query path (zero-spawn rule, S3).
+pub fn producer_version(name: &str, roots: &[PathBuf]) -> Option<String> {
+    let bin = resolve_bin(name, roots, "").ok()?;
+    first_output_line(&bin, &["--version"])
+}
+
 // ---------- D1: JSON serializer ----------
 
 /// `json.dumps(v, ensure_ascii=False, indent=1)` byte face (D1): 1-space

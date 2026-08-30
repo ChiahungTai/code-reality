@@ -141,6 +141,136 @@ fn query_stdout_full_shape_on_fixture() {
 }
 
 #[test]
+fn unstamped_remediation_split_by_divergence() {
+    // drifted: a source newer than the slot → rebuild guidance (S2).
+    // Both repos are git repos — source_line early-returns before the
+    // unstamped branch when repo_sha is also absent (git missing).
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join("seed.txt"), "s\n").unwrap();
+    git_setup(tmp.path());
+    let idx = fixture_copy(&tmp);
+    std::fs::write(tmp.path().join("src_new.py"), "x = 1\n").unwrap(); // newer than the copy
+    let out = run(&argv(&[
+        "f",
+        "--index",
+        &idx.to_string_lossy(),
+        "--repo",
+        &tmp.path().to_string_lossy(),
+    ]));
+    assert!(
+        out.stderr
+            .contains("未 stamp 且原始碼已較新——索引過期：跑 code-reality build"),
+        "stderr={}",
+        out.stderr
+    );
+
+    // not drifted: source older than the slot → legacy re-stamp guidance
+    let tmp2 = tempfile::tempdir().unwrap();
+    std::fs::write(tmp2.path().join("old.py"), "x = 1\n").unwrap();
+    git_setup(tmp2.path());
+    let idx2 = fixture_copy(&tmp2);
+    // fs::copy on macOS preserves the source mtime (fclonefileat fast
+    // path) — pin the copy to NOW so old.py is genuinely older
+    std::fs::File::open(&idx2)
+        .unwrap()
+        .set_modified(std::time::SystemTime::now())
+        .unwrap();
+    let out2 = run(&argv(&[
+        "f",
+        "--index",
+        &idx2.to_string_lossy(),
+        "--repo",
+        &tmp2.path().to_string_lossy(),
+    ]));
+    assert!(
+        out2.stderr.contains("未 stamp（生成後跑 --stamp-meta）"),
+        "stderr={}",
+        out2.stderr
+    );
+    assert!(!out2.stderr.contains("已較新"), "stderr={}", out2.stderr);
+}
+
+fn git_setup(repo: &std::path::Path) {
+    for args in [
+        vec!["init", "-q"],
+        vec!["-c", "user.email=t@t", "-c", "user.name=t", "add", "-A"],
+        vec![
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-qm",
+            "x",
+        ],
+    ] {
+        let st = std::process::Command::new("git")
+            .args(&args)
+            .current_dir(repo)
+            .status()
+            .unwrap();
+        assert!(st.success(), "git {args:?} failed");
+    }
+}
+
+#[test]
+fn head_drift_warn_e2e() {
+    // stamped index left behind by a docs-only commit → the single-source
+    // head-drift WARN (no heal — explicit --index is user-owned)
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    std::fs::write(repo.join("a.py"), "x = 1\n").unwrap();
+    git_setup(repo);
+    let idx = fixture_copy(&tmp);
+    let idx_s = idx.to_string_lossy().to_string();
+    let repo_s = repo.to_string_lossy().to_string();
+
+    let out = run(&argv(&[
+        "--stamp-meta",
+        "--repo",
+        &repo_s,
+        "--index",
+        &idx_s,
+    ]));
+    assert_eq!(out.exit_code, 0, "stderr={}", out.stderr);
+
+    std::fs::write(repo.join("docs.md"), "docs\n").unwrap();
+    for args in [
+        vec!["-c", "user.email=t@t", "-c", "user.name=t", "add", "-A"],
+        vec![
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-qm",
+            "x",
+        ],
+    ] {
+        let st = std::process::Command::new("git")
+            .args(&args)
+            .current_dir(repo)
+            .status()
+            .unwrap();
+        assert!(st.success());
+    }
+
+    let out = run(&argv(&[
+        "EventStoreLifecycle.open",
+        "--index",
+        &idx_s,
+        "--repo",
+        &repo_s,
+    ]));
+    assert_eq!(out.exit_code, 0, "stderr={}", out.stderr);
+    assert!(
+        out.stderr.contains("已離開 index 生成點"),
+        "stderr={}",
+        out.stderr
+    );
+}
+
+#[test]
 fn stamp_meta_writes_sidecar_and_is_idempotent() {
     let tmp = tempfile::tempdir().unwrap();
     let idx = fixture_copy(&tmp);
@@ -173,6 +303,10 @@ fn stamp_meta_writes_sidecar_and_is_idempotent() {
     assert!(sidecar.contains("\"stamped_at\": \""));
     assert!(sidecar.contains("+00:00"));
     assert!(sidecar.contains("\"tool\": \"code_reality.scip_refs\""));
+    assert!(
+        sidecar.contains("\"producer\": \""),
+        "S2: stamp records the producer version face"
+    );
 
     // idempotent rerun → same shape, file overwritten
     let out2 = run(&argv(&[

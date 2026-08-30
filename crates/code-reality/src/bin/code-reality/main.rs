@@ -43,6 +43,8 @@ fn route(argv: &[&str]) -> code_reality::ToolOutput {
         Some(&"sidecar_migrate") => code_reality::sidecar_migrate::run(argv),
         Some(&"project") => code_reality::project::run(argv),
         Some(&"build") => code_reality::build::run(argv),
+        Some(&"refresh") => code_reality::refresh::run(argv),
+        Some(&"hook") => code_reality::refresh::run(argv),
         Some(&"tour_validate") => code_reality::tour_validate::run(argv),
         Some(&"tour_upgrade") => code_reality::tour_upgrade::run(argv),
         Some(&"--version") | Some(&"-V") => ToolOutput {
@@ -66,7 +68,7 @@ fn route(argv: &[&str]) -> code_reality::ToolOutput {
     }
 }
 
-const SUBCOMMANDS: [&str; 17] = [
+const SUBCOMMANDS: [&str; 19] = [
     "scip_refs",
     "snapshot",
     "graph_audit",
@@ -84,4 +86,6 @@ const SUBCOMMANDS: [&str; 17] = [
     "graph_db",
     "sidecar_migrate",
     "project",
+    "refresh",
+    "hook",
 ];

@@ -113,7 +113,7 @@ fn mixed_language_sessions_are_independent() {
     // root: rust-analyzer loads the workspace from the rootUri (a
     // tempdir root would leave the .rs file detached — EP C-F-04's
     // degraded mode).
-    let (dir, sample) = py_fixture();
+    let (_dir, sample) = py_fixture();
     let b = bridge_at(Path::new(env!("CARGO_MANIFEST_DIR")));
     let (s_py, _) = b.session_for(&sample.to_string_lossy()).unwrap();
     let (s_rs, _) = b.session_for(&framing_rs().to_string_lossy()).unwrap();

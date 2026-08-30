@@ -283,8 +283,6 @@ pub fn report(
 
 pub struct LoadedIndex {
     pub index: Index,
-    /// Accumulated stderr WARN lines ([LOG]/[WARN] per Python output convention).
-    pub stderr: String,
 }
 
 pub fn load_index(path: &Path) -> Result<LoadedIndex, String> {
@@ -295,14 +293,11 @@ pub fn load_index(path: &Path) -> Result<LoadedIndex, String> {
     if index.documents.is_empty() {
         return Err("索引 0 文檔——空或損壞".to_string());
     }
-    let mut stderr = String::new();
-    if index.documents.len() < 100 {
-        stderr.push_str(&format!(
-            "[WARN] 索引僅 {} 文檔——可能截斷，結果存疑\n",
-            index.documents.len()
-        ));
-    }
-    Ok(LoadedIndex { index, stderr })
+    // The old `documents < 100` "possible truncation" heuristic retired
+    // (S2): it misattributed missing files as truncation on small repos
+    // while real truncation fails loudly in the parses above; the precise
+    // missing-files signal is doc_set_delta on the heal path.
+    Ok(LoadedIndex { index })
 }
 
 // ---------- slot / meta / git / [SRC] ----------
@@ -365,6 +360,206 @@ pub fn write_data_dir_gitignore(data_root: &Path) -> Result<(), String> {
     )
     .map_err(|e| format!(".gitignore 寫入失敗（{}）：{e}", g.display()))?;
     Ok(())
+}
+
+// ---------- index↔source staleness primitives (S2) ----------
+
+/// Corpus skip dirs — single source shared with the producer crate (its
+/// `collect_py_files` consumed the same 3-item list). The detection walk
+/// must be a SUPERSET walk relative to the producer corpus: skipping
+/// fewer dirs degrades to false-stale (safe — the heal's loop guard
+/// catches it); skipping more would go false-fresh (the dangerous side).
+/// `target` is NOT in this list: the python face keeps walking it
+/// (pyrefly indexes .py under it) while `walk_sources` skips its `.rs`
+/// (rust-analyzer's OUT_DIR artifacts never enter the corpus).
+pub const SKIP_DIRS: [&str; 3] = ["__pycache__", "venv", "node_modules"];
+
+/// One disk walk feeding both staleness signals: the per-language file
+/// sets (doc-set comparison) and the newest source mtime (cheap trigger).
+#[derive(Debug, Default)]
+pub struct SourceWalk {
+    pub py: BTreeSet<String>,
+    pub rs: BTreeSet<String>,
+    pub newest: Option<std::time::SystemTime>,
+}
+
+/// Walk `repo` for source files, mirroring the producer's corpus rules
+/// (dot-dirs + [`SKIP_DIRS`]). Fail-loud: a walk error is an error, never
+/// a silent empty set posing as fresh.
+pub fn walk_sources(repo: &Path) -> Result<SourceWalk, String> {
+    let root = resolve_repo(repo);
+    let mut out = SourceWalk::default();
+    // (dir, under_target): `target/` stays walkable for the python face
+    // (pyrefly indexes .py under it) but its `.rs` are cargo OUT_DIR
+    // artifacts — never in the rust-analyzer corpus — so the rust face
+    // and the newest-mtime signal both skip them. Post-build fresh-eyes
+    // finding: this repo carries 49 such .rs; counting them made every
+    // heal report missing>=49 and killed the Healed path.
+    let mut stack = vec![(root.clone(), false)];
+    while let Some((dir, under_target)) = stack.pop() {
+        let entries =
+            std::fs::read_dir(&dir).map_err(|e| format!("讀取 {} 失敗：{e}", dir.display()))?;
+        for ent in entries.flatten() {
+            let Ok(ft) = ent.file_type() else { continue };
+            let name = ent.file_name().to_string_lossy().into_owned();
+            if ft.is_dir() {
+                if name.starts_with('.') || SKIP_DIRS.contains(&name.as_str()) {
+                    continue;
+                }
+                stack.push((ent.path(), under_target || name == "target"));
+            } else if ft.is_file() {
+                let is_py = name.ends_with(".py");
+                if !(is_py || (name.ends_with(".rs") && !under_target)) {
+                    continue;
+                }
+                let rel = ent
+                    .path()
+                    .strip_prefix(&root)
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .unwrap_or_else(|_| name.clone());
+                if is_py {
+                    out.py.insert(rel);
+                } else {
+                    out.rs.insert(rel);
+                }
+                if let Ok(m) = ent.metadata().and_then(|md| md.modified()) {
+                    if out.newest.is_none_or(|n| m > n) {
+                        out.newest = Some(m);
+                    }
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// The two index↔source staleness signals. `head_drift=None` means "no
+/// head information" (unstamped meta, or git absent — SM-16): the
+/// unstamped WARN is source_line's single source, never duplicated here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StalenessSnapshot {
+    pub source_newer: bool,
+    pub head_drift: Option<bool>,
+}
+
+/// Cheap staleness evaluation (Stage A): walk + stats + meta read. Zero
+/// producer spawns (a stamped meta adds one `git rev-parse`) and zero
+/// protobuf parses — the steady-state query cost.
+pub fn evaluate_staleness(repo: &Path, slot: &Path) -> Result<StalenessSnapshot, String> {
+    let walk = walk_sources(repo)?;
+    let slot_m = slot
+        .metadata()
+        .and_then(|m| m.modified())
+        .map_err(|e| format!("stat {} 失敗：{e}", slot.display()))?;
+    let source_newer = walk.newest.is_some_and(|n| n > slot_m);
+    let stamped = load_meta(slot)
+        .0
+        .and_then(|m| m["head"].as_str().map(str::to_string))
+        .filter(|s| !s.is_empty());
+    let head_drift = match stamped {
+        None => None,
+        Some(idx) => match git_head(repo) {
+            Ok(head) => Some(idx != head),
+            Err(_) => None,
+        },
+    };
+    Ok(StalenessSnapshot {
+        source_newer,
+        head_drift,
+    })
+}
+
+/// Doc-set delta between a loaded index and the disk walk. Face-scoped:
+/// only extensions already present in the index are compared, so a
+/// python-face index never goes false-stale over stray .rs files (the
+/// reverse blind spot — index language ≠ repo language — is a recorded
+/// v1 boundary).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DocDelta {
+    pub missing: usize,
+    pub examples: Vec<String>,
+    pub extra: usize,
+}
+
+pub fn doc_set_delta(docs: &BTreeSet<String>, walk: &SourceWalk) -> DocDelta {
+    let has_py = docs.iter().any(|d| d.ends_with(".py"));
+    let has_rs = docs.iter().any(|d| d.ends_with(".rs"));
+    let disk: BTreeSet<&String> = walk
+        .py
+        .iter()
+        .chain(walk.rs.iter())
+        .filter(|p| (has_py && p.ends_with(".py")) || (has_rs && p.ends_with(".rs")))
+        .collect();
+    let missing_list: Vec<&String> = disk
+        .iter()
+        .copied()
+        .filter(|p| !docs.contains(*p))
+        .collect();
+    DocDelta {
+        missing: missing_list.len(),
+        examples: missing_list.iter().take(3).map(|s| s.to_string()).collect(),
+        extra: docs.iter().filter(|d| !disk.contains(d)).count(),
+    }
+}
+
+// ---------- stamp core (S4) ----------
+
+/// Stamp-write failure split so the cli `--stamp-meta` mode keeps its two
+/// frozen faces (git-warn + HEAD fail; write fail) while the refresh
+/// head-sync renders both to stderr.
+#[derive(Debug)]
+pub enum StampError {
+    Git(String),
+    Write(String),
+}
+
+impl std::fmt::Display for StampError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StampError::Git(w) | StampError::Write(w) => write!(f, "{}", w.trim_end()),
+        }
+    }
+}
+
+/// Stamp-write core shared by the umbrella build (face-accurate producer
+/// string from the legs it ran), the refresh head-sync (preserves the
+/// existing producer value), and the cli `--stamp-meta` mode (frozen
+/// stdout face; resolve-on-fresh). Returns the stamped head; the payload
+/// key order (repo/head/stamped_at/tool/producer) is the frozen Python
+/// dict order.
+pub fn stamp_meta_core(
+    repo: &Path,
+    index_path: &Path,
+    roots: &[PathBuf],
+    producer: Option<&str>,
+) -> Result<String, StampError> {
+    let head = git_head(repo).map_err(StampError::Git)?;
+    // Face-accurate provenance: explicit wins; otherwise preserve an
+    // existing stamp (head-sync) and only resolve on a fresh stamp —
+    // never blanket-stamp pyrefly onto a rust-face index.
+    let producer = match producer {
+        Some(p) => p.to_string(),
+        None => load_meta(index_path)
+            .0
+            .and_then(|m| m["producer"].as_str().map(str::to_string))
+            .filter(|s| !s.is_empty() && s != "<unresolved>")
+            .unwrap_or_else(|| {
+                crate::common::producer_version("pyrefly-index", roots)
+                    .unwrap_or("<unresolved>".to_string())
+            }),
+    };
+    let sidecar = meta_path(index_path);
+    let payload = serde_json::json!({
+        "repo": repo.canonicalize().unwrap_or_else(|_| repo.to_path_buf()).display().to_string(),
+        "head": head,
+        "stamped_at": utc_now_iso(),
+        "tool": "code_reality.scip_refs",
+        "producer": producer,
+    });
+    let text = format!("{}\n", serde_json::to_string_pretty(&payload).unwrap());
+    std::fs::write(&sidecar, &text)
+        .map_err(|e| StampError::Write(format!("sidecar 寫入失敗：{}", e)))?;
+    Ok(head)
 }
 
 /// Load stamp sidecar; corrupt/missing shapes → WARN + None (:596).
@@ -547,10 +742,24 @@ pub fn source_line(index_path: &Path, repo: Option<&Path>) -> (Option<String>, V
                 parts.push(format!("scip index @ {}（{}）", short(sha), date));
             }
         }
-        _ => warns.push(
-            "[WARN] index meta 未 stamp（生成後跑 --stamp-meta）——[SRC] 缺 index 版本\n"
+        _ => {
+            // Divergence-aware remediation (S2): stamping a stale index
+            // formalizes it — when sources moved past the slot, point at
+            // rebuild instead of re-stamp.
+            let drift = repo
+                .and_then(|r| walk_sources(r).ok())
+                .and_then(|w| w.newest)
+                .zip(index_path.metadata().and_then(|m| m.modified()).ok())
+                .is_some_and(|(n, s)| n > s);
+            warns.push(
+                if drift {
+                    "[WARN] index meta 未 stamp 且原始碼已較新——索引過期：跑 code-reality build\n"
+                } else {
+                    "[WARN] index meta 未 stamp（生成後跑 --stamp-meta）——[SRC] 缺 index 版本\n"
+                }
                 .to_string(),
-        ),
+            );
+        }
     }
     if let Some(sha) = &repo_sha {
         parts.push(format!("repo HEAD @ {}", short(sha)));

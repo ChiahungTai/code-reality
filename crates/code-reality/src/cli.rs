@@ -14,9 +14,7 @@
 
 use crate::argparse::looks_like_option;
 use crate::cache::{open_face, Face};
-use crate::engine::{
-    default_index_path, expand_home, git_head, load_index, meta_path, source_line, utc_now_iso,
-};
+use crate::engine::{default_index_path, expand_home, load_index, meta_path, source_line};
 use crate::ToolOutput;
 use scip::types::Index;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -329,6 +327,53 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         }
     }
 
+    // Query-time index heal (EP ep-index-query-time-self-heal S3): a
+    // slot left behind by source changes is rebuilt before the query
+    // answers, single-flight against concurrent healers/refreshes.
+    // Placed AFTER the final guard so an argv-invalid command never
+    // triggers data-plane side effects; write modes returned earlier,
+    // and the umbrella stamps via the lib directly (no cli::run
+    // indirection) so re-entry is structurally impossible. Explicit
+    // --index paths are never healed (user-owned).
+    if default_resolved && args.repo.is_some() {
+        let heal_off = std::env::var("CODE_REALITY_AUTOHEAL").ok().as_deref() == Some("off");
+        if !heal_off {
+            let repo_p = Path::new(args.repo.as_deref().unwrap());
+            match crate::build::ensure_fresh(repo_p, &crate::build::producer_roots()) {
+                Ok(crate::build::HealOutcome::Fresh) => {}
+                Ok(crate::build::HealOutcome::Healed {
+                    secs, nodes, notes, ..
+                }) => {
+                    let scope = if nodes > 0 {
+                        format!("{secs:.1}s，{nodes} nodes")
+                    } else {
+                        "半成功——graph 未重建，見下方 WARN".to_string()
+                    };
+                    stderr.push_str(&format!(
+                        "[OK] index healed（{scope}）——查詢以重建後索引作答\n"
+                    ));
+                    for n in notes {
+                        stderr.push_str(&n);
+                    }
+                }
+                Ok(crate::build::HealOutcome::HealedByPeer { .. }) => {
+                    stderr.push_str(
+                        "[OK] index healed（同 slot 併發 heal，等待後重用）——查詢以重建後索引作答\n",
+                    );
+                }
+                Ok(crate::build::HealOutcome::ServeStale(lines)) => {
+                    // payloads self-carry the serve-stale tail
+                    for l in lines {
+                        stderr.push_str(&l);
+                    }
+                }
+                Err(e) => stderr.push_str(&format!(
+                    "[WARN] 索引過期檢查失敗（{e}）——本次查詢以現存索引作答\n"
+                )),
+            }
+        }
+    }
+
     let repo = args.repo.as_deref().map(Path::new);
 
     if args.audit {
@@ -418,45 +463,37 @@ fn protobuf_answers(
 }
 
 /// --stamp-meta (scip_refs.py:696-722): idempotent version sidecar write.
+/// The payload/write core lives in engine (shared with the S4 refresh
+/// head-sync); this mode owns the frozen stdout face.
 fn stamp_meta_mode(index_path: &Path, repo: &Path) -> ToolOutput {
-    let head = match git_head(repo) {
-        Ok(head) => head,
-        Err(warn) => {
+    match crate::engine::stamp_meta_core(repo, index_path, &crate::build::producer_roots(), None) {
+        Ok(head) => {
+            let sidecar = meta_path(index_path);
+            let repo_name = repo
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            ToolOutput {
+                stdout: crate::msg_line(
+                    "OK",
+                    &format!(
+                        "meta stamped：{}（{} @ {}）",
+                        sidecar.display(),
+                        repo_name,
+                        head.chars().take(7).collect::<String>()
+                    ),
+                ),
+                stderr: String::new(),
+                exit_code: 0,
+            }
+        }
+        Err(crate::engine::StampError::Git(warn)) => {
             // Python prints the git-failure WARN line before the FAIL
             let mut out = ToolOutput::fail("取不到 repo HEAD——meta 未 stamp");
             out.stderr.insert_str(0, &warn);
-            return out;
+            out
         }
-    };
-    let sidecar = meta_path(index_path);
-    // Key order mirrors Python json.dumps of the dict: repo/head/stamped_at/tool
-    // (serde_json preserve_order keeps insertion order).
-    let payload = serde_json::json!({
-        "repo": repo.canonicalize().unwrap_or_else(|_| repo.to_path_buf()).display().to_string(),
-        "head": head,
-        "stamped_at": utc_now_iso(),
-        "tool": "code_reality.scip_refs",
-    });
-    let text = format!("{}\n", serde_json::to_string_pretty(&payload).unwrap());
-    if let Err(e) = std::fs::write(&sidecar, &text) {
-        return ToolOutput::fail(format!("sidecar 寫入失敗：{}", e));
-    }
-    let repo_name = repo
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_default();
-    ToolOutput {
-        stdout: crate::msg_line(
-            "OK",
-            &format!(
-                "meta stamped：{}（{} @ {}）",
-                sidecar.display(),
-                repo_name,
-                head.chars().take(7).collect::<String>()
-            ),
-        ),
-        stderr: String::new(),
-        exit_code: 0,
+        Err(crate::engine::StampError::Write(e)) => ToolOutput::fail(e),
     }
 }
 
@@ -469,10 +506,7 @@ fn build_cache_mode(index_path: &Path, stderr: &mut String) -> ToolOutput {
     let db_path = crate::cache::sqlite_path(index_path);
     let head = crate::engine::stamped_head(index_path);
     let loaded = match load_index(index_path) {
-        Ok(loaded) => {
-            stderr.push_str(&loaded.stderr);
-            loaded
-        }
+        Ok(loaded) => loaded,
         Err(msg) => return ToolOutput::fail(msg),
     };
     match crate::cache::build_db(&loaded.index, &db_path, &head) {
@@ -589,7 +623,6 @@ fn resolve_for_callers(
                 e
             ));
             let loaded = load_index(index_path)?;
-            stderr.push_str(&loaded.stderr);
             let defs = crate::engine::find_defs(&loaded.index, parsed);
             oracle = RowsOracle::Index(loaded.index);
             defs
@@ -662,7 +695,6 @@ fn callers_mode(
                 Ok(l) => l,
                 Err(msg) => return ToolOutput::fail(msg),
             };
-            stderr.push_str(&loaded.stderr);
             crate::engine::refs_rows(&loaded.index, &symbols)
         }
     };

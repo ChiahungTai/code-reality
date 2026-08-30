@@ -52,7 +52,13 @@ code-reality-lsp-bridge` — or from a checkout via `cargo install
 `<repo>/.code-reality/` — SCIP index slot under `scip/` with the
 self-contained single-`*` `.gitignore` (generate → `--stamp-meta` →
 `--build-cache` ordering); legacy `~/.mosaic/code-reality/` slots migrate
-via `code-reality sidecar_migrate --repo <repo>`.
+via `code-reality sidecar_migrate --repo <repo>`. scip_refs-family
+queries self-heal a stale slot before answering (single-flight;
+`CODE_REALITY_AUTOHEAL=off` reverts to warn-only); `code-reality refresh
+--repo <repo>` is the post-commit background face and `code-reality hook
+install|remove --repo <repo>` the opt-in `.githooks/post-commit` wiring
+(loud refusals over unmanaged hooks / foreign `core.hooksPath` / active
+`.git/hooks/*`).
 
 ## Module guide
 
@@ -89,6 +95,7 @@ via `code-reality sidecar_migrate --repo <repo>`.
 | Unified in-repo data plane (sidecar home retired) | default slots `<repo>/.code-reality/{scip,boundary,snapshots}/` resolved by `engine::default_index_path` / the `default_out_dir` family; the data dir self-writes a single-`*` `.gitignore` (zero consumer gitignore setup); legacy `~/.mosaic/code-reality/` slots migrate one-shot via `code-reality sidecar_migrate --repo <repo>` (retired 2026-08-29; five repos migrated byte-identical) | ✅ |
 | 新 repo 數據面一鍵準備（build 傘形） | `code-reality build --repo <repo> [--producer rust\|python] [--json]`（MCP face：`build` tool）— 偵測語言面 → spawn producer（`pyrefly-index`／`rust-analyzer scip <repo-dir>`＋`current_dir` toolchain pin；<128B 空索引守衛擋 Cargo.toml 形式靜默空產）→ in-process `graph_db build`＋`ensure_indexes`；**mixed repo 兩腿 cat-merge**（protobuf 同型訊息串接＝合法合併——單一 graph 雙語言可查，POC＋自倉 L4 實證）；env 類錯 `fail(2)`／graph 核心 `crash(1)`；index provenance in-process stamp（[SRC] 全行）；整合測試 12 條（fake-bin 注入＋fixture 直建，含 t12 倍增索引收斂）＋dogfood 三標的（ai-rules python 面／自倉混合合一 1011 nodes／NT 混合 66,820 nodes 雙語言合一）；**known issue 已構造免疫（NT 冷啟 relay 實測→閉環，全案記錄 `ai-analysis/reports/nt-cold-start-edge-dedup.md`）**：首次 build 邊數曾見 ≈2× 膨脹（466,459＝2×232,052＋2,355，nodes 恆定、重跑收斂 234,407；三路查證＝producer byte-deterministic＋r1 單份＋冷清 umbrella 重演單份——瞬態不可重現）；修復＝edge 物化自然鍵去重（kind＋caller＋callee＋file＋line，重複 occurrence 視為同一邊）——任何 producer 側重複均無害，首跑即收斂；**計數語義變更（L4 實證）**：NT canonical 234,407→232,273（常態輸出本含 2,134 同鍵重複——per-site 計數更精確，hub 度數不再虛胖） | ✅ |
 | Projected-graph overlay for EP planning | `code-reality project --repo <repo> --plan <plan.toml>` — compiles a declarative projection plan (planned symbols/edges/claims, TOML) via the spawned `overlay-gen` (single-source symbol minting + declared-edge-vs-source consistency gate), cat-merges the overlay onto the real index into `.code-reality/projections/<plan-stem>/`, and reports graft surface (real vs projected caller sites), new-symbol reverse chains, and claim verdicts (`[projected][HOLE]` claimed-but-unwired / `[projected][MISSING]` absent symbol). Every output carries the `[projected]` label + hypothetical-edge count — declarations, not evidence. The real slot stays byte-identical (protobuf-face queries only, zero sidecar writes) | ✅ |
+| Main-index query-time self-heal + commit-granularity refresh | scip_refs-family queries auto-heal a stale slot before answering (single-flight via `.code-reality/scip/.heal.lock`; a rebuild that still lags warns once and serves — corpus mismatch never loops; `CODE_REALITY_AUTOHEAL=off` reverts to warn-only) + `code-reality refresh --repo <repo>` (post-commit background face: full idempotent re-produce when sources moved, head-sync re-stamp on docs-only commits) + `code-reality hook install\|remove --repo <repo>` (opt-in `.githooks/post-commit`; script pins the resolved absolute bin path — GUI-no-PATH safe; logs to `.code-reality/refresh.log`) | ✅ |
 
 ## Tests
 
