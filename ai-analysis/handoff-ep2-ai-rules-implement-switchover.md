@@ -41,7 +41,7 @@
    - 考古證據傾向：②先跑一個 EP 的對照數據（brainstorm T2-1「天然對照」設計：8327ae4 的 CLI-in-prompt 是 sidecar vs in-path 的對照組，觀察窗從下一個 EP 起）再決定升級；③零考古證據；①的舊障礙（MCP 未連線全名 spawn 拒絕）已被 `8201987` 解除但尚無消費數據
 2. **implement 分層換軌**（`skills/implement/SKILL.md:166` 區）：spawned review agent 已掛 MCP——callers/impact 查詢改 MCP-first（MCP `callers`／`impact_radius`），CLI fallback 一行留給 generic Explore；同段四工具指示翻轉 MCP 優先
 3. **code-review/execution-plan 同步**：`skills/code-review/SKILL.md:127`、`skills/execution-plan/SKILL.md:161` 的「一律 CLI」改分層事實。注意：若決策點選②，execution-plan :161 的表述是「正確但需精確化」（spawn 對象確為 Explore），不是錯誤宣稱
-4. **stale 全清**（rg 錨掃描）：`rg -n "未掛 code-reality MCP|一律 CLI|一律以 CLI" skills/`——已知三處（execution-plan:161、implement:166、code-review:127）＋execution-plan「Step 3 平行 Spawn／單一 Agent Prompt」段（~:315-335）的 spawn 敘述一併核對；每處改分層事實，不留「一律」
+4. **stale 全清**（rg 錨掃描）：`rg -n "未掛 code-reality MCP|一律 CLI|一律以 CLI" skills/`——已知**四處**（execution-plan:161、implement:166、code-review:127、**cr-query:29**——lite-verify 2026-08-30 查證補列，同宣稱家族「spawned agent 未掛 code-reality MCP——CLI 清單見 execution-plan 段落 0」）＋execution-plan「Step 3 平行 Spawn／單一 Agent Prompt」段（:316/:329）的 spawn 敘述一併核對；每處改分層事實，不留「一律」
 5. **考古換軌消化**（座標 §7）：挖「CRG 退役後死掉沒搬的使用模式」，逐項判「復活成 CR MCP 形態／死得對」
 6. 順手清點：mosaic main worktree 殘留 `.code-review-graph/graph.db`（151KB、mtime 08-28 19:51）與「全刪」宣稱矛盾——回報 mosaic 端處置
 
