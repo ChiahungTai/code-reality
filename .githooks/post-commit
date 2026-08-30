@@ -28,6 +28,8 @@ inst() {
                 crates/code-reality-lsp-bridge/*) inst code-reality-lsp-bridge ;;
                 # code-reality changes also rebuild pyrefly-producer (path dep)
                 crates/code-reality/*) inst code-reality; inst pyrefly-producer ;;
+                # cr-freshness is a path dep of all three WARN-wired crates
+                crates/cr-freshness/*) inst code-reality; inst pyrefly-producer; inst code-reality-lsp-bridge ;;
                 crates/pyrefly-producer/*) inst pyrefly-producer ;;
                 Cargo.toml|Cargo.lock)
                     inst code-reality

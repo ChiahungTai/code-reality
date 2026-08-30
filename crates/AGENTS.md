@@ -47,10 +47,21 @@ tests are the sole gate face.
   `workspace.configuration` or `didChangeWatchedFiles
   .dynamicRegistration` (advertising them makes pyrefly issue
   server→client requests whose answers gate background work).
-- depends on no workspace crate; rmcp hoisted into workspace deps.
-  The bin's `stale_binary_warn()` is a LOCAL COPY of
-  `code-reality/src/freshness.rs` (the no-workspace-dep clause wins
-  over sharing) — change both together.
+- depends on no workspace TOOL crate (the independence clause);
+  zero-dep leaf crates are excepted — the WARN signal comes from
+  `cr-freshness` (extracted in ep-cr-freshness-extraction; the former
+  LOCAL COPY of `code-reality/src/freshness.rs` is retired). rmcp
+  hoisted into workspace deps.
+
+## cr-freshness (leaf lib crate)
+
+- **role**: zero-dep leaf carrying the binary freshness WARN signal
+  (`staleness` decision core + `is_dev_face` exe gate +
+  `stale_binary_warn` thin layer) — single source for all four
+  WARN-wired bins (ep-cr-freshness-extraction; retired the lsp-bridge
+  local copy). Consumers pass their own `option_env!("CR_BUILD_REV")`
+  (`cargo:rustc-env` scopes to the owning crate); the crate owns no
+  build script on purpose.
 
 ## pyrefly-producer (bin crate)
 
@@ -76,8 +87,8 @@ tests are the sole gate face.
   `engine::SKIP_DIRS` imported from the code-reality lib (single source
   with the staleness walk).
 - depends on the code-reality lib for `engine::default_index_path`
-  (slot resolution) and `freshness::stale_binary_warn`; the main
-  binary stays free of the pyrefly dep tree.
+  (slot resolution) and on the `cr-freshness` leaf for the WARN
+  signal; the main binary stays free of the pyrefly dep tree.
 - **bins**: `pyrefly-index` (occurrence index) + `overlay-gen`
   (declarative projection-plan compiler — single-source symbol minting
   via `emit`/`symbol`, declared-edge consistency gate via `py_calls`;
