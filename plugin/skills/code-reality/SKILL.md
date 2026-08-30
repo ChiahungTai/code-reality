@@ -22,6 +22,14 @@ parameter, not topology.
 | `callers(symbol, repo_root)` | Who calls it (sites included; item-level refs noted) |
 | `closure(symbol, repo_root, depth?)` | Transitive callers (BFS; default depth 2) |
 | `audit(repo_root)` | graph.db completeness gaps × SCIP refs (two-pass) |
+| `build(repo_root, producer?, json?)` | One-shot data-plane build (index + graph.db). WRITES `.code-reality/`; LONG-RUNNING: minutes-level, no progress reporting |
+| `snapshot(repo_root, label?, out_dir?)` | Boundary snapshot of the current graph state; WRITES a snapshot file (needs an existing graph.db) |
+| `delta_tour(repo_root, snapshot_a, snapshot_b, ep?, task?, out_dir?)` | Diff two snapshots into a delta-review CodeTour; WRITES `<repo>/.tours/delta/` (in-repo default — pass absolute snapshot paths) |
+| `project(repo_root, plan, json?)` | Projected-graph overlay for EP planning; WRITES `.code-reality/projections/<stem>/`, real slot untouched (needs `overlay-gen` resolvable — `uv tool install pyrefly-producer`) |
+
+The graph_query family (impact_radius, detect_changes, hub/bridge,
+communities, flows, search, …) is also MCP-exposed under the same
+server — 21 tools total.
 
 Responses embed `[SRC]` provenance lines (index version/commit) and a
 `[STDERR]` section for management output.
@@ -208,11 +216,15 @@ on any new repo.
   resolve for those (B7b).
 - `delta_tour --out-dir` resolves against the executing cwd, not the
   `--repo` root — run it from the repo (or pass an absolute path), or
-  the tours land in the caller's `.tours/delta/`.
+  the tours land in the caller's `.tours/delta/`. The MCP
+  `delta_tour` tool has no cwd trap: omitted `out_dir` defaults to
+  `<repo_root>/.tours/delta`.
 
 ## CLI surface (broader)
 
-The MCP face covers the SCIP family. The same binary carries the full
+The MCP face covers the SCIP family, the graph_query family, and the
+data-plane family (build/snapshot/delta_tour/project — write side
+effects, re-adjudicated 2026-08-29). The same binary carries the full
 toolchain: `code-reality <scip_refs|snapshot|graph_audit|
 hub_refs|boundary|boundary_build|build|chain_tour|delta_tour|
 tour_manifest|tour_validate|tour_upgrade|runtime_edges|

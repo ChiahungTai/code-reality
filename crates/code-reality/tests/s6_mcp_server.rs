@@ -2,6 +2,8 @@
 //! CLI uses), SM-14 isolation (missing repo loud; panic containment),
 //! and a live HTTP smoke on an ephemeral port.
 
+mod graph_db_fixture;
+
 use serde_json::json;
 
 #[tokio::test]
@@ -112,8 +114,10 @@ async fn http_server_serves_initialize_and_tools_list() {
             "architecture_overview",
             "audit",
             "bridge_nodes",
+            "build",
             "callers",
             "closure",
+            "delta_tour",
             "detect_changes",
             "document_symbols",
             "get_community",
@@ -123,8 +127,10 @@ async fn http_server_serves_initialize_and_tools_list() {
             "impact_radius",
             "list_communities",
             "list_flows",
+            "project",
             "refs",
-            "semantic_search"
+            "semantic_search",
+            "snapshot"
         ],
         "{names:?}"
     );
@@ -171,7 +177,7 @@ async fn http_server_serves_initialize_and_tools_list() {
         Ok(r) => assert!(r.is_error.unwrap_or(false)),
     }
     let tools2 = client.list_all_tools().await.unwrap();
-    assert_eq!(tools2.len(), 17);
+    assert_eq!(tools2.len(), 21);
     client.cancel().await.unwrap();
     server.abort();
 }
@@ -393,4 +399,252 @@ async fn get_community_drill_down_and_flows_limit() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     let n = stdout.matches("\"name\"").count();
     assert_eq!(n, 1, "--limit truncates flows, got {n} entries");
+}
+
+// ---------- data-plane family (EP ep-mcp-data-plane-tools) ----------
+
+fn dp_git(repo: &std::path::Path, args: &[&str]) {
+    let st = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(args)
+        .env("GIT_AUTHOR_NAME", "t")
+        .env("GIT_AUTHOR_EMAIL", "t@t")
+        .env("GIT_COMMITTER_NAME", "t")
+        .env("GIT_COMMITTER_EMAIL", "t@t")
+        .status()
+        .unwrap();
+    assert!(st.success(), "git {args:?} failed");
+}
+
+fn dp_ok_path(text: &str, marker: &str) -> String {
+    text.lines()
+        .find(|l| l.starts_with(marker))
+        .and_then(|l| l.split("-> ").last())
+        .unwrap()
+        .trim()
+        .to_string()
+}
+
+#[tokio::test]
+async fn data_plane_tools_route_loud_errors() {
+    let server = code_reality::mcp_server::CodeRealityServer::new();
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = std::fs::canonicalize(tmp.path()).unwrap();
+    let rr = repo.display().to_string();
+
+    // SM-2: build on a repo without any source face
+    let err = server
+        .build(rmcp::handler::server::wrapper::Parameters(
+            code_reality::mcp_server::BuildParams {
+                repo_root: rr.clone(),
+                producer: None,
+                json: None,
+            },
+        ))
+        .await
+        .unwrap_err();
+    assert!(err.message.contains("找不到 .py 或 .rs"), "{:?}", err.message);
+
+    // SM-3: producer validation surfaces as INVALID_PARAMS before any lib
+    // call — pinned on the code, not just the message text (the lib's own
+    // exit-2 arm produces a near-identical message; only the code
+    // distinguishes the pre-validation route)
+    let err = server
+        .build(rmcp::handler::server::wrapper::Parameters(
+            code_reality::mcp_server::BuildParams {
+                repo_root: rr.clone(),
+                producer: Some("go".into()),
+                json: None,
+            },
+        ))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        err.code,
+        rmcp::model::ErrorCode::INVALID_PARAMS,
+        "{:?}",
+        err.message
+    );
+    assert!(err.message.contains("rust 或 python"), "{:?}", err.message);
+
+    // SM-6: snapshot without a graph.db
+    let err = server
+        .snapshot(rmcp::handler::server::wrapper::Parameters(
+            code_reality::mcp_server::SnapshotParams {
+                repo_root: rr.clone(),
+                label: None,
+                out_dir: None,
+            },
+        ))
+        .await
+        .unwrap_err();
+    assert!(err.message.contains("graph.db"), "{:?}", err.message);
+
+    // SM-8: delta_tour with missing snapshot files
+    let err = server
+        .delta_tour(rmcp::handler::server::wrapper::Parameters(
+            code_reality::mcp_server::DeltaTourParams {
+                repo_root: rr.clone(),
+                snapshot_a: "/nonexistent-a.json".into(),
+                snapshot_b: "/nonexistent-b.json".into(),
+                ep: None,
+                task: None,
+                out_dir: None,
+            },
+        ))
+        .await
+        .unwrap_err();
+    assert!(err.message.contains("讀取失敗"), "{:?}", err.message);
+
+    // SM-11: project without an index slot
+    let err = server
+        .project(rmcp::handler::server::wrapper::Parameters(
+            code_reality::mcp_server::ProjectParams {
+                repo_root: rr.clone(),
+                plan: "/nonexistent-plan.toml".into(),
+                json: None,
+            },
+        ))
+        .await
+        .unwrap_err();
+    assert!(
+        err.message.contains("真實 index 不存在"),
+        "{:?}",
+        err.message
+    );
+
+    // SM-10: with an index placeholder in place, the invalid plan path is
+    // the error (project_repo checks the real index BEFORE the plan)
+    std::fs::create_dir_all(repo.join(".code-reality/scip")).unwrap();
+    std::fs::write(repo.join(".code-reality/scip/index.scip"), b"placeholder").unwrap();
+    let err = server
+        .project(rmcp::handler::server::wrapper::Parameters(
+            code_reality::mcp_server::ProjectParams {
+                repo_root: rr,
+                plan: "/nonexistent-plan.toml".into(),
+                json: None,
+            },
+        ))
+        .await
+        .unwrap_err();
+    assert!(
+        err.message.contains("plan") && err.message.contains("無效"),
+        "{:?}",
+        err.message
+    );
+}
+
+#[tokio::test]
+async fn mcp_snapshot_and_delta_tour_end_to_end() {
+    let server = code_reality::mcp_server::CodeRealityServer::new();
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = std::fs::canonicalize(tmp.path()).unwrap();
+    let rr = repo.display().to_string();
+
+    std::fs::create_dir_all(repo.join("pkg")).unwrap();
+    std::fs::write(
+        repo.join(".code-reality.toml"),
+        "[[module]]\nprefix = \"pkg/\"\n",
+    )
+    .unwrap();
+    std::fs::write(repo.join("pkg/mod.py"), "# header\ndef keep():\n    pass\n").unwrap();
+    dp_git(&repo, &["init", "-q"]);
+    dp_git(&repo, &["add", "."]);
+    dp_git(&repo, &["commit", "-qm", "base"]);
+
+    let db = repo.join(".code-reality/graph.db");
+    let mk_db = |edges: usize| {
+        // make_graph_db CREATEs tables — drop the previous db between the
+        // two graph states (simulated rebuilds)
+        let _ = std::fs::remove_file(&db);
+        std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+        let mut spec = graph_db_fixture::GraphDbSpec::default();
+        spec.metadata
+            .push(("git_head_sha".into(), "deadbeefdeadbeef".into()));
+        for i in 0..edges {
+            spec.edges.push((
+                "CALLS".into(),
+                graph_db_fixture::qualified(&repo, "pkg/mod.py", "keep"),
+                graph_db_fixture::qualified(&repo, &format!("pkg/other{i}.py"), "fn_b"),
+            ));
+        }
+        graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    };
+    mk_db(1);
+
+    // before snapshot (MCP write face); the fixture db's pinned sha
+    // (deadbeef) != real HEAD rides a stale WARN at exit 0
+    let r1 = server
+        .snapshot(rmcp::handler::server::wrapper::Parameters(
+            code_reality::mcp_server::SnapshotParams {
+                repo_root: rr.clone(),
+                label: Some("before".into()),
+                out_dir: None,
+            },
+        ))
+        .await
+        .unwrap();
+    let t1 = result_text(r1);
+    assert!(t1.contains("[WARN] graph stale"), "stale warn expected: {t1}");
+    assert!(t1.contains("[OK] snapshot: 2 files"), "{t1}");
+    let path1 = dp_ok_path(&t1, "[OK] snapshot");
+    assert!(std::path::Path::new(&path1).is_file(), "written: {path1}");
+
+    // second commit (source change anchors the git hunks) + db gains an edge
+    std::fs::write(repo.join("pkg/mod.py"), "# header\ndef keep():\n    return 42\n").unwrap();
+    dp_git(&repo, &["add", "."]);
+    dp_git(&repo, &["commit", "-qm", "change"]);
+    mk_db(2);
+
+    let r2 = server
+        .snapshot(rmcp::handler::server::wrapper::Parameters(
+            code_reality::mcp_server::SnapshotParams {
+                repo_root: rr.clone(),
+                label: Some("after".into()),
+                out_dir: None,
+            },
+        ))
+        .await
+        .unwrap();
+    let t2 = result_text(r2);
+    assert!(t2.contains("[OK] snapshot: 3 files"), "{t2}");
+    let path2 = dp_ok_path(&t2, "[OK] snapshot");
+    assert_ne!(path1, path2, "sha8-suffixed snapshot names differ");
+
+    // delta tour via MCP: omitted out_dir defaults in-repo (<repo>/.tours/delta)
+    let rt = server
+        .delta_tour(rmcp::handler::server::wrapper::Parameters(
+            code_reality::mcp_server::DeltaTourParams {
+                repo_root: rr,
+                snapshot_a: path1,
+                snapshot_b: path2,
+                ep: None,
+                task: Some("mcp-e2e".into()),
+                out_dir: None,
+            },
+        ))
+        .await
+        .unwrap();
+    let tt = result_text(rt);
+    assert!(tt.contains("[OK] delta tour:"), "{tt}");
+    assert!(tt.contains(".tours/delta/"), "in-repo default out_dir: {tt}");
+    let tour_path = dp_ok_path(&tt, "[OK] delta tour");
+    // the diff is real (an added edge + a changed file): steps must be >= 1
+    let steps: usize = tt
+        .lines()
+        .find(|l| l.starts_with("[OK] delta tour"))
+        .and_then(|l| l.split(": ").nth(1))
+        .and_then(|s| s.split(' ').next())
+        .and_then(|s| s.parse().ok())
+        .expect("step count in [OK] line");
+    assert!(steps >= 1, "expected non-degenerate tour, got {steps} steps: {tt}");
+    assert!(
+        std::path::Path::new(&tour_path).is_file(),
+        "tour written: {tour_path}"
+    );
+    assert!(
+        tour_path.ends_with("-mcp-e2e.tour"),
+        "task name in file: {tour_path}"
+    );
 }

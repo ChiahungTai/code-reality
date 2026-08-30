@@ -136,8 +136,11 @@ tests are the sole gate face.
   CLI umbrella `graph_query <op>` (`--union` retired — build-time
   materialization) and the 12 MCP tools share the argv path) /
   `mcp_server` (frontend adapter — rmcp streamable-http on 8200, tools
-  thin-wrap `cli::run` in-process with spawn_blocking + catch_unwind
-  per-request isolation [SM-14]; bin `code-reality-mcp`) / `cli` (assembly —
+  thin-wrap `cli::run` / `graph_engine::run` / the data-plane module
+  `run`s (build/snapshot/delta_tour/project — write side effects,
+  ep-mcp-data-plane-tools) through one shared spawn_blocking +
+  catch_unwind runner per-request isolation [SM-14]; bin
+  `code-reality-mcp`) / `cli` (assembly —
   argv surface, mode routing incl. `--callers`/`--closure`/`--depth`
   1-10000, and the in-process `--audit` two-pass) / `sidecar_migrate`
   (one-shot migration of the retired home sidecar face — leaf on

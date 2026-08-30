@@ -39,3 +39,6 @@ npm/*/*.tgz
 
 # Last-session observation layer (local session state, not repo content)
 STATE.md
+
+# Autonomous-session scratch (agent temp artifacts)
+.agent-tmp/

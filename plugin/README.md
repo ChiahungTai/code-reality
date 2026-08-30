@@ -4,8 +4,11 @@ Bundles two stdio MCP servers (ZCode spawns each per session, zero
 daemon) and the usage skill:
 
 - `code-reality` — the structural face: `refs` / `callers` / `closure`
-  / `audit` + the graph_query family; every tool takes an explicit
-  `repo_root` absolute path.
+  / `audit` + the graph_query family + the data-plane family
+  (`build` / `snapshot` / `delta_tour` / `project` — these WRITE to the
+  repo's `.code-reality/` and tour trees; `build` is minutes-level with
+  no progress reporting); every tool takes an explicit `repo_root`
+  absolute path.
 - `code-reality-lsp-bridge` — the type face, routed by file extension:
   `.py` → pyrefly (`hover` / `check_file` / `edit_file` / `lsp_status`),
   `.rs` → rust-analyzer (same tools). Each backend spawns lazily and

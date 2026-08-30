@@ -7,11 +7,17 @@
 //! hostile sidecars are caught at the handler boundary (SM-14) so one
 //! poisoned repo never takes the daemon down.
 //!
-//! Tool surface v0 (the SCIP family four — snapshot/tours stay CLI;
-//! skills subprocess-consume them, YAGNI):
-//! `refs(symbol, repo_root)` / `callers(symbol, repo_root)` /
-//! `closure(symbol, repo_root, depth)` / `audit(repo_root)`.
-//! Responses carry `[SRC]` passthrough and a `[STDERR]` section.
+//! Tool surface v1: the SCIP family (`refs`/`callers`/`closure`/
+//! `audit`), the graph-engine parity family, and — since 0.6.0
+//! (ep-mcp-data-plane-tools) — the data-plane four (`build` /
+//! `snapshot` / `delta_tour` / `project`). The original read-only
+//! "snapshot/tours stay CLI; skills subprocess-consume them" YAGNI
+//! stance was re-adjudicated 2026-08-29: the EP/build loop now drives
+//! the data plane in-session, so the MCP face carries write side
+//! effects — every data-plane tool description states its write
+//! target, and build's minutes-level no-progress semantics live in its
+//! description too. Responses carry `[SRC]` passthrough and a
+//! `[STDERR]` section.
 
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
@@ -157,6 +163,47 @@ pub struct GqTaskParams {
     pub files: Vec<String>,
 }
 
+// ---------- data-plane family (EP ep-mcp-data-plane-tools) ----------
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct BuildParams {
+    pub repo_root: String,
+    #[serde(default)]
+    pub producer: Option<String>,
+    #[serde(default)]
+    pub json: Option<bool>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct SnapshotParams {
+    pub repo_root: String,
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub out_dir: Option<String>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct DeltaTourParams {
+    pub repo_root: String,
+    pub snapshot_a: String,
+    pub snapshot_b: String,
+    #[serde(default)]
+    pub ep: Option<String>,
+    #[serde(default)]
+    pub task: Option<String>,
+    #[serde(default)]
+    pub out_dir: Option<String>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct ProjectParams {
+    pub repo_root: String,
+    pub plan: String,
+    #[serde(default)]
+    pub json: Option<bool>,
+}
+
 #[derive(Clone, Default)]
 pub struct CodeRealityServer {
     tool_router: ToolRouter<CodeRealityServer>,
@@ -256,15 +303,27 @@ impl CodeRealityServer {
             .with_route((Self::semantic_search_tool_attr(), Self::semantic_search))
             .with_route((Self::document_symbols_tool_attr(), Self::document_symbols))
             .with_route((Self::get_community_tool_attr(), Self::get_community))
+            .with_route((Self::build_tool_attr(), Self::build))
+            .with_route((Self::snapshot_tool_attr(), Self::snapshot))
+            .with_route((Self::delta_tour_tool_attr(), Self::delta_tour))
+            .with_route((Self::project_tool_attr(), Self::project))
     }
 
-    async fn run_refs_like(&self, args: Vec<String>) -> Result<CallToolResult, McpError> {
-        // SM-14 isolation in two layers: blocking I/O leaves the async
-        // runtime free, and catch_unwind maps data-driven panics (hostile
-        // sidecars) to per-request loud errors — the daemon survives
+    /// Shared per-request isolation (SM-14): blocking I/O leaves the
+    /// async runtime free, and catch_unwind maps data-driven panics
+    /// (hostile sidecars) to per-request loud errors — the daemon
+    /// survives. Every tool family funnels through here with its
+    /// module's argv `run` (refs via `cli::run`, graph via
+    /// `graph_engine::run`, data-plane via the module `run`s); panic
+    /// payloads are surfaced (the former gq form — strictly more
+    /// informative than the refs-era fixed string).
+    async fn run_module<F>(f: F, args: Vec<String>) -> Result<CallToolResult, McpError>
+    where
+        F: FnOnce(&[&str]) -> crate::ToolOutput + Send + 'static,
+    {
         let out = tokio::task::spawn_blocking(move || {
             let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| crate::cli::run(&refs)))
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(&refs)))
         })
         .await
         .map_err(|e| {
@@ -274,14 +333,23 @@ impl CodeRealityServer {
                 None,
             )
         })?
-        .map_err(|_| {
+        .map_err(|payload| {
+            let msg = payload
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .or_else(|| payload.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "non-string panic payload".into());
             McpError::new(
                 ErrorCode::INTERNAL_ERROR,
-                "lib panic（毒化 sidecar？）——已隔離為單請求錯誤",
+                format!("lib panic：{msg}——已隔離為單請求錯誤"),
                 None,
             )
         })?;
         map_tool_output(out)
+    }
+
+    async fn run_refs_like(&self, args: Vec<String>) -> Result<CallToolResult, McpError> {
+        Self::run_module(crate::cli::run, args).await
     }
 }
 
@@ -386,33 +454,7 @@ impl CodeRealityServer {
     }
 
     async fn gq(&self, args: Vec<String>) -> Result<CallToolResult, McpError> {
-        let out = tokio::task::spawn_blocking(move || {
-            let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                crate::graph_engine::run(&refs)
-            }))
-        })
-        .await
-        .map_err(|e| {
-            McpError::new(
-                ErrorCode::INTERNAL_ERROR,
-                format!("任務 join 失敗：{e}"),
-                None,
-            )
-        })?
-        .map_err(|payload| {
-            let msg = payload
-                .downcast_ref::<&str>()
-                .map(|s| s.to_string())
-                .or_else(|| payload.downcast_ref::<String>().cloned())
-                .unwrap_or_else(|| "non-string panic payload".into());
-            McpError::new(
-                ErrorCode::INTERNAL_ERROR,
-                format!("lib panic：{msg}——已隔離為單請求錯誤"),
-                None,
-            )
-        })?;
-        map_tool_output(out)
+        Self::run_module(crate::graph_engine::run, args).await
     }
 
     /// gq + a loud (non-breaking) deprecation notice when the client asked
@@ -783,6 +825,131 @@ impl CodeRealityServer {
             file,
         ])
         .await
+    }
+
+    // ---------- data-plane family (EP ep-mcp-data-plane-tools) ----------
+    // The face carries WRITE side effects (re-adjudicated 2026-08-29):
+    // each description states its write target and runtime shape so the
+    // caller knows what a call does to the repo's data plane.
+
+    /// One-shot data-plane build. Same lib as `code-reality build`.
+    #[tool(
+        description = "One-shot data-plane build: detect language face, spawn producers (pyrefly-index / rust-analyzer scip), rebuild graph.db + indexes. WRITES <repo>/.code-reality/ (index slot, graph.db). LONG-RUNNING: minutes-level on large repos, no progress reporting — the call blocks until done; set your client timeout accordingly. Same lib as `code-reality build --repo <repo>`"
+    )]
+    pub async fn build(
+        &self,
+        Parameters(BuildParams {
+            repo_root,
+            producer,
+            json,
+        }): Parameters<BuildParams>,
+    ) -> Result<CallToolResult, McpError> {
+        if let Some(p) = producer.as_deref() {
+            if p != "rust" && p != "python" {
+                return Err(McpError::new(
+                    ErrorCode::INVALID_PARAMS,
+                    format!("producer 須為 rust 或 python，收到：{p}"),
+                    None,
+                ));
+            }
+        }
+        let mut args = vec!["build".to_string(), "--repo".to_string(), repo_root];
+        if let Some(p) = producer {
+            args.push("--producer".to_string());
+            args.push(p);
+        }
+        if json.unwrap_or(false) {
+            args.push("--json".to_string());
+        }
+        Self::run_module(crate::build::run, args).await
+    }
+
+    /// Boundary snapshot. Same lib as `code-reality snapshot`.
+    #[tool(
+        description = "Boundary snapshot of the current graph.db state (files + module edges + staleness meta). WRITES a dated snapshot file under <repo>/.code-reality/snapshots/ (or out_dir). Requires an existing graph.db (run build first). Seconds-level. Same lib as `code-reality snapshot --repo <repo>`"
+    )]
+    pub async fn snapshot(
+        &self,
+        Parameters(SnapshotParams {
+            repo_root,
+            label,
+            out_dir,
+        }): Parameters<SnapshotParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut args = vec!["snapshot".to_string(), "--repo".to_string(), repo_root];
+        if let Some(l) = label {
+            args.push("--label".to_string());
+            args.push(l);
+        }
+        if let Some(d) = out_dir {
+            args.push("--out-dir".to_string());
+            args.push(d);
+        }
+        Self::run_module(crate::snapshot::run, args).await
+    }
+
+    /// Delta-review CodeTour. Same lib as `code-reality delta_tour`.
+    #[tool(
+        description = "Diff two snapshots into a delta-review CodeTour (git hunk anchors, EP claims comparison). WRITES <repo>/.tours/delta/<date>-<task>.tour — MCP default is in-repo (unlike the CLI's cwd-relative default); pass out_dir to override. Pass ABSOLUTE snapshot paths (the snapshot tool's report carries them). Seconds-level. Same lib as `code-reality delta_tour <a> <b> --repo <repo>`"
+    )]
+    pub async fn delta_tour(
+        &self,
+        Parameters(DeltaTourParams {
+            repo_root,
+            snapshot_a,
+            snapshot_b,
+            ep,
+            task,
+            out_dir,
+        }): Parameters<DeltaTourParams>,
+    ) -> Result<CallToolResult, McpError> {
+        // MCP callers have no meaningful server cwd — default the tour
+        // tree into the repo (CodeTour consumers open the repo root),
+        // unlike the CLI's cwd-relative default.
+        let out_dir = out_dir.unwrap_or_else(|| format!("{repo_root}/.tours/delta"));
+        let mut args = vec![
+            "delta_tour".to_string(),
+            snapshot_a,
+            snapshot_b,
+            "--repo".to_string(),
+            repo_root,
+            "--out-dir".to_string(),
+            out_dir,
+        ];
+        if let Some(e) = ep {
+            args.push("--ep".to_string());
+            args.push(e);
+        }
+        if let Some(t) = task {
+            args.push("--task".to_string());
+            args.push(t);
+        }
+        Self::run_module(crate::delta_tour::run, args).await
+    }
+
+    /// Projected-graph overlay. Same lib as `code-reality project`.
+    #[tool(
+        description = "Projected-graph overlay for EP planning: compile a declarative plan.toml via overlay-gen, report graft surface + claim verdicts ([projected] = declarations, not evidence). WRITES <repo>/.code-reality/projections/<plan-stem>/; the real index slot stays untouched. Needs overlay-gen resolvable (uv tool install pyrefly-producer). Pass an ABSOLUTE plan path (the server's cwd is meaningless to you). Seconds-level. Same lib as `code-reality project --repo <repo> --plan <plan.toml>`"
+    )]
+    pub async fn project(
+        &self,
+        Parameters(ProjectParams {
+            repo_root,
+            plan,
+            json,
+        }): Parameters<ProjectParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut args = vec![
+            "project".to_string(),
+            "--repo".to_string(),
+            repo_root,
+            "--plan".to_string(),
+            plan,
+        ];
+        if json.unwrap_or(false) {
+            args.push("--json".to_string());
+        }
+        Self::run_module(crate::project::run, args).await
     }
 }
 
