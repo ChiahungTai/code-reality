@@ -1,0 +1,8 @@
+[package]
+name = "cr-freshness"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dev-dependencies]
+tempfile = { workspace = true }

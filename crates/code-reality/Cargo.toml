@@ -25,6 +25,7 @@ tokio-util = { workspace = true }
 hyper-util = { workspace = true }
 axum = { workspace = true }
 schemars = { workspace = true }
+cr-freshness = { path = "../cr-freshness" }
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -1,8 +1,9 @@
 //! Version-face pin for the bridge bin (EP ep-binary-freshness-face
-//! review R5): the local-copy freshness logic has no cross-crate test
-//! surface, but its `--version` output shape is at least machine-pinned
-//! here. CR_REPO points at a nonexistent dir so the freshness check is
-//! silent and the stdout assertion is deterministic.
+//! review R5). The WARN signal logic lives in the shared `cr-freshness`
+//! leaf crate (tested there since ep-cr-freshness-extraction; the
+//! former local copy is retired). CR_REPO points at a nonexistent dir
+//! so the freshness check is silent and the stdout assertion is
+//! deterministic.
 
 use std::process::Command;
 

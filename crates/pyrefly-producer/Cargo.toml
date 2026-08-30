@@ -13,6 +13,7 @@ protobuf = { workspace = true }
 scip = { workspace = true }
 toml = { workspace = true }
 code-reality = { path = "../code-reality" }
+cr-freshness = { path = "../cr-freshness" }
 
 [dev-dependencies]
 rusqlite = { workspace = true }

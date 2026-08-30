@@ -14,7 +14,7 @@
 
 #[tokio::main]
 async fn main() {
-    code_reality::freshness::stale_binary_warn("code-reality");
+    cr_freshness::stale_binary_warn("code-reality", option_env!("CR_BUILD_REV"));
     let args: Vec<String> = std::env::args_os()
         .skip(1)
         .map(|a| a.to_string_lossy().into_owned())
@@ -24,7 +24,7 @@ async fn main() {
         match a.as_str() {
             "--stdio" => stdio = true,
             "--version" | "-V" => {
-                println!("{}", code_reality::freshness::version_face());
+                println!("{}", code_reality::version_face());
                 return;
             }
             "--help" | "-h" => {

@@ -541,6 +541,7 @@ name = "code-reality"
 version = "0.6.0"
 dependencies = [
  "axum",
+ "cr-freshness",
  "fancy-regex",
  "glob",
  "hyper-util",
@@ -567,6 +568,7 @@ dependencies = [
 name = "code-reality-lsp-bridge"
 version = "0.6.0"
 dependencies = [
+ "cr-freshness",
  "rmcp",
  "schemars",
  "serde",
@@ -659,6 +661,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b2a41393f66f16b0823bb79094d54ac5fbd34ab292ddafb9a0456ac9f87d201"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "cr-freshness"
+version = "0.6.0"
+dependencies = [
+ "tempfile",
 ]
 
 [[package]]
@@ -2494,6 +2503,7 @@ name = "pyrefly-producer"
 version = "0.6.0"
 dependencies = [
  "code-reality",
+ "cr-freshness",
  "protobuf",
  "pyrefly",
  "pyrefly_util",

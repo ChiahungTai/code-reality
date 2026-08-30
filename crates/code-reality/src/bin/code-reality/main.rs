@@ -13,7 +13,7 @@
 //! frozen Python has no umbrella at all; per-tool surfaces are the gate).
 
 fn main() {
-    code_reality::freshness::stale_binary_warn("code-reality");
+    cr_freshness::stale_binary_warn("code-reality", option_env!("CR_BUILD_REV"));
     let argv: Vec<String> = std::env::args_os()
         .skip(1)
         .map(|a| a.to_string_lossy().into_owned())
@@ -48,7 +48,7 @@ fn route(argv: &[&str]) -> code_reality::ToolOutput {
         Some(&"tour_validate") => code_reality::tour_validate::run(argv),
         Some(&"tour_upgrade") => code_reality::tour_upgrade::run(argv),
         Some(&"--version") | Some(&"-V") => ToolOutput {
-            stdout: format!("{}\n", code_reality::freshness::version_face()),
+            stdout: format!("{}\n", code_reality::version_face()),
             stderr: String::new(),
             exit_code: 0,
         },

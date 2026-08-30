@@ -63,7 +63,6 @@ pub mod common;
 pub mod delta_tour;
 pub mod engine;
 pub mod fndefs;
-pub mod freshness;
 pub mod graph_audit;
 pub mod graph_db;
 pub mod graph_engine;
@@ -82,3 +81,14 @@ pub mod tour_manifest;
 pub mod tour_upgrade;
 pub mod tour_validate;
 pub mod transition;
+
+/// The `<pkg>[+<rev>]` version face shared by this crate's bins
+/// (umbrella route arm + the mcp bin). The rev is embedded by this
+/// crate's build.rs (`CR_BUILD_REV`); the WARN signal logic lives in
+/// the zero-dep `cr-freshness` leaf crate.
+pub fn version_face() -> String {
+    match option_env!("CR_BUILD_REV") {
+        Some(r) => format!("{}+{}", env!("CARGO_PKG_VERSION"), r),
+        None => env!("CARGO_PKG_VERSION").to_string(),
+    }
+}

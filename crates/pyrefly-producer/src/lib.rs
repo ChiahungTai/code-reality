@@ -46,10 +46,11 @@ pub struct EmitReport {
 }
 
 /// Bin-face wrapper for the shared freshness warn (EP
-/// ep-binary-freshness-face): one stderr line when the installed binary
-/// lags the CR checkout.
+/// ep-binary-freshness-face; core lives in the cr-freshness leaf
+/// crate since ep-cr-freshness-extraction): one stderr line when the
+/// installed binary lags the CR checkout.
 pub fn report_stale_binary() {
-    code_reality::freshness::stale_binary_warn("pyrefly-producer");
+    cr_freshness::stale_binary_warn("pyrefly-producer", option_env!("CR_BUILD_REV"));
 }
 
 /// Emit a SCIP index for `repo_root` into its sidecar slot (or `out`).
