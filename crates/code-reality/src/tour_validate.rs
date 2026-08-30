@@ -385,7 +385,11 @@ pub fn validate(repo: &Path, tours_dir: &Path, with_manifest: bool) -> ToolOutpu
     };
     if tours.is_empty() {
         let root = repo.join(tours_dir);
-        if root.exists() && iter_tours(repo, tours_dir, true).unwrap_or_default().is_empty() {
+        if root.exists()
+            && iter_tours(repo, tours_dir, true)
+                .unwrap_or_default()
+                .is_empty()
+        {
             // Corpus dir present but zero *.tour on disk — layout or
             // extension drift is an anomaly, not a skip. Contract note:
             // deliberate deviation from the frozen tour_validate.py

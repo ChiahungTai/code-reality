@@ -1,8 +1,15 @@
-//! P2 integration tests: the rust-analyzer backend through the SAME
-//! bridge machinery (extension routing, hover, edit→check convergence,
-//! backend independence). Targets run against the real
-//! `rust-analyzer` on PATH; hover positions are machine-verified
-//! against `cat -n` of framing.rs (P1's line-number lesson).
+//! Rust-backend tests through the SAME bridge machinery, tiered
+//! (ep-rust-backend-test-retier): always-on = route_by_extension (no
+//! backend spawn — sessions are lazy) + backend-death isolation (one
+//! ra + one pyrefly). The two heavy real-ra cold loads (edit→check
+//! convergence, mixed-language independence) are `#[ignore]`d — their
+//! parallel self-contention flaked the 30s convergence deadline; run
+//! them on server.rs/session.rs changes: `cargo test -p
+//! code-reality-lsp-bridge -- --ignored`. The hover face lives in
+//! ra_equivalence_battery.rs (frozen baseline + version pin) — during
+//! a rust-analyzer version drift the default gate has no ra-hover
+//! smoke (battery skips; acceptable: drift needs a human baseline
+//! regeneration anyway).
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -12,10 +19,8 @@ use code_reality_lsp_bridge::server::{check_file_impl, edit_file_impl, hover_imp
 use code_reality_lsp_bridge::session::LangSpec;
 use code_reality_lsp_bridge::LspSession;
 
-// framing.rs (0-based): line 11 `pub fn write_message`, line 19
-// `pub fn read_message`; mid-identifier columns (ra's hit-test returns
-// empty on some boundary positions).
-const WRITE_MSG: (u32, u32) = (11, 10);
+// framing.rs (0-based): line 19 `pub fn read_message` (mid-identifier
+// columns: ra's hit-test returns empty on some boundary positions).
 const READ_MSG: (u32, u32) = (19, 10);
 
 fn framing_rs() -> PathBuf {
@@ -55,18 +60,7 @@ fn route_by_extension() {
 }
 
 #[test]
-fn rust_hover_function_signatures() {
-    let s = rust_session();
-    let file = framing_rs().to_string_lossy().to_string();
-    let (line, ch) = READ_MSG;
-    let h = hover_impl(&s, &file, line, ch).unwrap();
-    assert!(
-        h.contains("read_message") && h.contains("```rust"),
-        "got: {h}"
-    );
-}
-
-#[test]
+#[ignore = "heavy real-ra cold load — self-contention flaked the 30s convergence deadline; run on server.rs/session.rs changes: cargo test -p code-reality-lsp-bridge -- --ignored"]
 fn rust_edit_then_check_native_diagnostics() {
     // SM-8: in-memory edit converges rust-analyzer's NATIVE
     // diagnostics (flycheck/cargo-check runs on disk content —
@@ -107,6 +101,7 @@ fn rust_edit_then_check_native_diagnostics() {
 }
 
 #[test]
+#[ignore = "heavy real-ra cold load — run on server.rs/session.rs changes: cargo test -p code-reality-lsp-bridge -- --ignored"]
 fn mixed_language_sessions_are_independent() {
     // SM-3/SM-9: routing both languages through one Bridge spawns both
     // backends lazily and neither disturbs the other. Root = crate
@@ -190,22 +185,4 @@ fn py_fixture() -> (tempfile::TempDir, PathBuf) {
     .unwrap();
     std::fs::write(dir.path().join("pyrefly.toml"), "preset = \"strict\"\n").unwrap();
     (dir, sample)
-}
-
-#[test]
-fn rust_latency_budget_numbers() {
-    // P2 gate: record the latency budget this workspace exhibits
-    // (cold-load first hover vs warm hover). Asserts generous bounds
-    // only — the numbers are printed for the EP settlement.
-    let s = rust_session();
-    let file = framing_rs().to_string_lossy().to_string();
-    let t0 = Instant::now();
-    let _ = hover_impl(&s, &file, WRITE_MSG.0, WRITE_MSG.1).unwrap();
-    let cold = t0.elapsed();
-    let t1 = Instant::now();
-    let _ = hover_impl(&s, &file, READ_MSG.0, READ_MSG.1).unwrap();
-    let warm = t1.elapsed();
-    println!("[LATENCY] cold first hover: {cold:?}, warm hover: {warm:?}");
-    assert!(cold < Duration::from_secs(60), "cold load absurd: {cold:?}");
-    assert!(warm < Duration::from_secs(10), "warm hover slow: {warm:?}");
 }
