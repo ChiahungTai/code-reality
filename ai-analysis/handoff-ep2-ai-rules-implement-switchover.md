@@ -9,7 +9,7 @@
 ## 2. Baseline
 
 - ai-rules @ `683215d`（開工先 `git log` 重驗——已有後續 commit 就對帳避免重疊）
-- 供給端：code-reality v0.5.1 → **v0.6.0**（EP1 四 MCP 工具上線：`build`/`snapshot`/`delta_tour`/`project`；stdio 實測可呼；工具 description 內建寫副作用警示＋build 分鐘級長時語義）
+- 供給端：code-reality EP1 已 commit `31c9e85`（main）；**開工前置：v0.6.0 已發行**（tag `v0.6.0`＋PyPI 三 dist——開工前 `code-reality --version` 確認 ≥0.6.0，未發行則等 release 完成再換軌，條文先寫不生效）
 
 ## 3. 來源
 
@@ -22,7 +22,7 @@
 - Tier-0 接線（ai-rules `8327ae4`：execution-plan 段落 0 spawn prompt 帶 CLI 查詢）
 - Tier-1 投影圖 EP 接線（ai-rules `4b0cde5`：段落 0 投影步驟、F3 三態判讀、project 工具表）
 - CR MCP 白名單 rollout（ai-rules `8201987`：code-reviewer 族/spec-miner/lite-verify 五檔全名＋MCP-first fallback——「spawned 無 MCP」從此只對 generic Explore 為真）
-- CR 側四工具 MCP 化（EP1 v0.6.0）——本 handoff 的供給前提
+- **CR 側四工具 MCP 化（EP1，commit `31c9e85`，release v0.6.0）**——本 handoff 的供給前提；dual-context review 全綠（fresh 零🔴零🟡、primed 意圖忠實）、L4 stdio 實測（真 binary＋真 pyrefly producer，snapshot×2→delta_tour 全鏈＋project error face）
 - brainstorm 報告已在場（`ai-rules/ai-analysis/reports/2026-08-29-skill-agent-rules-improvement-brainstorm.md`）——EP2 消費它，不重做分析
 
 ## 5. 已決策（凍結，勿重辯）
