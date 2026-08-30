@@ -14,3 +14,5 @@ rust_backend.rs 六測試中五個各自 spawn 真 rust-analyzer 冷載整個 wo
 
 ## 備註
 test-only＋docs 變更、不出 release（wheel 不變）。凍結裁決見 EP。
+
+〔2026-08-30 追裁：user 選「每次都跑＋RA_SERIAL 序列化」（+~20s 相對並行形、52.48s 實測）——`#[ignore]` 形出貨（`4d109d1`）後即翻；兩顆重測試的驗證價值經論證與跨測試並行無關，flake 條件同樣移除（並行冷載→一次一顆）。詳 EP Build Record 追裁段。〕

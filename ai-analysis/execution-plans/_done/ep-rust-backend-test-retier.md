@@ -138,3 +138,4 @@ tests/rust_backend.rs:
 - **誠實修正——EP 預測錯誤**：SM-1「總時長顯著下降（≤15s）」不成立——實測 30.30s，floor 由**單顆** ra 冷載本 workspace（~25-30s）決定；本 EP 的改善面是**並行度（4-6 並行→1）與 flake 存在條件**，不是時長。要壓時長得另案（共享 session fixture——非目標）。
 - 文檔三處落地（STATE.md 三項解銷、crates/AGENTS.md tiering bullet、AGENTS.md:96 行）；`:112` 預存項結案（`_dir` 底線前綴綁定＝刻意非警告）。
 - post-build 縮編：build diff 審查併入 EP review（7 findings 已對實際檔案逐項實證；test-only＋docs、零產品碼變更）——如實記載的降級。
+- **追裁（同日，user「聽起來是可以順序跑啊，那就跑吧，反正多一分半還好」）**：`#[ignore]` 按需形出貨（`4d109d1`）後即翻——**每次都跑＋跨測試序列化**（`RA_SERIAL` mutex 護 edit/mixed/death 三顆真 ra 測試；cargo 對 test binary 本就序列，mutex 只管 binary 內並行 threads）。論證：兩顆重測試的驗證價值與跨測試並行無關（edit＝單 session 循序；mixed 的並行是測試內建 thread pair）。實證：4 passed 0 ignored、**52.48s**（並行時代同 binary 30-37s——52s≈序列和，證明 mutex 生效）；pgrep 峰值 2＝一顆 ra 本體＋其 proc-macro 子進程（非兩實例；先前 6-8 計數同比例）。驗證價值等價、+~20s 相對並行形，user 選 always-on 覆蓋。

@@ -1,23 +1,29 @@
-//! Rust-backend tests through the SAME bridge machinery, tiered
-//! (ep-rust-backend-test-retier): always-on = route_by_extension (no
-//! backend spawn — sessions are lazy) + backend-death isolation (one
-//! ra + one pyrefly). The two heavy real-ra cold loads (edit→check
-//! convergence, mixed-language independence) are `#[ignore]`d — their
-//! parallel self-contention flaked the 30s convergence deadline; run
-//! them on server.rs/session.rs changes: `cargo test -p
-//! code-reality-lsp-bridge -- --ignored`. The hover face lives in
-//! ra_equivalence_battery.rs (frozen baseline + version pin) — during
-//! a rust-analyzer version drift the default gate has no ra-hover
-//! smoke (battery skips; acceptable: drift needs a human baseline
+//! Rust-backend tests through the SAME bridge machinery. All four run
+//! in the always-on gate; the three real-rust-analyzer tests (edit→check
+//! convergence, mixed-language independence, backend-death isolation)
+//! serialize on RA_SERIAL — one workspace cold load at a time — since
+//! 4-6 concurrent cold loads racing the fixed 30s convergence deadline
+//! was the tracked starvation flake (ep-rust-backend-test-retier, then
+//! the same-day re-adjudication: serialize-in-gate over ignore-on-
+//! demand, +~90s accepted). The hover face lives in
+//! ra_equivalence_battery.rs (frozen baseline + version pin) — during a
+//! rust-analyzer version drift the default gate has no ra-hover smoke
+//! (battery skips; acceptable: drift needs a human baseline
 //! regeneration anyway).
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use code_reality_lsp_bridge::server::{check_file_impl, edit_file_impl, hover_impl, Bridge};
 use code_reality_lsp_bridge::session::LangSpec;
 use code_reality_lsp_bridge::LspSession;
+
+/// One real-rust-analyzer cold load at a time within this binary
+/// (cargo runs test binaries serially, so cross-binary contention
+/// doesn't exist — this mutex covers only the intra-binary parallel
+/// test threads).
+static RA_SERIAL: Mutex<()> = Mutex::new(());
 
 // framing.rs (0-based): line 19 `pub fn read_message` (mid-identifier
 // columns: ra's hit-test returns empty on some boundary positions).
@@ -60,8 +66,8 @@ fn route_by_extension() {
 }
 
 #[test]
-#[ignore = "heavy real-ra cold load — self-contention flaked the 30s convergence deadline; run on server.rs/session.rs changes: cargo test -p code-reality-lsp-bridge -- --ignored"]
 fn rust_edit_then_check_native_diagnostics() {
+    let _ra = RA_SERIAL.lock().unwrap();
     // SM-8: in-memory edit converges rust-analyzer's NATIVE
     // diagnostics (flycheck/cargo-check runs on disk content —
     // documented semantic limit, C-F-05).
@@ -101,8 +107,8 @@ fn rust_edit_then_check_native_diagnostics() {
 }
 
 #[test]
-#[ignore = "heavy real-ra cold load — run on server.rs/session.rs changes: cargo test -p code-reality-lsp-bridge -- --ignored"]
 fn mixed_language_sessions_are_independent() {
+    let _ra = RA_SERIAL.lock().unwrap();
     // SM-3/SM-9: routing both languages through one Bridge spawns both
     // backends lazily and neither disturbs the other. Root = crate
     // root: rust-analyzer loads the workspace from the rootUri (a
@@ -137,6 +143,7 @@ fn mixed_language_sessions_are_independent() {
 
 #[test]
 fn rust_backend_death_leaves_python_alive() {
+    let _ra = RA_SERIAL.lock().unwrap();
     // SM-7: kill the ra backend; the pyrefly session keeps serving.
     let (dir, sample) = py_fixture();
     let b = bridge_at(dir.path());

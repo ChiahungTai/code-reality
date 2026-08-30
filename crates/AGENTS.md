@@ -52,14 +52,13 @@ tests are the sole gate face.
   `cr-freshness` (extracted in ep-cr-freshness-extraction; the former
   LOCAL COPY of `code-reality/src/freshness.rs` is retired). rmcp
   hoisted into workspace deps.
-- test tiering (ep-rust-backend-test-retier): `tests/rust_backend.rs`
-  keeps only route (no backend spawn) + backend-death always-on; the
-  two heavy real-ra cold loads (edit→check convergence,
-  mixed-language independence) are `#[ignore]`d — run `cargo test -p
-  code-reality-lsp-bridge -- --ignored` when touching `server.rs` or
-  `session.rs` (their parallel self-contention flaked the 30s
-  convergence deadline; the hover face lives in
-  `ra_equivalence_battery.rs`).
+- test serialization (ep-rust-backend-test-retier + the same-day
+  re-adjudication): `tests/rust_backend.rs` runs all four tests in the
+  always-on gate; the three real-ra tests (edit→check convergence,
+  mixed-language independence, backend-death) take `RA_SERIAL` — one
+  workspace cold load at a time. 4-6 concurrent cold loads racing the
+  fixed 30s convergence deadline was the tracked starvation flake;
+  the hover face lives in `ra_equivalence_battery.rs`.
 
 ## cr-freshness (leaf lib crate)
 
