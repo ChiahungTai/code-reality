@@ -141,6 +141,40 @@ fn iter_tours_excludes_delta_by_default() {
 }
 
 #[test]
+fn validate_corpus_dir_with_zero_tours_fails_loud() {
+    // .tours exists but zero *.tour on disk — layout/extension drift is
+    // an anomaly, not a skip (the silent-validate-nothing trap; the
+    // 2026-08-30 adjudicated deviation from the frozen empty-exit-0 face).
+    let repo = repo_fixture("empty-dir");
+    std::fs::create_dir_all(repo.join(".tours")).unwrap();
+    std::fs::write(repo.join(".tours/manifest.toml"), "[tour]\n").unwrap();
+    let out = tour_validate::validate(&repo, Path::new(".tours"), false);
+    assert_eq!(out.exit_code, 1, "{}", out.stdout);
+    assert!(out.stdout.contains("零 .tour"), "{}", out.stdout);
+}
+
+#[test]
+fn validate_missing_corpus_dir_stays_warn_green() {
+    // no .tours at all = legitimately corpus-less repo — WARN + exit 0
+    // preserved (post-build on corpus-less repos must not break).
+    let repo = repo_fixture("no-dir");
+    let out = tour_validate::validate(&repo, Path::new(".tours"), false);
+    assert_eq!(out.exit_code, 0, "{}", out.stdout);
+    assert!(out.stdout.contains("無 .tour"), "{}", out.stdout);
+}
+
+#[test]
+fn validate_all_excluded_corpus_stays_warn_green() {
+    // corpus exists but every tour sits in an excluded dir (delta/) —
+    // a WARN-skip, not the zero-on-disk anomaly.
+    let repo = repo_fixture("all-delta");
+    write_tour(&repo, ".tours/delta/d.tour", "D", &[]);
+    let out = tour_validate::validate(&repo, Path::new(".tours"), false);
+    assert_eq!(out.exit_code, 0, "{}", out.stdout);
+    assert!(out.stdout.contains("無 .tour"), "{}", out.stdout);
+}
+
+#[test]
 fn validate_link_and_anchor_faces() {
     let repo = repo_fixture("validate");
     write_tour(

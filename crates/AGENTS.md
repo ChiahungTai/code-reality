@@ -200,7 +200,13 @@ tests are the sole gate face.
 - **Exit semantics (D3, per-tool — not uniform)**: snapshot crashes =
   exit 1 + empty stdout (uncaught-Python alignment);
   graph_audit env errors and argparse usage errors = exit 2; `--json`
-  faces print with a trailing newline (Python `print`).
+  faces print with a trailing newline (Python `print`);
+  `tour_validate` empty corpus is TWO-state since 2026-08-30 (adjudicated
+  deviation from the frozen `tour_validate.py:162-196` empty-exit-0
+  face): missing `.tours` dir = WARN + exit 0 (corpus-less skip
+  preserved), dir present but zero `*.tour` on disk = FAIL + exit 1
+  (layout/extension anomaly — aligns with tour_upgrade's crash on the
+  same state).
 - **Subcommand names mirror Python module names verbatim** (`scip_refs`,
   `snapshot`, `graph_audit`; not kebab-case) —
   relay minimal-diff contract. (`transition` left the CLI surface at S4 —

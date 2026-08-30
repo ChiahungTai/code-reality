@@ -384,10 +384,27 @@ pub fn validate(repo: &Path, tours_dir: &Path, with_manifest: bool) -> ToolOutpu
         }
     };
     if tours.is_empty() {
-        stdout.push_str(&format!(
-            "[WARN] {} 無 .tour\n",
-            repo.join(tours_dir).display()
-        ));
+        let root = repo.join(tours_dir);
+        if root.exists() && iter_tours(repo, tours_dir, true).unwrap_or_default().is_empty() {
+            // Corpus dir present but zero *.tour on disk — layout or
+            // extension drift is an anomaly, not a skip. Contract note:
+            // deliberate deviation from the frozen tour_validate.py
+            // empty-exit-0 face (adjudicated 2026-08-30; tour_upgrade
+            // already crashed on this state — the family semantics now
+            // agree).
+            stdout.push_str(&format!(
+                "[FAIL] {} 有 corpus 目錄但零 .tour 匹配——版面/副檔/路徑異常\n",
+                root.display()
+            ));
+            return ToolOutput {
+                stdout,
+                stderr: String::new(),
+                exit_code: 1,
+            };
+        }
+        stdout.push_str(&format!("[WARN] {} 無 .tour\n", root.display()));
+        // corpus-less repo = legitimate skip; if this repo SHOULD have a
+        // corpus, check the --repo target first.
         return ToolOutput {
             stdout,
             stderr: String::new(),
