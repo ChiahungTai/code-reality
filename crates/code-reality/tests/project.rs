@@ -71,6 +71,33 @@ fn fake_overlay_gen_failing(dir: &Path) -> PathBuf {
     script
 }
 
+/// Identity-guard leg: the fake minter's report declares the WRONG
+/// project identity — the orchestrator must fail loud with the real
+/// index prefix (ai-rules dogfood relay regression).
+fn fake_overlay_gen_wrong_identity(dir: &Path) -> PathBuf {
+    let script = dir.join("overlay-gen-wid");
+    let report = dir.join("report-wid.toml");
+    std::fs::write(
+        &report,
+        std::fs::read_to_string(fixture("proj_overlay_report.toml"))
+            .unwrap()
+            .replace("project = \"proj-fixture\"", "project = \"proj-fixture-dogfood\""),
+    )
+    .unwrap();
+    let content = format!(
+        "#!/bin/sh\nout=; rep=; prev=\nfor a in \"$@\"; do\n  case \"$prev\" in\n    --out) out=\"$a\";;\n    --report) rep=\"$a\";;\n  esac\n  prev=\"$a\"\ndone\ncp {leg} \"$out\"\ncp {r} \"$rep\"\n",
+        leg = fixture("proj_overlay_leg.scip").display(),
+        r = report.display(),
+    );
+    std::fs::write(&script, content).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    script
+}
+
 fn repo_with_plan(tmp: &tempfile::TempDir, plan_name: &str) -> (PathBuf, PathBuf) {
     let repo = tmp.path().join("repo");
     let scip = repo.join(".code-reality/scip");
@@ -255,4 +282,16 @@ fn run_arg_faces() {
     let out = code_reality::project::run(&["project", "-h"]);
     assert_eq!(out.exit_code, 0);
     assert!(out.stdout.contains("usage: code-reality project"));
+}
+
+#[test]
+fn wrong_plan_identity_fails_loud_with_real_prefix() {
+    let tmp = tempfile::tempdir().unwrap();
+    let _ = fake_overlay_gen_wrong_identity(tmp.path());
+    std::fs::rename(tmp.path().join("overlay-gen-wid"), tmp.path().join("overlay-gen")).unwrap();
+    let (repo, plan) = repo_with_plan(&tmp, "wid.toml");
+    let err = lib_run(&repo, &plan, &[tmp.path().to_path_buf()]).unwrap_err();
+    assert!(err.contains("前綴不符"), "{err}");
+    assert!(err.contains("proj-fixture-dogfood"), "{err}");
+    assert!(err.contains("pyrefly python proj-fixture 0.1.0"), "{err}");
 }

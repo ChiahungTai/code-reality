@@ -60,6 +60,8 @@ pub enum ProjectError {
 
 struct Report {
     graph_rev: String,
+    project: String,
+    version: String,
     minted_edges: usize,
     overlay_files: BTreeSet<String>,
     touched: Vec<(String, String)>, // (module, name) — module keeps bare-name
@@ -116,6 +118,8 @@ fn parse_report(text: &str) -> Result<Report, String> {
     }
     Ok(Report {
         graph_rev: tbl_str(&t, "graph_rev").unwrap_or_else(|| "unstamped".into()),
+        project: tbl_str(&t, "project").unwrap_or_default(),
+        version: tbl_str(&t, "version").unwrap_or_default(),
         minted_edges: t
             .get("minted_edges")
             .and_then(|v| v.as_integer())
@@ -285,6 +289,38 @@ pub fn project_repo(
 
     let real_face = load_query_face(&real).map_err(core)?;
     let proj_face = load_query_face(&merged).map_err(core)?;
+
+    // Identity guard: the overlay joins the real index by EXACT symbol ID
+    // (`pyrefly python <project> <version> ` prefix). A plan whose [meta]
+    // identity differs mints refs that silently join nothing — minted
+    // edges counted, yet +0 graft and HOLE-instead-of-WIRED verdicts
+    // (found via the ai-rules dogfood relay). Fail loud with the real
+    // values; one resolving probe (touched first, then claims) suffices.
+    let declared = format!("pyrefly python {} {}", rep.project, rep.version);
+    let probes = rep
+        .touched
+        .iter()
+        .map(|(m, n)| (m.clone(), n.clone()))
+        .chain(rep.claims.iter().map(|c| (c.to_module.clone(), c.to_name.clone())));
+    for (module, name) in probes {
+        let parsed = engine::Query::parse(&name);
+        let defs = engine::find_defs(&real_face.index, &parsed);
+        if let Some(def_sym) = defs.keys().next() {
+            // Compare by prefix match, not word-position parsing — the
+            // grammar lives in symbol.rs (pinned by symbol_form tests);
+            // take(4) here is display-only for the mismatch message.
+            let declared_with_space = format!("{declared} ");
+            if !def_sym.starts_with(&declared_with_space) {
+                let prefix = def_sym.split(' ').take(4).collect::<Vec<_>>().join(" ");
+                return Err(env(format!(
+                    "plan [meta] project/version 與真實 index 前綴不符：plan=\"{} {}\"、index=\"{prefix}\"——project/version 必須等於目標 repo 的 pyproject identity（symbol ID 是 join 鍵，不符則投影邊全部靜默不歸因）\n",
+                    rep.project, rep.version
+                )));
+            }
+            let _ = module;
+            break;
+        }
+    }
 
     // ---- graft surface: touched real symbols, real vs projected sites
     let mut graft_lines: Vec<String> = Vec::new();
