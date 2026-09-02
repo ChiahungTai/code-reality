@@ -820,13 +820,19 @@ pub fn impact_radius_with(
         "impact_scores": {},
     });
     if changed_files.is_empty() {
-        return Ok(empty);
+        let mut vacuous = empty;
+        vacuous["note"] = serde_json::json!(
+            "changed_files is empty — vacuous query (distinct from a path miss)"
+        );
+        return Ok(vacuous);
     }
     // seeds: every node whose file_path is changed (File nodes included —
     // get_nodes_by_file has no kind filter). Exact match first; a
     // '/'-boundary suffix fallback absorbs repo-relative input when the
     // graph stores repo-absolute paths (map_changes_to_nodes idiom) —
-    // without it a relative path silently seeded nothing.
+    // without it a relative path silently seeded nothing. A bare basename
+    // ("a.rs") can seed several same-suffixed files at once — caller
+    // under-specification; repo-relative paths are the intended input.
     let nodes_all = load_nodes(conn, false)?;
     let path_matches = |node_path: &str, f: &str| -> bool {
         if node_path == f {

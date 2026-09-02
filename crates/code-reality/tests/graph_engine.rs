@@ -497,6 +497,99 @@ fn impact_radius_relative_path_suffix_fallback() {
 }
 
 #[test]
+fn impact_radius_path_matching_edges() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("graph.db");
+    make_graph_db(&db, &impact_spec()).unwrap();
+    let conn = rusqlite::Connection::open(&db).unwrap();
+
+    // empty input: vacuous-query note (distinct from a path miss) — an
+    // upstream empty list (e.g. failed file-list generation) is tellable
+    // from a legitimate no-change query at the output boundary
+    let empty_in = impact_radius(&conn, &[], 2, 500).unwrap();
+    assert!(empty_in["changed_nodes"].as_array().unwrap().is_empty());
+    assert!(empty_in["note"].as_str().unwrap().contains("vacuous"));
+
+    // mixed absolute + relative in one call: both forms seed
+    let mixed = impact_radius(
+        &conn,
+        &["/repo/a.rs".to_string(), "b.rs".to_string()],
+        2,
+        500,
+    )
+    .unwrap();
+    assert_eq!(
+        mixed["changed_nodes"].as_array().unwrap().len(),
+        4, // f1a+f1b (a.rs) + f2a+x (b.rs)
+    );
+
+    // f longer than any node_path: no panic, lands as a noted miss (the
+    // length guard is refactor armor against index underflow — ends_with
+    // would already be false here, so this pins behavior, not the guard)
+    let long = impact_radius(
+        &conn,
+        &["/much/longer/than/any/node/path/a.rs".to_string()],
+        2,
+        500,
+    )
+    .unwrap();
+    assert!(long["note"].as_str().is_some());
+
+    // miss shape completeness: the empty contract holds together
+    let miss = impact_radius(&conn, &["/nonexistent/x.rs".to_string()], 2, 500).unwrap();
+    assert_eq!(miss["truncated"], false);
+    assert_eq!(miss["total_impacted"], 0);
+    assert!(miss["impacted_nodes"].as_array().unwrap().is_empty());
+    assert!(miss["edges"].as_array().unwrap().is_empty());
+    assert!(miss["impacted_files"].as_array().unwrap().is_empty());
+    assert!(miss["note"].as_str().is_some());
+}
+
+#[test]
+fn impact_radius_bare_basename_seeds_all_same_suffix_files() {
+    // pins the caller-under-specification hazard the seed comment warns
+    // about: a bare basename seeds every same-suffixed file across
+    // directories (fan-out, not a miss)
+    let mut spec = GraphDbSpec::default();
+    for (f, s) in [("/repo/src/a.rs", "fa"), ("/repo/lib/a.rs", "fb")] {
+        spec.nodes.push(NodeSeed {
+            name: s.into(),
+            parent: None,
+            qname: format!("{f}::{s}"),
+            file_path: f.into(),
+        });
+    }
+    spec.node_attrs = spec
+        .nodes
+        .iter()
+        .map(|n| {
+            (
+                n.qname.clone(),
+                NodeAttr {
+                    kind: "Function",
+                    language: "rust",
+                    is_test: 0,
+                    community_id: None,
+                },
+            )
+        })
+        .collect();
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("graph.db");
+    make_graph_db(&db, &spec).unwrap();
+    let conn = rusqlite::Connection::open(&db).unwrap();
+
+    let out = impact_radius(&conn, &["a.rs".to_string()], 2, 500).unwrap();
+    let changed: Vec<&str> = out["changed_nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|n| n["qualified_name"].as_str().unwrap())
+        .collect();
+    assert_eq!(changed.len(), 2, "both same-basename files seed");
+}
+
+#[test]
 fn impact_radius_cap_truncation() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("graph.db");
