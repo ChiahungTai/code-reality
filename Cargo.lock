@@ -538,7 +538,7 @@ checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
 name = "code-reality"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "axum",
  "cr-freshness",
@@ -566,7 +566,7 @@ dependencies = [
 
 [[package]]
 name = "code-reality-lsp-bridge"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "cr-freshness",
  "rmcp",
@@ -665,7 +665,7 @@ dependencies = [
 
 [[package]]
 name = "cr-freshness"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "tempfile",
 ]
@@ -2500,7 +2500,7 @@ dependencies = [
 
 [[package]]
 name = "pyrefly-producer"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "code-reality",
  "cr-freshness",
