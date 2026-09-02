@@ -469,6 +469,34 @@ fn impact_radius_relaxation_scores_and_order() {
 }
 
 #[test]
+fn impact_radius_relative_path_suffix_fallback() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("graph.db");
+    make_graph_db(&db, &impact_spec()).unwrap();
+    let conn = rusqlite::Connection::open(&db).unwrap();
+
+    // repo-relative input against repo-absolute storage: '/'+suffix seeds
+    let out = impact_radius(&conn, &["a.rs".to_string()], 2, 500).unwrap();
+    assert_eq!(
+        out["changed_nodes"].as_array().unwrap().len(),
+        2,
+        "relative path must seed via boundary suffix"
+    );
+    assert_eq!(out["total_impacted"], 3);
+
+    // same as the absolute query (parity with the relaxation test)
+    let abs = impact_radius(&conn, &["/repo/a.rs".to_string()], 2, 500).unwrap();
+    assert_eq!(out["impact_scores"], abs["impact_scores"]);
+
+    // anchored-suffix that is NOT boundary-aligned must not match
+    let no = impact_radius(&conn, &["po/a.rs".to_string()], 2, 500).unwrap();
+    assert!(no["changed_nodes"].as_array().unwrap().is_empty());
+
+    // a true miss returns empty WITH a note — not silently
+    assert!(no["note"].as_str().unwrap().contains("matched no node"));
+}
+
+#[test]
 fn impact_radius_cap_truncation() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("graph.db");

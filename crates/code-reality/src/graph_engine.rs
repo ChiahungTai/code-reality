@@ -823,15 +823,29 @@ pub fn impact_radius_with(
         return Ok(empty);
     }
     // seeds: every node whose file_path is changed (File nodes included —
-    // get_nodes_by_file has no kind filter)
+    // get_nodes_by_file has no kind filter). Exact match first; a
+    // '/'-boundary suffix fallback absorbs repo-relative input when the
+    // graph stores repo-absolute paths (map_changes_to_nodes idiom) —
+    // without it a relative path silently seeded nothing.
     let nodes_all = load_nodes(conn, false)?;
-    let changed_set: HashSet<&str> = changed_files.iter().map(|s| s.as_str()).collect();
+    let path_matches = |node_path: &str, f: &str| -> bool {
+        if node_path == f {
+            return true;
+        }
+        f.len() < node_path.len()
+            && node_path.ends_with(f)
+            && node_path.as_bytes()[node_path.len() - f.len() - 1] == b'/'
+    };
     let seed_nodes: Vec<&GraphNodeLite> = nodes_all
         .iter()
-        .filter(|n| changed_set.contains(n.file_path.as_str()))
+        .filter(|n| changed_files.iter().any(|f| path_matches(&n.file_path, f)))
         .collect();
     if seed_nodes.is_empty() {
-        return Ok(empty);
+        let mut missed = empty;
+        missed["note"] = serde_json::json!(
+            "changed_files matched no node file_path in this graph — verify repo_root/files (graph stores absolute paths; '/'+suffix matching was tried)"
+        );
+        return Ok(missed);
     }
     let seeds: HashSet<String> = seed_nodes.iter().map(|n| n.symbol.clone()).collect();
 
