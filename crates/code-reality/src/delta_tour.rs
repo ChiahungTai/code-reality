@@ -394,7 +394,9 @@ pub fn build_tour(
     // no-structural-change conclusion (the md conclusion face retired
     // with the transition CLI; this description is the diff conclusion
     // face now). The cross-face files warning rides the same prefix
-    // (SM-5 observable on the sole interface).
+    // (SM-5 observable on the sole interface), and so does the
+    // cross-generation warning (MOS-4: a graph rebuild between the two
+    // snapshots must not read as mass real deletions).
     let mut degenerate_prefix = data
         .get("degenerate_warning")
         .and_then(Value::as_str)
@@ -405,6 +407,13 @@ pub fn build_tour(
             .get("files_face_warning")
             .and_then(Value::as_str)
             .map(|w| format!("⚠️ 跨面 files 警示——{w}\n\n"))
+            .unwrap_or_default(),
+    );
+    degenerate_prefix.push_str(
+        &data
+            .get("generation_warning")
+            .and_then(Value::as_str)
+            .map(|w| format!("⚠️ 跨 graph 世代警示——{w}\n\n"))
             .unwrap_or_default(),
     );
     let summary = format!(

@@ -285,6 +285,91 @@ fn cross_face_files_diff_warns() {
 }
 
 #[test]
+fn cross_generation_pair_warns() {
+    // (MOS-4 symptom 2): snapshots taken against different graph.db
+    // generations warn on the json face; same-generation pairs and
+    // pairs missing the fingerprint (pre-fingerprint side) never warn
+    let tmp = tempfile::tempdir().unwrap();
+    let mk = |p: &Path, commit: &str, gen: Option<&str>, edges: Option<u64>| {
+        let mut meta = serde_json::Map::new();
+        meta.insert("repo".into(), serde_json::json!("r"));
+        meta.insert("commit".into(), serde_json::json!(commit));
+        meta.insert("files_face".into(), serde_json::json!("all-kinds"));
+        if let Some(g) = gen {
+            meta.insert("crg_last_updated".into(), serde_json::json!(g));
+        }
+        if let Some(n) = edges {
+            meta.insert("crg_raw_edges".into(), serde_json::json!(n));
+        }
+        let v = serde_json::json!({
+            "_meta": meta,
+            "files": ["f.py"],
+            "module_edges": [["m/a", "m/b", "CALLS"]],
+        });
+        std::fs::write(p, serde_json::to_string(&v).unwrap()).unwrap();
+    };
+    let a = tmp.path().join("a.json");
+    let b = tmp.path().join("b.json");
+    let c = tmp.path().join("c.json"); // same generation (control)
+    let d = tmp.path().join("d.json"); // no fingerprint (legacy side)
+    mk(&a, "aaaa1111", Some("2026-08-29T10:09:15+08:00"), Some(102));
+    mk(&b, "bbbb2222", Some("2026-08-30T10:49:29+08:00"), Some(134));
+    mk(&c, "cccc3333", Some("2026-08-29T10:09:15+08:00"), Some(102));
+    mk(&d, "dddd4444", None, None);
+    let sa = load_snapshot(&a).unwrap();
+    let sb = load_snapshot(&b).unwrap();
+    let sc = load_snapshot(&c).unwrap();
+    let sd = load_snapshot(&d).unwrap();
+    // cross-generation: warns with both values and the edge-count delta
+    let j = render_json_value(&sa, &sb, &summarize(&sa, &sb), None, None);
+    let w = j["generation_warning"].as_str().unwrap();
+    assert!(w.contains("跨 graph 世代"), "{w}");
+    assert!(
+        w.contains("2026-08-29T10:09:15+08:00") && w.contains("2026-08-30T10:49:29+08:00"),
+        "both generations must appear: {w}"
+    );
+    assert!(w.contains("raw edges 102→134"), "edge delta material: {w}");
+    // same generation: no warning
+    let j2 = render_json_value(&sa, &sc, &summarize(&sa, &sc), None, None);
+    assert!(
+        j2.get("generation_warning").is_none(),
+        "same-generation pair must not warn: {j2}"
+    );
+    // either side missing the fingerprint: skip (loose semantics —
+    // pre-fingerprint snapshots never false-warn)
+    let j3 = render_json_value(&sd, &sb, &summarize(&sd, &sb), None, None);
+    assert!(
+        j3.get("generation_warning").is_none(),
+        "before-side missing fingerprint must skip: {j3}"
+    );
+    let j4 = render_json_value(&sb, &sd, &summarize(&sb, &sd), None, None);
+    assert!(
+        j4.get("generation_warning").is_none(),
+        "after-side missing fingerprint must skip: {j4}"
+    );
+    // explicit null fingerprint — the legacy-db form (snapshot writes
+    // Value::Null when graph.db carries no last_updated) skips the same
+    let e = tmp.path().join("e.json");
+    let v = serde_json::json!({
+        "_meta": {
+            "repo": "r",
+            "commit": "eeee5555",
+            "files_face": "all-kinds",
+            "crg_last_updated": null,
+        },
+        "files": ["f.py"],
+        "module_edges": [["m/a", "m/b", "CALLS"]],
+    });
+    std::fs::write(&e, serde_json::to_string(&v).unwrap()).unwrap();
+    let se = load_snapshot(&e).unwrap();
+    let j5 = render_json_value(&se, &sb, &summarize(&se, &sb), None, None);
+    assert!(
+        j5.get("generation_warning").is_none(),
+        "null fingerprint (legacy-db form) must skip: {j5}"
+    );
+}
+
+#[test]
 fn files_only_change_counts_as_changed_module() {
     // (ported off the retired CLI): a files-only change still counts as
     // a changed module in the json face

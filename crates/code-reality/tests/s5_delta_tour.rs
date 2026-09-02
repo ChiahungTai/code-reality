@@ -225,7 +225,8 @@ fn degenerate_warning_is_additive_steps_still_render() {
     // T24 (T13 contract at the new injection point): the warning is an
     // ADDITIVE prefix — the change steps from the range still render.
     // The cross-face files warning rides the same prefix (post-build R2:
-    // SM-5 must stay observable on the sole interface)
+    // SM-5 must stay observable on the sole interface), and so does the
+    // cross-generation warning (MOS-4)
     let (repo, before, after) = repo_fixture("degen2");
     let mut stderr = String::new();
     let mut j = trans_json(&before, &after);
@@ -238,6 +239,10 @@ fn degenerate_warning_is_additive_steps_still_render() {
         "files_face_warning".into(),
         json!("files 面跨版本不可比（一方缺 files_face＝舊 structural-only 面）——files diff 不可信；module_edges 仍可比（kind 集不變）"),
     );
+    obj.insert(
+        "generation_warning".into(),
+        json!("before/after 跨 graph 世代（before 2026-08-29T10:09:15+08:00／after 2026-08-30T10:49:29+08:00；raw edges 102→134）——graph.db 曾在兩次 snapshot 之間重建，檔案集收縮可能是重建造成而非真實刪檔（phantom 刪檔風險）；delta 僅供參考，建議重建後雙端重 snapshot。不擋執行。"),
+    );
     let tour = build_tour(&j, &repo, None, "t", &mut stderr).unwrap();
     let steps = tour["steps"].as_array().unwrap();
     assert!(steps.len() >= 5, "change steps must still render: {tour}");
@@ -248,8 +253,14 @@ fn degenerate_warning_is_additive_steps_still_render() {
     let face_at = desc
         .find("跨面 files 警示")
         .expect("cross-face prefix missing");
+    let gen_at = desc
+        .find("跨 graph 世代警示")
+        .expect("cross-generation prefix missing");
     let counts_at = desc.find("before `").expect("counts line missing");
-    assert!(degen_at < counts_at && face_at < counts_at, "{desc}");
+    assert!(
+        degen_at < counts_at && face_at < counts_at && gen_at < counts_at,
+        "{desc}"
+    );
 }
 
 #[test]

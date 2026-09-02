@@ -190,6 +190,36 @@ fn face_mismatch(sa: &LoadedSnapshot, sb: &LoadedSnapshot) -> Option<String> {
     }
 }
 
+fn crg_generation(s: &LoadedSnapshot) -> Option<&str> {
+    s.meta.get("crg_last_updated").and_then(Value::as_str)
+}
+
+fn crg_raw_edges(s: &LoadedSnapshot) -> Option<u64> {
+    s.meta.get("crg_raw_edges").and_then(Value::as_u64)
+}
+
+/// Cross-generation guard (MOS-4 symptom 2): the pair spans two
+/// graph.db generations — a rebuild happened between the two snapshot
+/// points, and a corpus-shrinking rebuild masquerades as mass phantom
+/// deletions in the files diff. Loose semantics: either side missing
+/// the `crg_last_updated` fingerprint (pre-fingerprint snapshot)
+/// skips the check — old snapshots never false-warn. `last_updated`
+/// has a single writer, the graph build path, so a value difference
+/// means a real rebuild (head-sync refresh touches no meta).
+fn generation_mismatch(sa: &LoadedSnapshot, sb: &LoadedSnapshot) -> Option<String> {
+    let (ga, gb) = (crg_generation(sa)?, crg_generation(sb)?);
+    if ga == gb {
+        return None;
+    }
+    let edges_note = match (crg_raw_edges(sa), crg_raw_edges(sb)) {
+        (Some(na), Some(nb)) => format!("；raw edges {na}→{nb}"),
+        _ => String::new(),
+    };
+    Some(format!(
+        "before/after 跨 graph 世代（before {ga}／after {gb}{edges_note}）——graph.db 曾在兩次 snapshot 之間重建，檔案集收縮可能是重建造成而非真實刪檔（phantom 刪檔風險）；delta 僅供參考，建議重建後雙端重 snapshot。不擋執行。"
+    ))
+}
+
 /// File-path token regex (`transition.py:100`).
 fn file_token_re() -> &'static regex::Regex {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
@@ -332,6 +362,11 @@ pub fn render_json_value(
         out.as_object_mut()
             .unwrap()
             .insert("files_face_warning".into(), json!(w));
+    }
+    if let Some(w) = generation_mismatch(sa, sb) {
+        out.as_object_mut()
+            .unwrap()
+            .insert("generation_warning".into(), json!(w));
     }
     if let Some(c) = claims {
         let cmp = compare_claims(c, &changed_set);
