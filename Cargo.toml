@@ -27,6 +27,11 @@ axum = "0.8"
 schemars = "1.2.2"
 rmcp = { version = "3.1.4", features = ["server"] }
 
+[profile.dev]
+# Disk discipline: preserve filename/line-number backtraces while omitting
+# local-variable and function-parameter debug info to reduce dev artifact size.
+debug = "line-tables-only"
+
 [profile.release]
 # Query tooling: prefer fast index decode (the 275MB NT index parses in ~0.7s in release).
 debug = false
