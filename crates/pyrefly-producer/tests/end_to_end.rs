@@ -461,3 +461,68 @@ fn default_slot_chain_is_in_repo_and_git_clean() {
     );
     let _ = std::fs::remove_dir_all(&d);
 }
+
+#[test]
+fn cjk_sources_emit_consistent_positions() {
+    // AIR-33 ②: occurrence ranges are byte offsets into the
+    // analysis-time snapshot; CJK content makes any byte/char desync
+    // land mid-char (the recorded '共'/'會' panics). The single-read
+    // snapshot keeps offsets consistent by construction — pinned by the
+    // observable: emit succeeds and the class DEF reports its real line.
+    // Also pins ① on the producer output: the class symbol answers a
+    // bare-name find_defs. Isolated fixture dir (not mini/) — the class
+    // name must stay unique so the bare-query defs set is exactly one.
+    let src_fixture =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cjk/cjk_shapes.py");
+    let repo = std::env::temp_dir().join(format!("pyrefly-cjk-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&repo);
+    copy_tree(src_fixture.parent().unwrap(), &repo);
+
+    let index_path = repo.join("index.scip");
+    pyrefly_producer::emit(&repo, Some(&index_path)).expect("emit");
+    let loaded = code_reality::engine::load_index(&index_path).unwrap();
+
+    let src = std::fs::read_to_string(&src_fixture).unwrap();
+    let class_line = src
+        .lines()
+        .enumerate()
+        .find(|(_, l)| l.starts_with("class Greeter"))
+        .map(|(i, _)| i as i32 + 1)
+        .unwrap();
+
+    let doc = loaded
+        .index
+        .documents
+        .iter()
+        .find(|d| d.relative_path == "cjk_shapes.py")
+        .expect("cjk doc emitted");
+    let def = doc
+        .occurrences
+        .iter()
+        .find(|o| o.symbol.ends_with("/Greeter#") && o.symbol_roles & 1 != 0)
+        .expect("class Greeter DEF occurrence");
+    assert_eq!(def.range[0] + 1, class_line, "DEF on the real class line");
+
+    let defs = code_reality::engine::find_defs(
+        &loaded.index,
+        &code_reality::engine::Query::parse("Greeter"),
+    );
+    // Two groups by design: the class DEF (`Greeter#`) plus the B7b
+    // pseudo-constructor DEF (`Greeter().`) minted because the fixture
+    // calls the constructor.
+    assert_eq!(defs.len(), 2, "bare class name resolves (AIR-33 ①)");
+    let class_sym = defs
+        .keys()
+        .find(|s| s.ends_with("`cjk_shapes`/Greeter#"))
+        .expect("class DEF group");
+    assert_eq!(
+        defs[class_sym],
+        vec![format!("cjk_shapes.py:{class_line}")],
+        "class DEF on the real line"
+    );
+    assert!(
+        defs.keys().any(|s| s.ends_with("`cjk_shapes`/Greeter().")),
+        "pseudo-constructor DEF group rides along (B7b)"
+    );
+    let _ = std::fs::remove_dir_all(&repo);
+}

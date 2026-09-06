@@ -74,12 +74,16 @@ fn kind_of(raw: &str, ctx: &str) -> Result<DefKind, String> {
     match raw {
         "class" => Ok(DefKind::Class),
         "function" => Ok(DefKind::Function),
-        other => Err(format!("plan {ctx} kind 非法：{other}（僅 class|function）")),
+        other => Err(format!(
+            "plan {ctx} kind 非法：{other}（僅 class|function）"
+        )),
     }
 }
 
 fn valid_name(s: &str) -> bool {
-    !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
+    !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
 }
 
 fn expect_str(t: &toml::Table, key: &str, ctx: &str) -> Result<String, String> {
@@ -92,7 +96,9 @@ fn expect_str(t: &toml::Table, key: &str, ctx: &str) -> Result<String, String> {
 fn parse_scope(raw: Option<&toml::Value>, ctx: &str) -> Result<Vec<(String, bool)>, String> {
     let mut out = Vec::new();
     if let Some(v) = raw {
-        let arr = v.as_array().ok_or_else(|| format!("plan {ctx} scope 需陣列"))?;
+        let arr = v
+            .as_array()
+            .ok_or_else(|| format!("plan {ctx} scope 需陣列"))?;
         for (i, e) in arr.iter().enumerate() {
             let t = e
                 .as_table()
@@ -225,7 +231,10 @@ fn line_of(src: &str, off: usize) -> i64 {
 }
 
 fn rng(off: usize, len: usize) -> TextRange {
-    TextRange::new(TextSize::from(off as u32), TextSize::from((off + len) as u32))
+    TextRange::new(
+        TextSize::from(off as u32),
+        TextSize::from((off + len) as u32),
+    )
 }
 
 /// Stmt start = first non-whitespace char of the def's line (covers
@@ -243,7 +252,9 @@ fn stmt_start(src: &str, name_off: usize) -> usize {
 }
 
 fn toml_escape(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n")
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
 }
 
 // ---------- core ----------
@@ -268,8 +279,13 @@ pub fn generate(
     }
     let mut srcs: Vec<(String, String)> = Vec::new();
     for rel in &rels {
-        let text = std::fs::read_to_string(sources.join(rel))
-            .map_err(|e| format!("planned source 缺檔 {}（--sources {}）：{e}", rel, sources.display()))?;
+        let text = std::fs::read_to_string(sources.join(rel)).map_err(|e| {
+            format!(
+                "planned source 缺檔 {}（--sources {}）：{e}",
+                rel,
+                sources.display()
+            )
+        })?;
         srcs.push((rel.clone(), text));
     }
     let src_of = |rel: &str| -> Result<&str, String> {
@@ -378,7 +394,11 @@ pub fn generate(
         for (k, &i) in idxs.iter().enumerate() {
             let s = &plan.symbols[i];
             let name_off = first_occurrence(src, &s.name).expect("checked above");
-            let node_end = if k + 1 < starts.len() { starts[k + 1] } else { end_all };
+            let node_end = if k + 1 < starts.len() {
+                starts[k + 1]
+            } else {
+                end_all
+            };
             let scope: Vec<ScopeEntry> = s
                 .scope
                 .iter()
@@ -418,22 +438,13 @@ pub fn generate(
             // ctor form — its DEF was minted with the class (B7b pairing).
             let target = match e.to_kind {
                 DefKind::Class => {
-                    let cls_sym = symbol::target_symbol(
-                        &disc,
-                        &e.to_module,
-                        &[],
-                        DefKind::Class,
-                        &e.to_name,
-                    );
+                    let cls_sym =
+                        symbol::target_symbol(&disc, &e.to_module, &[], DefKind::Class, &e.to_name);
                     symbol::pseudo_ctor_symbol(&cls_sym).expect("class symbol")
                 }
-                DefKind::Function | DefKind::Variable => symbol::target_symbol(
-                    &disc,
-                    &e.to_module,
-                    &[],
-                    DefKind::Function,
-                    &e.to_name,
-                ),
+                DefKind::Function | DefKind::Variable => {
+                    symbol::target_symbol(&disc, &e.to_module, &[], DefKind::Function, &e.to_name)
+                }
             };
             em.push_call_reference(&target, call_range);
         }

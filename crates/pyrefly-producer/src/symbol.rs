@@ -11,8 +11,10 @@
 //! - pseudo-constructor  `` `pkg.mod`/Class(). `` / `` `pkg.mod`/Outer#Inner(). ``
 //!
 //! Only functions/methods carry the `().` tail the fn_tail_name gate
-//! requires — classes and variables are filtered at ingest exactly like
-//! the scip-python face (R2-3 parity, deliberate). The pseudo-constructor
+//! requires. Variables are filtered at ingest (R2-3 parity); classes
+//! ride the `#` tail and are queryable by bare name on the python
+//! faces since AIR-33 (the graph ingest face still filters them). The
+//! pseudo-constructor
 //! is the deliberate exception (B7b): a constructor CALL resolved to a
 //! corpus class target is minted in fn shape so the edge survives the
 //! ingest gate and pairs with the legacy class node by (name, file);

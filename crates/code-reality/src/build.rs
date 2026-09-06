@@ -383,6 +383,9 @@ pub fn build_repo(
     let ir = graph_db::ensure_indexes(&resolved).map_err(BuildError::Core)?;
     rep.indexes_created = ir.created;
     rep.indexes_skipped = ir.skipped;
+    // A converged explicit build ends any churn window — later queries
+    // heal normally (run_heal_locked clears this too; idempotent).
+    let _ = std::fs::remove_file(churn_marker(&slot));
     Ok(rep)
 }
 
@@ -425,6 +428,11 @@ const HEAL_LOCK_MAX_AGE: Duration = Duration::from_secs(600);
 /// Wait budget for a peer healer before serving stale.
 const HEAL_WAIT_BUDGET: Duration = Duration::from_secs(120);
 const HEAL_POLL: Duration = Duration::from_millis(200);
+/// Churn cooldown default (AIR-33 ③): while an active writer keeps
+/// sources newer than the slot, every query would re-burn a
+/// minutes-scale heal that cannot converge anyway (its output is stale
+/// the moment it lands). See `churn_cooldown_active`.
+const HEAL_CHURN_COOLDOWN: Duration = Duration::from_secs(600);
 
 fn acquire_heal_lock(slot_dir: &Path) -> Result<Option<HealLock>, String> {
     let p = slot_dir.join(".heal.lock");
@@ -490,6 +498,70 @@ fn producer_drift_note(slot: &Path, roots: &[PathBuf]) -> Option<String> {
     })
 }
 
+// ---------- churn cooldown (AIR-33 ③) ----------
+//
+// The mtime staleness signal is true on EVERY query while a writer keeps
+// editing — each full heal is minutes-scale on real corpora and cannot
+// converge under continuous edits (its output is stale the moment it
+// lands), so a heal that finishes and STILL finds sources newer than the
+// slot (the SM-9 loop guard) arms a cooldown marker. Later queries inside
+// the window serve the existing index with a WARN instead of re-burning
+// the heal. A head drift (commit boundary) always overrides — commits are
+// convergence points. Escape hatch: CODE_REALITY_HEAL_COOLDOWN_SECS=0.
+
+fn churn_cooldown_secs() -> u64 {
+    std::env::var("CODE_REALITY_HEAL_COOLDOWN_SECS")
+        .ok()
+        .and_then(|v| match v.parse::<u64>() {
+            Ok(secs) => Some(secs),
+            Err(_) => {
+                eprintln!(
+                    "[WARN] CODE_REALITY_HEAL_COOLDOWN_SECS 無法解析（{v}）——採用預設 {}s",
+                    HEAL_CHURN_COOLDOWN.as_secs()
+                );
+                None
+            }
+        })
+        .unwrap_or(HEAL_CHURN_COOLDOWN.as_secs())
+}
+
+/// Slot-sibling marker (`.heal-churn`); its mtime is the arming
+/// timestamp — the same mtime-as-clock idiom as the abandoned-lock age
+/// check.
+fn churn_marker(slot: &Path) -> PathBuf {
+    slot.parent()
+        .unwrap_or_else(|| Path::new(""))
+        .join(".heal-churn")
+}
+
+fn churn_cooldown_active(slot: &Path) -> bool {
+    let secs = churn_cooldown_secs();
+    if secs == 0 {
+        return false;
+    }
+    churn_marker(slot)
+        .metadata()
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .is_some_and(|age| age.as_secs() < secs)
+}
+
+/// Rewriting an already-fresh marker refreshes the window — protection
+/// extends while churn keeps failing to converge.
+fn write_churn_marker(slot: &Path) {
+    let _ = std::fs::write(churn_marker(slot), b"");
+}
+
+fn churn_serve_stale(slot: &Path, roots: &[PathBuf]) -> HealOutcome {
+    let mut lines = vec![
+        "[WARN] 活躍編輯中（上次癒合未能收斂）——cooldown 內跳過重癒，本次查詢以現存索引作答\n"
+            .to_string(),
+    ];
+    lines.extend(producer_drift_note(slot, roots));
+    HealOutcome::ServeStale(lines)
+}
+
 /// Post-rebuild-error outcome (SM-17 half-success): the rebuild failed
 /// AFTER the producer may have landed a fresh index — re-evaluate before
 /// serving stale, so a graph-only failure is not mislabeled. Public for
@@ -533,13 +605,19 @@ fn run_heal_locked(
             // behind warns once and serves — never loops.
             let snap = crate::engine::evaluate_staleness(repo, slot)?;
             if snap.source_newer {
+                // Failed convergence — arm the churn cooldown so the next
+                // query doesn't re-burn a minutes-scale heal into the same
+                // non-convergence (AIR-33 ③).
+                write_churn_marker(slot);
                 let mut lines = vec![
-                    "[WARN] heal 期間原始碼又變動——本次查詢以現存索引作答（下次查詢自動再癒）\n"
+                    "[WARN] heal 期間原始碼又變動——本次查詢以現存索引作答（cooldown 內後續查詢不再重癒）\n"
                         .to_string(),
                 ];
                 lines.extend(producer_drift_note(slot, roots));
                 return Ok(HealOutcome::ServeStale(lines));
             }
+            // Converged — any churn window is over; re-arm healing.
+            let _ = std::fs::remove_file(churn_marker(slot));
             let delta = match crate::engine::load_index(slot) {
                 Ok(loaded) => {
                     let docs: BTreeSet<String> = loaded
@@ -593,6 +671,11 @@ fn wait_peer_and_reevaluate(
                     waited_secs: t0.elapsed().as_secs_f64(),
                 });
             }
+            // peer released without fixing it — the cooldown applies here
+            // too (the peer's non-convergence armed it)
+            if snap.head_drift != Some(true) && churn_cooldown_active(slot) {
+                return Ok(churn_serve_stale(slot, roots));
+            }
             // peer released without fixing it — become the healer
             let slot_dir = slot.parent().unwrap_or_else(|| Path::new("."));
             return match acquire_heal_lock(slot_dir) {
@@ -631,6 +714,14 @@ pub fn ensure_fresh(repo: &Path, roots: &[PathBuf]) -> Result<HealOutcome, Strin
     let snap = crate::engine::evaluate_staleness(&repo, &slot)?;
     if !snap.source_newer {
         return Ok(HealOutcome::Fresh);
+    }
+    // Churn guard (AIR-33 ③): a marker armed by a heal that failed to
+    // converge means an active writer — skip the minutes-scale rebuild
+    // and serve the existing index (WARNed). A drifted head (commit
+    // boundary) overrides: commits are the stable points worth
+    // converging on.
+    if snap.head_drift != Some(true) && churn_cooldown_active(&slot) {
+        return Ok(churn_serve_stale(&slot, roots));
     }
     let t0 = Instant::now();
     let slot_dir = slot

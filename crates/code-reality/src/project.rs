@@ -10,8 +10,8 @@
 //! labels everything `[projected]` and counts hypothetical edges (the
 //! Claim→Evidence→Trust laundering trap guard). Query layer rides the
 //! protobuf face only (`engine::load_index` + `fn_spans`): deterministic,
-//! face-shape independent (the sqlite face's fn-tail gate hides class
-//! DEFs), and zero sidecar writes — the real slot stays byte-identical
+//! face-shape independent (query semantics never ride the derived
+//! table's ingest semantics), and zero sidecar writes — the real slot stays byte-identical
 //! (non-pollution invariant, test-pinned).
 
 use crate::argparse::{parse, FlagSpec, Kind, Outcome, ToolSpec};

@@ -84,8 +84,15 @@ Responses embed `[SRC]` provenance lines (index version/commit) and a
   a stale slot rebuild it before answering — single-flight across
   concurrent sessions through `.code-reality/scip/.heal.lock`. A rebuild
   that still leaves the slot behind warns once and serves (detection vs
-  corpus mismatch never loops). `CODE_REALITY_AUTOHEAL=off` reverts to
-  warn-only; explicit `--index` paths and the write modes are never
+  corpus mismatch never loops). Under an ACTIVE writer (a heal that
+  finishes and still finds sources newer than the slot) a churn
+  cooldown marker (`.heal-churn`, 10min) is armed — later queries inside
+  the window serve the existing index with a WARN instead of re-burning
+  a minutes-scale heal that cannot converge anyway; a head drift (commit
+  boundary) always overrides, and a converging heal clears the marker.
+  `CODE_REALITY_AUTOHEAL=off` reverts to warn-only;
+  `CODE_REALITY_HEAL_COOLDOWN_SECS=0` disables the cooldown; explicit
+  `--index` paths and the write modes are never
   healed. The manual chain above stays for explicit maintenance.
 - `code-reality refresh --repo <repo>` is the post-commit background
   face (full re-produce when sources moved; docs-only commits re-stamp
@@ -222,15 +229,17 @@ on any new repo.
 - `search` works as a single keyword per query — multi-word queries
   fall through to whole-phrase LIKE matching and typically return
   nothing.
-- SCIP DEFs cover functions and methods only: struct/trait/type names
-  are not resolvable query keys — query one of their methods instead.
-  Python classes behave the same (class name → "查無 DEF"; query a
-  method instead — bare name or `Class.method` dot form both match;
-  the `Class#method()` hash form is the DISPLAY format, not a query
-  key — mosaic_alpha relay verified 2026-08-29);
-  caveat: dataclass-style classes (constructor call with no corpus
-  `__init__`) mint a pseudo-constructor DEF, so the bare class name DOES
-  resolve for those (B7b).
+- SCIP DEFs cover functions, methods, and Python classes: a bare Python
+  class name resolves to the class DEF — `scip_refs <Class> --callers`
+  returns subclass / isinstance / constructor-call sites (end-anchored:
+  a nested class matches by its own name only, `Outer` never matches
+  `Outer#Inner#`). `Class.method` dot form matches methods; the
+  `Class#method()` hash form is the DISPLAY format, not a query key.
+  Rust struct/trait/type names are still not resolvable query keys —
+  query one of their methods instead; module variables (`NAME.` form)
+  remain non-queryable. Dataclass-style classes (constructor call with
+  no corpus `__init__`) additionally mint a pseudo-constructor DEF
+  (`Class().`), so a bare query then returns both groups (B7b).
 - `delta_tour --out-dir` resolves against the executing cwd, not the
   `--repo` root — run it from the repo (or pass an absolute path), or
   the tours land in the caller's `.tours/delta/`. The MCP

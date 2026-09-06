@@ -221,3 +221,55 @@ fn closure_depth1_is_callers_set() {
         out.stdout
     );
 }
+
+#[test]
+fn callers_mode_answers_python_class_query() {
+    // AIR-33 ①: a bare class-name query must reach the caller-edge modes
+    // (previously the fn-tail-only matcher answered "查無 DEF" for every
+    // `Class#` symbol). Caller attribution rides the CALLER fn's span —
+    // the class callee needs no span of its own.
+    use protobuf::Message;
+    use scip::types::{Document, Index, Occurrence};
+    let class = "pyrefly python p 0.1.0 `pkg.mod`/Widget#";
+    let fn_sym = "pyrefly python p 0.1.0 `pkg.other`/use_widget().";
+    let mk = |symbol: &str, line: i32, def: bool, enc: Option<Vec<i32>>| {
+        let mut o = Occurrence::new();
+        o.symbol = symbol.to_string();
+        o.range = vec![line, 0];
+        o.symbol_roles = if def { 1 } else { 0 };
+        o.enclosing_range = enc.unwrap_or_default();
+        o
+    };
+    let mut d1 = Document::new();
+    d1.relative_path = "pkg/mod.py".to_string();
+    d1.occurrences = vec![mk(class, 9, true, None)];
+    let mut d2 = Document::new();
+    d2.relative_path = "pkg/other.py".to_string();
+    d2.occurrences = vec![
+        // caller fn spans lines 1-5 (0-based enc [0,0,4,0]); the class
+        // reference at 0-based line 3 sits inside it
+        mk(fn_sym, 0, true, Some(vec![0, 0, 4, 0])),
+        mk(class, 3, false, None),
+    ];
+    let mut index = Index::new();
+    index.documents = vec![d1, d2];
+
+    let tmp = tempfile::tempdir().unwrap();
+    let idx = tmp.path().join("class_callers.scip");
+    std::fs::write(&idx, index.write_to_bytes().unwrap()).unwrap();
+    let idx_s = idx.to_string_lossy().to_string();
+    let out = run(&["scip_refs", "--callers", "Widget", "--index", &idx_s]);
+    assert_eq!(
+        out.exit_code, 0,
+        "stdout={}\nstderr={}",
+        out.stdout, out.stderr
+    );
+    assert!(!out.stdout.contains("查無 DEF"), "{}", out.stdout);
+    assert!(out.stdout.contains("Widget：1 callers"), "{}", out.stdout);
+    assert!(out.stdout.contains("use_widget"), "{}", out.stdout);
+    assert!(
+        out.stdout.contains("pkg/other.py:4"),
+        "site is the class reference line: {}",
+        out.stdout
+    );
+}

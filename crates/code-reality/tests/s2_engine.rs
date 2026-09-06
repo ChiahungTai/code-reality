@@ -88,6 +88,97 @@ fn fn_tail_captures_full_trailing_identifier() {
 }
 
 #[test]
+fn class_tail_captures_trailing_class_identifier() {
+    let class = "pyrefly python mosaic_alpha 0.1.0 `mosaic_alpha.conditions.base`/ConditionBase#";
+    assert_eq!(class_tail_name(class), Some("ConditionBase"));
+    // nested: the tail is Inner, never mid-chain Outer
+    assert_eq!(
+        class_tail_name("pyrefly python p 0.1 `pkg.mod`/Outer#Inner#"),
+        Some("Inner")
+    );
+    assert_eq!(class_tail_name("kernel/not_a_fn"), None);
+    assert_eq!(class_tail_name("kernel/open()."), None);
+    assert_eq!(class_tail_name("#"), None);
+}
+
+#[test]
+fn bare_matcher_accepts_class_tail_end_anchored() {
+    let class = "pyrefly python mosaic_alpha 0.1.0 `m`/ConditionBase#";
+    let q = Query::parse("ConditionBase");
+    assert!(
+        matches_query(class, &q),
+        "bare class name resolves (AIR-33)"
+    );
+    // prefix poisoning and mid-chain classes never match
+    assert!(!matches_query(
+        "pyrefly python p 0.1 `m`/MyConditionBase#",
+        &q
+    ));
+    assert!(!matches_query("pyrefly python p 0.1 `m`/Outer#Inner#", &q));
+    assert!(matches_query(
+        "pyrefly python p 0.1 `m`/Outer#Inner#",
+        &Query::parse("Inner")
+    ));
+    assert!(!matches_query(
+        "pyrefly python p 0.1 `m`/Outer#Inner#",
+        &Query::parse("Outer")
+    ));
+    // fn tail matching unchanged
+    assert!(matches_query(
+        "rust-analyzer cargo x 0.1.0 kernel/open().",
+        &Query::parse("open")
+    ));
+}
+
+#[test]
+fn bare_class_arm_is_python_face_gated() {
+    // AIR-33 scope: bare class-name queries were adjudicated for PYTHON
+    // faces only. Rust `Type#` DEFs share the tail shape (self-repo
+    // probe: `build/BuildError#` / `argparse/Kind#StoreTrue#` resolve
+    // without the gate) — they stay non-queryable by bare name.
+    let q = Query::parse("BuildError");
+    assert!(!matches_query(
+        "rust-analyzer cargo code-reality 0.6.3 build/BuildError#",
+        &q
+    ));
+    assert!(matches_query("pyrefly python p 0.1 `m`/BuildError#", &q));
+    assert!(matches_query(
+        "scip-python python p 0.1 `m`/BuildError#",
+        &q
+    ));
+    // fn-tail matching stays face-agnostic (frozen face)
+    assert!(matches_query(
+        "rust-analyzer cargo x 0.1.0 kernel/open().",
+        &Query::parse("open")
+    ));
+}
+
+#[test]
+fn find_defs_resolves_python_class_def() {
+    let class = "pyrefly python mosaic_alpha 0.1.0 `mosaic_alpha.conditions.base`/ConditionBase#";
+    let mut index = Index::new();
+    index.documents = vec![
+        doc(
+            "mosaic_alpha/conditions/base.py",
+            vec![
+                occ(class, 59, true, 2),  // class ConditionBase(ABC): at :60
+                occ(class, 10, false, 2), // same-file reference
+            ],
+        ),
+        doc(
+            "mosaic_alpha/conditions/moving_average.py",
+            vec![occ(class, 4, false, 2)], // base-class reference
+        ),
+    ];
+    let defs = find_defs(&index, &Query::parse("ConditionBase"));
+    assert_eq!(defs.len(), 1);
+    assert_eq!(defs[class][0], "mosaic_alpha/conditions/base.py:60");
+    let symbols: BTreeSet<String> = defs.keys().cloned().collect();
+    let refs = find_refs(&index, &symbols);
+    assert_eq!(refs[class].len(), 2);
+}
+
+#[test]
 fn tail_takes_last_space_part_when_more_than_four() {
     assert_eq!(
         tail(IMPL_VARIANT),

@@ -444,7 +444,11 @@ async fn data_plane_tools_route_loud_errors() {
         ))
         .await
         .unwrap_err();
-    assert!(err.message.contains("找不到 .py 或 .rs"), "{:?}", err.message);
+    assert!(
+        err.message.contains("找不到 .py 或 .rs"),
+        "{:?}",
+        err.message
+    );
 
     // SM-3: producer validation surfaces as INVALID_PARAMS before any lib
     // call — pinned on the code, not just the message text (the lib's own
@@ -586,13 +590,20 @@ async fn mcp_snapshot_and_delta_tour_end_to_end() {
         .await
         .unwrap();
     let t1 = result_text(r1);
-    assert!(t1.contains("[WARN] graph stale"), "stale warn expected: {t1}");
+    assert!(
+        t1.contains("[WARN] graph stale"),
+        "stale warn expected: {t1}"
+    );
     assert!(t1.contains("[OK] snapshot: 2 files"), "{t1}");
     let path1 = dp_ok_path(&t1, "[OK] snapshot");
     assert!(std::path::Path::new(&path1).is_file(), "written: {path1}");
 
     // second commit (source change anchors the git hunks) + db gains an edge
-    std::fs::write(repo.join("pkg/mod.py"), "# header\ndef keep():\n    return 42\n").unwrap();
+    std::fs::write(
+        repo.join("pkg/mod.py"),
+        "# header\ndef keep():\n    return 42\n",
+    )
+    .unwrap();
     dp_git(&repo, &["add", "."]);
     dp_git(&repo, &["commit", "-qm", "change"]);
     mk_db(2);
@@ -628,7 +639,10 @@ async fn mcp_snapshot_and_delta_tour_end_to_end() {
         .unwrap();
     let tt = result_text(rt);
     assert!(tt.contains("[OK] delta tour:"), "{tt}");
-    assert!(tt.contains(".tours/delta/"), "in-repo default out_dir: {tt}");
+    assert!(
+        tt.contains(".tours/delta/"),
+        "in-repo default out_dir: {tt}"
+    );
     let tour_path = dp_ok_path(&tt, "[OK] delta tour");
     // the diff is real (an added edge + a changed file): steps must be >= 1
     let steps: usize = tt
@@ -638,7 +652,10 @@ async fn mcp_snapshot_and_delta_tour_end_to_end() {
         .and_then(|s| s.split(' ').next())
         .and_then(|s| s.parse().ok())
         .expect("step count in [OK] line");
-    assert!(steps >= 1, "expected non-degenerate tour, got {steps} steps: {tt}");
+    assert!(
+        steps >= 1,
+        "expected non-degenerate tour, got {steps} steps: {tt}"
+    );
     assert!(
         std::path::Path::new(&tour_path).is_file(),
         "tour written: {tour_path}"

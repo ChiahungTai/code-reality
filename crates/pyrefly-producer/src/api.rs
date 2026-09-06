@@ -45,6 +45,16 @@ pub struct CallResolution {
 #[derive(Debug)]
 pub struct ModuleData {
     pub rel_path: String,
+    /// Source snapshot read once at analysis time (single-read contract):
+    /// the emit phase must not re-read from disk — AST byte offsets
+    /// index THIS text, and a re-read races concurrent writers (the CJK
+    /// char-boundary slicing panic face). Known residual window
+    /// (review-recorded): pyrefly reads/parses each file inside
+    /// `transaction.run` BEFORE this read — a writer landing between the
+    /// two reads still desyncs, and emit's boundary assert then aborts
+    /// that produce (old index survives). Revisit on a pyrefly rev
+    /// upgrade if the AST handle exposes its parsed text.
+    pub source: String,
     pub defs: Vec<walk::DefSite>,
     /// Every def/class/module-level-assign node in the file, used to build
     /// the qualified-name chain of a resolved target living in this module.
@@ -98,6 +108,8 @@ pub fn drive(repo_root: &Path, files: Vec<PathBuf>) -> Result<DriveResult, Strin
             result.skipped_no_ast.push(rel_path);
             continue;
         };
+        let source =
+            std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", rel_path))?;
         let sites = walk::collect(&ast);
 
         let resolve = |pos| match transaction.find_definition(handle, pos, preference) {
@@ -135,6 +147,7 @@ pub fn drive(repo_root: &Path, files: Vec<PathBuf>) -> Result<DriveResult, Strin
 
         result.modules.push(ModuleData {
             rel_path,
+            source,
             defs: sites.defs,
             def_nodes: sites.def_nodes,
             refs,

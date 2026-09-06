@@ -132,9 +132,10 @@ pub fn emit(repo_root: &Path, out: Option<&Path>) -> Result<EmitReport, String> 
     }
 
     for m in &driven.modules {
-        let src = std::fs::read_to_string(repo_root.join(&m.rel_path))
-            .map_err(|e| format!("read {}: {e}", m.rel_path))?;
-        emitter.start_module(&m.rel_path, &src);
+        // Single-read contract: `api::drive` snapshotted each source at
+        // analysis time — re-reading here would race concurrent writers
+        // and desync AST byte offsets from file bytes.
+        emitter.start_module(&m.rel_path, &m.source);
 
         // Module identity is derived from the rel path on BOTH sides
         // (defs and resolved targets): pyrefly's handle naming is

@@ -55,10 +55,11 @@ pub fn filter_workspace(edges: Vec<EdgeRow>, defs: &BTreeSet<String>) -> (Vec<Ed
 }
 
 /// Ref rows + DEF symbols via the family face ladder (fresh sqlite cache
-/// → protobuf in-memory; never builds the cache on miss). The sqlite face
-/// stores only fn-tailed symbols' occurrences (cache::build_db filter) —
-/// the protobuf branch mirrors that (`fn_tail_name` gate) so both faces
-/// carry the same fn-callee universe.
+/// → protobuf in-memory; never builds the cache on miss). Both faces
+/// re-gate on `fn_tail_name`: the cache table is versioned ingest
+/// semantics (class rows exist since SCHEMA_VERSION 2) while this
+/// oracle's fn-callee universe stays fn-tail-shaped — meta-table data ≠
+/// semantic source (cache::audit_targets' re-check precedent).
 fn scan_rows_and_defs(face: &Face) -> Result<(Vec<OccRow>, BTreeSet<String>), String> {
     match face {
         Face::Sqlite(conn) => {
@@ -80,7 +81,11 @@ fn scan_rows_and_defs(face: &Face) -> Result<(Vec<OccRow>, BTreeSet<String>), St
                     })
                     .map_err(|e| format!("scip_edges 掃描失敗：{e}"))?;
                 for row in it {
-                    rows.push(row.map_err(|e| format!("scip_edges 掃描失敗：{e}"))?);
+                    let (symbol, rel_path, line) =
+                        row.map_err(|e| format!("scip_edges 掃描失敗：{e}"))?;
+                    if fn_tail_name(&symbol).is_some() {
+                        rows.push((symbol, rel_path, line));
+                    }
                 }
             }
             let mut defs = BTreeSet::new();
@@ -91,7 +96,10 @@ fn scan_rows_and_defs(face: &Face) -> Result<(Vec<OccRow>, BTreeSet<String>), St
                 .query_map([], |r| r.get::<_, String>(0))
                 .map_err(|e| format!("scip_edges 掃描失敗：{e}"))?;
             for s in it {
-                defs.insert(s.map_err(|e| format!("scip_edges 掃描失敗：{e}"))?);
+                let s = s.map_err(|e| format!("scip_edges 掃描失敗：{e}"))?;
+                if fn_tail_name(&s).is_some() {
+                    defs.insert(s);
+                }
             }
             Ok((rows, defs))
         }

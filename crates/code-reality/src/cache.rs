@@ -9,14 +9,19 @@
 //! ("derived face is an accelerator, not a dependency" — scip_refs.py:459).
 
 use crate::engine::{
-    self, fn_tail_name, load_index, loc_line, matches_query, stamped_head, tail, Query,
+    self, class_tail_name, fn_tail_name, load_index, loc_line, matches_query, python_face,
+    stamped_head, tail, Query,
 };
 use rusqlite::{Connection, OpenFlags};
 use scip::types::Index;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
-pub const SCHEMA_VERSION: &str = "1";
+/// Ingest-semantics version: bumped when the set of queryable symbols or
+/// the occurrence rows change, so existing dbs auto-rebuild through the
+/// stale_reason path ("2" — class-tailed symbols enter symbol_tails and
+/// their occurrences ride along, AIR-33 ①).
+pub const SCHEMA_VERSION: &str = "2";
 
 pub const SCHEMA_SQL: &str = "
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -44,9 +49,9 @@ pub struct Stats {
     pub symbols: usize,
     pub occurrences: usize,
     /// Documents that carried occurrences in the SCIP index but lost
-    /// every one to the fn-tail gate (class/variable-only files — the
-    /// frozen R2-3 filter; s5-ceiling B8 evidence). Loud list so future
-    /// audits don't re-derive this by manual digging.
+    /// every one to the ingest gate (variable-only files — fn- and
+    /// class-tailed symbols are kept; s5-ceiling B8 evidence). Loud list
+    /// so future audits don't re-derive this by manual digging.
     pub docs_fully_filtered: usize,
 }
 
@@ -62,12 +67,22 @@ pub fn sqlite_path(index_path: &Path) -> PathBuf {
 }
 
 /// Core build — single transaction, atomic swap via tmp file + rename
-/// (scip_refs.py:350). Occurrences ingest only FN_TAIL symbols.
+/// (scip_refs.py:350). Occurrences ingest only queryable symbols (fn
+/// tail `name().` or class tail `name#` on the python faces).
 pub fn build_db(index: &Index, db_path: &Path, sidecar_head: &str) -> Result<Stats, String> {
     let mut tails: BTreeMap<String, (String, String)> = BTreeMap::new();
     for d in &index.documents {
         for occ in &d.occurrences {
-            if let Some(method) = fn_tail_name(&occ.symbol) {
+            // Queryable-symbol gate: fn tail `name().` OR class tail
+            // `name#` on the python faces (AIR-33 — bare class-name
+            // queries are legal keys there; variables and rust `Type#`
+            // symbols stay non-queryable).
+            let class_arm = if python_face(&occ.symbol) {
+                class_tail_name(&occ.symbol)
+            } else {
+                None
+            };
+            if let Some(method) = fn_tail_name(&occ.symbol).or(class_arm) {
                 tails.insert(
                     occ.symbol.clone(),
                     (tail(&occ.symbol).to_string(), method.to_string()),

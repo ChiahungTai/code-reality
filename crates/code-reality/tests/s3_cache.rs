@@ -109,7 +109,7 @@ fn stale_guards_all_four_signals() {
     tamper(&db, "UPDATE meta SET value = '9' WHERE key = 'schema'");
     let reason = stale_reason(&idx, &db).unwrap();
     assert!(
-        reason.contains("schema 版本不符（9 ≠ 1）"),
+        reason.contains("schema 版本不符（9 ≠ 2）"),
         "got: {}",
         reason
     );
@@ -201,12 +201,19 @@ fn crash_leftover_tmp_is_cleaned_by_rebuild() {
 #[test]
 fn docs_fully_filtered_counter_is_loud() {
     // B8 evidence loud list (W2 EP S2): a document whose every occurrence
-    // is class/variable-shaped (fails the fn-tail gate) must be counted,
-    // not silently vanish — the 130-file s5 audit was manual digging.
+    // fails the queryable-symbol gate (variable-shaped — fn- and
+    // class-tailed symbols are kept since AIR-33) must be counted, not
+    // silently vanish — the 130-file s5 audit was manual digging.
     let mut index = scip::types::Index::default();
     for (path, symbols) in [
-        ("cls_only.py", vec!["`m`/Only#"]),
-        ("mixed.py", vec!["`m`/Fn().", "`m`/Cls#"]),
+        ("var_only.py", vec!["pyrefly python p 0.1 `m`/VAR.VAR."]),
+        (
+            "mixed.py",
+            vec![
+                "pyrefly python p 0.1 `m`/Fn().",
+                "pyrefly python p 0.1 `m`/Cls#",
+            ],
+        ),
     ] {
         let mut doc = scip::types::Document {
             relative_path: path.to_string(),
@@ -225,6 +232,71 @@ fn docs_fully_filtered_counter_is_loud() {
     let tmp = tempfile::tempdir().unwrap();
     let db = tmp.path().join("count.scip.db");
     let stats = build_db(&index, &db, "headsha").unwrap();
-    assert_eq!(stats.docs_fully_filtered, 1, "cls_only.py only");
-    assert_eq!(stats.occurrences, 1, "mixed.py keeps its Fn(). def");
+    assert_eq!(stats.docs_fully_filtered, 1, "var_only.py only");
+    assert_eq!(stats.occurrences, 2, "fn + class both kept");
+}
+
+#[test]
+fn class_tailed_symbols_ingest_and_answer_bare_queries() {
+    // AIR-33 ①: class symbols enter symbol_tails (the SQL pre-narrow
+    // table) and their occurrences ride along — both faces answer a bare
+    // class-name query identically (previously "查無 DEF").
+    let class = "pyrefly python p 0.1.0 `pkg.mod`/Widget#";
+    let mut index = scip::types::Index::default();
+    let mut d1 = scip::types::Document {
+        relative_path: "pkg/mod.py".to_string(),
+        ..Default::default()
+    };
+    for (s, line, roles) in [(class, 9, 1), (class, 2, 0)] {
+        d1.occurrences.push(scip::types::Occurrence {
+            symbol: s.to_string(),
+            range: vec![line, 0],
+            symbol_roles: roles,
+            ..Default::default()
+        });
+    }
+    let mut d2 = scip::types::Document {
+        relative_path: "pkg/other.py".to_string(),
+        ..Default::default()
+    };
+    d2.occurrences.push(scip::types::Occurrence {
+        symbol: class.to_string(),
+        range: vec![3, 0],
+        symbol_roles: 0,
+        ..Default::default()
+    });
+    d2.occurrences.push(scip::types::Occurrence {
+        symbol: "`pkg.other`/use_widget().".to_string(),
+        range: vec![7, 0],
+        symbol_roles: 1,
+        ..Default::default()
+    });
+    index.documents.push(d1);
+    index.documents.push(d2);
+
+    let tmp = tempfile::tempdir().unwrap();
+    let idx = tmp.path().join("index.scip");
+    use protobuf::Message;
+    std::fs::write(&idx, index.write_to_bytes().unwrap()).unwrap();
+    // realistic setup: stamp the sidecar first, build with the same head
+    std::fs::write(
+        code_reality::engine::meta_path(&idx),
+        r#"{"repo": "/x", "head": "headsha", "stamped_at": "2026-09-06T00:00:00+00:00", "tool": "code_reality.scip_refs"}"#,
+    )
+    .unwrap();
+    let db = sqlite_path(&idx);
+    let stats = build_db(&index, &db, "headsha").unwrap();
+    assert_eq!(stats.symbols, 2, "class + fn both ingested");
+    assert_eq!(stats.occurrences, 4, "class refs ride along");
+
+    let (face, stderr) = open_face(&idx).unwrap();
+    assert!(stderr.is_empty(), "{stderr:?}");
+    let Face::Sqlite(conn) = face else {
+        panic!("fresh db must select the sqlite face");
+    };
+    let q = Query::parse("Widget");
+    let sq = code_reality::cache::sqlite_defs(&conn, &q).unwrap();
+    let pb = code_reality::engine::find_defs(&index, &q);
+    assert_eq!(sq, pb, "faces agree on the class query");
+    assert_eq!(sq[class], vec!["pkg/mod.py:10".to_string()]);
 }

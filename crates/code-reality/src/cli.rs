@@ -543,7 +543,7 @@ fn build_cache_mode(index_path: &Path, stderr: &mut String) -> ToolOutput {
                                 stderr.push_str(&crate::msg_line(
                                     "WARN",
                                     &format!(
-                                        "{} docs fully filtered by fn-tail gate（class/variable-only——R2-3 設計行為，B8 列冊）",
+                                        "{} docs fully filtered by ingest gate（variable-only——fn/class tail 已保留；B8 列冊）",
                                         stats.docs_fully_filtered
                                     ),
                                 ));

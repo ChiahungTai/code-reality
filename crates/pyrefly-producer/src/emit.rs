@@ -168,6 +168,18 @@ fn line_col(src: &str, line_starts: &[usize], off: TextSize) -> (i32, i32) {
         Err(i) => i - 1,
     };
     let start = line_starts[line_idx];
-    let prefix = &src[start..off.max(start)];
+    // Offsets index the analysis-time source snapshot and are token
+    // boundaries by construction. If one ever lands mid-char (snapshot/
+    // text desync) the index under assembly is untrustworthy: abort
+    // ALWAYS (release included) rather than emit floored wrong positions
+    // with a fresh mtime — crash-only, and the atomic write has not
+    // happened yet, so the previous good index survives and the heal
+    // path serves it.
+    let mut end = off.max(start);
+    while !src.is_char_boundary(end) {
+        end -= 1;
+    }
+    assert_eq!(end, off, "offset {} not a char boundary — text desync", off);
+    let prefix = &src[start..end];
     (line_idx as i32, prefix.chars().count() as i32)
 }

@@ -76,7 +76,12 @@ fn run_overlay_gen(
     report: Option<&Path>,
 ) -> std::process::Output {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_overlay-gen"));
-    cmd.arg("--plan").arg(plan).arg("--sources").arg(sources).arg("--out").arg(out);
+    cmd.arg("--plan")
+        .arg(plan)
+        .arg("--sources")
+        .arg(sources)
+        .arg("--out")
+        .arg(out);
     if let Some(r) = report {
         cmd.arg("--report").arg(r);
     }
@@ -101,15 +106,28 @@ fn golden_e2e_byte_deterministic() {
         .arg(&leg)
         .output()
         .unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("1 refs, 1 call sites"), "{stdout}");
 
     let root = plan_dir(tmp.path(), PLAN);
     let overlay = tmp.path().join("overlay.scip");
     let report = tmp.path().join("report.toml");
-    let out = run_overlay_gen(&root.join("plan.toml"), &root.join("sources"), &overlay, Some(&report));
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let out = run_overlay_gen(
+        &root.join("plan.toml"),
+        &root.join("sources"),
+        &overlay,
+        Some(&report),
+    );
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     assert!(String::from_utf8_lossy(&out.stdout).contains("gate 1/1"));
 
     // Report contract fields the orchestrator consumes.
@@ -119,11 +137,19 @@ fn golden_e2e_byte_deterministic() {
     assert!(rep.contains("minted_edges = 1"), "{rep}");
     assert!(rep.contains("[[touched]]"), "{rep}");
     assert!(rep.contains("name = \"compute\""), "{rep}");
-    assert!(rep.contains("overlay_files = [\"fixmod/planned_coordinator.py\"]"), "{rep}");
+    assert!(
+        rep.contains("overlay_files = [\"fixmod/planned_coordinator.py\"]"),
+        "{rep}"
+    );
 
     // Byte-determinism: same plan + sources → identical overlay bytes.
     let overlay2 = tmp.path().join("overlay2.scip");
-    let out = run_overlay_gen(&root.join("plan.toml"), &root.join("sources"), &overlay2, None);
+    let out = run_overlay_gen(
+        &root.join("plan.toml"),
+        &root.join("sources"),
+        &overlay2,
+        None,
+    );
     assert!(out.status.success());
     assert_eq!(
         std::fs::read(&overlay).unwrap(),
@@ -159,7 +185,12 @@ fn gate_failure_is_loud_and_writes_nothing() {
     let bad = PLAN.replace("compute(points)", "compute(points_x)");
     let root = plan_dir(tmp.path(), &bad);
     let overlay = tmp.path().join("overlay.scip");
-    let out = run_overlay_gen(&root.join("plan.toml"), &root.join("sources"), &overlay, None);
+    let out = run_overlay_gen(
+        &root.join("plan.toml"),
+        &root.join("sources"),
+        &overlay,
+        None,
+    );
     assert!(!out.status.success());
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("一致性 gate 失敗"), "{stderr}");
@@ -176,14 +207,24 @@ fn plan_schema_faces_fail_loud() {
     // Illegal name (slot-path safety mirrors the orchestrator's stem rule).
     let bad = PLAN.replace("name = \"graft-demo\"", "name = \"../evil\"");
     let root = plan_dir(tmp.path(), &bad);
-    let out = run_overlay_gen(&root.join("plan.toml"), &root.join("sources"), &tmp.path().join("o.scip"), None);
+    let out = run_overlay_gen(
+        &root.join("plan.toml"),
+        &root.join("sources"),
+        &tmp.path().join("o.scip"),
+        None,
+    );
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("name 非法"));
 
     // Unknown kind.
     let bad = PLAN.replace("kind = \"class\"", "kind = \"module\"");
     let root = plan_dir(tmp.path(), &bad);
-    let out = run_overlay_gen(&root.join("plan.toml"), &root.join("sources"), &tmp.path().join("o.scip"), None);
+    let out = run_overlay_gen(
+        &root.join("plan.toml"),
+        &root.join("sources"),
+        &tmp.path().join("o.scip"),
+        None,
+    );
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("kind 非法"));
 
@@ -192,7 +233,12 @@ fn plan_schema_faces_fail_loud() {
         .replace("to_kind = \"function\"", "to_kind = \"class\"")
         .replace("to_name = \"compute\"", "to_name = \"UndeclaredClass\"");
     let root = plan_dir(tmp.path(), &bad);
-    let out = run_overlay_gen(&root.join("plan.toml"), &root.join("sources"), &tmp.path().join("o.scip"), None);
+    let out = run_overlay_gen(
+        &root.join("plan.toml"),
+        &root.join("sources"),
+        &tmp.path().join("o.scip"),
+        None,
+    );
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("B7b"));
 }
@@ -237,7 +283,11 @@ fn pyrefly_index_relative_repo_resolves_cross_module_refs() {
         .arg(tmp.path().join("leg.scip"))
         .output()
         .unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
         stdout.contains("1 refs, 1 call sites"),
@@ -280,11 +330,20 @@ fn same_file_symbols_single_document() {
     let tmp = tempfile::tempdir().unwrap();
     let root = plan_dir(tmp.path(), PLAN);
     let overlay = tmp.path().join("overlay.scip");
-    let out = run_overlay_gen(&root.join("plan.toml"), &root.join("sources"), &overlay, None);
+    let out = run_overlay_gen(
+        &root.join("plan.toml"),
+        &root.join("sources"),
+        &overlay,
+        None,
+    );
     assert!(out.status.success());
     use protobuf::Message;
     let idx = scip::types::Index::parse_from_bytes(&std::fs::read(&overlay).unwrap()).unwrap();
-    assert_eq!(idx.documents.len(), 1, "two symbols, one file → one document");
+    assert_eq!(
+        idx.documents.len(),
+        1,
+        "two symbols, one file → one document"
+    );
     let defs = idx.documents[0]
         .occurrences
         .iter()
@@ -311,7 +370,11 @@ fn empty_plan_is_vacuously_green() {
         &tmp.path().join("o.scip"),
         Some(&tmp.path().join("r.toml")),
     );
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let rep = std::fs::read_to_string(tmp.path().join("r.toml")).unwrap();
     assert!(rep.contains("minted_defs = 0"), "{rep}");
     assert!(rep.contains("minted_edges = 0"), "{rep}");

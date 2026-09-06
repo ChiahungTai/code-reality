@@ -73,7 +73,13 @@ impl Query {
     }
 }
 
-/// Symbol matches query (name-tail AND (marker OR trait-decl) for Type.method).
+/// Symbol matches query (name-tail AND (marker OR trait-decl) for
+/// Type.method). Bare matches the fn tail `<name>().` OR — python faces
+/// only — the class tail `<name>#` (AIR-33: Python class names are
+/// resolvable query keys; end-anchored, so a mid-chain class in
+/// `Outer#Inner#` never matches an `Outer` query. Rust `Type#` DEFs
+/// share the tail shape but stay non-queryable by bare name — see
+/// [`python_face`]).
 pub fn matches_query(symbol: &str, query: &Query) -> bool {
     match query {
         Query::TypeMethod { type_name, method } => {
@@ -81,8 +87,21 @@ pub fn matches_query(symbol: &str, query: &Query) -> bool {
                 && (symbol.contains(&format!("[{}]", type_name))
                     || trait_decl_match(symbol, type_name))
         }
-        Query::Bare { name } => name_pat_match(symbol, name),
+        Query::Bare { name } => {
+            name_pat_match(symbol, name)
+                || (python_face(symbol) && class_tail_name(symbol).is_some_and(|n| n == name))
+        }
     }
+}
+
+/// Python-face discriminator: the symbol's second space-separated token
+/// is `python` (`pyrefly python …`, `scip-python python …`). Gates the
+/// bare-class query arm — AIR-33 adjudicated Python classes; rust
+/// `Type#` DEF symbols (same tail shape, e.g. `build/BuildError#`)
+/// stay non-queryable by bare name, preserving the documented rust-face
+/// contract (probe-confirmed on this repo's own index).
+pub fn python_face(symbol: &str) -> bool {
+    symbol.split(' ').nth(1) == Some("python")
 }
 
 /// Python `FN_TAIL_RE` = `(?<!\w)(\w+)\(\)\.$` — capture the trailing function
@@ -99,6 +118,28 @@ pub fn fn_tail_name(symbol: &str) -> Option<&str> {
         .unwrap_or(0);
     if start == body.len() {
         return None; // no word chars before "()."
+    }
+    let name = &body[start..];
+    let before_ok = start == 0 || !is_word(body[..start].chars().next_back().unwrap());
+    before_ok.then_some(name)
+}
+
+/// Trailing class identifier of a `#`-suffixed symbol (`…/Class#` →
+/// `Class`, `…/Outer#Inner#` → `Inner`) — the class form of the
+/// pyrefly/scip-python face. Tail-anchored like `fn_tail_name`; unlike
+/// `trait_decl_match` (mid-string search, the Type.method qualifier arm)
+/// it never matches a class sitting mid-chain.
+pub fn class_tail_name(symbol: &str) -> Option<&str> {
+    let body = symbol.strip_suffix('\n').unwrap_or(symbol);
+    let body = body.strip_suffix('#')?;
+    let start = body
+        .char_indices()
+        .rev()
+        .find(|(_, c)| !is_word(*c))
+        .map(|(i, c)| i + c.len_utf8())
+        .unwrap_or(0);
+    if start == body.len() {
+        return None; // no word chars before "#"
     }
     let name = &body[start..];
     let before_ok = start == 0 || !is_word(body[..start].chars().next_back().unwrap());

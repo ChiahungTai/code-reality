@@ -821,9 +821,8 @@ pub fn impact_radius_with(
     });
     if changed_files.is_empty() {
         let mut vacuous = empty;
-        vacuous["note"] = serde_json::json!(
-            "changed_files is empty — vacuous query (distinct from a path miss)"
-        );
+        vacuous["note"] =
+            serde_json::json!("changed_files is empty — vacuous query (distinct from a path miss)");
         return Ok(vacuous);
     }
     // seeds: every node whose file_path is changed (File nodes included —

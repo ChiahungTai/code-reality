@@ -793,3 +793,193 @@ fn t22_cli_off_switch_and_non_heal_faces() {
     assert!(!out.stderr.contains("index healed"));
     assert_eq!(std::fs::read(&slot).unwrap(), before);
 }
+
+// ---------- AIR-33 ③: churn cooldown ----------
+
+#[test]
+fn t18_churn_cooldown_skips_reheal_within_window() {
+    let _env = churn_env_guard();
+    let t = tempfile::tempdir().unwrap();
+    let repo = mkrepo(&t, &[("app.py", "def f():\n    return 1\n")]);
+    git_init(&repo);
+    let bindir = tempfile::tempdir().unwrap();
+    let counter = bindir.path().join("calls");
+    // A "producer" that finishes but leaves a source NEWER than the slot
+    // (touch AFTER the index copy — simulates an active writer editing
+    // during the heal); the SM-9 loop guard arms the churn marker.
+    fake_bin(
+        bindir.path(),
+        "pyrefly-index",
+        &format!(
+            "#!/bin/sh
+if [ \"$1\" = \"--version\" ]; then echo 'fake-pyrefly 9.9.9'; exit 0; fi
+{}
+mkdir -p \"$repo/.code-reality/scip\"
+cp '{FIXTURE}' \"$repo/.code-reality/scip/index.scip\"
+echo x >> '{}'
+touch \"$repo/app.py\"
+echo '[OK] fake pyrefly-index'
+",
+            arg_parse_sh(),
+            counter.display()
+        ),
+    );
+    let roots = vec![bindir.path().to_path_buf()];
+    build_repo(&repo, None, &roots).expect("initial build");
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    std::fs::write(repo.join("app2.py"), "x = 1\n").unwrap();
+
+    let first = ensure_fresh(&repo, &roots).unwrap();
+    assert!(
+        matches!(&first, HealOutcome::ServeStale(l) if l.iter().any(|s| s.contains("又變動"))),
+        "out={first:?}"
+    );
+    assert!(
+        repo.join(".code-reality/scip/.heal-churn").exists(),
+        "churn marker armed by the non-converging heal"
+    );
+    let calls_after_first = counter_lines(&counter);
+    assert!(calls_after_first >= 1);
+
+    let second = ensure_fresh(&repo, &roots).unwrap();
+    assert!(
+        matches!(&second, HealOutcome::ServeStale(l) if l.iter().any(|s| s.contains("cooldown"))),
+        "out={second:?}"
+    );
+    assert_eq!(
+        counter_lines(&counter),
+        calls_after_first,
+        "cooldown spawns nothing"
+    );
+}
+
+#[test]
+fn t19_head_drift_overrides_cooldown_and_convergence_clears() {
+    let _env = churn_env_guard();
+    let t = tempfile::tempdir().unwrap();
+    let repo = mkrepo(&t, &[("app.py", "def f():\n    return 1\n")]);
+    git_init(&repo);
+    let bindir = tempfile::tempdir().unwrap();
+    let counter = bindir.path().join("calls");
+    fake_pyrefly_pre(bindir.path(), &format!("echo x >> '{}'", counter.display()));
+    let roots = vec![bindir.path().to_path_buf()];
+    build_repo(&repo, None, &roots).expect("build");
+    std::fs::remove_file(&counter).unwrap(); // discard the setup-build spawn
+                                             // arm the churn marker directly (as a non-converging heal would)
+    std::fs::write(repo.join(".code-reality/scip/.heal-churn"), b"").unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    std::fs::write(repo.join("app3.py"), "y = 2\n").unwrap();
+
+    // head unchanged → the cooldown holds
+    let held = ensure_fresh(&repo, &roots).unwrap();
+    assert!(
+        matches!(&held, HealOutcome::ServeStale(l) if l.iter().any(|s| s.contains("cooldown"))),
+        "out={held:?}"
+    );
+    assert_eq!(counter_lines(&counter), 0, "held query spawns nothing");
+
+    // commit moves HEAD → override heals (converging producer clears it)
+    git_commit(&repo);
+    let out = ensure_fresh(&repo, &roots).unwrap();
+    assert!(
+        matches!(out, HealOutcome::Healed { nodes, .. } if nodes > 0),
+        "out={out:?}"
+    );
+    assert!(
+        !repo.join(".code-reality/scip/.heal-churn").exists(),
+        "converging heal clears the marker"
+    );
+}
+
+/// Serializes tests that mutate or depend on the cooldown env var
+/// (process-global; cargo runs test threads in parallel).
+fn churn_env_guard() -> std::sync::MutexGuard<'static, ()> {
+    static M: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    M.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+#[test]
+fn t20_cooldown_env_zero_disables() {
+    let _env = churn_env_guard();
+    let t = tempfile::tempdir().unwrap();
+    let repo = mkrepo(&t, &[("app.py", "def f():\n    return 1\n")]);
+    git_init(&repo);
+    let bindir = tempfile::tempdir().unwrap();
+    fake_pyrefly(bindir.path());
+    let roots = vec![bindir.path().to_path_buf()];
+    build_repo(&repo, None, &roots).expect("build");
+    // an armed fresh marker would hold — the documented escape hatch
+    // must bypass it
+    std::fs::write(repo.join(".code-reality/scip/.heal-churn"), b"").unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    std::fs::write(repo.join("app4.py"), "z = 3\n").unwrap();
+    std::env::set_var("CODE_REALITY_HEAL_COOLDOWN_SECS", "0");
+    let out = ensure_fresh(&repo, &roots).unwrap();
+    std::env::remove_var("CODE_REALITY_HEAL_COOLDOWN_SECS");
+    assert!(
+        matches!(out, HealOutcome::Healed { nodes, .. } if nodes > 0),
+        "out={out:?}"
+    );
+}
+
+#[test]
+fn t21_wait_peer_respects_armed_marker() {
+    let _env = churn_env_guard();
+    let t = tempfile::tempdir().unwrap();
+    let repo = mkrepo(&t, &[("app.py", "def f():\n    return 1\n")]);
+    git_init(&repo);
+    let bindir = tempfile::tempdir().unwrap();
+    fake_pyrefly(bindir.path());
+    let roots = vec![bindir.path().to_path_buf()];
+    build_repo(&repo, None, &roots).expect("build");
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    std::fs::write(repo.join("app5.py"), "z = 4\n").unwrap();
+    // A peer holds the heal lock; while we poll it "finishes" its
+    // non-converging heal (arms the marker) then releases the lock —
+    // our re-evaluation must serve stale on the cooldown instead of
+    // becoming the healer.
+    std::fs::write(lock_of(&repo), b"").unwrap();
+    let peer_repo = repo.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        let _ = std::fs::write(peer_repo.join(".code-reality/scip/.heal-churn"), b"");
+        let _ = std::fs::remove_file(lock_of(&peer_repo));
+    });
+    let out = ensure_fresh(&repo, &roots).unwrap();
+    assert!(
+        matches!(&out, HealOutcome::ServeStale(l) if l.iter().any(|s| s.contains("cooldown"))),
+        "out={out:?}"
+    );
+}
+
+#[test]
+fn t22_expired_marker_lets_heal_resume() {
+    let _env = churn_env_guard();
+    let t = tempfile::tempdir().unwrap();
+    let repo = mkrepo(&t, &[("app.py", "def f():\n    return 1\n")]);
+    git_init(&repo);
+    let bindir = tempfile::tempdir().unwrap();
+    fake_pyrefly(bindir.path());
+    let roots = vec![bindir.path().to_path_buf()];
+    build_repo(&repo, None, &roots).expect("build");
+    let marker = repo.join(".code-reality/scip/.heal-churn");
+    std::fs::write(&marker, b"").unwrap();
+    // backdate past the 600s window
+    let st = std::process::Command::new("touch")
+        .args(["-t", "202001010000"])
+        .arg(&marker)
+        .status()
+        .unwrap();
+    assert!(st.success());
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    std::fs::write(repo.join("app6.py"), "z = 5\n").unwrap();
+    let out = ensure_fresh(&repo, &roots).unwrap();
+    assert!(
+        matches!(out, HealOutcome::Healed { nodes, .. } if nodes > 0),
+        "out={out:?}"
+    );
+    assert!(
+        !marker.exists(),
+        "converging heal clears even a backdated marker"
+    );
+}
