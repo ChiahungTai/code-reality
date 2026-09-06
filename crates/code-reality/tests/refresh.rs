@@ -128,12 +128,20 @@ fn hook_install_bytes_idempotent_and_reverse() {
     assert!(text.contains("nohup"), "{text}");
     // F12: heal failures stay observable in the data dir's own log
     assert!(text.contains("refresh.log"), "{text}");
+    // burst debounce wiring: event marker + heartbeat + runner detach +
+    // the quiet-window env knob
+    assert!(text.contains("refresh.pending"), "{text}");
+    assert!(text.contains("refresh.scheduled"), "{text}");
+    assert!(text.contains("CODE_REALITY_REFRESH_QUIET_SECS"), "{text}");
+    assert!(
+        text.contains(") > /dev/null 2>&1 &"),
+        "runner detached: {text}"
+    );
     // the resolved ABSOLUTE bin path is embedded (GUI no-PATH trap)
     assert!(
         text.contains(&bindir.path().join("code-reality").display().to_string()),
         "{text}"
     );
-    assert!(text.trim_end().ends_with('&'), "background form: {text}");
     assert!(
         std::fs::metadata(&hook).unwrap().permissions().mode() & 0o111 != 0,
         "hook must be executable"
@@ -278,4 +286,99 @@ fn refresh_arg_guards() {
     let o = run(&["hook", "frobnicate", "--repo", "/tmp"]);
     assert_eq!(o.exit_code, 2);
     assert!(o.stderr.contains("install 或 remove"), "{}", o.stderr);
+}
+
+// ---------- hook burst debounce (trailing edge) ----------
+
+fn fire_hook(repo: &Path) {
+    let st = std::process::Command::new(repo.join(".githooks/post-commit"))
+        .current_dir(repo)
+        .env("CODE_REALITY_REFRESH_QUIET_SECS", "1")
+        .status()
+        .unwrap();
+    assert!(st.success(), "hook run failed");
+}
+
+fn counter_lines(c: &Path) -> usize {
+    std::fs::read_to_string(c)
+        .map(|t| t.lines().filter(|l| !l.is_empty()).count())
+        .unwrap_or(0)
+}
+
+/// Returns (repo, counter, bin-guard) — the bindir tempdir must outlive
+/// the hook firings (the script embeds its absolute path; dropping the
+/// TempDir deletes the fake bin before the runner calls it).
+fn debounced_fixture(t: &tempfile::TempDir) -> (PathBuf, PathBuf, tempfile::TempDir) {
+    let repo = mkrepo(t, &[("app.py", "x")]);
+    git_init(&repo);
+    let bindir = tempfile::tempdir().unwrap();
+    let counter = bindir.path().join("calls");
+    fake_bin(
+        bindir.path(),
+        "code-reality",
+        &format!("#!/bin/sh\necho x >> '{}'\n", counter.display()),
+    );
+    let out = hook_install(&repo, &[bindir.path().to_path_buf()]);
+    assert_eq!(out.exit_code, 0, "{}", out.stderr);
+    (repo, counter, bindir)
+}
+
+#[test]
+fn hook_burst_coalesces_into_one_tail_refresh() {
+    let t = tempfile::tempdir().unwrap();
+    let (repo, counter, _bin_guard) = debounced_fixture(&t);
+    // burst: three rapid fires (rebase-replay shape) — one runner, one
+    // tail refresh after the quiet window
+    for _ in 0..3 {
+        fire_hook(&repo);
+        std::thread::sleep(std::time::Duration::from_millis(150));
+    }
+    assert_eq!(counter_lines(&counter), 0, "quiet window holds the refresh");
+    std::thread::sleep(std::time::Duration::from_secs(4));
+    assert_eq!(counter_lines(&counter), 1, "burst tail = ONE refresh");
+
+    // a later isolated event refreshes exactly once more
+    fire_hook(&repo);
+    std::thread::sleep(std::time::Duration::from_secs(4));
+    assert_eq!(counter_lines(&counter), 2, "isolated event = one refresh");
+}
+
+#[test]
+fn hook_dead_runner_marker_is_respawned() {
+    let t = tempfile::tempdir().unwrap();
+    let (repo, counter, _bin_guard) = debounced_fixture(&t);
+    // a scheduled marker left by a crashed runner (ancient epoch) must
+    // not swallow events forever — the hook detects the dead heartbeat
+    // and respawns
+    let data = repo.join(".code-reality");
+    std::fs::create_dir_all(&data).unwrap(); // the hook mkdirs at run time
+    std::fs::write(data.join("refresh.scheduled"), "1000\n").unwrap();
+    fire_hook(&repo);
+    std::thread::sleep(std::time::Duration::from_secs(4));
+    assert!(
+        counter_lines(&counter) >= 1,
+        "dead marker respawned and refreshed"
+    );
+    assert!(
+        !data.join("refresh.scheduled").exists(),
+        "runner cleaned up its marker after firing"
+    );
+}
+
+#[test]
+fn hook_non_numeric_marker_is_sanitized() {
+    let t = tempfile::tempdir().unwrap();
+    let (repo, counter, _bin_guard) = debounced_fixture(&t);
+    let data = repo.join(".code-reality");
+    std::fs::create_dir_all(&data).unwrap();
+    // garbage marker content must not abort the hook (dash-family sh
+    // exits 2 on the arithmetic — the case-sanitize coerces to 0 and
+    // respawns instead)
+    std::fs::write(data.join("refresh.scheduled"), "abc\n").unwrap();
+    fire_hook(&repo); // asserts exit 0 despite the garbage marker
+    std::thread::sleep(std::time::Duration::from_secs(4));
+    assert!(
+        counter_lines(&counter) >= 1,
+        "sanitized marker respawned and refreshed"
+    );
 }

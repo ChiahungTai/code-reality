@@ -100,7 +100,13 @@ Responses embed `[SRC]` provenance lines (index version/commit) and a
   opt-in `.githooks/post-commit`; install refuses loudly over unmanaged
   hooks, a foreign `core.hooksPath`, or active `.git/hooks/*` entries,
   and the script pins the resolved absolute bin path (GUI-no-PATH safe),
-  logging to `.code-reality/refresh.log`.
+  logging to `.code-reality/refresh.log`. The hook debounces event
+  bursts (rebase replay, rapid commits) with a trailing quiet window —
+  one refresh per burst tail, not one per commit; the runner heartbeats
+  `refresh.scheduled` and a dead marker is respawned;
+  `CODE_REALITY_REFRESH_QUIET_SECS` overrides the window (default 5s);
+  a source-changing lost tail self-heals on the next query, a docs-only
+  lost tail re-stamps on the next refresh.
 
 ### Slot discipline
 

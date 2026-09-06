@@ -266,8 +266,16 @@ pub fn hook_install(repo: &Path, roots: &[PathBuf]) -> ToolOutput {
     if let Err(e) = std::fs::create_dir_all(&hooks_dir) {
         return ToolOutput::fail(format!("建立 {} 失敗：{e}", hooks_dir.display()));
     }
+    // Trailing-edge burst debounce: every commit stamps refresh.pending;
+    // a single detached runner waits for QUIET seconds of event silence
+    // and refreshes once — a rebase replay or rapid-commit burst pays ONE
+    // refresh instead of one per event. refresh.scheduled is the runner's
+    // heartbeat; a live runner beats every loop (~QUIET), so a marker
+    // older than 3×QUIET means the runner died and gets respawned. The
+    // query-time heal is the backstop when a source-changing tail event
+    // is lost (docs-only tails re-stamp on the next refresh).
     let script = format!(
-        "#!/bin/sh\n{HOOK_MARKER}\n# installed by `code-reality hook install`; remove with `code-reality hook remove`\n# prefer `uv tool install` over uvx — this script pins the absolute bin path resolved at install time\nmkdir -p .code-reality\nnohup '{}' refresh --repo \"$(git rev-parse --show-toplevel)\" >> .code-reality/refresh.log 2>&1 &\n",
+        "#!/bin/sh\n{HOOK_MARKER}\n# installed by `code-reality hook install`; remove with `code-reality hook remove`\n# prefer `uv tool install` over uvx — this script pins the absolute bin path resolved at install time\n# Burst debounce: commits in a burst (rebase replay, rapid commits) coalesce into ONE tail refresh.\n# CODE_REALITY_REFRESH_QUIET_SECS overrides the quiet window (default 5s). A source-changing lost\n# tail self-heals on the next query; a docs-only lost tail re-stamps on the next refresh.\nREPO=$(git rev-parse --show-toplevel)\nDATA=\"$REPO/.code-reality\"\nmkdir -p \"$DATA\"\nQUIET=${{CODE_REALITY_REFRESH_QUIET_SECS:-5}}\ncase $QUIET in ''|*[!0-9]*) QUIET=5;; esac\ndate +%s > \"$DATA/refresh.pending\"\nif [ -f \"$DATA/refresh.scheduled\" ]; then\n  sched=$(cat \"$DATA/refresh.scheduled\" 2>/dev/null || echo 0)\n  case $sched in ''|*[!0-9]*) sched=0;; esac\n  now=$(date +%s)\n  if [ $((now - sched)) -lt $((QUIET * 3)) ]; then\n    exit 0\n  fi\nfi\ndate +%s > \"$DATA/refresh.scheduled\"\n(\n  while :; do\n    sleep \"$QUIET\"\n    date +%s > \"$DATA/refresh.scheduled\"\n    last=$(cat \"$DATA/refresh.pending\" 2>/dev/null || echo 0)\n    case $last in ''|*[!0-9]*) last=0;; esac\n    now=$(date +%s)\n    if [ $((now - last)) -ge \"$QUIET\" ]; then\n      break\n    fi\n  done\n  rm -f \"$DATA/refresh.scheduled\" \"$DATA/refresh.pending\"\n  nohup '{}' refresh --repo \"$REPO\" >> \"$DATA/refresh.log\" 2>&1 &\n) > /dev/null 2>&1 &\nexit 0\n",
         bin.display()
     );
     if let Err(e) = std::fs::write(&hook_path, &script) {
