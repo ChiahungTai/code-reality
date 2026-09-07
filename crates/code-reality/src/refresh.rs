@@ -223,12 +223,30 @@ fn git_config_unset(repo: &Path, key: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Reorder install-candidate roots release-face-first: roots NOT under
+/// the cargo-home bin dir (the uv tool pin face, test fixtures) win
+/// over the dev face under `$CARGO_HOME/bin`. Consumer hooks must not
+/// pin the dev binary — that face tracks the CR checkout and warns on
+/// every tree churn, noise that leaks into consumer refresh.log on
+/// hybrid dev+consumer machines. Pure: testable against any
+/// cargo-home-shaped path. Order within each group is preserved; the
+/// dev face stays as the fallback, never dropped.
+pub fn release_first_roots(roots: &[PathBuf], cargo_home: &Path) -> Vec<PathBuf> {
+    let dev_bin = cargo_home.join("bin");
+    let (release, dev): (Vec<PathBuf>, Vec<PathBuf>) = roots
+        .iter()
+        .cloned()
+        .partition(|r| !r.starts_with(&dev_bin));
+    release.into_iter().chain(dev).collect()
+}
+
 /// Install the opt-in post-commit hook. Public with injectable roots so
 /// tests resolve the bin from synthetic dirs (the script embeds the
 /// resolved absolute path — GUI git clients may run hooks without PATH).
 /// A MANAGED existing script (HOOK_MARKER present) upgrades in place on
 /// content diff — rerunning install after a template change is the
 /// one-command migration path; byte-identical scripts stay a no-op.
+/// The embedded path prefers the release face ([`release_first_roots`]).
 pub fn hook_install(repo: &Path, roots: &[PathBuf]) -> ToolOutput {
     let hooks_dir = repo.join(".githooks");
     let hook_path = hooks_dir.join("post-commit");
@@ -275,7 +293,17 @@ pub fn hook_install(repo: &Path, roots: &[PathBuf]) -> ToolOutput {
             active_local_hooks.join("、")
         ));
     }
-    let bin = match resolve_bin("code-reality", roots, "安裝：uv tool install code-reality") {
+    let cargo_home = std::env::var_os("CARGO_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".cargo")
+        });
+    let ordered_roots = release_first_roots(roots, &cargo_home);
+    let bin = match resolve_bin(
+        "code-reality",
+        &ordered_roots,
+        "安裝：uv tool install code-reality",
+    ) {
         Ok(b) => b,
         Err(e) => return ToolOutput::fail(e),
     };

@@ -102,6 +102,9 @@ Responses embed `[SRC]` provenance lines (index version/commit) and a
   (the local-hooks guard applies only when installing would flip
   `core.hooksPath` — inert leftovers never block a managed rerun),
   and the script pins the resolved absolute bin path (GUI-no-PATH safe),
+  preferring the release face when one is installed (`~/.local/bin`
+  via uv — the cargo-home dev face is the fallback, so consumer hooks
+  stay silent when the CR checkout churns),
   logging to `.code-reality/refresh.log`. The hook debounces event
   bursts (rebase replay, rapid commits) with a trailing quiet window —
   one refresh per burst tail, not one per commit; the runner heartbeats

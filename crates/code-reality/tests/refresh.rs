@@ -539,3 +539,67 @@ fn refresh_does_not_nudge_current_format_or_absent_hook() {
         out.stderr
     );
 }
+
+#[test]
+fn release_first_roots_prefers_non_cargo_home() {
+    // ordering contract: any root outside the cargo-home bin dir (the
+    // uv pin face, test fixtures) wins over the dev face; order within
+    // each group is preserved; a dev-only list is unchanged (fallback,
+    // never dropped)
+    use code_reality::refresh::release_first_roots;
+    let cargo = PathBuf::from("/fake/cargo");
+    let roots = vec![
+        cargo.join("bin"),
+        PathBuf::from("/opt/release/bin"),
+        PathBuf::from("/tmp/fixtures-a"),
+    ];
+    assert_eq!(
+        release_first_roots(&roots, &cargo),
+        vec![
+            PathBuf::from("/opt/release/bin"),
+            PathBuf::from("/tmp/fixtures-a"),
+            cargo.join("bin"),
+        ]
+    );
+    // component boundary: `…/binx` is NOT under `…/bin` (Path::starts_with
+    // compares whole components) — it stays a release root
+    let binx = vec![cargo.join("binx"), cargo.join("bin")];
+    assert_eq!(
+        release_first_roots(&binx, &cargo),
+        vec![cargo.join("binx"), cargo.join("bin")]
+    );
+    let only_dev = vec![cargo.join("bin"), cargo.join("bin/other")];
+    assert_eq!(release_first_roots(&only_dev, &cargo), only_dev);
+}
+
+#[test]
+fn broken_release_bin_falls_through_to_dev_face() {
+    // composed behavior: a release-shaped root whose bin exists but is
+    // not executable is skipped by resolve_bin, and the reordered roots
+    // (release-first) then resolve the dev face — the fallback is real,
+    // not just ordering
+    let t = tempfile::tempdir().unwrap();
+    let fake_cargo = t.path().join("cargo-home");
+    let dev_dir = fake_cargo.join("bin");
+    let release_dir = t.path().join("release-bin");
+    std::fs::create_dir_all(&dev_dir).unwrap();
+    std::fs::create_dir_all(&release_dir).unwrap();
+    fake_bin(dev_dir.as_path(), "code-reality", "#!/bin/sh\nexit 0\n");
+    // non-executable release bin: exists, mode 0o644
+    std::fs::write(release_dir.join("code-reality"), "#!/bin/sh\nexit 0\n").unwrap();
+    let ordered = code_reality::refresh::release_first_roots(
+        &[dev_dir.clone(), release_dir.clone()],
+        &fake_cargo,
+    );
+    assert_eq!(
+        ordered,
+        vec![release_dir.clone(), dev_dir.clone()],
+        "release root moves first"
+    );
+    let resolved = code_reality::common::resolve_bin("code-reality", &ordered, "").unwrap();
+    assert_eq!(
+        resolved,
+        dev_dir.join("code-reality"),
+        "broken release bin falls through to the dev face"
+    );
+}
