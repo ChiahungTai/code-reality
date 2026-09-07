@@ -382,3 +382,160 @@ fn hook_non_numeric_marker_is_sanitized() {
         "sanitized marker respawned and refreshed"
     );
 }
+
+#[test]
+fn hook_install_upgrades_managed_script_in_place() {
+    let t = tempfile::tempdir().unwrap();
+    let repo = mkrepo(&t, &[("app.py", "x")]);
+    git_init(&repo);
+    let bindir = tempfile::tempdir().unwrap();
+    fake_bin(bindir.path(), "code-reality", "#!/bin/sh\nexit 0\n");
+    let roots = vec![bindir.path().to_path_buf()];
+    // an OLD-format managed hook (marker + pre-debounce one-liner body)
+    let hooks = repo.join(".githooks");
+    std::fs::create_dir_all(&hooks).unwrap();
+    std::fs::write(
+        hooks.join("post-commit"),
+        format!(
+            "#!/bin/sh\n# code-reality post-commit refresh (opt-in)\nmkdir -p .code-reality\nnohup '{}' refresh --repo \"$(git rev-parse --show-toplevel)\" >> .code-reality/refresh.log 2>&1 &\n",
+            bindir.path().join("code-reality").display()
+        ),
+    )
+    .unwrap();
+
+    let out = hook_install(&repo, &roots);
+    assert_eq!(out.exit_code, 0, "stderr={}", out.stderr);
+    assert!(
+        out.stdout.contains("升級"),
+        "upgrade message: {}",
+        out.stdout
+    );
+    let upgraded = std::fs::read_to_string(hooks.join("post-commit")).unwrap();
+    assert!(
+        upgraded.contains("refresh.pending"),
+        "current template in place: {upgraded}"
+    );
+    assert_eq!(
+        git_config(&repo, "core.hooksPath").as_deref(),
+        Some(".githooks"),
+        "upgrade also ensures the hook stays wired"
+    );
+
+    // byte-identical rerun stays a no-op (bytes unchanged + message)
+    let bytes = std::fs::read(hooks.join("post-commit")).unwrap();
+    let out2 = hook_install(&repo, &roots);
+    assert_eq!(out2.exit_code, 0);
+    assert!(
+        out2.stdout.contains("冪等"),
+        "no-op message: {}",
+        out2.stdout
+    );
+    assert_eq!(std::fs::read(hooks.join("post-commit")).unwrap(), bytes);
+}
+
+#[test]
+fn hook_install_allows_rerun_with_inert_local_hooks() {
+    // hooksPath already `.githooks` (the managed normal state): inert
+    // .git/hooks/* leftovers must not block reruns/upgrades — the flip
+    // guard only guards the flip
+    let t = tempfile::tempdir().unwrap();
+    let repo = mkrepo(&t, &[("app.py", "x")]);
+    git_init(&repo);
+    let bindir = tempfile::tempdir().unwrap();
+    fake_bin(bindir.path(), "code-reality", "#!/bin/sh\nexit 0\n");
+    let roots = vec![bindir.path().to_path_buf()];
+    let out = hook_install(&repo, &roots);
+    assert_eq!(out.exit_code, 0, "{}", out.stderr);
+    std::fs::write(repo.join(".git/hooks/pre-commit"), "#!/bin/sh\necho hi\n").unwrap();
+    let out2 = hook_install(&repo, &roots);
+    assert_eq!(
+        out2.exit_code, 0,
+        "inert local hooks must not block a managed rerun: {}",
+        out2.stderr
+    );
+}
+
+#[test]
+fn hook_install_refuses_managed_hook_with_foreign_hooks_path() {
+    // a managed script whose hooksPath was repointed (husky etc.) gets a
+    // loud refusal instead of a misleading idempotent OK
+    let t = tempfile::tempdir().unwrap();
+    let repo = mkrepo(&t, &[("app.py", "x")]);
+    git_init(&repo);
+    let bindir = tempfile::tempdir().unwrap();
+    fake_bin(bindir.path(), "code-reality", "#!/bin/sh\nexit 0\n");
+    let roots = vec![bindir.path().to_path_buf()];
+    let out = hook_install(&repo, &roots);
+    assert_eq!(out.exit_code, 0, "{}", out.stderr);
+    let st = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&repo)
+        .args(["config", "core.hooksPath", ".husky"])
+        .status()
+        .unwrap();
+    assert!(st.success());
+    let out2 = hook_install(&repo, &roots);
+    assert_eq!(out2.exit_code, 2, "{}", out2.stderr);
+    assert!(out2.stderr.contains("不覆寫"), "{}", out2.stderr);
+}
+
+#[test]
+fn refresh_nudges_old_format_managed_hook() {
+    let t = tempfile::tempdir().unwrap();
+    let repo = mkrepo(&t, &[("app.py", "def f():\n    return 1\n")]);
+    git_init(&repo);
+    let bindir = tempfile::tempdir().unwrap();
+    fake_pyrefly(bindir.path());
+    build_repo(&repo, None, &[bindir.path().to_path_buf()]).expect("build");
+    // an old-format managed hook must draw the upgrade hint on refresh
+    let hooks = repo.join(".githooks");
+    std::fs::create_dir_all(&hooks).unwrap();
+    std::fs::write(
+        hooks.join("post-commit"),
+        "#!/bin/sh\n# code-reality post-commit refresh (opt-in)\nexit 0\n",
+    )
+    .unwrap();
+
+    let repo_s = repo.display().to_string();
+    let out = run(&["refresh", "--repo", &repo_s]);
+    assert_eq!(out.exit_code, 0, "stderr={}", out.stderr);
+    assert!(
+        out.stderr.contains("hook install") && out.stderr.contains("舊格式"),
+        "nudge present: {}",
+        out.stderr
+    );
+}
+
+#[test]
+fn refresh_does_not_nudge_current_format_or_absent_hook() {
+    // reverse control: a current-format (v2) managed hook draws no
+    // nudge, and neither does having no hook at all
+    let t = tempfile::tempdir().unwrap();
+    let repo = mkrepo(&t, &[("app.py", "def f():\n    return 1\n")]);
+    git_init(&repo);
+    let bindir = tempfile::tempdir().unwrap();
+    fake_pyrefly(bindir.path());
+    fake_bin(bindir.path(), "code-reality", "#!/bin/sh\nexit 0\n");
+    let roots = vec![bindir.path().to_path_buf()];
+    build_repo(&repo, None, &roots).expect("build");
+    let out = hook_install(&repo, &roots);
+    assert_eq!(out.exit_code, 0, "{}", out.stderr);
+
+    let repo_s = repo.display().to_string();
+    let out = run(&["refresh", "--repo", &repo_s]);
+    assert_eq!(out.exit_code, 0, "stderr={}", out.stderr);
+    assert!(
+        !out.stderr.contains("舊格式"),
+        "current-format hook draws no nudge: {}",
+        out.stderr
+    );
+
+    std::fs::remove_file(repo.join(".githooks/post-commit")).unwrap();
+    let out = run(&["refresh", "--repo", &repo_s]);
+    assert_eq!(out.exit_code, 0, "stderr={}", out.stderr);
+    assert!(
+        !out.stderr.contains("舊格式"),
+        "absent hook draws no nudge: {}",
+        out.stderr
+    );
+}

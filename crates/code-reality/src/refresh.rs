@@ -72,17 +72,30 @@ fn refresh_run(toks: &[&str]) -> ToolOutput {
         return ToolOutput::fail("the following arguments are required: --repo");
     };
     let repo = resolve_repo(Path::new(&repo_s));
+    let mut stderr = String::new();
+    // Managed-hook upgrade nudge: an old-format hook (pre-debounce)
+    // keeps invoking this bin once per commit — one loud hint per run,
+    // never a mutation (the one-command migration is `hook install`,
+    // which upgrades managed scripts in place on content diff).
+    if let Ok(hook) = std::fs::read_to_string(repo.join(".githooks/post-commit")) {
+        if hook.contains(HOOK_MARKER) && !hook.contains("refresh.pending") {
+            stderr.push_str(&format!(
+                "[WARN] post-commit hook 為舊格式——重跑 `code-reality hook install --repo {}` 升級（burst debounce）\n",
+                repo.display()
+            ));
+        }
+    }
     let slot = match default_index_path(&repo) {
         Ok(s) => s,
         Err(e) => {
+            stderr.push_str(&crate::msg_line("WARN", &e));
             return ToolOutput {
                 stdout: String::new(),
-                stderr: crate::msg_line("WARN", &e),
+                stderr,
                 exit_code: 0,
-            }
+            };
         }
     };
-    let mut stderr = String::new();
     // Snapshot first (Fresh is a unit variant — the head-sync decision
     // needs the drift bit the outcome does not carry).
     let snap = match evaluate_staleness(&repo, &slot) {
@@ -213,25 +226,21 @@ fn git_config_unset(repo: &Path, key: &str) -> Result<(), String> {
 /// Install the opt-in post-commit hook. Public with injectable roots so
 /// tests resolve the bin from synthetic dirs (the script embeds the
 /// resolved absolute path — GUI git clients may run hooks without PATH).
+/// A MANAGED existing script (HOOK_MARKER present) upgrades in place on
+/// content diff — rerunning install after a template change is the
+/// one-command migration path; byte-identical scripts stay a no-op.
 pub fn hook_install(repo: &Path, roots: &[PathBuf]) -> ToolOutput {
     let hooks_dir = repo.join(".githooks");
     let hook_path = hooks_dir.join("post-commit");
-    if let Ok(existing) = std::fs::read_to_string(&hook_path) {
-        if !existing.contains(HOOK_MARKER) {
-            let head: Vec<&str> = existing.lines().take(3).collect();
+    let existing = std::fs::read_to_string(&hook_path).ok();
+    if let Some(text) = &existing {
+        if !text.contains(HOOK_MARKER) {
+            let head: Vec<&str> = text.lines().take(3).collect();
             return ToolOutput::fail(format!(
                 ".githooks/post-commit 已存在且非 code-reality 管理（前 3 行：{}）——不覆蓋；請手動併入 refresh 行（nohup <code-reality> refresh --repo … &）",
                 head.join(" ⏎ ")
             ));
         }
-        return ToolOutput {
-            stdout: crate::msg_line(
-                "OK",
-                &format!("hook 已安裝（冪等）：{}", hook_path.display()),
-            ),
-            stderr: String::new(),
-            exit_code: 0,
-        };
     }
     if let Some(cur) = git_config_get(repo, "core.hooksPath") {
         if cur != ".githooks" {
@@ -253,7 +262,14 @@ pub fn hook_install(repo: &Path, roots: &[PathBuf]) -> ToolOutput {
                 .collect()
         })
         .unwrap_or_default();
-    if !active_local_hooks.is_empty() {
+    // The flip guard only applies when installing would actually flip
+    // hooksPath — with hooksPath already `.githooks` (the managed
+    // normal state), inert `.git/hooks/*` leftovers must not block
+    // script upgrades (else the refresh nudge points at a refusing
+    // install — a stuck loop).
+    if !active_local_hooks.is_empty()
+        && git_config_get(repo, "core.hooksPath").as_deref() != Some(".githooks")
+    {
         return ToolOutput::fail(format!(
             ".git/hooks/ 已有作用中 hooks（{}）——設定 core.hooksPath 會停用它們；如確定，先手動遷移或移除",
             active_local_hooks.join("、")
@@ -278,6 +294,17 @@ pub fn hook_install(repo: &Path, roots: &[PathBuf]) -> ToolOutput {
         "#!/bin/sh\n{HOOK_MARKER}\n# installed by `code-reality hook install`; remove with `code-reality hook remove`\n# prefer `uv tool install` over uvx — this script pins the absolute bin path resolved at install time\n# Burst debounce: commits in a burst (rebase replay, rapid commits) coalesce into ONE tail refresh.\n# CODE_REALITY_REFRESH_QUIET_SECS overrides the quiet window (default 5s). A source-changing lost\n# tail self-heals on the next query; a docs-only lost tail re-stamps on the next refresh.\nREPO=$(git rev-parse --show-toplevel)\nDATA=\"$REPO/.code-reality\"\nmkdir -p \"$DATA\"\nQUIET=${{CODE_REALITY_REFRESH_QUIET_SECS:-5}}\ncase $QUIET in ''|*[!0-9]*) QUIET=5;; esac\ndate +%s > \"$DATA/refresh.pending\"\nif [ -f \"$DATA/refresh.scheduled\" ]; then\n  sched=$(cat \"$DATA/refresh.scheduled\" 2>/dev/null || echo 0)\n  case $sched in ''|*[!0-9]*) sched=0;; esac\n  now=$(date +%s)\n  if [ $((now - sched)) -lt $((QUIET * 3)) ]; then\n    exit 0\n  fi\nfi\ndate +%s > \"$DATA/refresh.scheduled\"\n(\n  while :; do\n    sleep \"$QUIET\"\n    date +%s > \"$DATA/refresh.scheduled\"\n    last=$(cat \"$DATA/refresh.pending\" 2>/dev/null || echo 0)\n    case $last in ''|*[!0-9]*) last=0;; esac\n    now=$(date +%s)\n    if [ $((now - last)) -ge \"$QUIET\" ]; then\n      break\n    fi\n  done\n  rm -f \"$DATA/refresh.scheduled\" \"$DATA/refresh.pending\"\n  nohup '{}' refresh --repo \"$REPO\" >> \"$DATA/refresh.log\" 2>&1 &\n) > /dev/null 2>&1 &\nexit 0\n",
         bin.display()
     );
+    if existing.as_deref() == Some(script.as_str()) {
+        return ToolOutput {
+            stdout: crate::msg_line(
+                "OK",
+                &format!("hook 已安裝（冪等）：{}", hook_path.display()),
+            ),
+            stderr: String::new(),
+            exit_code: 0,
+        };
+    }
+    let upgraded = existing.is_some();
     if let Err(e) = std::fs::write(&hook_path, &script) {
         return ToolOutput::fail(format!("寫入 {} 失敗：{e}", hook_path.display()));
     }
@@ -290,6 +317,19 @@ pub fn hook_install(repo: &Path, roots: &[PathBuf]) -> ToolOutput {
         if let Err(e) = git_config_set(repo, "core.hooksPath", ".githooks") {
             return ToolOutput::fail(e);
         }
+    }
+    if upgraded {
+        return ToolOutput {
+            stdout: crate::msg_line(
+                "OK",
+                &format!(
+                    "hook 腳本已升級（managed → 現行模板）：{}",
+                    hook_path.display()
+                ),
+            ),
+            stderr: String::new(),
+            exit_code: 0,
+        };
     }
     ToolOutput {
         stdout: format!(

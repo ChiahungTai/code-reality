@@ -98,7 +98,9 @@ Responses embed `[SRC]` provenance lines (index version/commit) and a
   face (full re-produce when sources moved; docs-only commits re-stamp
   provenance only). `code-reality hook install --repo <repo>` wires the
   opt-in `.githooks/post-commit`; install refuses loudly over unmanaged
-  hooks, a foreign `core.hooksPath`, or active `.git/hooks/*` entries,
+  hooks, a foreign `core.hooksPath`, or active `.git/hooks/*` entries
+  (the local-hooks guard applies only when installing would flip
+  `core.hooksPath` — inert leftovers never block a managed rerun),
   and the script pins the resolved absolute bin path (GUI-no-PATH safe),
   logging to `.code-reality/refresh.log`. The hook debounces event
   bursts (rebase replay, rapid commits) with a trailing quiet window —
@@ -106,7 +108,10 @@ Responses embed `[SRC]` provenance lines (index version/commit) and a
   `refresh.scheduled` and a dead marker is respawned;
   `CODE_REALITY_REFRESH_QUIET_SECS` overrides the window (default 5s);
   a source-changing lost tail self-heals on the next query, a docs-only
-  lost tail re-stamps on the next refresh.
+  lost tail re-stamps on the next refresh. Rerunning `hook install`
+  upgrades a managed script in place on content diff (byte-identical is
+  a no-op) — the one-command migration for template updates; an
+  old-format hook still invoking `refresh` gets a log nudge to upgrade.
 
 ### Slot discipline
 
