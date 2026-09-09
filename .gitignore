@@ -42,3 +42,4 @@ STATE.md
 
 # Autonomous-session scratch (agent temp artifacts)
 .agent-tmp/
+.delegate-bridge/
