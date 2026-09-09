@@ -16,6 +16,7 @@
 //! (stderr best-effort face).
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
@@ -257,6 +258,26 @@ pub fn required<'a>(
         .get(long)
         .and_then(|v| v.as_deref())
         .ok_or_else(|| format!("the following arguments are required: {}", long))
+}
+
+/// `--repo` value → canonical repo root via
+/// [`crate::engine::resolve_repo`]. Relative forms must resolve
+/// against the cwd BEFORE any join/strip-prefix: `repo.join(dir)`
+/// keeps the leading `CurDir` while glob-emitted paths carry no `./`
+/// prefix, so `strip_prefix` silently drops every file (MOS-86 — the
+/// ai-rules skill bans relative `--repo` pending this fix). Absolute
+/// values canonicalize too — the symlink-resolved form is the fixed
+/// point that keeps `--repo .` and `--repo <abs>` byte-equal. Absent
+/// flag → cwd. Placement note: a value-extraction helper like
+/// `required()`, not parsing — it deliberately reaches into engine
+/// for the canonicalization policy, so the module is no longer
+/// strictly parse-only.
+pub fn repo_root(values: &HashMap<&'static str, Option<String>>) -> PathBuf {
+    values
+        .get("--repo")
+        .and_then(|v| v.clone())
+        .map(|v| crate::engine::resolve_repo(&PathBuf::from(v)))
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
 }
 
 #[cfg(test)]

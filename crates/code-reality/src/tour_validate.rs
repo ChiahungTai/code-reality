@@ -476,11 +476,7 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         Outcome::Err(msg) => return ToolOutput::fail(msg),
         Outcome::Ok { values, .. } => values,
     };
-    let repo = values
-        .get("--repo")
-        .and_then(|v| v.clone())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let repo = crate::argparse::repo_root(&values);
     let tours_dir = values
         .get("--tours-dir")
         .and_then(|v| v.clone())

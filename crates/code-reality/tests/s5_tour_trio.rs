@@ -435,3 +435,73 @@ fn validate_manifest_mode_fails_zero() {
         out2.stdout
     );
 }
+
+// ---------- MOS-86: `--repo` relative form ≡ absolute (bin face) ----------
+// The 2026-08-27 trio above pinned `--tours-dir` equivalence only;
+// `--repo .` — banned by the ai-rules post-build skill pending this
+// root fix — still fed the raw relative root into the corpus walk:
+// glob matches `./`-prefixed patterns but emits prefix-free paths, so
+// the CurDir-retaining root strip_prefix-dropped every file into the
+// empty-corpus guard (mosaic 2026-09-09). The relative form needs a
+// real child process: cwd is process-global, so an in-process run()
+// would race the parallel test threads.
+
+fn run_bin(cwd: Option<&Path>, args: &[&str]) -> (i32, String, String) {
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_code-reality"));
+    if let Some(dir) = cwd {
+        cmd.current_dir(dir);
+    }
+    let out = cmd.args(args).output().unwrap();
+    (
+        out.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+#[test]
+fn validate_repo_relative_form_matches_absolute() {
+    let repo = repo_fixture("mos86-validate");
+    clean_corpus(&repo);
+    // minimal manifest so --manifest exercises the documented face
+    std::fs::write(repo.join(".tours/manifest.toml"), "[tour]\n").unwrap();
+    let (rel_code, rel_out, rel_err) = run_bin(
+        Some(&repo),
+        &["tour_validate", "--repo", ".", "--manifest"],
+    );
+    let (abs_code, abs_out, abs_err) = run_bin(
+        None,
+        &[
+            "tour_validate",
+            "--repo",
+            &repo.to_string_lossy(),
+            "--manifest",
+        ],
+    );
+    assert_eq!(abs_code, 0, "absolute form must pass: {abs_out}");
+    assert_eq!(rel_code, 0, "relative form hit the guard: {rel_out}");
+    assert_eq!(rel_code, abs_code);
+    assert_eq!(rel_out, abs_out, "`--repo .` must equal `--repo <abs>`");
+    assert_eq!(rel_err, abs_err);
+    assert!(rel_out.contains("fails=0"), "{rel_out}");
+    assert!(!rel_out.contains("零 .tour"), "{rel_out}");
+}
+
+#[test]
+fn manifest_and_upgrade_repo_relative_forms_resolve() {
+    // wiring spot checks for the other two run() sites routed through
+    // the same canonicalization
+    let repo = repo_fixture("mos86-wiring");
+    clean_corpus(&repo);
+    std::fs::write(repo.join(".tours/manifest.toml"), "[tour]\n").unwrap();
+    let (code, out, _) = run_bin(Some(&repo), &["tour_manifest", "--repo", "."]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains(&format!("[OK] manifest path: {}/.tours/manifest.toml", repo.display())),
+        "canonical absolute path expected, got: {out}"
+    );
+    assert!(out.contains("exists=true"), "{out}");
+    let (code, out, _) = run_bin(Some(&repo), &["tour_upgrade", "--repo", "."]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("tour_upgrade DRY-RUN: 2 tours"), "{out}");
+}
