@@ -111,33 +111,59 @@ fn write_derived_config(
     Ok(path)
 }
 
-fn run_indexer(
-    bin: &Path,
-    repo: &Path,
-    config: &Path,
-    candidate: &Path,
-    max_bytes: &str,
-) -> Result<(), String> {
-    let out = std::process::Command::new(bin)
-        .arg("index")
-        .arg("--cwd")
-        .arg(repo)
-        .arg(config)
-        .arg("--no-progress-bar")
-        .arg("--max-file-byte-size")
-        .arg(max_bytes)
-        .arg("--output")
-        .arg(candidate)
-        .output()
-        .map_err(|e| format!("spawn {} 失敗：{e}", bin.display()))?;
-    if !out.status.success() {
-        return Err(format!(
-            "scip-typescript 失敗（{}）：\n{}",
-            out.status,
-            String::from_utf8_lossy(&out.stderr)
-        ));
+/// Narrow seam around the external `scip-typescript` process. The
+/// producer policy (corpus/config/fallback/filtering) stays in this
+/// module; tests can replace only the process boundary instead of
+/// growing an argv-parsing subprocess runtime of their own.
+trait IndexerRunner {
+    fn version(&self, bin: &Path) -> Option<String>;
+
+    fn run(
+        &self,
+        bin: &Path,
+        repo: &Path,
+        config: &Path,
+        candidate: &Path,
+        max_bytes: &str,
+    ) -> Result<(), String>;
+}
+
+struct ProcessIndexer;
+
+impl IndexerRunner for ProcessIndexer {
+    fn version(&self, bin: &Path) -> Option<String> {
+        crate::common::first_output_line(bin, &["--version"])
     }
-    Ok(())
+
+    fn run(
+        &self,
+        bin: &Path,
+        repo: &Path,
+        config: &Path,
+        candidate: &Path,
+        max_bytes: &str,
+    ) -> Result<(), String> {
+        let out = std::process::Command::new(bin)
+            .arg("index")
+            .arg("--cwd")
+            .arg(repo)
+            .arg(config)
+            .arg("--no-progress-bar")
+            .arg("--max-file-byte-size")
+            .arg(max_bytes)
+            .arg("--output")
+            .arg(candidate)
+            .output()
+            .map_err(|e| format!("spawn {} 失敗：{e}", bin.display()))?;
+        if !out.status.success() {
+            return Err(format!(
+                "scip-typescript 失敗（{}）：\n{}",
+                out.status,
+                String::from_utf8_lossy(&out.stderr)
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// The pinned zero-file condition (POC: `error: no files got indexed`,
@@ -204,13 +230,23 @@ pub fn stage_typescript_leg(
     part: &Path,
     roots: &[PathBuf],
 ) -> Result<TsProduceOutcome, String> {
+    stage_typescript_leg_with(repo, stage_dir, part, roots, &ProcessIndexer)
+}
+
+fn stage_typescript_leg_with<R: IndexerRunner>(
+    repo: &Path,
+    stage_dir: &Path,
+    part: &Path,
+    roots: &[PathBuf],
+    runner: &R,
+) -> Result<TsProduceOutcome, String> {
     let corpus = collect_js_ts_corpus(repo)?;
     if corpus.files.is_empty() {
         return Ok(TsProduceOutcome::SkippedByProfile);
     }
     let ts_roots = node_tool_roots(repo, roots);
     let bin = resolve_bin_with_hint(&ts_roots).map_err(|e| format!("{e}\n"))?;
-    let version = crate::common::first_output_line(&bin, &["--version"]);
+    let version = runner.version(&bin);
     std::fs::create_dir_all(stage_dir)
         .map_err(|e| format!("建立 {} 失敗：{e}", stage_dir.display()))?;
     let max_bytes = max_file_size_arg(repo, &corpus.files)?;
@@ -229,7 +265,7 @@ pub fn stage_typescript_leg(
             "existing" => existing.clone().expect("existing mode implies a project"),
             _ => write_derived_config(stage_dir, repo, &corpus.files)?,
         };
-        if let Err(run_err) = run_indexer(&bin, repo, &config, &candidate, &max_bytes) {
+        if let Err(run_err) = runner.run(&bin, repo, &config, &candidate, &max_bytes) {
             if mode == "existing" && is_zero_file_failure(&run_err) {
                 mode = "derived";
                 continue;
@@ -295,4 +331,208 @@ pub fn stage_typescript_leg(
 
 fn resolve_bin_with_hint(roots: &[PathBuf]) -> Result<PathBuf, String> {
     crate::common::resolve_bin("scip-typescript", roots, INSTALL_HINT)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use protobuf::Message;
+    use scip::types::{Document, Occurrence};
+    use std::cell::RefCell;
+    use std::collections::VecDeque;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[derive(Clone, Debug)]
+    enum FakeReply {
+        Docs(Vec<String>),
+        Err(String),
+    }
+
+    #[derive(Default)]
+    struct FakeIndexer {
+        replies: RefCell<VecDeque<FakeReply>>,
+        configs: RefCell<Vec<PathBuf>>,
+    }
+
+    impl FakeIndexer {
+        fn with(replies: impl IntoIterator<Item = FakeReply>) -> Self {
+            Self {
+                replies: RefCell::new(replies.into_iter().collect()),
+                configs: RefCell::new(Vec::new()),
+            }
+        }
+
+        fn run_count(&self) -> usize {
+            self.configs.borrow().len()
+        }
+    }
+
+    impl IndexerRunner for FakeIndexer {
+        fn version(&self, _bin: &Path) -> Option<String> {
+            Some("0.4.0-in-process".to_string())
+        }
+
+        fn run(
+            &self,
+            _bin: &Path,
+            _repo: &Path,
+            config: &Path,
+            candidate: &Path,
+            _max_bytes: &str,
+        ) -> Result<(), String> {
+            self.configs.borrow_mut().push(config.to_path_buf());
+            match self
+                .replies
+                .borrow_mut()
+                .pop_front()
+                .expect("fake reply for every producer run")
+            {
+                FakeReply::Err(e) => Err(e),
+                FakeReply::Docs(paths) => {
+                    let mut index = Index::new();
+                    for rel in paths {
+                        let mut doc = Document::new();
+                        doc.relative_path = rel.clone();
+                        let mut occ = Occurrence::new();
+                        occ.symbol = format!(
+                            "scip-typescript npm . . /fixture/`{}`/item().",
+                            rel.replace('/', "_")
+                        );
+                        occ.symbol_roles = 1;
+                        occ.range = vec![0, 0, 1];
+                        doc.occurrences.push(occ);
+                        index.documents.push(doc);
+                    }
+                    std::fs::write(candidate, index.write_to_bytes().unwrap()).unwrap();
+                    Ok(())
+                }
+            }
+        }
+    }
+
+    fn executable_root() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("scip-typescript");
+        std::fs::write(&bin, b"fixture: never executed\n").unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        dir
+    }
+
+    fn stage_with(
+        repo: &Path,
+        runner: &FakeIndexer,
+    ) -> Result<(TsProduceOutcome, tempfile::TempDir), String> {
+        let root = executable_root();
+        let stage = repo.join(".code-reality/test-stage");
+        let part = repo.join(".code-reality/test-part.scip");
+        let out =
+            stage_typescript_leg_with(repo, &stage, &part, &[root.path().to_path_buf()], runner)?;
+        Ok((out, root))
+    }
+
+    #[test]
+    fn in_process_zero_file_existing_config_retries_derived_once() {
+        let repo = tempfile::tempdir().unwrap();
+        std::fs::write(repo.path().join("tsconfig.json"), "{}\n").unwrap();
+        std::fs::create_dir_all(repo.path().join("src")).unwrap();
+        std::fs::write(repo.path().join("src/a.ts"), "export const a = 1;\n").unwrap();
+        let runner = FakeIndexer::with([
+            FakeReply::Err("scip-typescript failed: no files got indexed".to_string()),
+            FakeReply::Docs(vec!["src/a.ts".to_string()]),
+        ]);
+
+        let (out, _bin) = stage_with(repo.path(), &runner).unwrap();
+        assert!(matches!(
+            out,
+            TsProduceOutcome::Staged {
+                mode: "derived",
+                indexed_docs: 1,
+                ..
+            }
+        ));
+        assert_eq!(runner.run_count(), 2);
+        let configs = runner.configs.borrow();
+        assert_eq!(configs[0], repo.path().join("tsconfig.json"));
+        assert_eq!(
+            configs[1].file_name().and_then(|s| s.to_str()),
+            Some("cr-tsconfig.json")
+        );
+    }
+
+    #[test]
+    fn in_process_partial_existing_config_falls_back_to_exact_derived() {
+        let repo = tempfile::tempdir().unwrap();
+        std::fs::write(repo.path().join("tsconfig.json"), "{}\n").unwrap();
+        std::fs::create_dir_all(repo.path().join("src")).unwrap();
+        std::fs::write(repo.path().join("src/a.ts"), "export const a = 1;\n").unwrap();
+        std::fs::write(repo.path().join("src/b.ts"), "export const b = 1;\n").unwrap();
+        let runner = FakeIndexer::with([
+            FakeReply::Docs(vec!["src/a.ts".to_string()]),
+            FakeReply::Docs(vec!["src/a.ts".to_string(), "src/b.ts".to_string()]),
+        ]);
+
+        let (out, _bin) = stage_with(repo.path(), &runner).unwrap();
+        assert!(matches!(
+            out,
+            TsProduceOutcome::Staged {
+                mode: "derived",
+                indexed_docs: 2,
+                ..
+            }
+        ));
+        assert_eq!(runner.run_count(), 2);
+    }
+
+    #[test]
+    fn in_process_unrelated_existing_error_does_not_fallback() {
+        let repo = tempfile::tempdir().unwrap();
+        std::fs::write(repo.path().join("tsconfig.json"), "{}\n").unwrap();
+        std::fs::create_dir_all(repo.path().join("src")).unwrap();
+        std::fs::write(repo.path().join("src/a.ts"), "export const a = 1;\n").unwrap();
+        let runner = FakeIndexer::with([FakeReply::Err(
+            "scip-typescript failed: TS2322 compiler failure".to_string(),
+        )]);
+
+        let err = stage_with(repo.path(), &runner).unwrap_err();
+        assert!(err.contains("TS2322"), "{err}");
+        assert_eq!(runner.run_count(), 1, "must not take derived fallback");
+    }
+
+    #[test]
+    fn in_process_filter_drops_non_governed_documents() {
+        let repo = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(repo.path().join("src")).unwrap();
+        std::fs::create_dir_all(repo.path().join("dist")).unwrap();
+        std::fs::write(repo.path().join("src/a.mjs"), "export const a = 1;\n").unwrap();
+        std::fs::write(repo.path().join("src/b.ts"), "export const b = 1;\n").unwrap();
+        std::fs::write(repo.path().join("dist/mirror.mjs"), "generated\n").unwrap();
+        std::fs::write(
+            repo.path().join(".code-reality.toml"),
+            "exclude = [\"dist/\"]\n",
+        )
+        .unwrap();
+        let runner = FakeIndexer::with([FakeReply::Docs(vec![
+            "src/a.mjs".to_string(),
+            "src/b.ts".to_string(),
+            "dist/mirror.mjs".to_string(),
+        ])]);
+
+        let (out, _bin) = stage_with(repo.path(), &runner).unwrap();
+        assert!(matches!(
+            out,
+            TsProduceOutcome::Staged {
+                mode: "derived",
+                indexed_docs: 2,
+                ..
+            }
+        ));
+        let part = repo.path().join(".code-reality/test-part.scip");
+        let index = Index::parse_from_bytes(&std::fs::read(part).unwrap()).unwrap();
+        let docs: BTreeSet<_> = index
+            .documents
+            .iter()
+            .map(|d| d.relative_path.as_str())
+            .collect();
+        assert_eq!(docs, BTreeSet::from(["src/a.mjs", "src/b.ts"]));
+    }
 }

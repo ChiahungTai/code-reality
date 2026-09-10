@@ -12,7 +12,7 @@ use protobuf::Message;
 use scip::types::{Document, Index};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use support::{mkrepo, occ};
+use support::{doc, mkrepo, occ, occ_at_token};
 
 const LIB_TS: &str = "\
 export class Greeter {
@@ -31,6 +31,7 @@ export function main() {
   return g.greet();
 }
 ";
+const TEST_TS: &str = "export function probeFn() {}\n";
 
 fn symbol(doc: &str, tail: &str) -> String {
     format!("scip-typescript npm . . /r/src/`{doc}`/{tail}")
@@ -42,51 +43,62 @@ fn lib_doc() -> Document {
     let mut d = Document::new();
     d.relative_path = "src/lib.ts".to_string();
     d.occurrences = vec![
-        occ(
+        occ_at_token(
             &symbol("lib.ts", "Greeter#"),
             1,
-            vec![0, 0, 6],
+            LIB_TS,
+            "Greeter",
+            0,
             Some(vec![0, 0, 2, 1]),
         ),
-        occ(
+        occ_at_token(
             &symbol("lib.ts", "Greeter#greet()."),
             1,
-            vec![1, 2, 7],
+            LIB_TS,
+            "greet",
+            0,
             Some(vec![1, 2, 1, 21]),
         ),
-        occ(
+        occ_at_token(
             &symbol("lib.ts", "tsHelper()."),
             1,
-            vec![3, 0, 8],
+            LIB_TS,
+            "tsHelper",
+            0,
             Some(vec![3, 0, 5, 1]),
         ),
     ];
     d
 }
 
-/// app.mjs: def main (lines 1-7 0-based), refs inside it — a call at
-/// line 3 (col 2), a constructor at line 4 (col 16), and the codex-P1-5
-/// identity case at line 5: a plain load (col 16) AND a real call
-/// (col 26) of the same name on ONE line. SCIP occurrence ranges carry
-/// the matching start columns.
+/// app.mjs: occurrence columns come from APP_MJS itself. `tsHelper`
+/// appears first in the import, then direct call, alias load, same-line
+/// call; `Greeter` appears first in the import, then in `new Greeter()`.
 fn app_doc() -> Document {
     let mut d = Document::new();
     d.relative_path = "src/app.mjs".to_string();
-    d.occurrences = vec![occ(
+    d.occurrences = vec![occ_at_token(
         &symbol("app.mjs", "main()."),
         1,
-        vec![1, 0, 4],
+        APP_MJS,
+        "main",
+        0,
         Some(vec![1, 0, 7, 1]),
     )];
-    // REF rows: (defining symbol, line, col) — cols match the source
-    for (sym_tail, range) in [
-        ("tsHelper().", vec![2, 2, 10]),  // tsHelper();        ← call
-        ("Greeter#", vec![3, 16, 23]),    // new Greeter()      ← constructor
-        ("tsHelper().", vec![4, 16, 24]), // const alias = tsHelper; ← plain load
-        ("tsHelper().", vec![4, 26, 34]), // tsHelper(); (same line) ← call
+    for (sym_tail, token, nth) in [
+        ("tsHelper().", "tsHelper", 1), // direct call
+        ("Greeter#", "Greeter", 1),     // constructor
+        ("tsHelper().", "tsHelper", 2), // plain alias load
+        ("tsHelper().", "tsHelper", 3), // same-line call
     ] {
-        d.occurrences
-            .push(occ(&symbol("lib.ts", sym_tail), 0, range, None));
+        d.occurrences.push(occ_at_token(
+            &symbol("lib.ts", sym_tail),
+            0,
+            APP_MJS,
+            token,
+            nth,
+            None,
+        ));
     }
     d
 }
@@ -94,10 +106,12 @@ fn app_doc() -> Document {
 fn test_doc() -> Document {
     let mut d = Document::new();
     d.relative_path = "__tests__/helper.test.ts".to_string();
-    d.occurrences = vec![occ(
+    d.occurrences = vec![occ_at_token(
         &symbol("__tests__/helper.test.ts", "probeFn()."),
         1,
-        vec![0, 0, 8],
+        TEST_TS,
+        "probeFn",
+        0,
         Some(vec![0, 0, 1, 1]),
     )];
     d
@@ -109,7 +123,7 @@ fn write_repo(t: &tempfile::TempDir) -> PathBuf {
         &[
             ("src/lib.ts", LIB_TS),
             ("src/app.mjs", APP_MJS),
-            ("__tests__/helper.test.ts", "export function probeFn() {}\n"),
+            ("__tests__/helper.test.ts", TEST_TS),
         ],
     )
 }
@@ -220,6 +234,73 @@ fn s3_calls_vs_references_edges() {
     // new Greeter() constructor: CALLS to the class symbol via class segment
     let gr_edges = edge_kinds(&repo, "main().", "Greeter#");
     assert_eq!(gr_edges, vec!["CALLS@4".to_string()], "{gr_edges:?}");
+}
+
+#[test]
+fn s3_calls_match_on_non_ascii_utf16_lines() {
+    // End-to-end UTF-16 alignment: the fixture occurrence columns come
+    // from occ_at_token (UTF-16, the real scip-typescript contract) and
+    // the production marks mint UTF-16 converted from tree-sitter bytes
+    // — a call after a non-ASCII prefix MUST still land CALLS. Before
+    // the conversion, byte-column marks mis-aligned on such lines
+    // (`uni` sits at UTF-16 col 14 but byte col 20 after `ラベル`) and
+    // silently degraded the call to REFERENCES.
+    const UNI_TS: &str = "export function uni(): string {\n  return '元';\n}\n";
+    const UNI_APP: &str =
+        "export function useUni() {\n  const ラベル = uni();\n  const alias = uni;\n}\n";
+    let t = tempfile::tempdir().unwrap();
+    let repo = support::mkrepo(&t, &[("src/uni.ts", UNI_TS), ("src/uni_app.mjs", UNI_APP)]);
+    let mut index = Index::new();
+    let def_doc = doc(
+        "src/uni.ts",
+        vec![occ_at_token(
+            &symbol("uni.ts", "uni()."),
+            1,
+            UNI_TS,
+            "uni",
+            0,
+            Some(vec![0, 0, 2, 1]),
+        )],
+    );
+    let mut app_doc = doc(
+        "src/uni_app.mjs",
+        vec![occ_at_token(
+            &symbol("uni_app.mjs", "useUni()."),
+            1,
+            UNI_APP,
+            "useUni",
+            0,
+            Some(vec![1, 0, 3, 1]),
+        )],
+    );
+    // refs inside useUni: the CALL after the katakana prefix (occurrence
+    // #0 of `uni`) and the plain load (#1)
+    for nth in [0, 1] {
+        app_doc.occurrences.push(occ_at_token(
+            &symbol("uni.ts", "uni()."),
+            0,
+            UNI_APP,
+            "uni",
+            nth,
+            None,
+        ));
+    }
+    index.documents = vec![def_doc, app_doc];
+    let slot_dir = repo.join(".code-reality/scip");
+    std::fs::create_dir_all(&slot_dir).unwrap();
+    let slot = slot_dir.join("index.scip");
+    std::fs::write(&slot, index.write_to_bytes().unwrap()).unwrap();
+    let rep = code_reality::graph_db::build_from_cache_at(&repo, &slot).unwrap();
+    let call_edges = edge_kinds(&repo, "useUni().", "uni().");
+    assert!(
+        call_edges.iter().any(|k| k.starts_with("CALLS")),
+        "call after a non-ASCII (UTF-16) prefix must stay CALLS: {call_edges:?} (report: calls={})",
+        rep.calls_edges
+    );
+    assert!(
+        call_edges.iter().any(|k| k.starts_with("REFERENCES")),
+        "plain load stays REFERENCES: {call_edges:?}"
+    );
 }
 
 #[test]

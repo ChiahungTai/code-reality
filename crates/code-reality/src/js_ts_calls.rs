@@ -12,9 +12,10 @@
 //! post-codex-review identity; line+name grain would pollute both to
 //! CALLS). The column is the tail identifier's start, matching where
 //! SCIP anchors the occurrence (`obj.method()` anchors at `method`, not
-//! `obj`). Column units are tree-sitter BYTES vs SCIP UTF-16 code
-//! units — identical on ASCII lines; a non-ASCII prefix degrades that
-//! line's marks conservatively (references stay REFERENCES).
+//! `obj`), in UTF-16 CODE UNITS — the units real scip-typescript emits
+//! (empirically pinned: a katakana identifier spans UTF-16, not byte,
+//! columns) — converted from tree-sitter's byte columns at mint time so
+//! non-ASCII lines match too.
 //! Computed/dynamic forms (`obj[key]()`) mint NO guessed name.
 
 use std::collections::{BTreeSet, HashSet};
@@ -107,10 +108,18 @@ fn collect(node: Node, src: &str, rel: &str, out: &mut CallSiteSet) {
         if let Some(callee) = node.child_by_field_name(field) {
             if let Some(tail) = static_callee_tail_node(callee, 0) {
                 let pos = tail.start_position();
+                // tree-sitter columns are BYTE offsets; SCIP occurrence
+                // columns are UTF-16 code units (empirically pinned on
+                // real scip-typescript 0.4.0: a 4-char katakana
+                // identifier spans [6,10] UTF-16, not [6,18] bytes).
+                // Convert via the line prefix so non-ASCII lines match.
+                let start_byte = tail.start_byte();
+                let line_start = start_byte - pos.column;
+                let col16 = src[line_start..start_byte].encode_utf16().count();
                 out.insert((
                     rel.to_string(),
                     pos.row as i64 + 1,
-                    pos.column as i64,
+                    col16 as i64,
                     tail.utf8_text(src.as_bytes())
                         .unwrap_or_default()
                         .to_string(),
@@ -331,6 +340,31 @@ mod tests {
         assert!(warns.is_empty(), "{warns:?}");
         assert!(marks.contains(&("gen.ts".into(), 2, 8, "track".into())));
         assert!(marks.contains(&("gen.ts".into(), 3, 22, "fetch".into())));
+        let _ = std::fs::remove_dir_all(t.path());
+    }
+
+    #[test]
+    fn non_ascii_prefix_columns_are_utf16() {
+        // scip-typescript columns are UTF-16 code units (empirically
+        // pinned: a 4-char katakana identifier spans [6,10], not the
+        // 12-byte [6,18]). Marks must carry the same units or a
+        // non-ASCII line prefix would mis-align every call after it.
+        //   "const ヘルパー = ε; x(ヘルパー);"
+        // UTF-16: x at col 16 — byte col would be 25.
+        let t = tempfile::tempdir().unwrap();
+        let (marks, warns) = scan(
+            t.path(),
+            &[("uni.ts", "const ヘルパー = ε; x(ヘルパー);\n")],
+        );
+        assert!(warns.is_empty(), "{warns:?}");
+        assert!(
+            marks.contains(&("uni.ts".into(), 1, 16, "x".into())),
+            "UTF-16 column expected: {marks:?}"
+        );
+        assert!(
+            !marks.contains(&("uni.ts".into(), 1, 25, "x".into())),
+            "byte column must not be minted: {marks:?}"
+        );
         let _ = std::fs::remove_dir_all(t.path());
     }
 }

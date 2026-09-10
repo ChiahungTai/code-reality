@@ -1,6 +1,8 @@
 //! JS/TS blueprint S1/S2 integration tests: language-set staging,
-//! atomic publication, and the scip-typescript producer contract — all
-//! through fake producers (hermetic; no npm/network).
+//! atomic publication, and the external scip-typescript process contract.
+//! Pure producer policy (fallback/filtering) lives in `ts_producer` unit
+//! tests behind an in-process runner seam; these tests keep subprocesses
+//! only where argv/resolution/orchestration behavior is the subject.
 
 mod support;
 
@@ -56,9 +58,7 @@ echo '[OK] fake rust-analyzer'
 
 /// Fake scip-typescript. Modes:
 /// - `good`: always copy `fixture` to --output (logs argv lines to `log`)
-/// - `zero_then_good`: the repo-root config gets the pinned zero-file
-///   error; the CR derived config (`cr-tsconfig.json`) succeeds
-/// - `fail`: exit 1 with a compiler-shaped error, never fall back
+/// - `fail`: exit 1 with a compiler-shaped error
 fn fake_scip_typescript(dir: &Path, mode: &str, fixture: &Path, log: &Path) {
     let run_good = format!(
         "echo \"$(pwd) $*\" >> '{}'\ncp '{}' \"$output\"\nexit 0",
@@ -67,11 +67,6 @@ fn fake_scip_typescript(dir: &Path, mode: &str, fixture: &Path, log: &Path) {
     );
     let body = match mode {
         "good" => run_good,
-        "zero_then_good" => format!(
-            "echo \"$(pwd) $*\" >> '{}'\ncase \"$config\" in\n  *cr-tsconfig.json) cp '{}' \"$output\"; exit 0 ;;\n  *) echo 'error: no files got indexed' >&2; exit 1 ;;\nesac",
-            log.display(),
-            fixture.display()
-        ),
         _ => "echo 'error: TS2322 some compiler failure' >&2\nexit 1".to_string(),
     };
     fake_bin(
@@ -124,97 +119,6 @@ fn s2_derived_mode_success_and_report() {
     let calls = log_lines(&log);
     assert_eq!(calls.len(), 1, "{calls:?}");
     assert!(calls[0].contains("cr-tsconfig.json"), "{calls:?}");
-}
-
-#[test]
-fn s2_existing_zero_file_falls_back_exactly_once() {
-    let t = tempfile::tempdir().unwrap();
-    let repo = mkrepo(
-        &t,
-        &[
-            ("tsconfig.json", "{}\n"),
-            ("src/a.ts", "export function a() {}\n"),
-        ],
-    );
-    let bindir = tempfile::tempdir().unwrap();
-    let log = bindir.path().join("ts-calls");
-    let fx = bindir.path().join("fx.scip");
-    write_fixture(&fx, &ts_scip_bytes("/abs/repo/src", &[("src/a.ts", "a")]));
-    fake_scip_typescript(bindir.path(), "zero_then_good", &fx, &log);
-    let roots = vec![bindir.path().to_path_buf()];
-
-    let rep = build_repo(&repo, None, &roots).expect("fallback build");
-    assert_eq!(rep.face, "typescript-face");
-    assert_eq!(log_lines(&log).len(), 2, "exactly one derived retry");
-    assert_eq!(slot_docs(&repo), vec!["src/a.ts".to_string()]);
-}
-
-#[test]
-fn s2_existing_unrelated_error_no_fallback() {
-    let t = tempfile::tempdir().unwrap();
-    let repo = mkrepo(
-        &t,
-        &[
-            ("tsconfig.json", "{\"compilerOptions\":{}}\n"),
-            ("src/a.ts", "export function a() {}\n"),
-        ],
-    );
-    let bindir = tempfile::tempdir().unwrap();
-    let log = bindir.path().join("ts-calls");
-    let fx = bindir.path().join("fx.scip");
-    write_fixture(&fx, &[]);
-    fake_scip_typescript(bindir.path(), "fail", &fx, &log);
-    let roots = vec![bindir.path().to_path_buf()];
-
-    let err = build_repo(&repo, None, &roots).unwrap_err();
-    assert!(
-        matches!(err, BuildError::Env(ref m) if m.contains("TS2322")),
-        "{err:?}"
-    );
-    assert!(log_lines(&log).is_empty(), "fail mode never copies");
-    // the repo tsconfig is untouched
-    assert_eq!(
-        std::fs::read_to_string(repo.join("tsconfig.json")).unwrap(),
-        "{\"compilerOptions\":{}}\n"
-    );
-}
-
-#[test]
-fn s2_filter_excludes_non_governed_docs_derived_exact() {
-    let t = tempfile::tempdir().unwrap();
-    let repo = mkrepo(
-        &t,
-        &[
-            ("src/a.mjs", "export const a = 1;\n"),
-            ("src/b.ts", "export const b = 1;\n"),
-            ("dist/mirror.mjs", "generated\n"),
-            (".code-reality.toml", "exclude = [\"dist/\"]\n"),
-        ],
-    );
-    let bindir = tempfile::tempdir().unwrap();
-    let log = bindir.path().join("ts-calls");
-    let fx = bindir.path().join("fx.scip");
-    // producer output includes the generated mirror; filter must drop it
-    write_fixture(
-        &fx,
-        &ts_scip_bytes(
-            "/abs/repo",
-            &[
-                ("src/a.mjs", "a"),
-                ("src/b.ts", "b"),
-                ("dist/mirror.mjs", "mirror"),
-            ],
-        ),
-    );
-    fake_scip_typescript(bindir.path(), "good", &fx, &log);
-    let roots = vec![bindir.path().to_path_buf()];
-
-    let rep = build_repo(&repo, None, &roots).expect("filtered build");
-    assert!(rep.nodes > 0);
-    assert_eq!(
-        slot_docs(&repo),
-        vec!["src/a.mjs".to_string(), "src/b.ts".to_string()]
-    );
 }
 
 #[test]
@@ -574,65 +478,4 @@ cp '{}' \"$output\"
     let bytes = std::fs::read(&slot).unwrap();
     Index::parse_from_bytes(&bytes).expect("live slot must parse after concurrent builds");
     let _ = log;
-}
-
-#[test]
-fn s2_existing_partial_coverage_falls_back_to_derived() {
-    // codex P0-2: an existing project config that indexes only PART of
-    // the governed corpus must fall back to the derived config (which
-    // converges exactly) — never publish a partial corpus the S4
-    // fingerprint contract cannot represent.
-    let t = tempfile::tempdir().unwrap();
-    let repo = mkrepo(
-        &t,
-        &[
-            (
-                "tsconfig.json",
-                "{\"compilerOptions\":{\"allowJs\":true}}\n",
-            ),
-            ("src/a.ts", "export const a = 1;\n"),
-            ("src/b.ts", "export const b = 1;\n"),
-        ],
-    );
-    let bindir = tempfile::tempdir().unwrap();
-    let log = bindir.path().join("ts-calls");
-    let full = bindir.path().join("full.scip");
-    write_fixture(
-        &full,
-        &ts_scip_bytes("/abs", &[("src/a.ts", "a"), ("src/b.ts", "b")]),
-    );
-    let partial = bindir.path().join("partial.scip");
-    write_fixture(&partial, &ts_scip_bytes("/abs", &[("src/a.ts", "a")]));
-    fake_bin(
-        bindir.path(),
-        "scip-typescript",
-        &format!(
-            "#!/bin/sh
-if [ \"$1\" = \"--version\" ]; then echo '0.4.0-fake'; exit 0; fi
-prev=''; config=''; output=''
-for a in \"$@\"; do
-  if [ \"$prev\" = \"--output\" ]; then output=\"$a\"; prev=''; continue; fi
-  if [ \"$prev\" = \"--cwd\" ] || [ \"$prev\" = \"--max-file-byte-size\" ]; then prev=''; continue; fi
-  case \"$a\" in -*) ;; *) config=\"$a\" ;; esac
-  prev=\"$a\"
-done
-echo \"$config\" >> '{}'
-case \"$config\" in
-  *cr-tsconfig.json) cp '{}' \"$output\"; exit 0 ;;
-  *) cp '{}' \"$output\"; exit 0 ;;
-esac
-",
-            log.display(),
-            full.display(),
-            partial.display()
-        ),
-    );
-    let roots = vec![bindir.path().to_path_buf()];
-    let rep = build_repo(&repo, None, &roots).expect("fallback build");
-    // exactly two producer runs (existing partial → derived full)
-    assert_eq!(log_lines(&log).len(), 2, "{:?}", log_lines(&log));
-    assert!(rep.notes.iter().any(|n| n.contains("derived config")));
-    let mut docs = slot_docs(&repo);
-    docs.sort();
-    assert_eq!(docs, vec!["src/a.ts".to_string(), "src/b.ts".to_string()]);
 }

@@ -107,6 +107,43 @@ pub fn occ(symbol: &str, is_def: i32, range: Vec<i32>, enc: Option<Vec<i32>>) ->
     o
 }
 
+/// Build an occurrence whose SCIP range is derived from the actual source
+/// token instead of a duplicated magic coordinate. `nth` is zero-based
+/// over exact token matches in the whole source. SCIP columns are UTF-16
+/// code units; deriving them here also makes non-ASCII prefixes explicit
+/// rather than silently assuming byte-column equality.
+pub fn occ_at_token(
+    symbol: &str,
+    is_def: i32,
+    source: &str,
+    token: &str,
+    nth: usize,
+    enc: Option<Vec<i32>>,
+) -> Occurrence {
+    assert!(!token.is_empty(), "fixture token must be non-empty");
+    let (byte_start, matched) = source
+        .match_indices(token)
+        .nth(nth)
+        .unwrap_or_else(|| panic!("token {token:?} occurrence #{nth} missing from fixture source"));
+    assert_eq!(matched, token);
+    let before = &source[..byte_start];
+    let line = before.bytes().filter(|b| *b == b'\n').count();
+    let line_start = before.rfind('\n').map_or(0, |i| i + 1);
+    let prefix = &source[line_start..byte_start];
+    assert!(
+        !token.contains('\n'),
+        "fixture occurrence token must stay on one source line: {token:?}"
+    );
+    let start_col = prefix.encode_utf16().count();
+    let end_col = start_col + token.encode_utf16().count();
+    occ(
+        symbol,
+        is_def,
+        vec![line as i32, start_col as i32, end_col as i32],
+        enc,
+    )
+}
+
 pub fn doc(rel: &str, occs: Vec<Occurrence>) -> Document {
     let mut d = Document::new();
     d.relative_path = rel.to_string();
