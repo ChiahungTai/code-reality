@@ -41,7 +41,11 @@ git-unresolvable rev conservatively does, and uncommitted `crates/`
 edits always warn on the dev face. The CR repo's
 `.githooks/post-commit` (maintainer layout, opt-in via
 `core.hooksPath=.githooks`) background-reinstalls changed crates so the
-installed face follows HEAD.
+installed face follows HEAD, plus a hand-merged refresh leg (burst
+debounce → release-face `refresh`, re-stamp on docs-only commits) —
+deliberately unmanaged (no HOOK_MARKER) so `hook install` keeps
+refusing rather than dropping the reinstall block; template changes
+must be hand-ported (header comment in the hook).
 
 ```
 code-reality <tool> --repo <repo-root> [args]
