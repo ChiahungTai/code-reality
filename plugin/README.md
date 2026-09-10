@@ -8,11 +8,15 @@ daemon) and the usage skill:
   (`build` / `snapshot` / `delta_tour` / `project` — these WRITE to the
   repo's `.code-reality/` and tour trees; `build` is minutes-level with
   no progress reporting); every tool takes an explicit `repo_root`
-  absolute path.
+  absolute path. Structural queries are first-class for Python, Rust,
+  and JavaScript/TypeScript (`.js/.jsx/.mjs/.cjs/.ts/.tsx` — the
+  `scip-typescript` producer; `build --producer typescript` forces that
+  leg).
 - `code-reality-lsp-bridge` — the type face, routed by file extension:
   `.py` → pyrefly (`hover` / `check_file` / `edit_file` / `lsp_status`),
-  `.rs` → rust-analyzer (same tools). Each backend spawns lazily and
-  independently.
+  `.rs` → rust-analyzer (same tools), and the six JS/TS extensions →
+  typescript-language-server (same tools). Each backend spawns lazily
+  and independently.
 
 ## Prerequisites (the binaries)
 
@@ -33,6 +37,16 @@ once (an offline first session fails loud and retries the next one).
    uv tool install code-reality-lsp-bridge   # code-reality-lsp-bridge
    uv tool install pyrefly-producer          # pyrefly-index + pyrefly-lsp (Python backend)
    rustup component add rust-analyzer        # Rust backend — system dependency, ships in no wheel
+   ```
+
+   JS/TS faces are external npm prerequisites (like rust-analyzer, they
+   ship in no wheel; Node ≥ 18 runtime required; no network use at
+   query/build time — resolution is deterministic):
+
+   ```
+   npm install --save-dev @sourcegraph/scip-typescript   # structural producer (repo-local node_modules/.bin wins)
+   npm install --global typescript-language-server typescript  # type face backend
+   # GUI/PATH-restricted environments: export CODE_REALITY_NODE_BIN_DIR=<bin-dir>
    ```
 
    One-shot use without installing anything: `uvx code-reality <tool>

@@ -21,8 +21,8 @@ parameter, not topology.
 | `refs(symbol, repo_root)` | Where is this symbol defined/referenced (SCIP index; trait disambiguation) |
 | `callers(symbol, repo_root)` | Who calls it (sites included; item-level refs noted) |
 | `closure(symbol, repo_root, depth?)` | Transitive callers (BFS; default depth 2) |
-| `audit(repo_root)` | graph.db completeness gaps × SCIP refs (two-pass) |
-| `build(repo_root, producer?, json?)` | One-shot data-plane build (index + graph.db). WRITES `.code-reality/`; LONG-RUNNING: minutes-level, no progress reporting |
+| `audit(repo_root)` | graph.db completeness gaps × SCIP refs (two-pass). Rust-only completeness oracle — a graph carrying JS/TS nodes returns a partial/non-passing result (capability boundary), never a clean verdict |
+| `build(repo_root, producer?, json?)` | One-shot data-plane build (index + graph.db) for any detected mix of Python / Rust / JS-TS. WRITES `.code-reality/`; LONG-RUNNING: minutes-level, no progress reporting |
 | `snapshot(repo_root, label?, out_dir?)` | Boundary snapshot of the current graph state; WRITES a snapshot file (needs an existing graph.db) |
 | `delta_tour(repo_root, snapshot_a, snapshot_b, ep?, task?, out_dir?)` | Diff two snapshots into a delta-review CodeTour; WRITES `<repo>/.tours/delta/` (in-repo default — pass absolute snapshot paths) |
 | `project(repo_root, plan, json?)` | Projected-graph overlay for EP planning; WRITES `.code-reality/projections/<stem>/`, real slot untouched (needs `overlay-gen` resolvable — `uv tool install pyrefly-producer`) |
@@ -54,8 +54,10 @@ Responses embed `[SRC]` provenance lines (index version/commit) and a
 
 - One-shot: `code-reality build --repo <repo>` runs the whole chain
   (detect → producer → `graph_db build` → `ensure_indexes`); mixed
-  repos run both producers and cat-merge the indexes into one
-  dual-language graph
+  repos run all detected producers and merge the partial indexes into
+  one multi-language graph (deterministic python→rust→typescript
+  order; every leg stages, the live slot publishes once after all legs
+  validate — a later-leg failure leaves the previous index intact)
 - Generate the same slot with the Rust-native producer: `cargo run
   --release -p pyrefly-producer --bin pyrefly-index -- --repo <repo>`
   (no Node.js, no venv — bundled typeshed), then `code-reality
@@ -77,6 +79,46 @@ Responses embed `[SRC]` provenance lines (index version/commit) and a
   cwd — indexing from the wrong directory silently indexes the wrong
   repo and still exits 0; on fatal errors a partial index is still
   written, so the exit code is the failure signal
+
+### JavaScript/TypeScript repos (scip-typescript producer)
+
+- First-class structural face for `.js/.jsx/.mjs/.cjs/.ts/.tsx`:
+  `code-reality build --repo <repo>` auto-detects the family (one
+  producer, two graph-language labels derived from the defining
+  document extension); `--producer typescript` forces the leg
+- External prerequisites (ship in no wheel, like rust-analyzer):
+  `scip-typescript` (structural producer; Node ≥ 18 runtime) and, for
+  the type face, `typescript-language-server` + `typescript` via the
+  lsp-bridge. Resolution order: repo-local `node_modules/.bin` →
+  `CODE_REALITY_NODE_BIN_DIR` → PATH. No `npx`/network at build or
+  query time — a missing binary is a loud env failure with install
+  guidance
+- Existing root `tsconfig.json`/`jsconfig.json` is used ONLY when it
+  covers the governed corpus exactly; otherwise (missing config,
+  zero-file outcomes, partial coverage) CR writes an ephemeral
+  sidecar config with the explicit governed `files` list under
+  `.code-reality/` — the target repo's config is never modified, and
+  glob inference is never trusted for extension discovery
+- Graph semantics: syntactic CALLS are derived by a Tree-sitter
+  re-parse (direct/method/optional-chain/constructor calls are CALLS;
+  imports and property reads stay REFERENCES; identity is
+  line+column+name grain); class/interface `#` symbols are queryable
+  as `Type` nodes (bare-name queries); test-path classification
+  understands `__tests__/`, `*.spec.*`, `*.test.*`
+- Freshness: JS/TS sources participate in the same self-heal (below),
+  including add/delete/rename via the source-set fingerprint and
+  corpus-policy (profile exclusion) changes; a profile-excluded
+  generated tree neither triggers nor appears in heals. If the whole
+  corpus ends up excluded, an auto-detect build converges to empty
+  (index+graph removed) instead of erroring forever — an explicit
+  `--producer <empty face>` still errors loud
+- Capability boundaries (S6): `audit`/`graph_audit` completeness is a
+  Rust-only oracle — JS/TS-containing graphs get a partial/non-passing
+  result with explicit coverage fields (use `refs`/`callers`/
+  `graph_query` for JS/TS structural facts); `hub_refs --hazard` marks
+  JS/TS targets `hazard_level=unsupported-js-ts` +
+  `hazard_supported=false` (static aggregation stays); `project`
+  rejects JS/TS planned sources (Python/pyrefly identities only)
 
 ### Query-time self-heal & commit-granularity refresh (opt-in)
 

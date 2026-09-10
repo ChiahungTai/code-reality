@@ -7,33 +7,42 @@ tests are the sole gate face.
 ## code-reality-lsp-bridge (bin crate)
 
 - **role**: LSP↔MCP bridge for the type face (hover / diagnostics /
-  edit-recheck, EP ep-type-face-lsp-bridge) — one MCP server process
-  (stdio, `--stdio` flag; bin `code-reality-lsp-bridge`), one lazily
-  spawned language-server backend (default `pyrefly-lsp`; `--lsp-command`
-  overrides — the bridge itself imports NO language-specific crate,
-  which is the P2 clause: the Rust type face is this crate with
-  rust-analyzer as the backend command).
+  edit-recheck, EP ep-type-face-lsp-bridge + the JS/TS S5 arc) — one
+  MCP server process (stdio, `--stdio` flag; bin
+  `code-reality-lsp-bridge`), THREE independent lazily spawned
+  language-server backends: `.py` → `pyrefly-lsp` (`--lsp-command`
+  overrides), `.rs` → `rust-analyzer` (`--rust-backend`), and the six
+  JS/TS extensions → `typescript-language-server --stdio`
+  (`--typescript-backend` overrides the program only; the fixed
+  `--stdio` arg comes from the typed `BackendCommand` — argv never a
+  shell string) — the bridge itself imports NO language-specific
+  crate, which is the P2 clause.
 - **layering**: `framing` (LSP base-protocol Content-Length framing over
   child stdio — headers must end `\r\n`, Content-Length only) /
   `session` (lifecycle + protocol client: `LangSpec` per-language
-  profile [languageId, extension gate, hover-retry window, check
-  deadline, install hint], lazy spawn + initialize → `initialized`
-  handshake, all interactions serialized under one interaction lock
-  per session [pyrefly's uris_pending_close assumes a single ordered
-  writer], reader thread three-way split [responses → pending slot,
-  publishDiagnostics → per-URI diag cache, server→client requests →
-  ALWAYS an empty `[]` response — unanswered workspace/configuration
-  freezes pyrefly's background indexing], content overlay
-  [path → last-sent content+version; LRU eviction didCloses the server
-  copy but keeps the overlay, so un-persisted edits survive re-open],
-  `sync_open` [no-op when unchanged; didChange full-sync on out-of-band
-  disk edits; re-open from overlay after eviction]; full-content
-  didChange uses the RANGE form spanning the OLD content — the
-  range-elided form is a spec obligation rust-analyzer does not honor,
-  probe-verified 2026-08-28]) / `server` (rmcp ToolRouter face +
-  `Bridge` extension routing [.py → pyrefly session, .rs →
-  rust-analyzer session — two independent lazy backends, SM-7];
-  tools `lsp_status` [per-backend lines], `hover` [bounded retry,
+  family profile [extension-set gate, per-extension languageId table,
+  hover-retry window, check deadline, install hint, `diag_versions` —
+  whether the backend stamps `version` on diagnostic pushes; measured:
+  pyrefly/ra always do, typescript-language-server 6.0.0 never does
+  and ignores the LSP `versionSupport` capability, so its convergence
+  gate is time-basis + quiesce], lazy spawn + initialize →
+  `initialized` handshake, all interactions serialized under one
+  interaction lock per session [pyrefly's uris_pending_close assumes a
+  single ordered writer], reader thread three-way split [responses →
+  pending slot, publishDiagnostics → per-URI diag cache, server→client
+  requests → ALWAYS an empty `[]` response — unanswered
+  workspace/configuration freezes pyrefly's background indexing],
+  content overlay [path → last-sent content+version; LRU eviction
+  didCloses the server copy but keeps the overlay, so un-persisted
+  edits survive re-open], `sync_open` [no-op when unchanged; didChange
+  full-sync on out-of-band disk edits; re-open from overlay after
+  eviction]; full-content didChange uses the RANGE form spanning the
+  OLD content — the range-elided form is a spec obligation
+  rust-analyzer does not honor, probe-verified 2026-08-28]) / `server`
+  (rmcp ToolRouter face + `Bridge` extension routing [.py → pyrefly
+  session, .rs → rust-analyzer session, js/jsx/mjs/cjs/ts/tsx → the
+  TS session — three independent lazy backends, SM-7]; tools
+  `lsp_status` [per-backend lines], `hover` [bounded retry,
   per-backend window; rust-analyzer's transient -32801 "content
   modified" retried like a null hover], `check_file` [convergence =
   cached push carries the overlay's version or newer AND postdates any
@@ -121,14 +130,40 @@ tests are the sole gate face.
   `--` separator, `-h`; all graph-family CLIs grow from here) / `engine`
   (domain/use case — SCIP parsing via the `scip` crate [rust-protobuf
   form, types at `scip::types::*`], symbol predicates [hand-rolled — the
-  `regex` crate has no look-around], scan, `[SRC]` assembly, structured
-  caller-edge accessors [`FnSpan`/`fn_spans` from DEF
-  `enclosing_range`, flat `refs_rows`]) + index↔source staleness
+  `regex` crate has no look-around; `queryable_symbol` is the single
+  document-aware ingest/query gate — fn-shaped symbols always,
+  `#`-tailed class symbols on Python faces and JS/TS documents], scan,
+  `[SRC]` assembly, structured caller-edge accessors [`FnSpan`/
+  `fn_spans` from DEF `enclosing_range`, flat `refs_rows`];
+  `is_test_path` is the shared test-file policy for graph insertion and
+  query filtering) + index↔source staleness
   primitives (`SKIP_DIRS` corpus list single-sourced cross-crate — the
-  producer imports it; `walk_sources`/`evaluate_staleness`/`doc_set_delta`
-  feed the WARN faces and the heal; `stamp_meta_core` shared by the cli
+  producer imports it; `walk_sources` is the one four-language walk
+  [JS/TS profile-excluded HERE — producer corpus and freshness corpus
+  share the single effective policy] carrying per-face newest maps and
+  the FNV source-set fingerprint; `evaluate_staleness`/`StalenessSnapshot
+  ::needs_rebuild` [mtime OR doc-set drift OR corpus-policy drift — the
+  delete/rename blind spot mtime cannot see]; `doc_set_delta` compares
+  BOTH missing and extra; `stamp_meta_core` shared by the cli
   stamp mode and the refresh head-sync — face-accurate producer string,
-  preserve-on-head-sync) / `callers` (domain — DEF-enc
+  preserve-prior-identity-keys on corpus mismatch [the keys describe
+  the INDEX; preserving them keeps drift visible — dropping them would
+  launder a delete into mtime-only freshness]) / `language` (domain —
+  `LanguageFace` [document language, extension single source] vs
+  `ProducerFamily` [executable leg; JS+TS share the typescript family]
+  with the frozen ORDERED merge order) / `js_ts_corpus` (domain — the
+  governed JS/TS source set; the single answer to "which JS/TS
+  documents belong to this repo" on both the producer and freshness
+  sides) / `ts_producer` (adapter — the scip-typescript leg:
+  existing-config-first with the full-coverage predicate [partial
+  coverage falls back to the derived explicit-files sidecar, which
+  must converge exactly — the target repo's config is never mutated],
+  deterministic node-tool resolution [repo-local `node_modules/.bin`
+  → `CODE_REALITY_NODE_BIN_DIR` → base roots], governed-set SCIP
+  filtering) / `js_ts_calls` (domain — Tree-sitter call-site collector
+  for the six extensions; mark identity is line+column+name so a
+  same-line plain load never rides a real call's mark) / `callers`
+  (domain — DEF-enc
   containment attribution with the `(width, seq)` innermost tie, closure
   BFS, mode output assembly; imports neither cli/cache/fndefs) / `cache`
   (adapter — derived sqlite three-table cache with cross-language schema

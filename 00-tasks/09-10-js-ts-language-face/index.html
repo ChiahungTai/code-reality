@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>JS/TS Language Face — Task Brief</title>
+<style>
+body{font-family:system-ui,-apple-system,sans-serif;max-width:1080px;margin:40px auto;padding:0 22px;line-height:1.55;color:#202124}h1,h2{line-height:1.2}.meta,.card{border:1px solid #d9dde3;border-radius:12px;padding:16px 18px;margin:14px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}.badge{display:inline-block;border:1px solid #9aa0a6;border-radius:999px;padding:3px 9px;font-size:.85rem}code{background:#f1f3f4;padding:1px 5px;border-radius:5px}.muted{color:#5f6368}ul{padding-left:22px}
+</style>
+</head>
+<body>
+<span class="badge">📋 Reviewed Blueprint + 7 Child EPs</span>
+<span class="badge">✅ Implemented — M1 + M2 accepted (pending user commit)</span>
+<h1>JavaScript / TypeScript first-class language faces</h1>
+<div class="meta"><strong>EP:</strong> <code>00-tasks/09-10-js-ts-language-face/ep.md</code><br><strong>Children:</strong> S1-S7 implementation EPs under <code>children/</code><br><strong>POC evidence:</strong> <code>poc/results.md</code><br><strong>Baseline:</strong> <code>5938aee9111b0ed8b2320652bf8252fb10fe3127</code><br><strong>Projection source:</strong> planning POCs + direct source/rg evidence; no local CR graph was available in this worktree.</div>
+<h2>Why this arc exists</h2>
+<p>CR can currently build production graphs for Python and Rust, but a JavaScript repository such as <code>delegate-bridge</code> has no supported build leg. Planning POCs show that CR already parses <code>scip-typescript</code> output; the remaining work is semantic and lifecycle integration rather than a new graph engine.</p>
+<div class="grid">
+<div class="card"><strong>POC: format</strong><p>Existing CR ingested the governed 28-document JS SCIP: 192 nodes / 293 edges, and real cross-file callers already resolve.</p></div>
+<div class="card"><strong>POC: semantic gap</strong><p>Every JS node was mislabeled Rust and every graph edge was REFERENCES; CALLS = 0. S3 closes language, symbol-kind and call-site semantics.</p></div>
+<div class="card"><strong>POC: exact corpus</strong><p>Upstream <code>--infer-tsconfig</code> and empty <code>{}</code> config fail the real <code>.mjs</code> corpus. A CR-owned explicit <code>files</code> config indexes exactly 28 source documents without target config mutation.</p></div>
+<div class="card"><strong>POC: six extensions</strong><p>Glob/include inference missed <code>.jsx</code>; explicit governed <code>files</code> indexed <code>.js/.jsx/.mjs/.cjs/.ts/.tsx</code> exactly.</p></div>
+<div class="card"><strong>POC: CALLS</strong><p>Tree-sitter JavaScript/TypeScript candidates classified direct, method, optional-chain and constructor calls across all six extensions while preserving property reads.</p></div>
+<div class="card"><strong>POC: LSP</strong><p><code>typescript-language-server --stdio</code> passed hover for all six extensions and diagnostics/edit convergence. The bridge therefore needs executable + argv, not a third bare command string.</p></div>
+<div class="card"><strong>POC: containment</strong><p><code>enclosing_range</code> coverage was 192/192 on source-only dogfood and 10/10 on the six-extension fixture.</p></div>
+<div class="card"><strong>POC: freshness</strong><p>mtime-only Stage A can miss delete/rename. S4 adds active-face/source-set/profile corpus identity so path-set changes force rebuild.</p></div>
+</div>
+<h2>Two milestones</h2>
+<ul><li><strong>M1 structural:</strong> build, atomic all-leg staging, refs/callers, graph CALLS semantics, freshness/self-heal, graph queries, and fail-loud guards for language-specific tools.</li><li><strong>M2 type:</strong> all six JS/TS extensions routed to an independent LSP backend for hover, diagnostics and edit/recheck.</li></ul>
+<h2>Seven implementation children</h2>
+<ol><li>Language-set build orchestration.</li><li><code>scip-typescript</code> producer and governed corpus.</li><li>JS/TS graph language + CALLS semantics.</li><li>Freshness / doc-set / self-heal lifecycle.</li><li>JS/TS LSP type face.</li><li>Truthful boundaries for Python/Rust-only special tools.</li><li><code>delegate-bridge</code> dogfood, docs, distribution and release closure.</li></ol>
+<h2>Non-negotiables</h2>
+<ul><li>No repository-specific JS hacks in code-reality.</li><li>No target-repo <code>tsconfig.json</code> mutation; an existing config must be usable, so empty <code>{}</code> falls back to a CR-owned explicit governed <code>files</code> config.</li><li>No hidden <code>npx</code>/npm network install during build, query healing, plugin startup, or default tests.</li><li>Every producer leg stages before one atomic live-slot publish.</li><li>Producer and freshness paths consume one governed corpus policy; delete/rename/profile changes cannot be hidden by mtime-only freshness.</li><li>No “supported” claim while the graph is references-only, language metadata is false, or JS/TS symbols are silently filtered.</li><li>No false-clean hazard/audit/project output on a language those tools do not understand, including mixed repos.</li><li>M1 structural support is independent of the optional M2 LSP backend.</li><li>Python/Rust behavior remains a regression contract.</li></ul>
+<h2>Independent review closure</h2>
+<p>The parent blueprint already absorbed its first independent review. All seven implementation children are now written; the final cross-child review closes interface consistency before ZCode implementation. Key frozen contracts include exact governed-file fallback, source-only dogfood accounting, all-leg atomic staging, syntax-aware CALLS, corpus-identity freshness, executable-plus-argv TLS routing, explicit special-tool support boundaries, and an external-prerequisite distribution model with no implicit npm acquisition.</p>
+<h2>Implementation result (2026-09-10)</h2>
+<p>All seven children implemented in one working tree (uncommitted at this writing). <strong>Verification:</strong> full workspace <code>cargo test</code> exit 0 (504 passed / 0 failed); wrapper/version gate 14/14; real-corpus M1 <strong>ALL PASS</strong> on a disposable <code>delegate-bridge</code> copy (36/36 governed docs exact, derived-config path — the repo's <code>tsconfig.json</code> no longer exists, coverage 100%, 340 syntactic CALLS, full freshness mutation matrix incl. backdated-mtime delete); real-TLS M2 <strong>ALL PASS</strong> (six-extension hover, diagnostic convergence after the <code>diag_versions</code> fix, missing-backend isolation). Evidence: <code>acceptance.md</code> beside this shell.</p>
+<p><strong>Four review waves absorbed post-implementation:</strong> in-harness mid-build reviewer (1🟡+7🟢); codex bridge review (4×P0: per-attempt staging, existing-config full-coverage fallback, sub-face loss, churn-marker arming; 4×P1 incl. CALLS column identity); the user's codex architecture review (policy-empty convergence + stamp key preservation blockers, LSP test isolation, test-support consolidation, pub-visibility reverts); muse final review (1×P0 auto-index new-language heal via selection stamp, 2×P1 qualified-target hazard + torn graph heal, 8×P2). Production module decomposition (engine.rs/build.rs) and migrating the OLD test files onto <code>tests/support/</code> are deferred follow-ups by review agreement.</p>
+<p class="muted">Diagram slot intentionally left unrendered at planning time; the EP is the AI source of truth and this shell is the human viewport.</p>
+</body>
+</html>
