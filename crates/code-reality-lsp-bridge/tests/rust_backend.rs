@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use code_reality_lsp_bridge::server::{check_file_impl, edit_file_impl, hover_impl, Bridge};
-use code_reality_lsp_bridge::session::LangSpec;
+use code_reality_lsp_bridge::session::{BackendCommand, LangSpec};
 use code_reality_lsp_bridge::LspSession;
 
 /// One real-rust-analyzer cold load at a time within this binary
@@ -35,15 +35,18 @@ fn framing_rs() -> PathBuf {
 
 fn bridge_at(root: &Path) -> Arc<Bridge> {
     Arc::new(Bridge::new(
-        "pyrefly-lsp",
-        "rust-analyzer",
+        BackendCommand::python("pyrefly-lsp"),
+        BackendCommand::rust("rust-analyzer"),
+        // The ts family is never routed by these tests; the bare name
+        // keeps the third session unspawned (lazy by contract).
+        BackendCommand::typescript("typescript-language-server"),
         root.to_path_buf(),
     ))
 }
 
 fn rust_session() -> Arc<LspSession> {
     Arc::new(LspSession::new(
-        "rust-analyzer",
+        BackendCommand::rust("rust-analyzer"),
         Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf(),
         300,
         LangSpec::rust(),

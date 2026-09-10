@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use code_reality_lsp_bridge::server::hover_impl;
-use code_reality_lsp_bridge::session::LangSpec;
+use code_reality_lsp_bridge::session::{BackendCommand, LangSpec};
 use code_reality_lsp_bridge::LspSession;
 
 fn normalize(hover: &str) -> String {
@@ -39,7 +39,7 @@ fn rust_hover_roundtrip_vs_frozen_baseline() {
     let baseline: serde_json::Value = serde_json::from_str(&baseline_raw).unwrap();
 
     let session = Arc::new(LspSession::new(
-        "rust-analyzer",
+        BackendCommand::rust("rust-analyzer"),
         Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf(),
         300,
         LangSpec::rust(),

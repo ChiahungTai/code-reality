@@ -11,13 +11,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use code_reality_lsp_bridge::server::{check_file_impl, edit_file_impl, hover_impl};
-use code_reality_lsp_bridge::session::LangSpec;
+use code_reality_lsp_bridge::session::{BackendCommand, LangSpec};
 use code_reality_lsp_bridge::LspSession;
 
 mod common;
 
-fn backend_bin() -> String {
-    common::backend_bin()
+fn backend_bin() -> BackendCommand {
+    BackendCommand::python(common::backend_bin())
 }
 
 const SAMPLE: &str = "import math\n\n\ndef greet(name: str) -> str:\n    return \"hello \" + name\n\n\nmsg = greet(\"world\")\ncount: int = msg\nnan_invalid: int = math.nan\n\nreveal = msg\nprint(reveal, count)\n";
@@ -34,7 +34,7 @@ fn strict_fixture() -> (tempfile::TempDir, PathBuf) {
 
 fn session_at(dir: &std::path::Path) -> Arc<LspSession> {
     Arc::new(LspSession::new(
-        &backend_bin(),
+        backend_bin(),
         dir.to_path_buf(),
         300,
         LangSpec::python(),
@@ -64,7 +64,7 @@ fn session_handshake_and_shutdown() {
 fn backend_spawn_failure_is_loud() {
     let dir = tempfile::tempdir().unwrap();
     let s = Arc::new(LspSession::new(
-        "/nonexistent-backend",
+        BackendCommand::python("/nonexistent-backend"),
         dir.path().to_path_buf(),
         300,
         LangSpec::python(),
@@ -225,7 +225,7 @@ fn lru_evict_preserves_overlay_edits() {
     // workspace test parallelism (flaked at 10s and 20s).
     let (dir, sample) = strict_fixture();
     let s = Arc::new(LspSession::new(
-        &backend_bin(),
+        backend_bin(),
         dir.path().to_path_buf(),
         300,
         {
@@ -301,7 +301,7 @@ fn poisoned_cache_entry_does_not_converge() {
     // poisoned count=0 can never be the answer.
     let (dir, sample) = strict_fixture();
     let s = Arc::new(LspSession::new(
-        &backend_bin(),
+        backend_bin(),
         dir.path().to_path_buf(),
         300,
         {
@@ -359,7 +359,7 @@ fn stalled_half_window_recovers_via_force_reopen() {
     // entry is back at version 1 and the check stays under deadline.
     let (dir, sample) = strict_fixture();
     let s = Arc::new(LspSession::new(
-        &backend_bin(),
+        backend_bin(),
         dir.path().to_path_buf(),
         300,
         {
@@ -469,7 +469,7 @@ fn check_file_timeout_path_warns() {
     // the production default is 20s.
     let (dir, sample) = strict_fixture();
     let s = Arc::new(LspSession::new(
-        &backend_bin(),
+        backend_bin(),
         dir.path().to_path_buf(),
         60_000,
         {

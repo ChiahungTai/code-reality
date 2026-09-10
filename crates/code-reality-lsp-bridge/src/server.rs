@@ -1,10 +1,13 @@
 //! MCP server face of the bridge (rmcp, stdio). Tools are thin: they
-//! route by file extension (`.py` → pyrefly backend, `.rs` →
-//! rust-analyzer — the P2 clause: same crate, backend is a parameter)
-//! and hold no LSP state of their own — every interaction goes through
-//! the routed `LspSession` (serialized per backend), and blocking work
-//! runs on `spawn_blocking` so the async runtime stays free.
+//! route by file extension across three backend families (`.py` →
+//! pyrefly, `.rs` → rust-analyzer, `.js/.jsx/.mjs/.cjs/.ts/.tsx` →
+//! typescript-language-server — the P2 clause: same crate, backend is
+//! a parameter) and hold no LSP state of their own — every interaction
+//! goes through the routed `LspSession` (serialized per backend), and
+//! blocking work runs on `spawn_blocking` so the async runtime stays
+//! free.
 
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -17,12 +20,12 @@ use rmcp::{tool, tool_handler, ErrorData as McpError};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::session::{LangSpec, LspSession};
+use crate::session::{BackendCommand, LangSpec, LspSession};
 
 #[derive(Deserialize, JsonSchema)]
 pub struct HoverParams {
-    /// Absolute path of the Python (.py) or Rust (.rs) file (must exist
-    /// on disk).
+    /// Absolute path of a supported file (must exist on disk): .py,
+    /// .rs, .js, .jsx, .mjs, .cjs, .ts, or .tsx.
     pub file: String,
     /// Zero-based line (LSP convention).
     pub line: u32,
@@ -32,53 +35,75 @@ pub struct HoverParams {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct FileParams {
-    /// Absolute path of the Python (.py) or Rust (.rs) file (must exist
-    /// on disk).
+    /// Absolute path of a supported file (must exist on disk): .py,
+    /// .rs, .js, .jsx, .mjs, .cjs, .ts, or .tsx.
     pub file: String,
 }
 
 #[derive(Deserialize, JsonSchema)]
 pub struct EditParams {
-    /// Absolute path of the Python (.py) or Rust (.rs) file (must exist
-    /// on disk).
+    /// Absolute path of a supported file (must exist on disk): .py,
+    /// .rs, .js, .jsx, .mjs, .cjs, .ts, or .tsx.
     pub file: String,
     /// Full replacement content of the file.
     pub content: String,
 }
 
-/// Two independent backend sessions with per-call extension routing.
-/// Killing one backend leaves the other fully functional (SM-7).
+/// Three independent backend families with per-call extension routing
+/// (Python / Rust / JavaScript-TypeScript). Killing one backend leaves
+/// the others fully functional — sessions share no protocol state
+/// (SM-11/SM-12).
 pub struct Bridge {
     pub py: Arc<LspSession>,
     pub rs: Arc<LspSession>,
+    pub ts: Arc<LspSession>,
 }
 
 impl Bridge {
-    pub fn new(py_backend_cmd: &str, rs_backend_cmd: &str, root: PathBuf) -> Self {
+    pub fn new(
+        py_backend: BackendCommand,
+        rs_backend: BackendCommand,
+        ts_backend: BackendCommand,
+        root: PathBuf,
+    ) -> Self {
         Self {
             py: Arc::new(LspSession::new(
-                py_backend_cmd,
+                py_backend,
                 root.clone(),
                 300,
                 LangSpec::python(),
             )),
-            rs: Arc::new(LspSession::new(rs_backend_cmd, root, 300, LangSpec::rust())),
+            rs: Arc::new(LspSession::new(
+                rs_backend,
+                root.clone(),
+                300,
+                LangSpec::rust(),
+            )),
+            ts: Arc::new(LspSession::new(
+                ts_backend,
+                root,
+                300,
+                LangSpec::typescript(),
+            )),
         }
     }
 
     /// Route by file extension (case-sensitive), driven by each
-    /// session's LangSpec. Unknown extensions are rejected loudly
-    /// with the supported surface listed.
+    /// session's LangSpec matcher. Unknown extensions are rejected
+    /// loudly with the supported surface listed — before any backend
+    /// spawn.
     pub fn session_for(&self, file: &str) -> Result<(Arc<LspSession>, PathBuf), String> {
         let path = PathBuf::from(file);
         let ext = path.extension().and_then(|e| e.to_str());
-        let session = if ext == Some(self.py.lang.extension) {
+        let session = if ext.is_some_and(|e| self.py.lang.supports_extension(e)) {
             Arc::clone(&self.py)
-        } else if ext == Some(self.rs.lang.extension) {
+        } else if ext.is_some_and(|e| self.rs.lang.supports_extension(e)) {
             Arc::clone(&self.rs)
+        } else if ext.is_some_and(|e| self.ts.lang.supports_extension(e)) {
+            Arc::clone(&self.ts)
         } else {
             return Err(format!(
-                "unsupported file type .{}: {file} — this bridge serves .py (pyrefly backend) and .rs (rust-analyzer backend)",
+                "unsupported file type .{}: {file} — this bridge serves .py (pyrefly backend), .rs (rust-analyzer backend), and .js/.jsx/.mjs/.cjs/.ts/.tsx (typescript-language-server backend)",
                 ext.unwrap_or(""),
             ));
         };
@@ -88,6 +113,20 @@ impl Bridge {
     pub fn shutdown_all(&self) {
         let _ = self.py.shutdown();
         let _ = self.rs.shutdown();
+        let _ = self.ts.shutdown();
+    }
+
+    /// `lsp_status` body: one line per backend family in stable order
+    /// (Python, Rust, TypeScript). A missing JS/TS executable surfaces
+    /// as that family's `state=unavailable` — never a server-wide
+    /// failure.
+    pub fn status_report(&self) -> String {
+        format!(
+            "{}\n{}\n{}",
+            status_line("py", &self.py),
+            status_line("rs", &self.rs),
+            status_line("ts", &self.ts)
+        )
     }
 }
 
@@ -127,20 +166,18 @@ impl rmcp::ServerHandler for LspBridgeServer {
 
 impl LspBridgeServer {
     #[tool(
-        description = "Bridge/backend health: per-backend server info, backend command, open-file count, liveness (py = pyrefly, rs = rust-analyzer). A backend whose binary is missing from PATH reports state=unavailable with install guidance"
+        description = "Bridge/backend health: per-backend-family server info, backend command, open-file count, liveness (py = pyrefly for .py, rs = rust-analyzer for .rs, ts = typescript-language-server for .js/.jsx/.mjs/.cjs/.ts/.tsx), in that stable order. A backend whose executable cannot be resolved reports state=unavailable with install guidance — a missing TypeScript/Node toolchain is a family-level condition, never a server-wide failure"
     )]
     pub async fn lsp_status(&self) -> Result<CallToolResult, McpError> {
         let b = Arc::clone(&self.bridge);
-        let text = tokio::task::spawn_blocking(move || {
-            format!("{}\n{}", status_line("py", &b.py), status_line("rs", &b.rs))
-        })
-        .await
-        .map_err(|e| McpError::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
+        let text = tokio::task::spawn_blocking(move || b.status_report())
+            .await
+            .map_err(|e| McpError::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
         Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
     }
 
     #[tool(
-        description = "Hover a Python (.py → pyrefly) or Rust (.rs → rust-analyzer) symbol: returns the upstream markdown type signature. file = absolute path (must exist on disk); line/character are zero-based, character counts UTF-16 code units (LSP convention). Files excluded by the repo's .gitignore may return no hover (upstream behavior)"
+        description = "Hover a symbol and return the upstream markdown type signature. Faces: .py → pyrefly, .rs → rust-analyzer, .js/.jsx/.mjs/.cjs → typescript-language-server (javascript faces), .ts/.tsx → typescript-language-server (typescript faces). file = absolute path (must exist on disk); line/character are zero-based, character counts UTF-16 code units (LSP convention). Files excluded by the repo's .gitignore may return no hover (upstream behavior)"
     )]
     pub async fn hover(
         &self,
@@ -163,7 +200,7 @@ impl LspBridgeServer {
     }
 
     #[tool(
-        description = "Type-check one Python (.py) or Rust (.rs) file: returns its latest diagnostics (severity, code, range, message). file = absolute path. Out-of-band disk edits are picked up automatically. Note (Rust): flycheck/cargo-check diagnostics run on the DISK content — in-memory edits see rust-analyzer's native diagnostics only"
+        description = "Type-check one supported file and return its latest diagnostics (severity, code, range, message). Faces: .py → pyrefly, .rs → rust-analyzer, .js/.jsx/.mjs/.cjs/.ts/.tsx → typescript-language-server. file = absolute path. Out-of-band disk edits are picked up automatically. Note (Rust): flycheck/cargo-check diagnostics run on the DISK content — in-memory edits see rust-analyzer's native diagnostics only"
     )]
     pub async fn check_file(
         &self,
@@ -181,7 +218,7 @@ impl LspBridgeServer {
     }
 
     #[tool(
-        description = "Replace a Python (.py) or Rust (.rs) file's content in the language server's workspace (full-content didChange; the disk file is NOT written). Run check_file afterwards for updated diagnostics"
+        description = "Replace a supported file's content in the language server's workspace (full-content didChange; the disk file is NOT written). Faces: .py → pyrefly, .rs → rust-analyzer, .js/.jsx/.mjs/.cjs/.ts/.tsx → typescript-language-server. Run check_file afterwards for updated diagnostics"
     )]
     pub async fn edit_file(
         &self,
@@ -206,42 +243,97 @@ impl LspBridgeServer {
 /// containing a path separator are checked directly. No external
 /// `which` dependency.
 pub fn backend_available(cmd: &str) -> bool {
-    fn executable(p: &Path) -> bool {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::metadata(p)
-                .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
-                .unwrap_or(false)
-        }
-        #[cfg(not(unix))]
-        {
-            p.is_file()
-        }
-    }
     if cmd.contains('/') {
-        return executable(Path::new(cmd));
+        is_executable(Path::new(cmd))
+    } else {
+        let Ok(search) = std::env::var("PATH") else {
+            return false;
+        };
+        std::env::split_paths(&search).any(|dir| is_executable(&dir.join(cmd)))
     }
-    let Ok(search) = std::env::var("PATH") else {
-        return false;
-    };
-    std::env::split_paths(&search).any(|dir| executable(&dir.join(cmd)))
+}
+
+fn is_executable(p: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(p)
+            .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false)
+    }
+    #[cfg(not(unix))]
+    {
+        p.is_file()
+    }
+}
+
+/// Deterministic, no-network executable resolution for the JS/TS
+/// backend (S5). Order:
+/// 1. explicit `--typescript-backend` override — wins unconditionally
+///    (same semantics as `--lsp-command`/`--rust-backend`: a
+///    non-resolving override fails loudly at spawn/use; it is never
+///    silently substituted by a different server);
+/// 2. `<workspace>/node_modules/.bin/typescript-language-server`;
+/// 3. directories from `CODE_REALITY_NODE_BIN_DIR` (path list, in
+///    order);
+/// 4. the bare program name — PATH resolution, probed by
+///    `backend_available` and performed by `Command::new` under the
+///    same rule, so status can never claim available and then spawn
+///    under a different one.
+///
+/// Never runs `npm`/`npx` or any installer. `_with` takes the
+/// environment explicitly so tests stay race-free.
+pub fn resolve_typescript_backend(explicit: Option<&str>, workspace: &Path) -> BackendCommand {
+    let path_env = std::env::var_os("PATH").unwrap_or_default();
+    let node_bin_dir = std::env::var_os("CODE_REALITY_NODE_BIN_DIR");
+    resolve_typescript_backend_with(
+        explicit,
+        workspace,
+        path_env.as_os_str(),
+        node_bin_dir.as_deref(),
+    )
+}
+
+pub fn resolve_typescript_backend_with(
+    explicit: Option<&str>,
+    workspace: &Path,
+    path_env: &OsStr,
+    node_bin_dir: Option<&OsStr>,
+) -> BackendCommand {
+    const TLS: &str = "typescript-language-server";
+    if let Some(program) = explicit {
+        return BackendCommand::typescript(program.to_string());
+    }
+    let local = workspace.join("node_modules").join(".bin").join(TLS);
+    if is_executable(&local) {
+        return BackendCommand::typescript(local.to_string_lossy().into_owned());
+    }
+    if let Some(dirs) = node_bin_dir {
+        for dir in std::env::split_paths(dirs) {
+            let cand = dir.join(TLS);
+            if is_executable(&cand) {
+                return BackendCommand::typescript(cand.to_string_lossy().into_owned());
+            }
+        }
+    }
+    let _ = path_env; // tier 4 IS the bare name: PATH walk happens at probe/spawn
+    BackendCommand::typescript(TLS.to_string())
 }
 
 /// One `lsp_status` line: availability first (missing binary ⇒
 /// `state=unavailable` + the LangSpec install hint), then live session
 /// state once the backend exists.
 pub fn status_line(tag: &str, s: &LspSession) -> String {
-    if !backend_available(s.backend_cmd()) {
+    if !backend_available(&s.backend().program) {
         return format!(
             "{tag}: backend={} server=n/a open_files=0 state=unavailable (binary not found; install: {})",
-            s.backend_cmd(),
+            s.backend(),
             s.lang.install_hint
         );
     }
     format!(
         "{tag}: backend={} server={} open_files={} state={}",
-        s.backend_cmd(),
+        s.backend(),
         s.server_info(),
         s.open_files.lock().unwrap().len(),
         if s.is_dead() { "dead" } else { "alive" }
@@ -336,10 +428,20 @@ pub fn check_file_impl(s: &LspSession, file: &str) -> Result<String, String> {
             None => false,
         };
         if let Some(e) = &entry {
-            // version must be present and >= the overlay's — the
-            // version-less pushes (e.g. a didClose empty push from a
-            // concurrent eviction) must never read as converged (P1 F6).
-            let version_ok = e.version.map(|v| v >= overlay_version).unwrap_or(false);
+            // Version gate: for backends that stamp `version`
+            // (pyrefly/rust-analyzer) the push must carry the overlay's
+            // current version or newer — a version-less push there (e.g.
+            // a didClose empty push from a concurrent eviction) must
+            // never read as converged (P1 F6). typescript-language-server
+            // NEVER stamps version (measured on 6.0.0; the LSP
+            // versionSupport capability is unimplemented) — for that
+            // family the time-based freshness basis + quiesce window are
+            // the convergence evidence.
+            let version_ok = if s.lang.diag_versions {
+                e.version.map(|v| v >= overlay_version).unwrap_or(false)
+            } else {
+                true
+            };
             let quiesced = std::time::Instant::now().duration_since(e.last_push) >= s.quiesce;
             if version_ok && fresh && quiesced {
                 return Ok(format_diags(&e.diagnostics));
@@ -362,7 +464,10 @@ pub fn check_file_impl(s: &LspSession, file: &str) -> Result<String, String> {
         if !reissued && std::time::Instant::now() >= deadline - half {
             let stalled = match &entry {
                 None => true,
-                Some(e) if e.version.is_none() => true,
+                // a version-less push is only "stalled" when the backend
+                // was supposed to stamp versions (pyrefly/ra anomaly);
+                // for the never-versioned TS family it is normal traffic
+                Some(e) if e.version.is_none() => s.lang.diag_versions,
                 Some(_) => {
                     !fresh && std::time::Instant::now() >= basis.unwrap_or(call_start) + half
                 }

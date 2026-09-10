@@ -14,13 +14,13 @@ use std::path::Path;
 use std::sync::Arc;
 
 use code_reality_lsp_bridge::server::hover_impl;
-use code_reality_lsp_bridge::session::LangSpec;
+use code_reality_lsp_bridge::session::{BackendCommand, LangSpec};
 use code_reality_lsp_bridge::LspSession;
 
 mod common;
 
-fn backend_bin() -> String {
-    common::backend_bin()
+fn backend_bin() -> BackendCommand {
+    BackendCommand::python(common::backend_bin())
 }
 
 /// Shared normalization spec (mirror of gen_baseline.py `normalize`):
@@ -101,7 +101,7 @@ fn hover_parity_vs_pyright_baseline() {
         std::fs::copy(fixture_dir.join(name), tmp.path().join(name)).unwrap();
     }
     let session = Arc::new(LspSession::new(
-        &backend_bin(),
+        backend_bin(),
         tmp.path().to_path_buf(),
         300,
         LangSpec::python(),

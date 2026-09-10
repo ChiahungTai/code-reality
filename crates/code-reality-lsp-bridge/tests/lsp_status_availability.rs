@@ -7,12 +7,12 @@
 use std::path::PathBuf;
 
 use code_reality_lsp_bridge::server::{backend_available, status_line};
-use code_reality_lsp_bridge::session::{LangSpec, LspSession};
+use code_reality_lsp_bridge::session::{BackendCommand, LangSpec, LspSession};
 
 #[test]
 fn missing_backend_reports_unavailable_with_hint() {
     let s = LspSession::new(
-        "definitely-missing-backend-9f2c",
+        BackendCommand::rust("definitely-missing-backend-9f2c"),
         PathBuf::from("/"),
         0,
         LangSpec::rust(),
@@ -31,7 +31,12 @@ fn present_backend_reports_session_state() {
     // Absolute-path backend that exists but is never spawned: the
     // probe passes and the session renders its real (un-spawned)
     // state — the availability gate must not swallow it.
-    let s = LspSession::new("/bin/cat", PathBuf::from("/"), 0, LangSpec::rust());
+    let s = LspSession::new(
+        BackendCommand::rust("/bin/cat"),
+        PathBuf::from("/"),
+        0,
+        LangSpec::rust(),
+    );
     let line = status_line("rs", &s);
     assert!(line.contains("state=alive"), "{line}");
     assert!(line.contains("server=not-spawned-yet"), "{line}");

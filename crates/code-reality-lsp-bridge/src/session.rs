@@ -1,7 +1,9 @@
 //! `LspSession` — lifecycle + protocol client for one spawned language
-//! server (default backend: the `pyrefly-lsp` bin, overridable via
-//! `--lsp-command`; the bridge stays language-agnostic — P2 Rust type
-//! face is the same crate with a different backend command).
+//! server backend (a typed `BackendCommand`: program + fixed argv —
+//! Python via `pyrefly-lsp`, Rust via `rust-analyzer`, JavaScript/
+//! TypeScript via `typescript-language-server --stdio`; the bridge
+//! stays language-agnostic — the P2 clause: same crate, backend is a
+//! parameter).
 //!
 //! Concurrency contract (EP R-08): every LSP interaction runs under the
 //! `interaction` lock, so writes and response pairing never interleave —
@@ -56,14 +58,69 @@ pub struct OverlayEntry {
     pub last_mutation: Option<Instant>,
 }
 
+/// Typed backend process spec, spawned directly as argv (never through
+/// a shell). Family constructors pin the fixed arguments — the
+/// TypeScript server's required `--stdio` lives HERE rather than in a
+/// shell string, so spawn performs no parsing (EP S5 frozen decision 3).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BackendCommand {
+    pub program: String,
+    pub args: Vec<String>,
+}
+
+impl BackendCommand {
+    pub fn python(program: impl Into<String>) -> Self {
+        Self {
+            program: program.into(),
+            args: Vec::new(),
+        }
+    }
+
+    pub fn rust(program: impl Into<String>) -> Self {
+        Self {
+            program: program.into(),
+            args: Vec::new(),
+        }
+    }
+
+    pub fn typescript(program: impl Into<String>) -> Self {
+        Self {
+            program: program.into(),
+            args: vec!["--stdio".to_string()],
+        }
+    }
+}
+
+/// Safe display form for status/error text (program + fixed args);
+/// this is never executed.
+impl std::fmt::Display for BackendCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.program)?;
+        for arg in &self.args {
+            write!(f, " {arg}")?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LangFamily {
+    Python,
+    Rust,
+    TypeScript,
+}
+
 /// Per-language backend profile: everything the generic LspSession
-/// machinery needs to serve one language. The P2 clause — the same
-/// crate serves any LSP backend given one of these.
+/// machinery needs to serve one language family. The P2 clause — the
+/// same crate serves any LSP backend given one of these. S5: the
+/// single-extension gate became an extension-set matcher with a
+/// per-extension language id, so one TypeScript family serves six file
+/// faces with four language ids.
 #[derive(Clone, Copy)]
 pub struct LangSpec {
-    pub language_id: &'static str,
+    pub family: LangFamily,
     /// Extension gate (case-sensitive, includes no dot).
-    pub extension: &'static str,
+    pub extensions: &'static [&'static str],
     /// Bounded-retry window for the transient null hover while the
     /// backend warms up (rust-analyzer cold-loads a whole workspace:
     /// observed 749ms–9.5s, so Rust uses 30s).
@@ -74,29 +131,79 @@ pub struct LangSpec {
     pub slow_timeout_ms: u64,
     /// Install guidance surfaced when the backend binary is missing.
     pub install_hint: &'static str,
+    /// Whether this backend stamps `version` on publishDiagnostics
+    /// pushes. Measured behavior (S5 real-TLS acceptance): pyrefly and
+    /// rust-analyzer always do; typescript-language-server 6.0.0 never
+    /// does and ignores the LSP `versionSupport` client capability.
+    /// Drives the diagnostic convergence gate — versioned backends keep
+    /// the version check (the poisoned-eviction defense), unversioned
+    /// ones rely on the time-based freshness basis + quiesce window.
+    pub diag_versions: bool,
 }
 
 impl LangSpec {
     pub fn python() -> Self {
         Self {
-            language_id: "python",
-            extension: "py",
+            family: LangFamily::Python,
+            extensions: &["py"],
             hover_retry_ms: 500,
             // 20s: under parallel-test load (a dozen backends at once)
             // the recheck wave can overshoot 10s — headroom, not latency.
             slow_timeout_ms: 20_000,
             install_hint: "uv tool install pyrefly-producer (or cargo install --path <checkout>/crates/pyrefly-producer)",
+            diag_versions: true,
         }
     }
 
     pub fn rust() -> Self {
         Self {
-            language_id: "rust",
-            extension: "rs",
+            family: LangFamily::Rust,
+            extensions: &["rs"],
             hover_retry_ms: 30_000,
             slow_timeout_ms: 30_000,
             install_hint: "rustup component add rust-analyzer",
+            diag_versions: true,
         }
+    }
+
+    pub fn typescript() -> Self {
+        Self {
+            family: LangFamily::TypeScript,
+            extensions: &["js", "jsx", "mjs", "cjs", "ts", "tsx"],
+            // Rust-class policy (EP S5): the large-workspace-safe 30s
+            // hover/convergence ceilings — measure real TS workspaces
+            // before reducing; the POC's small-fixture latency is not a
+            // production upper bound.
+            hover_retry_ms: 30_000,
+            slow_timeout_ms: 30_000,
+            install_hint: "npm install --global typescript-language-server typescript (requires Node.js); a repo-local node_modules/.bin install or a directory listed in CODE_REALITY_NODE_BIN_DIR is picked up automatically",
+            // measured on real 6.0.0: publishDiagnostics never carries
+            // `version` and the versionSupport client capability is
+            // not implemented (bundle-verified)
+            diag_versions: false,
+        }
+    }
+
+    pub fn supports_extension(&self, ext: &str) -> bool {
+        self.extensions.contains(&ext)
+    }
+
+    /// LSP languageId for one file extension of this family (exact
+    /// table from the EP; `None` for extensions the family does not
+    /// serve).
+    pub fn language_id(&self, ext: &str) -> Option<&'static str> {
+        if !self.supports_extension(ext) {
+            return None;
+        }
+        Some(match ext {
+            "py" => "python",
+            "rs" => "rust",
+            "js" | "mjs" | "cjs" => "javascript",
+            "jsx" => "javascriptreact",
+            "ts" => "typescript",
+            "tsx" => "typescriptreact",
+            _ => return None,
+        })
     }
 }
 
@@ -108,7 +215,7 @@ struct Backend {
 type PendingSlot = Arc<Mutex<Option<(i64, mpsc::SyncSender<Value>)>>>;
 
 pub struct LspSession {
-    backend_cmd: String,
+    cmd: BackendCommand,
     root: PathBuf,
     pub quiesce: Duration,
     pub lang: LangSpec,
@@ -167,9 +274,9 @@ fn err_str(e: impl std::fmt::Display) -> String {
 }
 
 impl LspSession {
-    pub fn new(backend_cmd: &str, root: PathBuf, quiesce_ms: u64, lang: LangSpec) -> Self {
+    pub fn new(cmd: BackendCommand, root: PathBuf, quiesce_ms: u64, lang: LangSpec) -> Self {
         Self {
-            backend_cmd: backend_cmd.to_string(),
+            cmd,
             root,
             quiesce: Duration::from_millis(quiesce_ms),
             lang,
@@ -185,8 +292,23 @@ impl LspSession {
         }
     }
 
-    pub fn backend_cmd(&self) -> &str {
-        &self.backend_cmd
+    pub fn backend(&self) -> &BackendCommand {
+        &self.cmd
+    }
+
+    /// Per-file language id from the family's mapping; falls back to
+    /// the family's primary language when the path carries no
+    /// recognized extension (defensive — the tool face routes by
+    /// extension before any session is touched).
+    fn language_id_for(&self, path: &Path) -> &'static str {
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        self.lang
+            .language_id(ext)
+            .unwrap_or(match self.lang.family {
+                LangFamily::Python => "python",
+                LangFamily::Rust => "rust",
+                LangFamily::TypeScript => "typescript",
+            })
     }
 
     pub fn is_dead(&self) -> bool {
@@ -211,7 +333,7 @@ impl LspSession {
         if self.is_dead() {
             return Err(format!(
                 "language server backend died (command: {}) — restart the bridge to recover",
-                self.backend_cmd
+                self.cmd
             ));
         }
         Ok(())
@@ -234,7 +356,8 @@ impl LspSession {
         }
         self.check_alive()?;
 
-        let mut child = Command::new(&self.backend_cmd)
+        let mut child = Command::new(&self.cmd.program)
+            .args(&self.cmd.args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -243,7 +366,7 @@ impl LspSession {
                 format!(
                     "failed to spawn language server backend `{}`: {e}\n\
                      install it ({}) or override the backend command",
-                    self.backend_cmd, self.lang.install_hint
+                    self.cmd, self.lang.install_hint
                 )
             })?;
         let stdin = child.stdin.take().unwrap();
@@ -323,13 +446,23 @@ impl LspSession {
         // Handshake: initialize → response → `initialized` notification
         // (any didOpen sent before `initialized` is dropped by the
         // server). Caller holds the interaction lock.
+        //
+        // `versionSupport: true` (LSP 3.15+ client capability): asks the
+        // server to stamp `version` on every publishDiagnostics push.
+        // Without it typescript-language-server sends UNVERSIONED pushes
+        // (real-TLS acceptance finding), which the convergence gate
+        // treats as stalled (no version ⇒ cannot prove freshness) —
+        // every check_file would ride the reopen-recovery path and end
+        // in the deadline WARN despite correct content. pyrefly and
+        // rust-analyzer stamp versions unconditionally, so declaring
+        // this is a no-op for them.
         let params = json!({
             "processId": std::process::id(),
             "rootUri": file_uri(&self.root),
             "capabilities": {
                 "textDocument": {
                     "hover": {"contentFormat": ["markdown", "plaintext"]},
-                    "publishDiagnostics": {"relatedInformation": true}
+                    "publishDiagnostics": {"relatedInformation": true, "versionSupport": true}
                 }
             }
         });
@@ -474,7 +607,7 @@ impl LspSession {
     /// LRU cap: the oldest open file is didClose'd (overlay retained).
     pub fn sync_open(&self, path: &Path) -> Result<Option<Instant>, String> {
         let uri = file_uri(path);
-        let lang_id = self.lang.language_id;
+        let lang_id = self.language_id_for(path);
         let mut mutation: Option<Instant> = None;
 
         // LRU touch: already-open files move to the back.
@@ -625,7 +758,7 @@ impl LspSession {
             .get(path)
             .cloned()
             .ok_or_else(|| format!("file not opened: {}", path.display()))?;
-        let lang_id = self.lang.language_id;
+        let lang_id = self.language_id_for(path);
         self.notify(
             "textDocument/didOpen",
             json!({
