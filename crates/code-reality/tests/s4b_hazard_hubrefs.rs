@@ -470,6 +470,7 @@ fn json_payload_and_compact_bytes() {
         None,
         0,
         "full",
+        true,
     );
     let text = code_reality::common::to_json_py_compact(&payload);
     // Python default separators: ", " and ": " — pinned shape

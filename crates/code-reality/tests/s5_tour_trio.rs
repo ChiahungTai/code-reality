@@ -465,10 +465,8 @@ fn validate_repo_relative_form_matches_absolute() {
     clean_corpus(&repo);
     // minimal manifest so --manifest exercises the documented face
     std::fs::write(repo.join(".tours/manifest.toml"), "[tour]\n").unwrap();
-    let (rel_code, rel_out, rel_err) = run_bin(
-        Some(&repo),
-        &["tour_validate", "--repo", ".", "--manifest"],
-    );
+    let (rel_code, rel_out, rel_err) =
+        run_bin(Some(&repo), &["tour_validate", "--repo", ".", "--manifest"]);
     let (abs_code, abs_out, abs_err) = run_bin(
         None,
         &[
@@ -497,7 +495,10 @@ fn manifest_and_upgrade_repo_relative_forms_resolve() {
     let (code, out, _) = run_bin(Some(&repo), &["tour_manifest", "--repo", "."]);
     assert_eq!(code, 0, "{out}");
     assert!(
-        out.contains(&format!("[OK] manifest path: {}/.tours/manifest.toml", repo.display())),
+        out.contains(&format!(
+            "[OK] manifest path: {}/.tours/manifest.toml",
+            repo.display()
+        )),
         "canonical absolute path expected, got: {out}"
     );
     assert!(out.contains("exists=true"), "{out}");

@@ -68,6 +68,9 @@ pub mod graph_db;
 pub mod graph_engine;
 pub mod hazard;
 pub mod hub_refs;
+pub mod js_ts_calls;
+pub mod js_ts_corpus;
+pub mod language;
 pub mod mcp_server;
 pub mod profile;
 pub mod project;
@@ -81,6 +84,7 @@ pub mod tour_manifest;
 pub mod tour_upgrade;
 pub mod tour_validate;
 pub mod transition;
+pub mod ts_producer;
 
 /// The `<pkg>[+<rev>]` version face shared by this crate's bins
 /// (umbrella route arm + the mcp bin). The rev is embedded by this

@@ -32,9 +32,9 @@ fn fake_pyrefly(dir: &Path) {
         &format!(
             "#!/bin/sh
 if [ \"$1\" = \"--version\" ]; then echo 'fake-pyrefly 9.9.9'; exit 0; fi
-prev=''; for a in \"$@\"; do if [ \"$prev\" = \"--repo\" ]; then repo=\"$a\"; fi; prev=\"$a\"; done
-mkdir -p \"$repo/.code-reality/scip\"
-cp '{FIXTURE}' \"$repo/.code-reality/scip/index.scip\"
+prev=''; for a in \"$@\"; do if [ \"$prev\" = \"--repo\" ] || [ \"$prev\" = \"--out\" ]; then eval \"${{prev#--}}=\\\"$a\\\"\"; fi; prev=\"$a\"; done
+mkdir -p \"$(dirname \"$out\")\"
+cp '{FIXTURE}' \"$out\"
 echo '[OK] fake pyrefly-index'
 "
         ),

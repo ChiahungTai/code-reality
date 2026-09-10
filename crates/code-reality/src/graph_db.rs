@@ -22,8 +22,9 @@ use crate::argparse::{parse, FlagSpec, Kind, Outcome, ToolSpec};
 use crate::cache::{self, Face};
 use crate::callers;
 use crate::common::{resolve, to_json_indent1};
-use crate::engine::{fn_tail_name, ln};
+use crate::engine::{fn_tail_name, is_test_path, ln, queryable_symbol, QueryableKind};
 use crate::fndefs;
+use crate::js_ts_calls;
 use crate::py_calls;
 use crate::ToolOutput;
 use rusqlite::Connection;
@@ -49,6 +50,12 @@ pub struct BuildReport {
     pub external_skipped: usize,
     pub flows: usize,
     pub communities: usize,
+    /// Containment-coverage denominators (S3): queryable FUNCTION defs
+    /// vs those with a usable `enclosing_range`. The acceptance gate is
+    /// the RATIO on real corpora (predeclared bar), never a bare
+    /// `CALLS > 0`.
+    pub fn_def_total: usize,
+    pub fn_def_spanned: usize,
     pub db: PathBuf,
 }
 
@@ -217,33 +224,34 @@ CREATE TABLE flow_memberships (
 CREATE VIRTUAL TABLE nodes_fts USING fts5(name, content='nodes', content_rowid='id');
 PRAGMA user_version = 1;";
 
-/// Test-entry face for `is_test` on producer nodes: Rust `tests/`
-/// directories plus the Python `test_` prefix conventions (the
-/// engine-side `is_test_file` regex does not cover Rust — EP finding 1).
+/// Test-entry face for producer nodes: shared path policy (S3 single
+/// source — see [`crate::engine::is_test_path`]) covering Rust `tests/`
+/// directories, the historical `test_` prefix, Python conventions, and
+/// the JS/TS `__tests__` / `.spec.` / `.test.` shapes.
 pub fn is_test_rel(rel: &str) -> bool {
-    let p = rel.replace('\\', "/");
-    p.starts_with("tests/")
-        || p.contains("/tests/")
-        || p.starts_with("test_")
-        || p.contains("/test_")
+    is_test_path(rel)
 }
 
-/// LSP-harvest synthesizes `lsp python <rel> [L<line>] <name>().`
-/// symbols — the `lsp ` prefix is the language discriminator, the
-/// optional `L<line>` middle segment disambiguates same-file same-name
-/// defs (both shapes parse). scip-python emits
-/// `scip-python python <project> <version> \`symbol\`...` and
-/// pyrefly-producer mirrors that shape with a `pyrefly ` discriminator
-/// — both leading Python discriminators (F1). Everything else is the
-/// rust-analyzer SCIP face.
-fn infer_language(symbol: &str) -> &'static str {
-    if symbol.starts_with("lsp ")
-        || symbol.starts_with("scip-python ")
-        || symbol.starts_with("pyrefly ")
-    {
-        "Python"
-    } else {
-        "Rust"
+/// Graph node language from the DEFINING document extension (S3/AD-3:
+/// scip-typescript carries no language discriminator in its symbols) —
+/// `.py`→Python, `.rs`→Rust, the four JS extensions→JavaScript,
+/// `.ts/.tsx`→TypeScript. Legacy/unknown document extensions fall back
+/// to the historical symbol-prefix rule (lsp-/scip-python-/pyrefly- →
+/// Python, else Rust) rather than silently relabeling unknown
+/// producers.
+fn infer_language(symbol: &str, rel_path: &str) -> &'static str {
+    match crate::language::LanguageFace::from_path(Path::new(rel_path)) {
+        Some(face) => face.graph_label(),
+        None => {
+            if symbol.starts_with("lsp ")
+                || symbol.starts_with("scip-python ")
+                || symbol.starts_with("pyrefly ")
+            {
+                "Python"
+            } else {
+                "Rust"
+            }
+        }
     }
 }
 
@@ -283,9 +291,25 @@ struct ScanRows {
     defs: Vec<(String, String, i64)>,
     /// (symbol, rel_path, line) in scan order
     refs: Vec<(String, String, i64)>,
-    /// non-fn-tail occurrences skipped (protobuf arm parity — counted,
-    /// never silently dropped)
+    /// Ref-site start columns per (symbol, rel_path, line) — the JS/TS
+    /// CALLS identity is column-grained (a same-line plain load of the
+    /// same name must not ride a real call's mark); Python keeps the
+    /// frozen line+name grain.
+    ref_cols: BTreeMap<(String, String, i64), std::collections::BTreeSet<i64>>,
+    /// Queryable kind per def symbol ("Function"/"Type") — carried from
+    /// the scan gate so node insertion never re-infers kind from name
+    /// strings (S3).
+    def_kinds: BTreeMap<String, &'static str>,
+    /// occurrences skipped by the queryable gate (protobuf arm parity —
+    /// counted, never silently dropped)
     non_fn_skipped: usize,
+}
+
+fn kind_str(kind: QueryableKind) -> &'static str {
+    match kind {
+        QueryableKind::Function => "Function",
+        QueryableKind::Type => "Type",
+    }
 }
 
 fn scan(face: &Face) -> Result<ScanRows, String> {
@@ -294,10 +318,12 @@ fn scan(face: &Face) -> Result<ScanRows, String> {
             let mut rows = ScanRows {
                 defs: Vec::new(),
                 refs: Vec::new(),
+                ref_cols: BTreeMap::new(),
+                def_kinds: BTreeMap::new(),
                 non_fn_skipped: 0,
             };
             let mut stmt = conn
-                .prepare("SELECT symbol, rel_path, line, is_def FROM occurrences ORDER BY seq")
+                .prepare("SELECT symbol, rel_path, line, is_def, col FROM occurrences ORDER BY seq")
                 .map_err(|e| format!("graph_db 掃描失敗：{e}"))?;
             let it = stmt
                 .query_map([], |r| {
@@ -306,18 +332,24 @@ fn scan(face: &Face) -> Result<ScanRows, String> {
                         r.get::<_, String>(1)?,
                         r.get::<_, i64>(2)?,
                         r.get::<_, i64>(3)?,
+                        r.get::<_, i64>(4)?,
                     ))
                 })
                 .map_err(|e| format!("graph_db 掃描失敗：{e}"))?;
             for row in it {
-                let (s, f, l, d) = row.map_err(|e| format!("graph_db 讀取失敗：{e}"))?;
-                if fn_tail_name(&s).is_none() {
+                let (s, f, l, d, col) = row.map_err(|e| format!("graph_db 讀取失敗：{e}"))?;
+                let Some(qs) = queryable_symbol(&s, &f) else {
                     rows.non_fn_skipped += 1; // symmetric with the protobuf arm
                     continue;
-                }
+                };
                 if d != 0 {
+                    rows.def_kinds.insert(s.clone(), kind_str(qs.kind));
                     rows.defs.push((s, f, l));
                 } else {
+                    rows.ref_cols
+                        .entry((s.clone(), f.clone(), l))
+                        .or_default()
+                        .insert(col);
                     rows.refs.push((s, f, l));
                 }
             }
@@ -327,19 +359,27 @@ fn scan(face: &Face) -> Result<ScanRows, String> {
             let mut rows = ScanRows {
                 defs: Vec::new(),
                 refs: Vec::new(),
+                ref_cols: BTreeMap::new(),
+                def_kinds: BTreeMap::new(),
                 non_fn_skipped: 0,
             };
             for d in &index.documents {
                 for occ in &d.occurrences {
-                    if fn_tail_name(&occ.symbol).is_none() {
+                    let Some(qs) = queryable_symbol(&occ.symbol, &d.relative_path) else {
                         rows.non_fn_skipped += 1;
                         continue;
-                    }
+                    };
                     let l = ln(occ);
+                    let col = occ.range.get(1).copied().unwrap_or(0);
                     if occ.symbol_roles & 1 != 0 {
+                        rows.def_kinds.insert(occ.symbol.clone(), kind_str(qs.kind));
                         rows.defs
                             .push((occ.symbol.clone(), d.relative_path.clone(), l));
                     } else {
+                        rows.ref_cols
+                            .entry((occ.symbol.clone(), d.relative_path.clone(), l))
+                            .or_default()
+                            .insert(col as i64);
                         rows.refs
                             .push((occ.symbol.clone(), d.relative_path.clone(), l));
                     }
@@ -390,6 +430,95 @@ pub fn stale_head_warn(db_path: &Path, repo_root: &Path) -> Option<String> {
     })
 }
 
+// ---------- S6: language coverage for capability guards ----------
+
+/// Language coverage of a graph DB — the shared guard input for the
+/// language-specific capability boundaries (S6): which languages the
+/// unified graph actually carries. Unknown labels are preserved verbatim
+/// (a completeness gate must never normalize an unknown producer into a
+/// supported answer — that is the false-clean hole this type exists to
+/// close).
+#[derive(Default, Debug)]
+pub struct GraphLanguages {
+    pub python: bool,
+    pub rust: bool,
+    pub javascript: bool,
+    pub typescript: bool,
+    pub unknown: BTreeSet<String>,
+}
+
+impl GraphLanguages {
+    pub fn has_js_ts(&self) -> bool {
+        self.javascript || self.typescript
+    }
+
+    /// True when the graph carries no non-File nodes at all — the
+    /// completeness gates must treat that as unscannable, never clean.
+    pub fn is_empty(&self) -> bool {
+        !(self.python || self.rust || self.javascript || self.typescript) && self.unknown.is_empty()
+    }
+
+    /// JS/TS + unknown labels — everything outside the audited Rust
+    /// face, named for guard messages/JSON.
+    pub fn unsupported_names(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        if self.javascript {
+            out.push("javascript".to_string());
+        }
+        if self.typescript {
+            out.push("typescript".to_string());
+        }
+        out.extend(self.unknown.iter().cloned());
+        out
+    }
+}
+
+/// DISTINCT node languages, non-File nodes only.
+pub fn graph_languages(db: &Path) -> Result<GraphLanguages, String> {
+    let conn = crate::common::connect_ro(db)?;
+    let mut stmt = conn
+        .prepare("SELECT DISTINCT language FROM nodes WHERE kind != 'File'")
+        .map_err(|e| format!("graph language 查詢失敗：{e}"))?;
+    let rows = stmt
+        .query_map([], |r| r.get::<_, Option<String>>(0))
+        .map_err(|e| format!("graph language 查詢失敗：{e}"))?;
+    let mut out = GraphLanguages::default();
+    for row in rows {
+        let lang = row.map_err(|e| format!("graph language 讀取失敗：{e}"))?;
+        match lang.as_deref() {
+            Some("Python") => out.python = true,
+            Some("Rust") => out.rust = true,
+            Some("JavaScript") => out.javascript = true,
+            Some("TypeScript") => out.typescript = true,
+            other => {
+                out.unknown.insert(other.unwrap_or("<null>").to_string());
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Languages of the nodes a symbol-targeted tool resolved (name-keyed;
+/// empty when the name carries no node — the caller's own vacuous guards
+/// stay authoritative). Ambiguity across languages is preserved so the
+/// caller can take the conservative partial path instead of picking one.
+pub fn symbol_languages(repo_root: &Path, name: &str) -> Result<BTreeSet<String>, String> {
+    let conn = crate::common::connect_ro(&db_path(repo_root))?;
+    let mut stmt = conn
+        .prepare("SELECT DISTINCT language FROM nodes WHERE name = ?1 AND kind != 'File'")
+        .map_err(|e| format!("symbol language 查詢失敗：{e}"))?;
+    let rows = stmt
+        .query_map([&name], |r| r.get::<_, Option<String>>(0))
+        .map_err(|e| format!("symbol language 查詢失敗：{e}"))?;
+    let mut out = BTreeSet::new();
+    for row in rows {
+        if let Some(l) = row.map_err(|e| format!("symbol language 讀取失敗：{e}"))? {
+            out.insert(l);
+        }
+    }
+    Ok(out)
+}
+
 fn now_ts() -> f64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -397,8 +526,11 @@ fn now_ts() -> f64 {
         .as_secs_f64()
 }
 
-/// One attributed site edge: (caller_symbol, callee_symbol, rel_path, line).
-type SiteEdge = (String, String, String, i64);
+/// One attributed site edge: (caller_symbol, callee_symbol, rel_path,
+/// line, col) — `col` is the occurrence's start column for JS/TS faces
+/// (column-grained CALLS identity), `-1` for the line-grain faces
+/// (Python marks, LSP harvest).
+type SiteEdge = (String, String, String, i64, i64);
 
 /// Nearest-preceding-def attribution (the bootstrap rule — the LSP face
 /// has no spans). Every ref site becomes one edge row; refs with no
@@ -428,7 +560,8 @@ fn attribute_nearest(
             .map(|(_, s)| s.to_string());
         match caller {
             Some(c) if &c != symbol => {
-                out.push((c, symbol.clone(), rel.clone(), *line));
+                // LSP-harvest face: line-grain (no column data)
+                out.push((c, symbol.clone(), rel.clone(), *line, -1));
             }
             Some(_) => self_refs += 1,
             None => item_level += 1,
@@ -497,26 +630,53 @@ pub fn build_from_cache_at(repo: &Path, index_path: &Path) -> Result<BuildReport
     // the build site holds repo root + sources, so it re-derives call
     // positions syntactically. The lsp-harvest golden face stays
     // REFERENCES-only (documented; its CALLS story is out of scope).
-    let (call_marks, _call_warns) = if producer == "lsp-harvest" {
-        (py_calls::CallSiteSet::default(), Vec::new())
+    let (py_marks, js_ts_marks, _call_warns) = if producer == "lsp-harvest" {
+        (
+            py_calls::CallSiteSet::default(),
+            js_ts_calls::CallSiteSet::default(),
+            Vec::new(),
+        )
     } else {
-        // .py gate: rust-analyzer faces share the "scip" producer class —
-        // without it every Rust repo build would feed .rs sources to the
-        // Python parser (WARN spam + pointless full-tree I/O).
-        let rels: std::collections::BTreeSet<String> = rows
-            .refs
-            .iter()
-            .map(|(_, r, _)| r.clone())
-            .filter(|r| r.ends_with(".py"))
-            .collect();
-        let (marks, warns) = py_calls::call_sites(&repo_abs, &rels);
+        // Syntax re-derivation per language face: rust-analyzer SCIP
+        // marks calls itself, Python re-parses via py_calls (frozen
+        // line+name grain), JS/TS re-parses via js_ts_calls
+        // (column-grained identity). Kept as two sets — the grains
+        // differ by design.
+        let rels: std::collections::BTreeSet<String> =
+            rows.refs.iter().map(|(_, r, _)| r.clone()).collect();
+        let mut py_rels = std::collections::BTreeSet::new();
+        let mut js_ts_rels = std::collections::BTreeSet::new();
+        for r in &rels {
+            match crate::language::LanguageFace::from_path(Path::new(r)) {
+                Some(crate::language::LanguageFace::Python) => {
+                    py_rels.insert(r.clone());
+                }
+                Some(crate::language::LanguageFace::JavaScript)
+                | Some(crate::language::LanguageFace::TypeScript) => {
+                    js_ts_rels.insert(r.clone());
+                }
+                _ => {}
+            }
+        }
+        let (py_marks, mut warns) = py_calls::call_sites(&repo_abs, &py_rels);
+        let (js_marks, js_warns) = js_ts_calls::call_sites(&repo_abs, &js_ts_rels);
+        warns.extend(js_warns);
         for w in &warns {
             eprintln!("{w}");
         }
-        (marks, warns)
+        (py_marks, js_marks, warns)
     };
     // attribution: (caller, callee, rel, line) site rows
     let def_symbols: BTreeSet<String> = rows.defs.iter().map(|(s, _, _)| s.clone()).collect();
+    // Containment coverage (S3): denominator = queryable FUNCTION defs,
+    // numerator = fn DEFs with a usable enclosing_range. A few passing
+    // CALLS sites cannot hide widespread span loss behind this pair.
+    let fn_def_total = rows
+        .defs
+        .iter()
+        .filter(|(s, _, _)| rows.def_kinds.get(s.as_str()) == Some(&"Function"))
+        .count();
+    let mut fn_def_spanned = 0usize;
     let (edge_rows, item_level, self_refs): (Vec<SiteEdge>, usize, usize) =
         if producer == "lsp-harvest" {
             attribute_nearest(&rows.defs, &rows.refs)
@@ -528,6 +688,7 @@ pub fn build_from_cache_at(repo: &Path, index_path: &Path) -> Result<BuildReport
                 Face::Sqlite(_) => fndefs::spans_source(index_path, None),
             };
             let (spans, _span_warns) = spans_result?;
+            fn_def_spanned = spans.values().map(Vec::len).sum();
             let mut by_callee: BTreeMap<String, Vec<(String, String, i64)>> = BTreeMap::new();
             for (sym, rel, line) in &rows.refs {
                 by_callee
@@ -547,7 +708,28 @@ pub fn build_from_cache_at(repo: &Path, index_path: &Path) -> Result<BuildReport
                             selfs += 1;
                             continue;
                         }
-                        out.push((c.symbol.clone(), callee.clone(), rel.clone(), *line));
+                        // JS/TS: expand the attributed site per occurrence
+                        // column — same-line ref+call of one symbol are
+                        // distinct occurrences and must split CALLS vs
+                        // REFERENCES (the column identity, codex P1-5;
+                        // line-grain attribution cannot tell them apart).
+                        // Python/LSP rows keep col = -1 (line-grain marks).
+                        let is_js_ts = matches!(
+                            crate::language::LanguageFace::from_path(Path::new(rel)),
+                            Some(crate::language::LanguageFace::JavaScript)
+                                | Some(crate::language::LanguageFace::TypeScript)
+                        );
+                        let cols: Vec<i64> = if is_js_ts {
+                            rows.ref_cols
+                                .get(&(callee.clone(), rel.clone(), *line))
+                                .map(|s| s.iter().copied().collect())
+                                .unwrap_or_else(|| vec![-1])
+                        } else {
+                            vec![-1]
+                        };
+                        for col in cols {
+                            out.push((c.symbol.clone(), callee.clone(), rel.clone(), *line, col));
+                        }
                     }
                 }
             }
@@ -555,7 +737,7 @@ pub fn build_from_cache_at(repo: &Path, index_path: &Path) -> Result<BuildReport
         };
     let external_skipped = edge_rows
         .iter()
-        .filter(|(_, callee, _, _)| !def_symbols.contains(callee))
+        .filter(|(_, callee, _, _, _)| !def_symbols.contains(callee))
         .count();
 
     // write: temp sibling + atomic rename
@@ -592,9 +774,17 @@ pub fn build_from_cache_at(repo: &Path, index_path: &Path) -> Result<BuildReport
         let mut ordered: Vec<&(String, String, i64)> = rows.defs.iter().collect();
         ordered.sort_by(|a, b| (&a.1, &a.2).cmp(&(&b.1, &b.2)));
         for (symbol, rel, line) in ordered {
-            let Some(name) = fn_tail_name(symbol) else {
+            let Some(qs) = queryable_symbol(symbol, rel) else {
                 continue;
             };
+            // Kind rides from the scan gate (S3): never re-inferred from
+            // name strings here. Unknown symbols default to Function —
+            // the pre-S3 shape — but scan fills every def it emits.
+            let kind = rows
+                .def_kinds
+                .get(symbol.as_str())
+                .copied()
+                .unwrap_or("Function");
             let file_abs = resolve(&repo_abs.join(rel));
             let file_s = file_abs.display().to_string();
             let n = tx
@@ -602,18 +792,19 @@ pub fn build_from_cache_at(repo: &Path, index_path: &Path) -> Result<BuildReport
                     "INSERT OR IGNORE INTO nodes \
                      (symbol, kind, name, qname, file_path, line_start, line_end, \
                       language, extra, updated_at, is_test, provenance) \
-                     VALUES (?1, 'Function', ?2, ?3, ?4, ?5, ?5, ?6, ?7, ?8, ?9, ?10)",
+                     VALUES (?1, ?11, ?2, ?3, ?4, ?5, ?5, ?6, ?7, ?8, ?9, ?10)",
                     rusqlite::params![
                         symbol,
-                        name,
-                        format!("{file_s}::{name}"),
+                        qs.name,
+                        format!("{file_s}::{}", qs.name),
                         file_s,
                         line,
-                        infer_language(symbol),
+                        infer_language(symbol, rel),
                         "{\"producer\":\"graph_db\"}",
                         now,
                         is_test_rel(rel) as i64,
-                        producer
+                        producer,
+                        kind
                     ],
                 )
                 .map_err(|e| format!("節點寫入失敗：{e}"))?;
@@ -639,20 +830,36 @@ pub fn build_from_cache_at(repo: &Path, index_path: &Path) -> Result<BuildReport
                  VALUES (?7, ?1, ?2, ?3, ?4, ?5, 1.0, 'EXTRACTED', ?6)",
             )
             .map_err(|e| format!("邊寫入準備失敗：{e}"))?;
-        for (caller, callee, rel, line) in &edge_rows {
+        for (caller, callee, rel, line, col) in &edge_rows {
             if !def_symbols.contains(callee) {
                 continue;
             }
-            // S3-F2: a reference row at a (file, line) that carries a
-            // call to the symbol's fn tail is a CALLS edge; the rest stay
-            // REFERENCES. Dunder-collapsed constructor edges carry tail
-            // `__init__` while the syntactic callee is the CLASS name —
-            // fall back to the symbol's own-class segment before `#`.
-            let tail_match = fn_tail_name(callee)
-                .is_some_and(|t| call_marks.contains(&(rel.clone(), *line, t.to_string())));
-            let class_match = class_segment(callee)
-                .is_some_and(|c| call_marks.contains(&(rel.clone(), *line, c.to_string())));
-            let is_calls = tail_match || class_match;
+            // S3-F2 + codex-P1-5: a reference occurrence at a site that
+            // carries a call to the symbol is a CALLS edge; the rest stay
+            // REFERENCES. JS/TS rows match on their OWN start column (the
+            // row was expanded per-occurrence) — a same-line plain load
+            // of the same name cannot ride a real call's mark. Python
+            // keeps the frozen line+name grain (py_calls precedent).
+            // Dunder-collapsed constructor edges carry tail `__init__`
+            // while the syntactic callee is the CLASS name — fall back to
+            // the symbol's own-class segment before `#`.
+            let is_js_ts = matches!(
+                crate::language::LanguageFace::from_path(Path::new(rel)),
+                Some(crate::language::LanguageFace::JavaScript)
+                    | Some(crate::language::LanguageFace::TypeScript)
+            );
+            let tail = fn_tail_name(callee);
+            let cls = class_segment(callee);
+            let is_calls = if is_js_ts && *col >= 0 {
+                tail.is_some_and(|t| {
+                    js_ts_marks.contains(&(rel.clone(), *line, *col, t.to_string()))
+                }) || cls.is_some_and(|c| {
+                    js_ts_marks.contains(&(rel.clone(), *line, *col, c.to_string()))
+                })
+            } else {
+                tail.is_some_and(|t| py_marks.contains(&(rel.clone(), *line, t.to_string())))
+                    || cls.is_some_and(|c| py_marks.contains(&(rel.clone(), *line, c.to_string())))
+            };
             let kind = if is_calls { "CALLS" } else { "REFERENCES" };
             let file_abs = resolve(&repo_abs.join(rel));
             if !seen_edges.insert((
@@ -710,6 +917,8 @@ pub fn build_from_cache_at(repo: &Path, index_path: &Path) -> Result<BuildReport
         external_skipped,
         flows: derived.flows,
         communities: derived.communities,
+        fn_def_total,
+        fn_def_spanned,
         db,
     })
 }
@@ -924,6 +1133,10 @@ pub fn run(argv: &[&str]) -> ToolOutput {
                     "self_ref_skipped": rep.self_ref_skipped,
                     "non_fn_defs_skipped": rep.non_fn_defs_skipped,
                     "external_skipped": rep.external_skipped,
+                    "fn_def_coverage": {
+                        "spanned": rep.fn_def_spanned,
+                        "total": rep.fn_def_total
+                    },
                     "flows": rep.flows,
                     "communities": rep.communities,
                     "db": rep.db.display().to_string(),
@@ -962,31 +1175,69 @@ mod tests {
     #[test]
     fn python_prefixes_cover_all_python_producers() {
         // lsp-harvest synthesized shape
-        assert_eq!(infer_language("lsp python src/a.py target()."), "Python");
+        assert_eq!(
+            infer_language("lsp python src/a.py target().", "src/a.py"),
+            "Python"
+        );
         // lsp-harvest line-disambiguated shape
         assert_eq!(
-            infer_language("lsp python src/a.py L10 target()."),
+            infer_language("lsp python src/a.py L10 target().", "src/a.py"),
             "Python"
         );
         // scip-python emitted shape (F1: previously fell through to Rust)
         assert_eq!(
-            infer_language("scip-python python proj 0.1.0 `pkg.mod`/fn()."),
+            infer_language(
+                "scip-python python proj 0.1.0 `pkg.mod`/fn().",
+                "pkg/mod.py"
+            ),
             "Python"
         );
         assert_eq!(
-            infer_language("scip-python python proj 0.1.0 `pkg.mod`/Class#method()."),
+            infer_language(
+                "scip-python python proj 0.1.0 `pkg.mod`/Class#method().",
+                "pkg/mod.py"
+            ),
             "Python"
         );
         // pyrefly-producer mirrored shape (ep-pyrefly-native-producer S1)
         assert_eq!(
-            infer_language("pyrefly python proj 0.1.0 `pkg.mod`/fn()."),
+            infer_language("pyrefly python proj 0.1.0 `pkg.mod`/fn().", "pkg/mod.py"),
             "Python"
         );
         assert_eq!(
-            infer_language("pyrefly python proj 0.1.0 `pkg.mod`/Class#method()."),
+            infer_language(
+                "pyrefly python proj 0.1.0 `pkg.mod`/Class#method().",
+                "pkg/mod.py"
+            ),
             "Python"
         );
         // rust-analyzer SCIP face stays Rust
-        assert_eq!(infer_language("file:///repo/src/lib.rs/`main`"), "Rust");
+        assert_eq!(
+            infer_language("file:///repo/src/lib.rs/`main`", "src/lib.rs"),
+            "Rust"
+        );
+    }
+
+    #[test]
+    fn js_ts_documents_drive_labels_and_unknown_falls_back() {
+        // S3: the document extension is the authority (AD-3) — the
+        // scip-typescript symbol prefix says nothing about JS vs TS.
+        let sym = "scip-typescript npm . . /r/src/`x`/fn().";
+        assert_eq!(infer_language(sym, "src/a.js"), "JavaScript");
+        assert_eq!(infer_language(sym, "src/a.jsx"), "JavaScript");
+        assert_eq!(infer_language(sym, "src/a.mjs"), "JavaScript");
+        assert_eq!(infer_language(sym, "src/a.cjs"), "JavaScript");
+        assert_eq!(infer_language(sym, "src/a.ts"), "TypeScript");
+        assert_eq!(infer_language(sym, "src/a.tsx"), "TypeScript");
+        // unknown document extension → legacy prefix fallback (never a
+        // silent JS/TS relabel of unknown producers)
+        assert_eq!(
+            infer_language("pyrefly python p 1 `m`/f().", "f.pyi"),
+            "Python"
+        );
+        assert_eq!(
+            infer_language("file:///repo/src/lib.rs/`main`", "gen.rs.in"),
+            "Rust"
+        );
     }
 }

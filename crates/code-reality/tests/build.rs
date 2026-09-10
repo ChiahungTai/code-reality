@@ -2,11 +2,14 @@
 //! injection: producers are shell stubs on synthetic roots — the
 //! process-global PATH is never mutated (cargo-test parallelism).
 
+mod support;
+
 use code_reality::build::{
     build_repo, count_sources, ensure_fresh, heal_outcome_after_rebuild_err, BuildError,
     HealOutcome,
 };
 use code_reality::common::resolve_bin;
+use code_reality::language::ProducerFamily;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
@@ -28,12 +31,47 @@ fn mkrepo(t: &tempfile::TempDir, files: &[(&str, &str)]) -> PathBuf {
     repo
 }
 
-/// Parses `--repo <v>` / `--output <v>` pairs from "$@".
+/// Parses `--repo <v>` / `--output <v>` / `--out <v>` pairs from "$@".
 fn arg_parse_sh() -> &'static str {
-    r#"prev=''; for a in "$@"; do if [ "$prev" = "--repo" ] || [ "$prev" = "--output" ]; then eval "${prev#--}=\"$a\""; fi; prev="$a"; done"#
+    r#"prev=''; for a in "$@"; do if [ "$prev" = "--repo" ] || [ "$prev" = "--output" ] || [ "$prev" = "--out" ]; then eval "${prev#--}=\"$a\""; fi; prev="$a"; done"#
+}
+
+/// Corpus-consistent python fixture: docs == {app.py, app2.py} — the
+/// heal-path tests converge on exactly that disk set after writing
+/// app2.py, so the S4 missing/extra convergence gates pass (the rich
+/// fixture's .rs docs would read as a permanent corpus mismatch). The
+/// defs deliberately avoid the name `f` (tests asserting 查無 DEF for
+/// query f rely on that).
+fn pyfx_bytes() -> Vec<u8> {
+    use protobuf::Message;
+    use scip::types::{Document, Index, Occurrence};
+    let mut index = Index::new();
+    for (path, names) in [
+        ("app.py", ["app_main", "app_aux"]),
+        ("app2.py", ["app_second", "app_third"]),
+    ] {
+        let mut d = Document::new();
+        d.relative_path = path.to_string();
+        for name in names {
+            let mut occ = Occurrence::new();
+            occ.symbol = format!("pyrefly python proj 0.1.0 `m`/{name}().");
+            occ.symbol_roles = 1;
+            occ.range = vec![0, 0, 1];
+            d.occurrences.push(occ);
+        }
+        index.documents.push(d);
+    }
+    index.write_to_bytes().unwrap()
+}
+
+fn install_pyfx(dir: &Path) -> PathBuf {
+    let p = dir.join("pyfx.scip");
+    std::fs::write(&p, pyfx_bytes()).unwrap();
+    p
 }
 
 fn fake_pyrefly(dir: &Path) {
+    let fx = install_pyfx(dir);
     fake_bin(
         dir,
         "pyrefly-index",
@@ -41,11 +79,12 @@ fn fake_pyrefly(dir: &Path) {
             "#!/bin/sh
 if [ \"$1\" = \"--version\" ]; then echo 'fake-pyrefly 9.9.9'; exit 0; fi
 {}
-mkdir -p \"$repo/.code-reality/scip\"
-cp '{FIXTURE}' \"$repo/.code-reality/scip/index.scip\"
+mkdir -p \"$(dirname \"$out\")\"
+cp '{}' \"$out\"
 echo '[OK] fake pyrefly-index'
 ",
-            arg_parse_sh()
+            arg_parse_sh(),
+            fx.display()
         ),
     );
 }
@@ -73,6 +112,8 @@ echo '[OK] fake rust-analyzer'
 
 #[test]
 fn t1_count_sources_detection_matrix() {
+    use code_reality::build::SourceInventory;
+    use code_reality::language::ProducerFamily;
     let t = tempfile::tempdir().unwrap();
     let repo = mkrepo(
         &t,
@@ -83,17 +124,96 @@ fn t1_count_sources_detection_matrix() {
             ("target/gen.py", "x"), // SKIP_DIRS
             (".hidden/d.py", "x"),  // dot-dir
             ("notes.txt", "x"),
+            ("app.mjs", "x"),    // JS family
+            ("widget.tsx", "x"), // TS family
         ],
     );
-    assert_eq!(count_sources(&repo).unwrap(), (2, 1));
+    assert_eq!(
+        count_sources(&repo).unwrap(),
+        SourceInventory {
+            py: 2,
+            rs: 1,
+            js_ts: 2
+        }
+    );
 
     let t2 = tempfile::tempdir().unwrap();
     let repo2 = mkrepo(&t2, &[("only.py", "x")]);
-    assert_eq!(count_sources(&repo2).unwrap(), (1, 0));
+    assert_eq!(
+        count_sources(&repo2).unwrap(),
+        SourceInventory {
+            py: 1,
+            rs: 0,
+            js_ts: 0
+        }
+    );
 
     let t3 = tempfile::tempdir().unwrap();
     let repo3 = mkrepo(&t3, &[("only.rs", "x")]);
-    assert_eq!(count_sources(&repo3).unwrap(), (0, 1));
+    assert_eq!(
+        count_sources(&repo3).unwrap(),
+        SourceInventory {
+            py: 0,
+            rs: 1,
+            js_ts: 0
+        }
+    );
+
+    // detection → producer families: every combination SM-1..SM-7 (S1)
+    let inv = |py: usize, rs: usize, js_ts: usize| SourceInventory { py, rs, js_ts };
+    let fams = |i: SourceInventory| {
+        let mut out = std::collections::BTreeSet::new();
+        if i.py > 0 {
+            out.insert(ProducerFamily::Python);
+        }
+        if i.rs > 0 {
+            out.insert(ProducerFamily::Rust);
+        }
+        if i.js_ts > 0 {
+            out.insert(ProducerFamily::TypeScript);
+        }
+        out
+    };
+    assert_eq!(
+        fams(inv(1, 0, 0)),
+        [ProducerFamily::Python].into_iter().collect()
+    );
+    assert_eq!(
+        fams(inv(0, 1, 0)),
+        [ProducerFamily::Rust].into_iter().collect()
+    );
+    assert_eq!(
+        fams(inv(0, 0, 1)),
+        [ProducerFamily::TypeScript].into_iter().collect()
+    );
+    assert_eq!(
+        fams(inv(1, 1, 0)),
+        [ProducerFamily::Python, ProducerFamily::Rust]
+            .into_iter()
+            .collect()
+    );
+    assert_eq!(
+        fams(inv(1, 0, 1)),
+        [ProducerFamily::Python, ProducerFamily::TypeScript]
+            .into_iter()
+            .collect()
+    );
+    assert_eq!(
+        fams(inv(0, 1, 1)),
+        [ProducerFamily::Rust, ProducerFamily::TypeScript]
+            .into_iter()
+            .collect()
+    );
+    assert_eq!(
+        fams(inv(1, 1, 1)),
+        [
+            ProducerFamily::Python,
+            ProducerFamily::Rust,
+            ProducerFamily::TypeScript
+        ]
+        .into_iter()
+        .collect()
+    );
 }
 
 #[test]
@@ -118,7 +238,22 @@ fn t3_run_usage_and_producer_validation() {
     assert_eq!(o.exit_code, 2);
     let o = code_reality::build::run(&["build", "--repo", "/nonexistent-xyz", "--producer", "go"]);
     assert_eq!(o.exit_code, 2);
-    assert!(o.stderr.contains("rust 或 python"));
+    assert!(
+        o.stderr.contains("rust、python 或 typescript"),
+        "{}",
+        o.stderr
+    );
+    // the shared JS/TS family value passes validation (fails later on
+    // the nonexistent repo, NOT on producer spelling)
+    let o = code_reality::build::run(&[
+        "build",
+        "--repo",
+        "/nonexistent-xyz",
+        "--producer",
+        "typescript",
+    ]);
+    assert_eq!(o.exit_code, 2);
+    assert!(o.stderr.contains("不是目錄"), "{}", o.stderr);
     let o = code_reality::build::run(&["build", "--help"]);
     assert_eq!(o.exit_code, 0);
     assert!(o.stdout.contains("--producer"));
@@ -235,16 +370,19 @@ fn t7_mixed_repo_unified_graph_concat() {
     let roots = vec![bindir.path().to_path_buf()];
 
     let rep = build_repo(&repo, None, &roots).expect("mixed unified");
-    assert_eq!(rep.face, "mixed(rust+python)");
+    assert_eq!(rep.face, "mixed(python+rust)");
     assert!(rep.nodes > 0);
-    // cat-merge proof: the slot is exactly python-part ++ rust-part.
-    let fixture_len = std::fs::metadata(FIXTURE).unwrap().len();
-    let slot_len = std::fs::metadata(slot_of(&repo)).unwrap().len();
-    assert_eq!(slot_len, fixture_len * 2, "slot={slot_len}");
+    // cat-merge proof: the slot is exactly python-part ++ rust-part (the
+    // frozen ORDERED merge — python first).
+    let rich = std::fs::read(FIXTURE).unwrap();
+    let mut expect = pyfx_bytes();
+    expect.extend_from_slice(&rich);
+    let slot_bytes = std::fs::read(slot_of(&repo)).unwrap();
+    assert_eq!(slot_bytes, expect);
     assert!(!rep.repo.join(".code-reality/scip/.rust-part.scip").exists());
 
     // single-leg override on a mixed repo → note about the other face
-    let rep2 = build_repo(&repo, Some("rust"), &roots).expect("producer override");
+    let rep2 = build_repo(&repo, Some(ProducerFamily::Rust), &roots).expect("producer override");
     assert_eq!(rep2.face, "rust-face");
     assert!(rep2.notes.iter().any(|n| n.contains("未索引：python")));
 }
@@ -301,7 +439,7 @@ fn t11_empty_repo_env_fail() {
     std::fs::write(t.path().join("notes.txt"), "no code").unwrap();
     let err = build_repo(t.path(), None, &[]).unwrap_err();
     assert!(
-        matches!(err, BuildError::Env(ref m) if m.contains("找不到 .py 或 .rs")),
+        matches!(err, BuildError::Env(ref m) if m.contains("找不到可索引原始碼")),
         "{err:?}"
     );
 }
@@ -349,6 +487,7 @@ fn slot_of(repo: &Path) -> PathBuf {
 // ---------- S3: query-time heal (ep-index-query-time-self-heal) ----------
 
 fn fake_pyrefly_pre(dir: &Path, pre: &str) {
+    let fx = install_pyfx(dir);
     fake_bin(
         dir,
         "pyrefly-index",
@@ -357,11 +496,12 @@ fn fake_pyrefly_pre(dir: &Path, pre: &str) {
 if [ \"$1\" = \"--version\" ]; then echo 'fake-pyrefly 9.9.9'; exit 0; fi
 {}
 {pre}
-mkdir -p \"$repo/.code-reality/scip\"
-cp '{FIXTURE}' \"$repo/.code-reality/scip/index.scip\"
+mkdir -p \"$(dirname \"$out\")\"
+cp '{}' \"$out\"
 echo '[OK] fake pyrefly-index'
 ",
-            arg_parse_sh()
+            arg_parse_sh(),
+            fx.display()
         ),
     );
 }
@@ -556,10 +696,15 @@ fn t18_false_stale_warns_once_no_loop() {
         matches!(out1, HealOutcome::ServeStale(ref l) if l[0].contains("語料不一致")),
         "out={out1:?}"
     );
-    // WARN-once semantics: the healed slot is fresh by mtime, the second
-    // query rebuilds nothing (SM-9)
+    // Post-codex-P0-4 semantics: the non-converged heal ARMS the churn
+    // cooldown, so the second query is cooldown-ServeStale — never Fresh
+    // (calling an incomplete index fresh was the closed hole). The
+    // warn-once core invariant holds either way: no further rebuild.
     let out2 = ensure_fresh(&repo, &roots).unwrap();
-    assert_eq!(out2, HealOutcome::Fresh);
+    assert!(
+        matches!(out2, HealOutcome::ServeStale(ref l) if l.iter().any(|s| s.contains("cooldown"))),
+        "out={out2:?}"
+    );
     assert_eq!(
         counter_lines(&counter),
         1,
@@ -814,8 +959,8 @@ fn t18_churn_cooldown_skips_reheal_within_window() {
             "#!/bin/sh
 if [ \"$1\" = \"--version\" ]; then echo 'fake-pyrefly 9.9.9'; exit 0; fi
 {}
-mkdir -p \"$repo/.code-reality/scip\"
-cp '{FIXTURE}' \"$repo/.code-reality/scip/index.scip\"
+mkdir -p \"$(dirname \"$out\")\"
+cp '{FIXTURE}' \"$out\"
 echo x >> '{}'
 touch \"$repo/app.py\"
 echo '[OK] fake pyrefly-index'
@@ -861,11 +1006,10 @@ fn t19_head_drift_overrides_cooldown_and_convergence_clears() {
     git_init(&repo);
     let bindir = tempfile::tempdir().unwrap();
     let counter = bindir.path().join("calls");
-    fake_pyrefly_pre(bindir.path(), &format!("echo x >> '{}'", counter.display()));
+    support::install_py_deriving_fake(bindir.path());
     let roots = vec![bindir.path().to_path_buf()];
     build_repo(&repo, None, &roots).expect("build");
-    std::fs::remove_file(&counter).unwrap(); // discard the setup-build spawn
-                                             // arm the churn marker directly (as a non-converging heal would)
+    // arm the churn marker directly (as a non-converging heal would)
     std::fs::write(repo.join(".code-reality/scip/.heal-churn"), b"").unwrap();
     std::thread::sleep(std::time::Duration::from_millis(20));
     std::fs::write(repo.join("app3.py"), "y = 2\n").unwrap();
@@ -905,7 +1049,7 @@ fn t20_cooldown_env_zero_disables() {
     let repo = mkrepo(&t, &[("app.py", "def f():\n    return 1\n")]);
     git_init(&repo);
     let bindir = tempfile::tempdir().unwrap();
-    fake_pyrefly(bindir.path());
+    support::install_py_deriving_fake(bindir.path());
     let roots = vec![bindir.path().to_path_buf()];
     build_repo(&repo, None, &roots).expect("build");
     // an armed fresh marker would hold — the documented escape hatch
@@ -959,7 +1103,7 @@ fn t22_expired_marker_lets_heal_resume() {
     let repo = mkrepo(&t, &[("app.py", "def f():\n    return 1\n")]);
     git_init(&repo);
     let bindir = tempfile::tempdir().unwrap();
-    fake_pyrefly(bindir.path());
+    support::install_py_deriving_fake(bindir.path());
     let roots = vec![bindir.path().to_path_buf()];
     build_repo(&repo, None, &roots).expect("build");
     let marker = repo.join(".code-reality/scip/.heal-churn");

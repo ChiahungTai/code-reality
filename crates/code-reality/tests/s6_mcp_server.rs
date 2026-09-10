@@ -445,7 +445,7 @@ async fn data_plane_tools_route_loud_errors() {
         .await
         .unwrap_err();
     assert!(
-        err.message.contains("找不到 .py 或 .rs"),
+        err.message.contains("找不到可索引原始碼"),
         "{:?}",
         err.message
     );
@@ -470,7 +470,11 @@ async fn data_plane_tools_route_loud_errors() {
         "{:?}",
         err.message
     );
-    assert!(err.message.contains("rust 或 python"), "{:?}", err.message);
+    assert!(
+        err.message.contains("rust、python 或 typescript"),
+        "{:?}",
+        err.message
+    );
 
     // SM-6: snapshot without a graph.db
     let err = server

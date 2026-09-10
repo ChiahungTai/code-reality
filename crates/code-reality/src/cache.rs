@@ -9,8 +9,8 @@
 //! ("derived face is an accelerator, not a dependency" — scip_refs.py:459).
 
 use crate::engine::{
-    self, class_tail_name, fn_tail_name, load_index, loc_line, matches_query, python_face,
-    stamped_head, tail, Query,
+    self, fn_tail_name, load_index, loc_line, matches_query, queryable_symbol, stamped_head, tail,
+    Query,
 };
 use rusqlite::{Connection, OpenFlags};
 use scip::types::Index;
@@ -19,9 +19,11 @@ use std::path::{Path, PathBuf};
 
 /// Ingest-semantics version: bumped when the set of queryable symbols or
 /// the occurrence rows change, so existing dbs auto-rebuild through the
-/// stale_reason path ("2" — class-tailed symbols enter symbol_tails and
-/// their occurrences ride along, AIR-33 ①).
-pub const SCHEMA_VERSION: &str = "2";
+/// stale_reason path ("4" — S3/S4 follow-up: occurrences carry the start
+/// COLUMN (occ.range[1]) — the JS/TS CALLS identity is column-grained;
+/// "3" was the document-aware queryable gate; "2" the AIR-33 python
+/// class expansion).
+pub const SCHEMA_VERSION: &str = "4";
 
 pub const SCHEMA_SQL: &str = "
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -32,7 +34,8 @@ CREATE TABLE occurrences (
     symbol   TEXT    NOT NULL,
     rel_path TEXT    NOT NULL,
     line     INTEGER NOT NULL,
-    is_def   INTEGER NOT NULL
+    is_def   INTEGER NOT NULL,
+    col      INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE symbol_tails (
     -- tail = precomputed descriptor (for manual sqlite inspection;
@@ -73,19 +76,14 @@ pub fn build_db(index: &Index, db_path: &Path, sidecar_head: &str) -> Result<Sta
     let mut tails: BTreeMap<String, (String, String)> = BTreeMap::new();
     for d in &index.documents {
         for occ in &d.occurrences {
-            // Queryable-symbol gate: fn tail `name().` OR class tail
-            // `name#` on the python faces (AIR-33 — bare class-name
-            // queries are legal keys there; variables and rust `Type#`
-            // symbols stay non-queryable).
-            let class_arm = if python_face(&occ.symbol) {
-                class_tail_name(&occ.symbol)
-            } else {
-                None
-            };
-            if let Some(method) = fn_tail_name(&occ.symbol).or(class_arm) {
+            // Queryable-symbol gate (S3, document-aware): fn tail
+            // `name().` always; class tail `name#` on the python faces
+            // (AIR-33) and on JS/TS documents (scip-typescript `#` defs).
+            // Variables and rust `Type#` symbols stay non-queryable.
+            if let Some(qs) = queryable_symbol(&occ.symbol, &d.relative_path) {
                 tails.insert(
                     occ.symbol.clone(),
-                    (tail(&occ.symbol).to_string(), method.to_string()),
+                    (tail(&occ.symbol).to_string(), qs.name.to_string()),
                 );
             }
         }
@@ -123,13 +121,14 @@ pub fn build_db(index: &Index, db_path: &Path, sidecar_head: &str) -> Result<Sta
                         kept_any = true;
                         count += 1;
                         conn.execute(
-                            "INSERT INTO occurrences (symbol, rel_path, line, is_def)\
-                             VALUES (?, ?, ?, ?)",
+                            "INSERT INTO occurrences (symbol, rel_path, line, is_def, col)\
+                             VALUES (?, ?, ?, ?, ?)",
                             rusqlite::params![
                                 occ.symbol,
                                 d.relative_path,
                                 engine::ln(occ),
-                                if occ.symbol_roles & 1 != 0 { 1 } else { 0 }
+                                if occ.symbol_roles & 1 != 0 { 1 } else { 0 },
+                                occ.range.get(1).copied().unwrap_or(0)
                             ],
                         )?;
                     }
@@ -377,22 +376,29 @@ pub fn sqlite_defs(
     };
     let mut defs: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for symbol in candidate_symbols {
-        if !matches_query(&symbol, query) {
-            continue;
-        }
         let rows: Vec<(String, i64)> = query_loc_rows(
             conn,
             "SELECT rel_path, line FROM occurrences \
              WHERE symbol = ? AND is_def = 1 ORDER BY seq",
             &[&symbol],
         )?;
-        if !rows.is_empty() {
-            // ref-only symbols stay out of defs (protobuf same rule)
-            defs.insert(
-                symbol,
-                rows.into_iter().map(|(p, l)| loc_line(&p, l)).collect(),
-            );
+        if rows.is_empty() {
+            continue; // ref-only symbols stay out of defs (protobuf same rule)
         }
+        // The class arm is document-aware (S3): a `#`-tailed symbol is
+        // queryable when ANY defining document is python-face or JS/TS.
+        // fn-tail matching is document-independent, so this preserves
+        // the fn-query path byte-for-byte.
+        if !rows
+            .iter()
+            .any(|(p, _)| matches_query(&symbol, Some(p), query))
+        {
+            continue;
+        }
+        defs.insert(
+            symbol,
+            rows.into_iter().map(|(p, l)| loc_line(&p, l)).collect(),
+        );
     }
     Ok(defs)
 }

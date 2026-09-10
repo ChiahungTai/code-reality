@@ -298,8 +298,11 @@ fn emit_build_cache_and_graph_db_on_fixture() {
             .unwrap();
         assert_eq!(calls, 8, "graph CALLS edges");
         assert_eq!(
-            refs, 2,
-            "graph REFERENCES edges (handler load + alias P() residual)"
+            refs, 4,
+            "graph REFERENCES edges (handler load + alias P() residual + \
+             Wrapper base load + isinstance Plain load — class-tailed \
+             Python symbols ride the graph since the S3 document-aware \
+             queryable gate, matching the scip-face enumeration above)"
         );
         assert!(nested_calls >= 1, "nested-fn CALLS edge: {nested_calls}");
         assert_eq!(plain_calls, 1, "Plain(). pseudo-ctor CALLS edge");

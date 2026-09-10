@@ -47,7 +47,8 @@ const SPEC: ToolSpec = ToolSpec {
 
 const HELP: &str = "usage: code-reality project --repo <repo> --plan <plan.toml> [--json]
   --repo REPO     repo whose real index anchors the projection
-  --plan PLAN     projection plan (planned sources live in <plan dir>/sources/)
+  --plan PLAN     projection plan (planned sources live in <plan dir>/sources/;
+                  Python .py only — JS/TS planned sources are rejected)
   --json          machine-readable report
 ";
 
@@ -242,6 +243,46 @@ pub fn project_repo(
         return Err(env(format!(
             "planned sources 目錄不存在：{}（plan 同層 sources/ 放假想 .py）",
             sources.display()
+        )));
+    }
+    // S6 capability guard: the overlay mints pyrefly/Python symbol
+    // identities — JS/TS planned sources would be laundered through
+    // Python-shaped projected symbols. Reject before overlay-gen runs
+    // (SM-9/10: a Python-only plan in a JS-containing repo stays valid —
+    // the guard scopes to the PLANNED sources, not the repo). Recursive:
+    // sources/ subdirectories must not bypass the check (muse P2-7).
+    fn collect_source_files(dir: &Path, out: &mut Vec<String>) -> std::io::Result<()> {
+        for ent in std::fs::read_dir(dir)? {
+            let ent = ent?;
+            let p = ent.path();
+            if p.is_dir() {
+                collect_source_files(&p, out)?;
+            } else {
+                out.push(ent.file_name().to_string_lossy().into_owned());
+            }
+        }
+        Ok(())
+    }
+    let mut source_names: Vec<String> = Vec::new();
+    collect_source_files(&sources, &mut source_names)
+        .map_err(|e| env(format!("讀 {} 失敗：{e}", sources.display())))?;
+    let js_ts: Vec<String> = source_names
+        .iter()
+        .filter(|n| {
+            crate::language::LanguageFace::from_path(Path::new(n)).is_some_and(|f| {
+                matches!(
+                    f,
+                    crate::language::LanguageFace::JavaScript
+                        | crate::language::LanguageFace::TypeScript
+                )
+            })
+        })
+        .cloned()
+        .collect();
+    if !js_ts.is_empty() {
+        return Err(env(format!(
+            "project overlay 目前僅支援 Python/pyrefly 符號鑄造——planned sources 含 JS/TS 檔（{}）；本弧新增的是 JS/TS 實圖攝取，非 JS/TS 假想投影（計畫中來源請僅 .py）",
+            js_ts.iter().take(3).cloned().collect::<Vec<_>>().join("、")
         )));
     }
 

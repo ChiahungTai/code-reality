@@ -466,7 +466,13 @@ fn protobuf_answers(
 /// The payload/write core lives in engine (shared with the S4 refresh
 /// head-sync); this mode owns the frozen stdout face.
 fn stamp_meta_mode(index_path: &Path, repo: &Path) -> ToolOutput {
-    match crate::engine::stamp_meta_core(repo, index_path, &crate::build::producer_roots(), None) {
+    match crate::engine::stamp_meta_core(
+        repo,
+        index_path,
+        &crate::build::producer_roots(),
+        None,
+        None,
+    ) {
         Ok(head) => {
             let sidecar = meta_path(index_path);
             let repo_name = repo
@@ -784,6 +790,27 @@ fn audit_mode(
             gates[1].replace("{graph}", &graph.display().to_string())
         ));
     }
+    // S6 coverage preflight — the wrapper routes the same guard as the
+    // direct command; invoking the internal audit() must not bypass it
+    let decision = match crate::graph_audit::coverage_decision(&graph) {
+        Ok(d) => d,
+        Err(e) => return ToolOutput::fail(format!("graph_audit 異常退出：{e}")),
+    };
+    let unsupported = match &decision {
+        crate::graph_audit::CoverageDecision::Unsupported(list)
+        | crate::graph_audit::CoverageDecision::Partial(list) => list.clone(),
+        crate::graph_audit::CoverageDecision::Full => Vec::new(),
+    };
+    if matches!(
+        decision,
+        crate::graph_audit::CoverageDecision::Unsupported(_)
+    ) {
+        return ToolOutput::fail(format!(
+            "graph_audit 能力邊界：graph 僅含 {} 節點——完整度 oracle 僅支援 Rust；JS/TS 結構事實請用 scip_refs --callers / graph_query",
+            unsupported.join(", ")
+        ));
+    }
+    let partial_coverage = !unsupported.is_empty();
     let (_risk, audited, missing, errors, total_ra, _warns) =
         match crate::graph_audit::audit(&repo, &graph, false, None) {
             Ok(v) => v,
@@ -866,6 +893,19 @@ fn audit_mode(
         with_refs,
         missing.len()
     ));
+    if partial_coverage {
+        stdout.push_str(&format!(
+            "[PARTIAL] 完整度覆蓋僅 Rust——graph 另含 {}（本弧無 JS/TS 完整度 oracle）\n",
+            unsupported.join(", ")
+        ));
+        // partial coverage is the capability-unsupported exit face (2),
+        // never a clean 0 (S6)
+        return ToolOutput {
+            stdout,
+            stderr: std::mem::take(stderr),
+            exit_code: 2,
+        };
+    }
     ToolOutput {
         stdout,
         stderr: std::mem::take(stderr),

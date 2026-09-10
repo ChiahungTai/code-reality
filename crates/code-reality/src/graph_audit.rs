@@ -404,6 +404,9 @@ pub(crate) fn env_gate_messages() -> [&'static str; 3] {
     ]
 }
 
+/// PATH-style executable probe (crate-internal infra; test topology
+/// must not decide production API visibility — the boundary tests
+/// probe the environment themselves).
 pub(crate) fn which(bin: &str) -> Option<PathBuf> {
     use std::os::unix::fs::PermissionsExt;
     let path = std::env::var_os("PATH")?;
@@ -412,6 +415,42 @@ pub(crate) fn which(bin: &str) -> Option<PathBuf> {
             .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
             .unwrap_or(false)
     })
+}
+
+/// S6 coverage decision for a graph: the audit's completeness oracle is
+/// rust-analyzer over `**/*.rs`, so JS/TS nodes are outside the scanned
+/// corpus. `Unsupported` = no Rust face at all (explicit capability
+/// failure); `Partial` = Rust results render but the verdict can never
+/// be clean; `Full` = baseline behavior. A graph with ZERO non-File
+/// nodes (e.g. a variable-only JS corpus — everything filtered at
+/// ingest) is also `Unsupported`: "[OK] 無缺差" exit 0 over an empty
+/// scan would be a false-clean verdict (muse P2-6).
+pub(crate) fn coverage_decision(graph: &Path) -> Result<CoverageDecision, String> {
+    let c = crate::graph_db::graph_languages(graph)?;
+    if c.is_empty() {
+        return Ok(CoverageDecision::Unsupported(vec![
+            "空 graph（無可查節點）".to_string(),
+        ]));
+    }
+    let unsupported = c.unsupported_names();
+    if c.has_js_ts() && !c.rust {
+        Ok(CoverageDecision::Unsupported(unsupported))
+    } else if !unsupported.is_empty() {
+        Ok(CoverageDecision::Partial(unsupported))
+    } else {
+        Ok(CoverageDecision::Full)
+    }
+}
+
+/// Outcome of [`coverage_decision`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CoverageDecision {
+    /// Graph carries only non-Rust (JS/TS/unknown) languages.
+    Unsupported(Vec<String>),
+    /// Rust face present AND unaudited languages present.
+    Partial(Vec<String>),
+    /// Rust-only graph — baseline audit semantics.
+    Full,
 }
 
 /// Route a `code-reality graph_audit ...` invocation.
@@ -483,6 +522,53 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         };
     }
 
+    // S6 false-clean guard: this audit's completeness oracle is
+    // rust-analyzer reconciliation over `**/*.rs` — a graph carrying
+    // JS/TS nodes is outside the scanned corpus. Pure JS/TS → explicit
+    // unsupported (never a clean verdict); Rust+JS/TS → Rust results
+    // still render, but the overall verdict is partial (exit 2), never
+    // clean-silent (a mixed repo is the parent-review F7 hole).
+    let decision = match coverage_decision(&graph) {
+        Ok(d) => d,
+        Err(e) => {
+            let mut out = ToolOutput::crash(e);
+            out.stderr.insert_str(0, &stderr);
+            return out;
+        }
+    };
+    let unsupported: Vec<String> = match &decision {
+        CoverageDecision::Unsupported(list) | CoverageDecision::Partial(list) => list.clone(),
+        CoverageDecision::Full => Vec::new(),
+    };
+    if matches!(decision, CoverageDecision::Unsupported(_)) {
+        let unsupported_s = unsupported.join(", ");
+        stderr.push_str(&crate::msg_line(
+            "FAIL",
+            &format!(
+                "graph 僅含 {unsupported_s} 節點——graph_audit 的完整度 oracle 僅支援 Rust（rust-analyzer 對帳）；JS/TS 結構事實請用 scip_refs --callers / graph_query（本弧無 JS/TS 完整度 oracle）"
+            ),
+        ));
+        let stdout = if as_json {
+            let mut body = crate::common::to_json_indent1(&serde_json::json!({
+                "risk_files": [],
+                "audited_files": 0,
+                "missing": [],
+                "errors": [],
+                "audited_languages": [],
+                "unsupported_languages": unsupported,
+            }));
+            body.push('\n');
+            body
+        } else {
+            String::new()
+        };
+        return ToolOutput {
+            stdout,
+            stderr,
+            exit_code: 2,
+        };
+    }
+
     let (risk, audited, missing, errors, total_ra, warns) =
         match audit(&repo, &graph, all_files, None) {
             Ok(v) => v,
@@ -531,12 +617,18 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         let errors_v: Vec<&String> = errors.iter().collect();
         // Python `print(json.dumps(...))` — the trailing newline is part of
         // the stdout byte face
-        let mut body = crate::common::to_json_indent1(&serde_json::json!({
+        let mut v = serde_json::json!({
             "risk_files": risk_files,
             "audited_files": audited,
             "missing": missing_v,
             "errors": errors_v,
-        }));
+        });
+        if !unsupported.is_empty() {
+            // S6 partial-coverage statement (additive, never silent)
+            v["audited_languages"] = serde_json::json!(["rust"]);
+            v["unsupported_languages"] = serde_json::json!(unsupported);
+        }
+        let mut body = crate::common::to_json_indent1(&v);
         body.push('\n');
         body
     } else {
@@ -575,12 +667,94 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         } else {
             out.push_str("[OK] 無缺差\n");
         }
+        if !unsupported.is_empty() {
+            // S6 partial-coverage statement — visible in the verdict body,
+            // not only stderr (automation reads stdout too)
+            out.push_str(&format!(
+                "[PARTIAL] 完整度覆蓋僅 Rust——graph 另含 {}（本弧無 JS/TS 完整度 oracle）；JS/TS 結構事實用 scip_refs --callers / graph_query\n",
+                unsupported.join(", ")
+            ));
+        }
         out
     };
-    let exit_code = if missing.is_empty() { 0 } else { 1 };
+    // Partial coverage (mixed graph with unaudited JS/TS) is exit 2 —
+    // the capability-unsupported family — never a clean 0 and never
+    // masquerading as source-correctness defects (S6).
+    let exit_code = if !unsupported.is_empty() {
+        2
+    } else if missing.is_empty() {
+        0
+    } else {
+        1
+    };
     ToolOutput {
         stdout,
         stderr,
         exit_code,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{coverage_decision, CoverageDecision};
+    use scip::types::{Document, Index, Occurrence};
+
+    fn occ(symbol: &str, is_def: i32) -> Occurrence {
+        let mut o = Occurrence::new();
+        o.symbol = symbol.to_string();
+        o.symbol_roles = is_def;
+        o.range = vec![0, 0, 1];
+        o
+    }
+
+    fn doc(rel: &str, symbol: &str) -> Document {
+        let mut d = Document::new();
+        d.relative_path = rel.to_string();
+        d.occurrences = vec![occ(symbol, 1)];
+        d
+    }
+
+    fn graph_for(docs: Vec<Document>) -> tempfile::TempDir {
+        use protobuf::Message;
+        let t = tempfile::tempdir().unwrap();
+        let slot_dir = t.path().join(".code-reality/scip");
+        std::fs::create_dir_all(&slot_dir).unwrap();
+        let slot = slot_dir.join("index.scip");
+        let mut index = Index::new();
+        index.documents = docs;
+        std::fs::write(&slot, index.write_to_bytes().unwrap()).unwrap();
+        crate::graph_db::build_from_cache_at(t.path(), &slot).expect("graph build");
+        t
+    }
+
+    #[test]
+    fn coverage_decision_matrix() {
+        let js = graph_for(vec![
+            doc("src/lib.ts", "scip-typescript npm . . /r/`lib.ts`/a()."),
+            doc("src/app.mjs", "scip-typescript npm . . /r/`app.mjs`/b()."),
+        ]);
+        assert_eq!(
+            coverage_decision(&js.path().join(".code-reality/graph.db")).unwrap(),
+            CoverageDecision::Unsupported(vec!["javascript".into(), "typescript".into()])
+        );
+
+        let rs = graph_for(vec![doc(
+            "src/lib.rs",
+            "rust-analyzer cargo x 0.1.0 k/open().",
+        )]);
+        assert_eq!(
+            coverage_decision(&rs.path().join(".code-reality/graph.db")).unwrap(),
+            CoverageDecision::Full
+        );
+
+        let mx = graph_for(vec![
+            doc("src/lib.rs", "rust-analyzer cargo x 0.1.0 k/open()."),
+            doc("src/lib.ts", "scip-typescript npm . . /r/`lib.ts`/a()."),
+            doc("src/app.mjs", "scip-typescript npm . . /r/`app.mjs`/b()."),
+        ]);
+        assert_eq!(
+            coverage_decision(&mx.path().join(".code-reality/graph.db")).unwrap(),
+            CoverageDecision::Partial(vec!["javascript".into(), "typescript".into()])
+        );
     }
 }

@@ -116,7 +116,7 @@ fn refresh_run(toks: &[&str]) -> ToolOutput {
             if snap.head_drift == Some(true) && slot.exists() {
                 // head-sync only: sources are current, provenance lags —
                 // re-stamp instead of paying a full re-produce
-                match stamp_meta_core(&repo, &slot, &producer_roots(), None) {
+                match stamp_meta_core(&repo, &slot, &producer_roots(), None, None) {
                     Ok(_) => stderr.push_str("[OK] refresh：索引新鮮，meta head 已同步\n"),
                     Err(e) => {
                         stderr.push_str(&format!("[WARN] refresh：head-sync stamp 失敗（{e}）\n"))

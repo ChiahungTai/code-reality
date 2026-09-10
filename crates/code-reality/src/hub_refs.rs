@@ -68,7 +68,8 @@ const HELP: &str = concat!(
     "  --direction DIRECTION\n",
     "                        refs 方向\n",
     "  --top TOP             每欄最多列 N 目錄\n",
-    "  --hazard              強制全規則 hazard 掃描（常規為觸發式：static_prod ≤ RG_TRIGGER_PROD=2 才掃）\n",
+    "  --hazard              強制全規則 hazard 掃描（常規為觸發式：static_prod ≤ RG_TRIGGER_PROD=2 才掃）；\n",
+    "                        動態 hazard 語義僅 Python——JS/TS 目標回 unsupported-js-ts（非「零危害」）\n",
     "  --json                機器可讀輸出（hazard_findings 欄）\n",
 );
 
@@ -492,6 +493,7 @@ pub fn json_payload(
     warn: Option<&str>,
     results_omitted: i64,
     hazard_level: &str,
+    hazard_supported: bool,
 ) -> Value {
     let findings_v: Vec<Value> = findings
         .iter()
@@ -528,6 +530,7 @@ pub fn json_payload(
         },
         "hazard_findings": findings_v,
         "hazard_level": hazard_level,
+        "hazard_supported": hazard_supported,
         "hazard_gate": warn,
     })
 }
@@ -605,7 +608,51 @@ pub fn run(argv: &[&str]) -> ToolOutput {
     let mut findings: Vec<HazardFinding> = Vec::new();
     let mut warn: Option<String> = None;
     let mut level = "resident";
-    if direction == "callers" || force_hazard {
+    // S6 target-language guard: the hazard layer encodes Python AST /
+    // dynamic-dispatch semantics — running it against a JS/TS target
+    // would return an empty-clean answer (a false "zero hazards").
+    // Static caller aggregation stays; dynamic hazard coverage is
+    // explicitly marked unsupported. Ambiguous Python+JS/TS names take
+    // the conservative path too (SM-6/7/8). Resolution is three-pronged
+    // (muse P1-2): (a) name lookup for bare inputs, (b) the RESOLVED
+    // target's producer prefix (scip-typescript face), and (c) the
+    // defining-file extension embedded in `::`-qualified inputs — the
+    // shape graph output teaches users to copy, which passthrough
+    // resolution never maps to a bare name.
+    let target_langs = crate::graph_db::symbol_languages(&repo, &symbol).unwrap_or_default();
+    let resolved_target = resp
+        .get("target")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let qualified_path_js_ts = resolved_target
+        .split("::")
+        .next()
+        .filter(|p| p.contains('/'))
+        .map(|p| {
+            matches!(
+                crate::language::LanguageFace::from_path(Path::new(p)),
+                Some(crate::language::LanguageFace::JavaScript)
+                    | Some(crate::language::LanguageFace::TypeScript)
+            )
+        })
+        .unwrap_or(false);
+    let js_ts_target = target_langs
+        .iter()
+        .any(|l| l == "JavaScript" || l == "TypeScript")
+        || resolved_target.starts_with("scip-typescript ")
+        || qualified_path_js_ts;
+    let py_target = target_langs.iter().any(|l| l == "Python");
+    let mut hazard_supported = true;
+    if js_ts_target {
+        hazard_supported = false;
+        level = "unsupported-js-ts";
+        let langs = target_langs.iter().cloned().collect::<Vec<_>>().join(", ");
+        warn = Some(format!(
+            "[WARN] hazard 動態層僅支援 Python 語義——目標 {symbol} 語言為 {langs}{}；靜態 caller 聚合仍有效，動態 hazard 覆蓋不成立（非「零危害」）",
+            if py_target { "（同名 Python 符號存在——ambiguous 目標，保守處理）" } else { "" }
+        ));
+    } else if direction == "callers" || force_hazard {
         match hazard_stage(
             &symbol,
             &repo,
@@ -634,6 +681,7 @@ pub fn run(argv: &[&str]) -> ToolOutput {
             warn.as_deref(),
             omitted,
             level,
+            hazard_supported,
         ));
         body.push('\n'); // Python print()
         return ToolOutput {

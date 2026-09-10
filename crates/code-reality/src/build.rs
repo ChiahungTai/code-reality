@@ -1,15 +1,25 @@
 //! `build` — one-shot data-plane bootstrap for a repo (EP
-//! ep-build-umbrella). Orchestration only, zero new production logic:
-//! detect the language face → run the matching producer (pyrefly-index
-//! / rust-analyzer scip, spawned as sibling bins — the crates are
-//! separate dists, so process spawn is the only legal coupling) →
-//! in-process `graph_db build` + `ensure_indexes` → state summary.
+//! ep-build-umbrella + JS/TS blueprint S1/S2). Orchestration only:
+//! detect the language faces → run the selected producer legs
+//! (pyrefly-index / rust-analyzer scip / scip-typescript, spawned as
+//! sibling or external bins — process spawn is the only legal coupling)
+//! → in-process `graph_db build` + `ensure_indexes` → state summary.
 //!
-//! Mixed repos default to BOTH legs with the protobuf cat-merge trick:
-//! concatenating two encoded `scip.Index` messages of the same type is
-//! a legal merge (repeated fields stack), so the unified graph needs no
-//! graph_db changes (POC-verified 2026-08-29: one db serving
-//! `scip_refs` for both `src/lib.rs:1` and `app.py:1`).
+//! Language-set orchestration (S1): the binary `RepoKind` branching is
+//! gone; detection yields a [`SourceInventory`] over the
+//! [`crate::language`] extension mapping, legs run in the frozen
+//! `ProducerFamily::ORDERED` order, and EVERY leg stages a validated
+//! partial under pid-keyed names. The live slot is published exactly
+//! once — `merge_and_publish` — after all requested legs validate, so a
+//! failed later leg leaves the pre-build slot byte-identical (the old
+//! Python-first path wrote the live slot directly; that hole is closed).
+//!
+//! Mixed indexes use the protobuf cat-merge trick: concatenating encoded
+//! `scip.Index` messages of the same type is a legal merge (repeated
+//! fields stack; N-way feasibility POC-verified). CR product code does
+//! not consume `Index.metadata` — the sidecar stamp stays the
+//! provenance authority — but the merge order is frozen and tested
+//! because protobuf singular fields are last-value-wins.
 //!
 //! Known trap (POC): `rust-analyzer scip` takes the repo DIRECTORY —
 //! passing Cargo.toml exits 0 with a metadata-only "empty" index, hence
@@ -19,6 +29,7 @@ use crate::argparse::{parse, FlagSpec, Kind, Outcome, ToolSpec};
 use crate::common::{first_output_line, resolve_bin};
 use crate::engine::{default_index_path, resolve_repo};
 use crate::graph_db;
+use crate::language::ProducerFamily;
 use crate::ToolOutput;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -36,7 +47,7 @@ const SPEC: ToolSpec = ToolSpec {
             long: "--producer",
             short: None,
             kind: Kind::Value {
-                metavar: "rust|python",
+                metavar: "rust|python|typescript",
             },
         },
         FlagSpec {
@@ -48,10 +59,13 @@ const SPEC: ToolSpec = ToolSpec {
     positionals: &[],
 };
 
-const HELP: &str = "usage: code-reality build --repo <repo> [--producer rust|python] [--json]
+const HELP: &str =
+    "usage: code-reality build --repo <repo> [--producer rust|python|typescript] [--json]
   --repo REPO              repo root whose data plane gets bootstrapped
-  --producer rust|python   override detection (mixed repos run both legs
-                           by default and cat-merge into one graph)
+  --producer rust|python|typescript
+                           override detection（typescript = JS/TS 共用腿）；
+                           mixed repos run all legs by default and cat-merge
+                           into one graph
   --json                   machine-readable report
 ";
 
@@ -59,13 +73,6 @@ const HELP: &str = "usage: code-reality build --repo <repo> [--producer rust|pyt
 /// (the Cargo.toml-form trap produced 102-122 bytes; a legal minimal
 /// crate index is 725 bytes — POC- calibrated).
 const EMPTY_INDEX_BYTES: u64 = 128;
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum RepoKind {
-    Python,
-    Rust,
-    Mixed { py: usize, rs: usize },
-}
 
 #[derive(Debug)]
 pub struct Report {
@@ -99,14 +106,24 @@ impl BuildError {
     }
 }
 
-pub fn count_sources(repo: &Path) -> Result<(usize, usize), String> {
+/// Per-face source counts from the detection walk (S1). `js_ts` counts
+/// all six JS/TS extensions — JS and TS are one producer family with
+/// two graph-language labels.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct SourceInventory {
+    pub py: usize,
+    pub rs: usize,
+    pub js_ts: usize,
+}
+
+pub fn count_sources(repo: &Path) -> Result<SourceInventory, String> {
     // Composed (not duplicated) from the shared corpus list; the build
     // detector additionally skips `target` (OUT_DIR artifacts are not
     // source — the staleness walk keeps .py there for the python face).
     let mut skips: Vec<&str> = crate::engine::SKIP_DIRS.to_vec();
     skips.push("target");
     let mut stack = vec![repo.to_path_buf()];
-    let (mut py, mut rs) = (0usize, 0usize);
+    let mut inv = SourceInventory::default();
     while let Some(dir) = stack.pop() {
         let entries =
             std::fs::read_dir(&dir).map_err(|e| format!("讀取 {} 失敗：{e}", dir.display()))?;
@@ -119,27 +136,33 @@ pub fn count_sources(repo: &Path) -> Result<(usize, usize), String> {
                 }
                 stack.push(ent.path());
             } else if ft.is_file() {
-                if name.ends_with(".py") {
-                    py += 1;
-                } else if name.ends_with(".rs") {
-                    rs += 1;
+                match crate::language::LanguageFace::from_path(Path::new(&name)) {
+                    Some(crate::language::LanguageFace::Python) => inv.py += 1,
+                    Some(crate::language::LanguageFace::Rust) => inv.rs += 1,
+                    Some(crate::language::LanguageFace::JavaScript)
+                    | Some(crate::language::LanguageFace::TypeScript) => inv.js_ts += 1,
+                    None => {}
                 }
             }
         }
     }
-    Ok((py, rs))
+    Ok(inv)
 }
 
-fn detect_kind(repo: &Path) -> Result<RepoKind, BuildError> {
-    let (py, rs) = count_sources(repo).map_err(BuildError::Core)?;
-    match (py, rs) {
-        (0, 0) => Err(BuildError::Env(
-            "找不到 .py 或 .rs 原始碼——build 需要至少一種語言面".to_string(),
-        )),
-        (_, 0) => Ok(RepoKind::Python),
-        (0, _) => Ok(RepoKind::Rust),
-        (py, rs) => Ok(RepoKind::Mixed { py, rs }),
+/// Detected producer families (S1: detection feeds an ordered set, not a
+/// `RepoKind` enum — language three must not grow combinatorial states).
+fn detect_families(inv: &SourceInventory) -> BTreeSet<ProducerFamily> {
+    let mut out = BTreeSet::new();
+    if inv.py > 0 {
+        out.insert(ProducerFamily::Python);
     }
+    if inv.rs > 0 {
+        out.insert(ProducerFamily::Rust);
+    }
+    if inv.js_ts > 0 {
+        out.insert(ProducerFamily::TypeScript);
+    }
+    out
 }
 
 pub(crate) fn producer_roots() -> Vec<PathBuf> {
@@ -155,21 +178,58 @@ pub(crate) fn producer_roots() -> Vec<PathBuf> {
     roots
 }
 
-fn python_leg(repo: &Path, rep: &mut Report, roots: &[PathBuf]) -> Result<(), BuildError> {
+/// Protobuf same-type message concatenation: repeated fields stack, so
+/// `read(slot) ++ read(part)` written back is a legal merged Index.
+/// Temp-sibling + rename (atomic, graph_db build precedent). Consumed
+/// by the `project` overlay merge; `build` itself stages and merges
+/// through [`merge_and_publish`].
+pub(crate) fn concat_scip(slot: &Path, part: &Path) -> Result<(), String> {
+    let a = std::fs::read(slot).map_err(|e| format!("讀 {} 失敗：{e}", slot.display()))?;
+    let b = std::fs::read(part).map_err(|e| format!("讀 {} 失敗：{e}", part.display()))?;
+    let tmp = slot.with_file_name(".merge-tmp.scip");
+    std::fs::write(&tmp, [a, b].concat()).map_err(|e| format!("寫 {} 失敗：{e}", tmp.display()))?;
+    std::fs::rename(&tmp, slot)
+        .map_err(|e| format!("rename {} → {} 失敗：{e}", tmp.display(), slot.display()))
+}
+
+/// A producer partial validated for merge: pid-keyed path unique to one
+/// build attempt (a concurrent/failed attempt never overwrites another's
+/// part — S1 atomicity prerequisite).
+struct StagedLeg {
+    family: ProducerFamily,
+    path: PathBuf,
+}
+
+/// Producer outputs below this size are metadata-only "empty" indexes
+/// (the Cargo.toml-form trap produced 102-122 bytes; a legal minimal
+/// crate index is 725 bytes — POC- calibrated).
+fn validate_partial(path: &Path) -> Result<(), BuildError> {
+    let len = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    if len < EMPTY_INDEX_BYTES {
+        return Err(BuildError::Env(
+            "producer 產出空索引（<128 bytes）——workspace 載入可能失敗；rust-analyzer scip 需傳 repo 目錄（非 Cargo.toml）"
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// Python leg, staged (S1: every leg writes an explicit partial — the
+/// producer's own sidecar invalidation keys off its output path, so a
+/// pid-keyed part cannot touch the live slot's sidecars).
+fn stage_python(repo: &Path, part: &Path, roots: &[PathBuf]) -> Result<Option<String>, BuildError> {
     let bin = resolve_bin(
         "pyrefly-index",
         roots,
         "安裝：uv tool install pyrefly-producer（或 cargo install --path crates/pyrefly-producer）",
     )
     .map_err(|e| BuildError::Env(format!("{e}\n")))?;
-    if let Some(v) = first_output_line(&bin, &["--version"]) {
-        rep.producers.push(format!("pyrefly-index {v}"));
-    }
-    // No --out: the producer writes the in-repo slot itself and
-    // invalidates superseded sidecar artifacts beside it.
+    let version = first_output_line(&bin, &["--version"]);
     let out = Command::new(&bin)
         .arg("--repo")
         .arg(repo)
+        .arg("--out")
+        .arg(part)
         .current_dir(repo)
         .output()
         .map_err(|e| BuildError::Env(format!("spawn {} 失敗：{e}", bin.display())))?;
@@ -180,24 +240,19 @@ fn python_leg(repo: &Path, rep: &mut Report, roots: &[PathBuf]) -> Result<(), Bu
             String::from_utf8_lossy(&out.stderr)
         )));
     }
-    Ok(())
+    Ok(version)
 }
 
-fn rust_leg(
-    repo: &Path,
-    out_path: &Path,
-    rep: &mut Report,
-    roots: &[PathBuf],
-) -> Result<(), BuildError> {
+/// Rust leg, staged into an explicit partial (unchanged shape from the
+/// pre-S1 two-leg era: `--output` + the empty-index guard).
+fn stage_rust(repo: &Path, part: &Path, roots: &[PathBuf]) -> Result<Option<String>, BuildError> {
     let bin = resolve_bin(
         "rust-analyzer",
         roots,
         "安裝：rustup component add rust-analyzer",
     )
     .map_err(|e| BuildError::Env(format!("{e}\n")))?;
-    if let Some(v) = first_output_line(&bin, &["--version"]) {
-        rep.producers.push(v);
-    }
+    let version = first_output_line(&bin, &["--version"]);
     // current_dir pins the rustup proxy's toolchain resolution to the
     // repo (cwd-based proxy trap); the repo DIRECTORY (not Cargo.toml)
     // is the verified CLI shape.
@@ -205,7 +260,7 @@ fn rust_leg(
         .arg("scip")
         .arg(repo)
         .arg("--output")
-        .arg(out_path)
+        .arg(part)
         .current_dir(repo)
         .output()
         .map_err(|e| {
@@ -221,33 +276,76 @@ fn rust_leg(
             String::from_utf8_lossy(&out.stderr)
         )));
     }
-    let len = std::fs::metadata(out_path).map(|m| m.len()).unwrap_or(0);
-    if len < EMPTY_INDEX_BYTES {
-        return Err(BuildError::Env(
-            "producer 產出空索引（<128 bytes）——workspace 載入可能失敗；rust-analyzer scip 需傳 repo 目錄（非 Cargo.toml）"
-                .to_string(),
-        ));
-    }
-    Ok(())
+    validate_partial(part)?;
+    Ok(version)
 }
 
-/// Protobuf same-type message concatenation: repeated fields stack, so
-/// `read(slot) ++ read(part)` written back is a legal merged Index.
-/// Temp-sibling + rename (atomic, graph_db build precedent).
-pub(crate) fn concat_scip(slot: &Path, part: &Path) -> Result<(), String> {
-    let a = std::fs::read(slot).map_err(|e| format!("讀 {} 失敗：{e}", slot.display()))?;
-    let b = std::fs::read(part).map_err(|e| format!("讀 {} 失敗：{e}", part.display()))?;
-    let tmp = slot.with_file_name(".merge-tmp.scip");
-    std::fs::write(&tmp, [a, b].concat()).map_err(|e| format!("寫 {} 失敗：{e}", tmp.display()))?;
-    std::fs::rename(&tmp, slot)
-        .map_err(|e| format!("rename {} → {} 失敗：{e}", tmp.display(), slot.display()))
+/// Best-effort removal of THIS build's staged artifacts only
+/// (attempt-keyed names + its stage dir); never touches unrelated
+/// sidecar files or another attempt's artifacts.
+fn cleanup_staged(slot_dir: &Path, attempt: &str) {
+    let part_prefix = format!(".part-{attempt}-");
+    let publish_tmp = format!(".publish-{attempt}.scip");
+    if let Ok(entries) = std::fs::read_dir(slot_dir) {
+        for ent in entries.flatten() {
+            let name = ent.file_name().to_string_lossy().into_owned();
+            if name.starts_with(&part_prefix) || name == publish_tmp {
+                let _ = std::fs::remove_file(ent.path());
+            }
+        }
+    }
+    let _ = std::fs::remove_dir_all(slot_dir.join(format!(".stage-{attempt}")));
+}
+
+/// Validate the candidate then publish the live slot exactly once
+/// (atomic sibling rename — concurrent readers never see a torn index).
+/// Single leg: the validated part renames onto the slot. Multi-leg:
+/// deterministic `ORDERED` concatenation into a sibling tmp, parse the
+/// merged candidate, rename. Failure at any point leaves the old slot
+/// untouched.
+fn merge_and_publish(staged: &[StagedLeg], slot: &Path, attempt: &str) -> Result<(), BuildError> {
+    if staged.len() == 1 {
+        crate::engine::load_index(&staged[0].path)
+            .map_err(|e| BuildError::Env(format!("partial 驗證失敗：{e}")))?;
+        return std::fs::rename(&staged[0].path, slot).map_err(|e| {
+            BuildError::Core(format!(
+                "rename {} → {} 失敗：{e}",
+                staged[0].path.display(),
+                slot.display()
+            ))
+        });
+    }
+    let mut bytes: Vec<u8> = Vec::new();
+    for family in ProducerFamily::ORDERED {
+        if let Some(leg) = staged.iter().find(|l| l.family == family) {
+            let b = std::fs::read(&leg.path)
+                .map_err(|e| BuildError::Core(format!("讀 {} 失敗：{e}", leg.path.display())))?;
+            bytes.extend_from_slice(&b);
+        }
+    }
+    let tmp = slot.with_file_name(format!(".publish-{attempt}.scip"));
+    std::fs::write(&tmp, &bytes)
+        .map_err(|e| BuildError::Core(format!("寫 {} 失敗：{e}", tmp.display())))?;
+    if let Err(e) = crate::engine::load_index(&tmp) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(BuildError::Env(format!("merged candidate 驗證失敗：{e}")));
+    }
+    std::fs::rename(&tmp, slot).map_err(|e| {
+        BuildError::Core(format!(
+            "rename {} → {} 失敗：{e}",
+            tmp.display(),
+            slot.display()
+        ))
+    })
 }
 
 /// Core orchestration. `roots` is the bin-search path list (injectable
-/// for tests); `producer` overrides the detected face.
+/// for tests); `producer` overrides the detected face set with exactly
+/// one family (a deliberate partial face — omitted detected families are
+/// reported, never silently dropped).
 pub fn build_repo(
     repo: &Path,
-    producer: Option<&str>,
+    producer: Option<ProducerFamily>,
     roots: &[PathBuf],
 ) -> Result<Report, BuildError> {
     let resolved = resolve_repo(repo);
@@ -257,7 +355,21 @@ pub fn build_repo(
             repo.display()
         )));
     }
-    let kind = detect_kind(&resolved)?;
+    let inventory = count_sources(&resolved).map_err(BuildError::Core)?;
+    let detected = detect_families(&inventory);
+    let selected: Vec<ProducerFamily> = match producer {
+        None => ProducerFamily::ORDERED
+            .into_iter()
+            .filter(|f| detected.contains(f))
+            .collect(),
+        Some(f) => vec![f],
+    };
+    if selected.is_empty() {
+        return Err(BuildError::Env(
+            "找不到可索引原始碼（.py／.rs／.js/.jsx/.mjs/.cjs/.ts/.tsx）——build 需要至少一種語言面"
+                .to_string(),
+        ));
+    }
     let slot_dir = resolved.join(".code-reality").join("scip");
     std::fs::create_dir_all(&slot_dir)
         .map_err(|e| BuildError::Env(format!("建立 {} 失敗：{e}", slot_dir.display())))?;
@@ -267,16 +379,21 @@ pub fn build_repo(
         .map_err(BuildError::Env)?;
     let slot = default_index_path(&resolved).map_err(BuildError::Core)?;
     let slot_existed = slot.exists();
-
-    let (mut run_py, mut run_rs) = match kind {
-        RepoKind::Python => (true, false),
-        RepoKind::Rust => (false, true),
-        RepoKind::Mixed { .. } => (true, true),
-    };
-    if let Some(p) = producer {
-        run_py = p == "python";
-        run_rs = p == "rust";
-    }
+    // Per-attempt staging identity: pid + process-local counter. PID
+    // alone collides for same-process concurrent builds (MCP
+    // spawn_blocking runs two builds in one daemon — a shared
+    // `.part-<pid>` namespace lets them overwrite/rename/clean each
+    // other's partials, S1 EP "unique to one build attempt"). With
+    // unique names, racing builds only race the final rename — last
+    // writer publishes its own COMPLETE merged index, never a torn or
+    // foreign-partial slot.
+    static ATTEMPT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let attempt = format!(
+        "{pid}-{}",
+        ATTEMPT.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+        pid = std::process::id()
+    );
+    let stage_dir = slot_dir.join(format!(".stage-{attempt}"));
 
     let mut rep = Report {
         repo: resolved.clone(),
@@ -291,76 +408,160 @@ pub fn build_repo(
         notes: Vec::new(),
     };
 
-    match (run_py, run_rs) {
-        (true, false) => {
-            rep.face = "python-face".to_string();
-            python_leg(&resolved, &mut rep, roots)?;
-            if slot_existed {
-                rep.notes
-                    .push("覆蓋既有 index.scip（slot 單檔——先前面目已取代）".to_string());
+    // ---- stage every requested leg (ORDERED); a later-leg failure must
+    // leave the pre-build live slot byte-identical ----
+    let mut staged: Vec<StagedLeg> = Vec::new();
+    // Did every selected leg resolve to an intentionally-empty governed
+    // corpus (profile exclusion)? The legal empty-convergence terminal
+    // state (codex blocker 1: an all-excluded corpus must be able to
+    // CONVERGE — erroring forever leaves a stale index/graph served as
+    // fresh-adjacent forever).
+    let mut all_policy_empty = !selected.is_empty();
+    for family in &selected {
+        let part = slot_dir.join(format!(".part-{attempt}-{}.scip", family.cli_name()));
+        match family {
+            ProducerFamily::Python => match stage_python(&resolved, &part, roots) {
+                Ok(version) => {
+                    validate_partial(&part)?;
+                    all_policy_empty = false;
+                    if let Some(v) = version {
+                        rep.producers.push(format!("pyrefly-index {v}"));
+                    }
+                }
+                Err(e) => {
+                    cleanup_staged(&slot_dir, &attempt);
+                    return Err(e);
+                }
+            },
+            ProducerFamily::Rust => match stage_rust(&resolved, &part, roots) {
+                Ok(version) => {
+                    all_policy_empty = false;
+                    if let Some(v) = version {
+                        rep.producers.push(v);
+                    }
+                }
+                Err(e) => {
+                    cleanup_staged(&slot_dir, &attempt);
+                    return Err(e);
+                }
+            },
+            ProducerFamily::TypeScript => {
+                match crate::ts_producer::stage_typescript_leg(&resolved, &stage_dir, &part, roots)
+                {
+                    Ok(crate::ts_producer::TsProduceOutcome::SkippedByProfile) => {
+                        rep.notes.push(
+                            "typescript 語言面：governed 語料為空（profile exclude）——略過此腿"
+                                .to_string(),
+                        );
+                        continue;
+                    }
+                    Ok(crate::ts_producer::TsProduceOutcome::Staged {
+                        producer_version,
+                        mode,
+                        indexed_docs,
+                    }) => {
+                        all_policy_empty = false;
+                        // No 128B size guard here: that heuristic is
+                        // rust-analyzer-specific calibration (the
+                        // Cargo.toml metadata-only trap); the TS leg's
+                        // own validation is stronger and exact (parse +
+                        // governed doc-set), and a legal tiny JS corpus
+                        // produces a small-but-valid index.
+                        if let Some(v) = producer_version {
+                            rep.producers.push(format!("scip-typescript {v}"));
+                        }
+                        rep.notes.push(format!(
+                            "typescript 腿：{mode} config、{indexed_docs} governed 文檔"
+                        ));
+                    }
+                    Err(e) => {
+                        cleanup_staged(&slot_dir, &attempt);
+                        return Err(BuildError::Env(e));
+                    }
+                }
             }
         }
-        (false, true) => {
-            rep.face = "rust-face".to_string();
-            // The leg always writes the sibling part; the single-leg face
-            // lands it on the slot via rename so concurrent readers never
-            // see a torn index (rust-analyzer would otherwise write the
-            // slot in place — the mixed path already had rename via
-            // concat_scip).
-            let rs_part = slot_dir.join(".rust-part.scip");
-            if let Err(e) = rust_leg(&resolved, &rs_part, &mut rep, roots) {
-                let _ = std::fs::remove_file(&rs_part);
-                return Err(e);
-            }
-            std::fs::rename(&rs_part, &slot).map_err(|e| {
-                BuildError::Core(format!(
-                    "rename {} → {} 失敗：{e}",
-                    rs_part.display(),
-                    slot.display()
-                ))
-            })?;
-            if slot_existed {
-                rep.notes
-                    .push("覆蓋既有 index.scip（slot 單檔——先前面目已取代）".to_string());
-            }
+        staged.push(StagedLeg {
+            family: *family,
+            path: part,
+        });
+    }
+    if staged.is_empty() {
+        if producer.is_none() && all_policy_empty {
+            // Empty convergence: auto-detection selected only faces whose
+            // governed corpus is entirely profile-excluded — the truthful
+            // state is NO index. Remove the slot and graph so freshness
+            // converges (next check: Fresh) instead of serving a stale
+            // corpus forever. An EXPLICIT override onto an empty face
+            // stays a loud error (the operator asked for that face).
+            cleanup_staged(&slot_dir, &attempt);
+            let _ = std::fs::remove_file(crate::cache::sqlite_path(&slot));
+            let _ = std::fs::remove_file(crate::engine::meta_path(&slot));
+            let _ = std::fs::remove_file(crate::fndefs::fndefs_path(&slot));
+            let _ = std::fs::remove_file(&slot);
+            let _ = std::fs::remove_file(graph_db::db_path(&resolved));
+            rep.face = "empty(profile-excluded)".to_string();
+            rep.graph_rebuilt = false; // the graph is REMOVED, not rebuilt
+            rep.notes.push(
+                "governed 語料全數被 profile 排除——收斂為空（index 與 graph 已移除）".to_string(),
+            );
+            let _ = std::fs::remove_file(churn_marker(&slot));
+            return Ok(rep);
         }
-        (true, true) => {
-            rep.face = "mixed(rust+python)".to_string();
-            // Python writes the slot (plus sidecar invalidation); rust
-            // writes a sibling part file, then the two are cat-merged
-            // into the slot (one graph serves both languages).
-            let rs_part = slot_dir.join(".rust-part.scip");
-            python_leg(&resolved, &mut rep, roots)?;
-            if let Err(e) = rust_leg(&resolved, &rs_part, &mut rep, roots) {
-                let _ = std::fs::remove_file(&rs_part);
-                return Err(e);
-            }
-            concat_scip(&slot, &rs_part).map_err(BuildError::Core)?;
-            let _ = std::fs::remove_file(&rs_part);
-            rep.notes
-                .push("雙語言合一 graph（rust+python 串接）".to_string());
-        }
-        (false, false) => {
-            return Err(BuildError::Env(
-                "--producer 內部錯誤：需為 rust 或 python".to_string(),
-            ));
-        }
+        cleanup_staged(&slot_dir, &attempt);
+        return Err(BuildError::Env(
+            "選定的語言面均未產出索引（governed 語料為空或 producer 略過）".to_string(),
+        ));
+    }
+
+    // ---- publish exactly once, after every requested leg validated ----
+    if let Err(e) = merge_and_publish(&staged, &slot, &attempt) {
+        cleanup_staged(&slot_dir, &attempt);
+        return Err(e);
+    }
+    cleanup_staged(&slot_dir, &attempt);
+    if staged.len() == 1 {
+        rep.face = staged[0].family.face_name().to_string();
+    } else {
+        let names: Vec<&str> = ProducerFamily::ORDERED
+            .iter()
+            .filter(|f| staged.iter().any(|l| l.family == **f))
+            .map(|f| f.cli_name())
+            .collect();
+        rep.face = format!("mixed({})", names.join("+"));
+    }
+    // Superseded derived sidecars of the live slot: the producers'
+    // invalidation contract, applied at the publish point (a concurrent
+    // query could otherwise build a cache db newer than the new slot and
+    // relay the OLD corpus as fresh). Meta is restamped right below.
+    let _ = std::fs::remove_file(crate::cache::sqlite_path(&slot));
+    let _ = std::fs::remove_file(crate::fndefs::fndefs_path(&slot));
+    if slot_existed {
+        rep.notes
+            .push("覆蓋既有 index.scip（slot 單檔——先前面目已取代）".to_string());
     }
 
     // Stamp index provenance in-process with the legs that actually ran
     // (face-accurate producer string; relay Finding B's no-unstamped-slot
     // goal — direct lib call, no cli::run indirection so the query-path
-    // heal hook cannot re-enter at all).
-    let producer = rep.producers.join("; ");
+    // heal hook cannot re-enter at all). Selection mode: explicit
+    // override pins the face scope; auto lets freshness union with
+    // newly detected faces (muse P0-1).
+    let producer_str = rep.producers.join("; ");
     if let Err(e) = crate::engine::stamp_meta_core(
         &resolved,
         &slot,
         roots,
-        if producer.is_empty() {
+        if producer_str.is_empty() {
             None
         } else {
-            Some(&producer)
+            Some(&producer_str)
         },
+        Some(if producer.is_some() {
+            "explicit"
+        } else {
+            "auto"
+        }),
     ) {
         rep.notes.push(format!(
             "stamp-meta 失敗（{e}）——手動補：code-reality scip_refs --repo {} --stamp-meta",
@@ -368,11 +569,16 @@ pub fn build_repo(
         ));
     }
 
-    if matches!(kind, RepoKind::Mixed { .. }) && (run_py ^ run_rs) {
-        rep.notes.push(format!(
-            "未索引：{}（--producer 切換）",
-            if run_py { "rust" } else { "python" }
-        ));
+    if let Some(sel) = producer {
+        let omitted: Vec<&str> = ProducerFamily::ORDERED
+            .iter()
+            .filter(|f| detected.contains(f) && **f != sel)
+            .map(|f| f.cli_name())
+            .collect();
+        if !omitted.is_empty() {
+            rep.notes
+                .push(format!("未索引：{}（--producer 切換）", omitted.join("、")));
+        }
     }
     rep.notes
         .push("全量重產：producer 每次重建（冪等）".to_string());
@@ -470,32 +676,49 @@ fn acquire_heal_lock(slot_dir: &Path) -> Result<Option<HealLock>, String> {
     }
 }
 
-/// Flagged-path-only producer drift note (the steady-state query path is
-/// zero-spawn by rule): stamped producer vs installed — an upgrade
+/// Flagged-path-only producer drift notes (the steady-state query path
+/// is zero-spawn by rule): stamped producer vs installed — an upgrade
 /// signal, never a rebuild trigger (rebuilding with the same stale
-/// producer changes nothing).
-fn producer_drift_note(slot: &Path, roots: &[PathBuf]) -> Option<String> {
-    let stamped = crate::engine::load_meta(slot)
+/// producer changes nothing). Covers the two strict-compare producers:
+/// `pyrefly-index` and `scip-typescript` (S4 generalization);
+/// rust-analyzer stays excluded — its version floats with the toolchain.
+/// Crate-internal: exercised through the heal outcomes that surface it.
+pub(crate) fn producer_drift_notes(repo: &Path, slot: &Path, roots: &[PathBuf]) -> Vec<String> {
+    let Some(stamped) = crate::engine::load_meta(slot)
         .0
         .and_then(|m| m["producer"].as_str().map(str::to_string))
-        .filter(|s| !s.is_empty() && s != "<unresolved>")?;
-    // Only the pyrefly segment is compared: the stamp records the legs
-    // that actually ran ("pyrefly-index X; rust-analyzer Y"), and
-    // rust-analyzer's version floats with the toolchain — a rust-face
-    // stamp carries no pyrefly segment and never warns here.
-    let stamped_py = stamped
-        .split("; ")
-        .find(|seg| seg.starts_with("pyrefly-index "))?
-        .to_string();
-    let stamped_v = stamped_py
-        .strip_prefix("pyrefly-index ")
-        .unwrap_or(&stamped_py);
-    let current = crate::common::producer_version("pyrefly-index", roots)?;
-    (stamped_v != current).then(|| {
-        format!(
-            "[WARN] producer 版本錯配（stamp pyrefly-index {stamped_v} ≠ 現裝 {current}）——升級：uv tool install -U pyrefly-producer\n"
-        )
-    })
+        .filter(|s| !s.is_empty() && s != "<unresolved>")
+    else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let segments: Vec<&str> = stamped.split("; ").collect();
+    if let Some(stamped_py) = segments.iter().find(|s| s.starts_with("pyrefly-index ")) {
+        let stamped_v = stamped_py
+            .strip_prefix("pyrefly-index ")
+            .unwrap_or(stamped_py);
+        if let Some(current) = crate::common::producer_version("pyrefly-index", roots) {
+            if stamped_v != current {
+                out.push(format!(
+                    "[WARN] producer 版本錯配（stamp pyrefly-index {stamped_v} ≠ 現裝 {current}）——升級：uv tool install -U pyrefly-producer\n"
+                ));
+            }
+        }
+    }
+    if let Some(stamped_ts) = segments.iter().find(|s| s.starts_with("scip-typescript ")) {
+        let stamped_v = stamped_ts
+            .strip_prefix("scip-typescript ")
+            .unwrap_or(stamped_ts);
+        let ts_roots = crate::ts_producer::node_tool_roots(repo, roots);
+        if let Some(current) = crate::common::producer_version("scip-typescript", &ts_roots) {
+            if stamped_v != current {
+                out.push(format!(
+                    "[WARN] producer 版本錯配（stamp scip-typescript {stamped_v} ≠ 現裝 {current}）——升級：npm install --save-dev @sourcegraph/scip-typescript（repo-local node_modules/.bin 優先）——或全域安裝後將 bin 目錄加入 PATH／CODE_REALITY_NODE_BIN_DIR\n"
+                ));
+            }
+        }
+    }
+    out
 }
 
 // ---------- churn cooldown (AIR-33 ③) ----------
@@ -553,12 +776,12 @@ fn write_churn_marker(slot: &Path) {
     let _ = std::fs::write(churn_marker(slot), b"");
 }
 
-fn churn_serve_stale(slot: &Path, roots: &[PathBuf]) -> HealOutcome {
+fn churn_serve_stale(repo: &Path, slot: &Path, roots: &[PathBuf]) -> HealOutcome {
     let mut lines = vec![
         "[WARN] 活躍編輯中（上次癒合未能收斂）——cooldown 內跳過重癒，本次查詢以現存索引作答\n"
             .to_string(),
     ];
-    lines.extend(producer_drift_note(slot, roots));
+    lines.extend(producer_drift_notes(repo, slot, roots));
     HealOutcome::ServeStale(lines)
 }
 
@@ -572,7 +795,7 @@ pub fn heal_outcome_after_rebuild_err(
     err: String,
 ) -> Result<HealOutcome, String> {
     let snap = crate::engine::evaluate_staleness(repo, slot)?;
-    if !snap.source_newer {
+    if !snap.needs_rebuild() {
         Ok(HealOutcome::Healed {
             secs: 0.0,
             nodes: 0,
@@ -596,29 +819,25 @@ fn run_heal_locked(
         Err(e) => {
             let mut out = heal_outcome_after_rebuild_err(repo, slot, e.msg().to_string())?;
             if let HealOutcome::ServeStale(lines) = &mut out {
-                lines.extend(producer_drift_note(slot, roots));
+                lines.extend(producer_drift_notes(repo, slot, roots));
             }
             Ok(out)
         }
         Ok(rep) => {
+            // Empty convergence (all faces policy-excluded) removes the
+            // slot — absence IS the converged state; evaluate_staleness
+            // would stat-fail on the missing slot.
+            if !slot.exists() {
+                return Ok(HealOutcome::Healed {
+                    secs: t0.elapsed().as_secs_f64(),
+                    nodes: rep.nodes,
+                    notes: rep.notes,
+                });
+            }
             // Loop guard (SM-9): a rebuild that still leaves the slot
             // behind warns once and serves — never loops.
             let snap = crate::engine::evaluate_staleness(repo, slot)?;
-            if snap.source_newer {
-                // Failed convergence — arm the churn cooldown so the next
-                // query doesn't re-burn a minutes-scale heal into the same
-                // non-convergence (AIR-33 ③).
-                write_churn_marker(slot);
-                let mut lines = vec![
-                    "[WARN] heal 期間原始碼又變動——本次查詢以現存索引作答（cooldown 內後續查詢不再重癒）\n"
-                        .to_string(),
-                ];
-                lines.extend(producer_drift_note(slot, roots));
-                return Ok(HealOutcome::ServeStale(lines));
-            }
-            // Converged — any churn window is over; re-arm healing.
-            let _ = std::fs::remove_file(churn_marker(slot));
-            let delta = match crate::engine::load_index(slot) {
+            let doc_delta = match crate::engine::load_index(slot) {
                 Ok(loaded) => {
                     let docs: BTreeSet<String> = loaded
                         .index
@@ -632,18 +851,57 @@ fn run_heal_locked(
                 // unparseable fresh output is the build's own failure face
                 Err(_) => None,
             };
-            if let Some(d) = &delta {
-                if d.missing > 0 {
+            // Fingerprint-only drift (no newer mtime) gets the PRECISE
+            // diagnosis first: the producer corpus vs disk mismatch —
+            // the generic "sources changed during heal" wording would
+            // misdescribe a persistently-omitting producer.
+            if !snap.source_newer && snap.needs_rebuild() {
+                if let Some(d) = &doc_delta {
+                    if d.missing > 0 || d.extra > 0 {
+                        write_churn_marker(slot);
+                        let mut lines = vec![format!(
+                            "[WARN] 偵測與 producer 語料不一致（false-stale：missing={}，extra={}，例：{}）——不迴圈，本次查詢以現存索引作答（cooldown 內後續查詢不再重癒）\n",
+                            d.missing, d.extra, d.examples.join("、")
+                        )];
+                        lines.extend(producer_drift_notes(repo, slot, roots));
+                        return Ok(HealOutcome::ServeStale(lines));
+                    }
+                }
+            }
+            if snap.needs_rebuild() {
+                // Failed convergence — arm the churn cooldown so the next
+                // query doesn't re-burn a minutes-scale heal into the same
+                // non-convergence (AIR-33 ③).
+                write_churn_marker(slot);
+                let mut lines = vec![
+                    "[WARN] heal 期間原始碼又變動——本次查詢以現存索引作答（cooldown 內後續查詢不再重癒）\n"
+                        .to_string(),
+                ];
+                lines.extend(producer_drift_notes(repo, slot, roots));
+                return Ok(HealOutcome::ServeStale(lines));
+            }
+            // Converged — any churn window is over; re-arm healing.
+            let _ = std::fs::remove_file(churn_marker(slot));
+            // Residual delta on a mtime-converged rebuild: the indexed
+            // corpus still disagrees with disk. Reachable only in the
+            // LEGACY keyless-meta shape (with fingerprint keys this
+            // fires in the precise branch above) — arm the marker there
+            // too, or the next query would call this index Fresh
+            // (codex P0-4). Serve with the warning — never loop.
+            if let Some(d) = &doc_delta {
+                if d.missing > 0 || d.extra > 0 {
+                    write_churn_marker(slot);
                     let mut lines = vec![format!(
-                        "[WARN] 偵測與 producer 語料不一致（false-stale：missing={}，例：{}）——不迴圈，本次查詢以現存索引作答\n",
+                        "[WARN] 偵測與 producer 語料不一致（false-stale：missing={}，extra={}，例：{}）——不迴圈，本次查詢以現存索引作答\n",
                         d.missing,
+                        d.extra,
                         d.examples.join("、")
                     )];
-                    lines.extend(producer_drift_note(slot, roots));
+                    lines.extend(producer_drift_notes(repo, slot, roots));
                     return Ok(HealOutcome::ServeStale(lines));
                 }
             }
-            let notes = producer_drift_note(slot, roots).into_iter().collect();
+            let notes = producer_drift_notes(repo, slot, roots);
             Ok(HealOutcome::Healed {
                 secs: t0.elapsed().as_secs_f64(),
                 nodes: rep.nodes,
@@ -666,15 +924,16 @@ fn wait_peer_and_reevaluate(
     loop {
         if !lock_path.exists() {
             let snap = crate::engine::evaluate_staleness(repo, slot)?;
-            if !snap.source_newer {
+            // churn guard BEFORE the HealedByPeer return — a peer whose
+            // heal failed to converge (armed marker) must not be reported
+            // as having fixed it (codex P0-4)
+            if snap.head_drift != Some(true) && churn_cooldown_active(slot) {
+                return Ok(churn_serve_stale(repo, slot, roots));
+            }
+            if !snap.needs_rebuild() {
                 return Ok(HealOutcome::HealedByPeer {
                     waited_secs: t0.elapsed().as_secs_f64(),
                 });
-            }
-            // peer released without fixing it — the cooldown applies here
-            // too (the peer's non-convergence armed it)
-            if snap.head_drift != Some(true) && churn_cooldown_active(slot) {
-                return Ok(churn_serve_stale(slot, roots));
             }
             // peer released without fixing it — become the healer
             let slot_dir = slot.parent().unwrap_or_else(|| Path::new("."));
@@ -694,7 +953,7 @@ fn wait_peer_and_reevaluate(
                 "[WARN] heal lock 等待逾時（併發 healer 未釋放）——本次查詢以現存索引作答\n"
                     .to_string(),
             ];
-            lines.extend(producer_drift_note(slot, roots));
+            lines.extend(producer_drift_notes(repo, slot, roots));
             return Ok(HealOutcome::ServeStale(lines));
         }
         std::thread::sleep(HEAL_POLL);
@@ -712,16 +971,17 @@ pub fn ensure_fresh(repo: &Path, roots: &[PathBuf]) -> Result<HealOutcome, Strin
         return Ok(HealOutcome::Fresh);
     }
     let snap = crate::engine::evaluate_staleness(&repo, &slot)?;
-    if !snap.source_newer {
-        return Ok(HealOutcome::Fresh);
-    }
-    // Churn guard (AIR-33 ③): a marker armed by a heal that failed to
-    // converge means an active writer — skip the minutes-scale rebuild
-    // and serve the existing index (WARNed). A drifted head (commit
-    // boundary) overrides: commits are the stable points worth
-    // converging on.
+    // Churn guard (AIR-33 ③ + codex P0-4): an armed marker means the
+    // last heal FAILED TO CONVERGE — checked BEFORE any Fresh
+    // short-circuit, because a non-converged heal can leave the slot
+    // mtime-fresh with no fingerprint keys (the very state the marker
+    // exists to remember). A drifted head (commit boundary) overrides:
+    // commits are the stable points worth converging on.
     if snap.head_drift != Some(true) && churn_cooldown_active(&slot) {
-        return Ok(churn_serve_stale(&slot, roots));
+        return Ok(churn_serve_stale(&repo, &slot, roots));
+    }
+    if !snap.needs_rebuild() {
+        return Ok(HealOutcome::Fresh);
     }
     let t0 = Instant::now();
     let slot_dir = slot
@@ -733,7 +993,7 @@ pub fn ensure_fresh(repo: &Path, roots: &[PathBuf]) -> Result<HealOutcome, Strin
         Ok(None) => wait_peer_and_reevaluate(&repo, &slot, roots, t0),
         Err(e) => {
             let mut lines = vec![format!("[WARN] {e}——本次查詢以現存索引作答\n")];
-            lines.extend(producer_drift_note(&slot, roots));
+            lines.extend(producer_drift_notes(&repo, &slot, roots));
             Ok(HealOutcome::ServeStale(lines))
         }
     }
@@ -803,12 +1063,18 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         return ToolOutput::fail("the following arguments are required: --repo");
     };
     let producer = values.get("--producer").and_then(|v| v.clone());
-    if let Some(p) = &producer {
-        if p != "rust" && p != "python" {
-            return ToolOutput::fail("--producer 需為 rust 或 python");
-        }
+    let producer_family = producer.as_deref().map(ProducerFamily::parse_cli);
+    if let Some(None) = producer_family {
+        return ToolOutput::fail(format!(
+            "--producer 需為 rust、python 或 typescript（收到：{}）",
+            producer.unwrap_or_default()
+        ));
     }
-    match build_repo(Path::new(&repo), producer.as_deref(), &producer_roots()) {
+    match build_repo(
+        Path::new(&repo),
+        producer_family.flatten(),
+        &producer_roots(),
+    ) {
         Ok(rep) => render(rep, json),
         Err(e) => match e {
             BuildError::Env(m) => ToolOutput::fail(format!("build: {m}")),

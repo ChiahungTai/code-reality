@@ -73,23 +73,80 @@ impl Query {
     }
 }
 
+/// Queryable-symbol kinds (S3): `#`-tailed class/type-like symbols are
+/// queryable as `Type` nodes on the Python faces (AIR-33) and the JS/TS
+/// faces (scip-typescript emits real `Name#` defs); Rust `Type#` stays
+/// non-queryable by bare name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueryableKind {
+    Function,
+    Type,
+}
+
+pub struct QueryableSymbol<'a> {
+    pub name: &'a str,
+    pub kind: QueryableKind,
+}
+
+/// Single ingest/query gate for queryable symbol shapes, document-aware
+/// (S3): fn-shaped symbols are always queryable functions; `#`-tailed
+/// symbols are queryable types only on the Python faces (symbol prefix)
+/// or when the DEFINING document is JS/TS (scip-typescript carries no
+/// language discriminator in the symbol — AD-3 derives it from the
+/// document extension). This one predicate drives both the scip_refs
+/// cache ingest and graph materialization — duplicating the gate per
+/// path is how JS/TS class definitions used to disappear.
+pub fn queryable_symbol<'a>(symbol: &'a str, rel_path: &str) -> Option<QueryableSymbol<'a>> {
+    if let Some(name) = fn_tail_name(symbol) {
+        return Some(QueryableSymbol {
+            name,
+            kind: QueryableKind::Function,
+        });
+    }
+    let type_name = class_tail_name(symbol)?;
+    let js_ts = matches!(
+        crate::language::LanguageFace::from_path(Path::new(rel_path)),
+        Some(crate::language::LanguageFace::JavaScript)
+            | Some(crate::language::LanguageFace::TypeScript)
+    );
+    (python_face(symbol) || js_ts).then_some(QueryableSymbol {
+        name: type_name,
+        kind: QueryableKind::Type,
+    })
+}
+
+/// Class-arm membership for query matching: Python faces by symbol
+/// prefix, JS/TS by defining document. `rel_path: None` = no document
+/// context (legacy call sites — python-prefix rule only).
+fn class_arm_matches(symbol: &str, rel_path: Option<&str>) -> bool {
+    if python_face(symbol) {
+        return true;
+    }
+    matches!(
+        rel_path.and_then(|rel| crate::language::LanguageFace::from_path(Path::new(rel))),
+        Some(crate::language::LanguageFace::JavaScript)
+            | Some(crate::language::LanguageFace::TypeScript)
+    )
+}
+
 /// Symbol matches query (name-tail AND (marker OR trait-decl) for
-/// Type.method). Bare matches the fn tail `<name>().` OR — python faces
-/// only — the class tail `<name>#` (AIR-33: Python class names are
-/// resolvable query keys; end-anchored, so a mid-chain class in
-/// `Outer#Inner#` never matches an `Outer` query. Rust `Type#` DEFs
-/// share the tail shape but stay non-queryable by bare name — see
-/// [`python_face`]).
-pub fn matches_query(symbol: &str, query: &Query) -> bool {
+/// Type.method). Bare matches the fn tail `<name>().` OR the class tail
+/// `<name>#` on the python faces / JS-or-TS documents (AIR-33 + S3:
+/// end-anchored, so a mid-chain class in `Outer#Inner#` never matches
+/// an `Outer` query; Rust `Type#` DEFs share the tail shape but stay
+/// non-queryable by bare name — see [`python_face`]). `rel_path` is the
+/// DEFINING document of the occurrence when known.
+pub fn matches_query(symbol: &str, rel_path: Option<&str>, query: &Query) -> bool {
     match query {
         Query::TypeMethod { type_name, method } => {
             name_pat_match(symbol, method)
-                && (symbol.contains(&format!("[{}]", type_name))
+                && (symbol.contains(&format!("[{type_name}]"))
                     || trait_decl_match(symbol, type_name))
         }
         Query::Bare { name } => {
             name_pat_match(symbol, name)
-                || (python_face(symbol) && class_tail_name(symbol).is_some_and(|n| n == name))
+                || (class_arm_matches(symbol, rel_path)
+                    && class_tail_name(symbol).is_some_and(|n| n == name))
         }
     }
 }
@@ -182,7 +239,9 @@ pub fn find_defs(index: &Index, query: &Query) -> BTreeMap<String, Vec<String>> 
     let mut defs: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for d in &index.documents {
         for occ in &d.occurrences {
-            if occ.symbol_roles & 1 != 0 && matches_query(&occ.symbol, query) {
+            if occ.symbol_roles & 1 != 0
+                && matches_query(&occ.symbol, Some(&d.relative_path), query)
+            {
                 defs.entry(occ.symbol.clone())
                     .or_default()
                     .push(loc_line(&d.relative_path, ln(occ)));
@@ -415,13 +474,116 @@ pub fn write_data_dir_gitignore(data_root: &Path) -> Result<(), String> {
 /// (rust-analyzer's OUT_DIR artifacts never enter the corpus).
 pub const SKIP_DIRS: [&str; 3] = ["__pycache__", "venv", "node_modules"];
 
-/// One disk walk feeding both staleness signals: the per-language file
-/// sets (doc-set comparison) and the newest source mtime (cheap trigger).
+/// Shared test-file classification (S3 single source): consumed by BOTH
+/// graph DB insertion (`is_test` column) and graph-engine query
+/// filtering, which previously disagreed (`__tests__`/`.spec`/`.test`
+/// known only to the query regex). Union policy — `tests/` directory
+/// and the `test_` prefix keep their historical any-extension behavior
+/// (Rust/Python fixtures pin it); `__tests__/` and the `.spec.`/`.test.`
+/// suffixes apply to the six JS/TS extensions only, never to unrelated
+/// extensions.
+pub fn is_test_path(rel: &str) -> bool {
+    let p = rel.replace('\\', "/");
+    if p.starts_with("tests/") || p.contains("/tests/") {
+        return true;
+    }
+    if p.starts_with("test_") || p.contains("/test_") {
+        return true;
+    }
+    if p.starts_with("__tests__/") || p.contains("/__tests__/") {
+        return true;
+    }
+    let name = p.rsplit('/').next().unwrap_or("");
+    for stem in [".spec", ".test"] {
+        for ext in [".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx"] {
+            if name.ends_with(&format!("{stem}{ext}")) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// One disk walk feeding every staleness signal: the per-language file
+/// sets (doc-set comparison), the newest source mtime (cheap trigger),
+/// and the face-scoped source-set fingerprint (S4 add/delete/rename
+/// detection — mtime alone cannot see a deletion). JS/TS files are
+/// profile-excluded HERE (AD-11: producer corpus and freshness corpus
+/// share one effective policy); Python/Rust keep their historical
+/// corpus rules (no profile filter) until a separately reviewed change.
 #[derive(Debug, Default)]
 pub struct SourceWalk {
     pub py: BTreeSet<String>,
     pub rs: BTreeSet<String>,
+    pub js: BTreeSet<String>,
+    pub ts: BTreeSet<String>,
+    /// Newest across ALL walked faces — the legacy staleness basis for
+    /// indexes without stamped face metadata.
     pub newest: Option<std::time::SystemTime>,
+    /// Per-face newest for face-scoped comparisons (S4 face isolation:
+    /// an explicit python-only slot is not staled by a newer `.ts`).
+    pub newest_by_face: BTreeMap<crate::language::LanguageFace, std::time::SystemTime>,
+}
+
+impl SourceWalk {
+    /// Disk paths for the given faces (JS+TS sets are already governed —
+    /// profile-excluded at walk time).
+    pub fn paths_for_faces(
+        &self,
+        faces: &BTreeSet<crate::language::LanguageFace>,
+    ) -> BTreeSet<String> {
+        let mut out = BTreeSet::new();
+        for face in faces {
+            match face {
+                crate::language::LanguageFace::Python => out.extend(self.py.iter().cloned()),
+                crate::language::LanguageFace::Rust => out.extend(self.rs.iter().cloned()),
+                crate::language::LanguageFace::JavaScript => out.extend(self.js.iter().cloned()),
+                crate::language::LanguageFace::TypeScript => out.extend(self.ts.iter().cloned()),
+            }
+        }
+        out
+    }
+
+    /// Newest mtime among the given faces only (None when none present).
+    pub fn newest_for_faces(
+        &self,
+        faces: &BTreeSet<crate::language::LanguageFace>,
+    ) -> Option<std::time::SystemTime> {
+        faces
+            .iter()
+            .filter_map(|f| self.newest_by_face.get(f).copied())
+            .max()
+    }
+
+    /// Stable fingerprint of the sorted (face, path) membership for the
+    /// given faces — an equality detector for add/delete/rename and
+    /// corpus-policy changes, NOT a security boundary. FNV-1a 64 over
+    /// `"<face>\0<path>\0"` pairs; BTreeSet iteration is already sorted,
+    /// so directory traversal order cannot leak into the hash.
+    pub fn fingerprint_for_faces(&self, faces: &BTreeSet<crate::language::LanguageFace>) -> String {
+        fn fnv1a64(bytes: &mut u64, s: &str) {
+            for b in s.as_bytes() {
+                *bytes ^= *b as u64;
+                *bytes = bytes.wrapping_mul(0x100000001b3);
+            }
+        }
+        let mut h: u64 = 0xcbf29ce484222325;
+        for face in faces {
+            let paths = match face {
+                crate::language::LanguageFace::Python => &self.py,
+                crate::language::LanguageFace::Rust => &self.rs,
+                crate::language::LanguageFace::JavaScript => &self.js,
+                crate::language::LanguageFace::TypeScript => &self.ts,
+            };
+            for p in paths {
+                fnv1a64(&mut h, face.meta_name());
+                fnv1a64(&mut h, "\0");
+                fnv1a64(&mut h, p);
+                fnv1a64(&mut h, "\0");
+            }
+        }
+        format!("{h:016x}")
+    }
 }
 
 /// Walk `repo` for source files, mirroring the producer's corpus rules
@@ -429,13 +591,18 @@ pub struct SourceWalk {
 /// a silent empty set posing as fresh.
 pub fn walk_sources(repo: &Path) -> Result<SourceWalk, String> {
     let root = resolve_repo(repo);
+    // JS/TS corpus policy: repo-owned profile exclusions (loaded once
+    // per walk — the same effective policy the producer applies, AD-11).
+    let profile = crate::profile::load_profile(&root)?;
     let mut out = SourceWalk::default();
     // (dir, under_target): `target/` stays walkable for the python face
     // (pyrefly indexes .py under it) but its `.rs` are cargo OUT_DIR
-    // artifacts — never in the rust-analyzer corpus — so the rust face
-    // and the newest-mtime signal both skip them. Post-build fresh-eyes
-    // finding: this repo carries 49 such .rs; counting them made every
-    // heal report missing>=49 and killed the Healed path.
+    // artifacts — never in the rust-analyzer corpus — so the rust face,
+    // the newest-mtime signal, and the JS/TS faces (build detection
+    // skips `target` entirely; one corpus policy) all skip them.
+    // Post-build fresh-eyes finding: this repo carries 49 such .rs;
+    // counting them made every heal report missing>=49 and killed the
+    // Healed path.
     let mut stack = vec![(root.clone(), false)];
     while let Some((dir, under_target)) = stack.pop() {
         let entries =
@@ -449,23 +616,41 @@ pub fn walk_sources(repo: &Path) -> Result<SourceWalk, String> {
                 }
                 stack.push((ent.path(), under_target || name == "target"));
             } else if ft.is_file() {
-                let is_py = name.ends_with(".py");
-                if !(is_py || (name.ends_with(".rs") && !under_target)) {
+                let Some(face) = crate::language::LanguageFace::from_path(Path::new(&name)) else {
                     continue;
-                }
+                };
                 let rel = ent
                     .path()
                     .strip_prefix(&root)
                     .map(|p| p.to_string_lossy().into_owned())
                     .unwrap_or_else(|_| name.clone());
-                if is_py {
-                    out.py.insert(rel);
-                } else {
-                    out.rs.insert(rel);
-                }
-                if let Ok(m) = ent.metadata().and_then(|md| md.modified()) {
+                let m = ent.metadata().and_then(|md| md.modified()).ok();
+                match face {
+                    crate::language::LanguageFace::Python => out.py.insert(rel),
+                    crate::language::LanguageFace::Rust => {
+                        if under_target {
+                            continue;
+                        }
+                        out.rs.insert(rel)
+                    }
+                    crate::language::LanguageFace::JavaScript
+                    | crate::language::LanguageFace::TypeScript => {
+                        if under_target || crate::profile::is_excluded(&rel, profile.as_ref()) {
+                            continue;
+                        }
+                        if face == crate::language::LanguageFace::JavaScript {
+                            out.js.insert(rel)
+                        } else {
+                            out.ts.insert(rel)
+                        }
+                    }
+                };
+                if let Some(m) = m {
                     if out.newest.is_none_or(|n| m > n) {
                         out.newest = Some(m);
+                    }
+                    if out.newest_by_face.get(&face).is_none_or(|n| m > *n) {
+                        out.newest_by_face.insert(face, m);
                     }
                 }
             }
@@ -474,27 +659,165 @@ pub fn walk_sources(repo: &Path) -> Result<SourceWalk, String> {
     Ok(out)
 }
 
-/// The two index↔source staleness signals. `head_drift=None` means "no
+/// The index↔source staleness signals. `head_drift=None` means "no
 /// head information" (unstamped meta, or git absent — SM-16): the
 /// unstamped WARN is source_line's single source, never duplicated here.
+/// `doc_set_drift`/`corpus_policy_drift=None` = legacy metadata without
+/// the S4 fingerprint keys (baseline mtime behavior applies).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StalenessSnapshot {
     pub source_newer: bool,
+    pub doc_set_drift: Option<bool>,
+    pub corpus_policy_drift: Option<bool>,
     pub head_drift: Option<bool>,
+}
+
+impl StalenessSnapshot {
+    /// The rebuild decision (S4): mtime-newness OR source-set drift
+    /// (add/delete/rename — mtime alone cannot see a deletion) OR
+    /// JS/TS corpus-policy drift. Callers deciding whether producer
+    /// work is required use this, never the bare `source_newer` bit.
+    pub fn needs_rebuild(&self) -> bool {
+        self.source_newer
+            || self.doc_set_drift == Some(true)
+            || self.corpus_policy_drift == Some(true)
+    }
+}
+
+/// Fingerprint of the JS/TS-relevant exclusion policy: `<none>` sentinel
+/// when the repo carries no profile (creation of one is then a visible
+/// drift), otherwise a stable hash over the sorted `exclude` prefixes —
+/// the only profile section that shapes the JS/TS corpus (AD-11).
+pub fn js_ts_profile_fingerprint(repo: &Path) -> String {
+    let Ok(profile) = crate::profile::load_profile(repo) else {
+        return "<none>".to_string();
+    };
+    let Some(p) = profile else {
+        return "<none>".to_string();
+    };
+    let mut h: u64 = 0xcbf29ce484222325;
+    for prefix in &p.exclude {
+        for b in prefix.as_bytes() {
+            h ^= *b as u64;
+            h = h.wrapping_mul(0x100000001b3);
+        }
+        h ^= 0;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    format!("{h:016x}")
+}
+
+fn parse_stamped_faces(
+    meta: &serde_json::Value,
+) -> Option<BTreeSet<crate::language::LanguageFace>> {
+    let arr = meta.get("source_faces")?.as_array()?;
+    let mut out = BTreeSet::new();
+    for v in arr {
+        let name = v.as_str()?;
+        let face = match name {
+            "python" => crate::language::LanguageFace::Python,
+            "rust" => crate::language::LanguageFace::Rust,
+            "javascript" => crate::language::LanguageFace::JavaScript,
+            "typescript" => crate::language::LanguageFace::TypeScript,
+            _ => return None, // unknown face name — treat as legacy meta
+        };
+        out.insert(face);
+    }
+    Some(out)
 }
 
 /// Cheap staleness evaluation (Stage A): walk + stats + meta read. Zero
 /// producer spawns (a stamped meta adds one `git rev-parse`) and zero
-/// protobuf parses — the steady-state query cost.
+/// protobuf parses — the steady-state query cost. With S4 face metadata
+/// present, the mtime signal is face-scoped (an explicit python-only
+/// slot is not staled by a newer `.ts`) and the two fingerprint
+/// comparisons cover add/delete/rename and JS/TS corpus-policy changes
+/// that mtime alone cannot see. For AUTO-selected indexes the eval
+/// scope is the union of stamped faces and currently-detected disk
+/// faces — a newly arrived language (or a profile un-exclusion that
+/// reveals one) must trigger the heal that would then rebuild all
+/// faces; an EXPLICIT producer override keeps its pinned faces (muse
+/// P0-1). A graph.db older than the slot is a torn data plane (index
+/// published, graph build failed) and forces a heal (muse P1-3).
 pub fn evaluate_staleness(repo: &Path, slot: &Path) -> Result<StalenessSnapshot, String> {
     let walk = walk_sources(repo)?;
     let slot_m = slot
         .metadata()
         .and_then(|m| m.modified())
         .map_err(|e| format!("stat {} 失敗：{e}", slot.display()))?;
-    let source_newer = walk.newest.is_some_and(|n| n > slot_m);
-    let stamped = load_meta(slot)
-        .0
+    let meta = load_meta(slot).0;
+    let stamped_faces = meta.as_ref().and_then(parse_stamped_faces);
+    // selection mode: "explicit" = operator-forced single family (pinned
+    // face scope); "auto" or absent (legacy) = union with detected faces
+    let explicit_selection = meta
+        .as_ref()
+        .and_then(|m| m["selection"].as_str().map(str::to_string))
+        .is_some_and(|s| s == "explicit");
+    let detected_faces: Option<BTreeSet<crate::language::LanguageFace>> = if explicit_selection {
+        None
+    } else {
+        let mut f = BTreeSet::new();
+        if !walk.py.is_empty() {
+            f.insert(crate::language::LanguageFace::Python);
+        }
+        if !walk.rs.is_empty() {
+            f.insert(crate::language::LanguageFace::Rust);
+        }
+        if !walk.js.is_empty() {
+            f.insert(crate::language::LanguageFace::JavaScript);
+        }
+        if !walk.ts.is_empty() {
+            f.insert(crate::language::LanguageFace::TypeScript);
+        }
+        Some(f)
+    };
+    let eval_faces: Option<BTreeSet<crate::language::LanguageFace>> = stamped_faces
+        .as_ref()
+        .map(|stamped| {
+            let mut union = stamped.clone();
+            if let Some(detected) = &detected_faces {
+                union.extend(detected.iter().copied());
+            }
+            union
+        })
+        .or(detected_faces);
+    let source_newer = match &eval_faces {
+        Some(faces) => walk.newest_for_faces(faces).is_some_and(|n| n > slot_m),
+        None => walk.newest.is_some_and(|n| n > slot_m),
+    };
+    // The fingerprint compares the STAMPED faces' paths against disk —
+    // the union adds mtime coverage; cross-face doc-set drift for a
+    // newly arrived face is carried by source_newer (its file is new,
+    // hence newer than the slot).
+    let fp = meta
+        .as_ref()
+        .and_then(|m| m["source_set_fingerprint"].as_str().map(str::to_string));
+    let doc_set_drift = match (&stamped_faces, &fp) {
+        (Some(faces), Some(stamped_fp)) => Some(walk.fingerprint_for_faces(faces) != *stamped_fp),
+        _ => None,
+    };
+    let has_js_ts = stamped_faces.as_ref().is_some_and(|f| {
+        f.contains(&crate::language::LanguageFace::JavaScript)
+            || f.contains(&crate::language::LanguageFace::TypeScript)
+    });
+    let policy_fp = meta
+        .as_ref()
+        .and_then(|m| m["js_ts_profile_fingerprint"].as_str().map(str::to_string));
+    let corpus_policy_drift = match (has_js_ts, policy_fp) {
+        (true, Some(stamped)) => Some(js_ts_profile_fingerprint(repo) != stamped),
+        _ => None,
+    };
+    // Torn data plane: the slot published but the graph build failed —
+    // the prior graph lags the slot forever unless this forces the heal
+    // (muse P1-3; graph normally lands milliseconds after the slot).
+    let graph_lags = slot
+        .parent()
+        .map(|d| d.parent().map(|p| p.join("graph.db")))
+        .flatten()
+        .and_then(|g| g.metadata().ok())
+        .and_then(|m| m.modified().ok())
+        .is_some_and(|gm| gm < slot_m);
+    let stamped = meta
         .and_then(|m| m["head"].as_str().map(str::to_string))
         .filter(|s| !s.is_empty());
     let head_drift = match stamped {
@@ -505,7 +828,9 @@ pub fn evaluate_staleness(repo: &Path, slot: &Path) -> Result<StalenessSnapshot,
         },
     };
     Ok(StalenessSnapshot {
-        source_newer,
+        source_newer: source_newer || graph_lags,
+        doc_set_drift,
+        corpus_policy_drift,
         head_drift,
     })
 }
@@ -514,7 +839,8 @@ pub fn evaluate_staleness(repo: &Path, slot: &Path) -> Result<StalenessSnapshot,
 /// only extensions already present in the index are compared, so a
 /// python-face index never goes false-stale over stray .rs files (the
 /// reverse blind spot — index language ≠ repo language — is a recorded
-/// v1 boundary).
+/// v1 boundary). JS/TS compares against the governed (profile-filtered)
+/// walk sets — the same corpus policy the producer applies.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DocDelta {
     pub missing: usize,
@@ -525,12 +851,27 @@ pub struct DocDelta {
 pub fn doc_set_delta(docs: &BTreeSet<String>, walk: &SourceWalk) -> DocDelta {
     let has_py = docs.iter().any(|d| d.ends_with(".py"));
     let has_rs = docs.iter().any(|d| d.ends_with(".rs"));
-    let disk: BTreeSet<&String> = walk
-        .py
+    let has_js = docs.iter().any(|d| {
+        [".js", ".jsx", ".mjs", ".cjs"]
+            .iter()
+            .any(|e| d.ends_with(e))
+    });
+    let has_ts = docs
         .iter()
-        .chain(walk.rs.iter())
-        .filter(|p| (has_py && p.ends_with(".py")) || (has_rs && p.ends_with(".rs")))
-        .collect();
+        .any(|d| d.ends_with(".ts") || d.ends_with(".tsx"));
+    let mut disk: BTreeSet<&String> = BTreeSet::new();
+    if has_py {
+        disk.extend(walk.py.iter());
+    }
+    if has_rs {
+        disk.extend(walk.rs.iter());
+    }
+    if has_js {
+        disk.extend(walk.js.iter());
+    }
+    if has_ts {
+        disk.extend(walk.ts.iter());
+    }
     let missing_list: Vec<&String> = disk
         .iter()
         .copied()
@@ -573,6 +914,7 @@ pub fn stamp_meta_core(
     index_path: &Path,
     roots: &[PathBuf],
     producer: Option<&str>,
+    selection: Option<&str>,
 ) -> Result<String, StampError> {
     let head = git_head(repo).map_err(StampError::Git)?;
     // Face-accurate provenance: explicit wins; otherwise preserve an
@@ -589,14 +931,100 @@ pub fn stamp_meta_core(
                     .unwrap_or("<unresolved>".to_string())
             }),
     };
+    // Selection mode ("auto" | "explicit"): drives the freshness scope —
+    // auto unions stamped faces with detected disk faces (a newly
+    // arrived language must heal, muse P0-1); explicit keeps the pinned
+    // face (operator-owned partial build). Preserved on head-sync like
+    // the producer string.
+    let selection = match selection {
+        Some(s) => s.to_string(),
+        None => load_meta(index_path)
+            .0
+            .and_then(|m| m["selection"].as_str().map(str::to_string))
+            .unwrap_or_else(|| "auto".to_string()),
+    };
     let sidecar = meta_path(index_path);
-    let payload = serde_json::json!({
+    let mut payload = serde_json::json!({
         "repo": repo.canonicalize().unwrap_or_else(|_| repo.to_path_buf()).display().to_string(),
         "head": head,
         "stamped_at": utc_now_iso(),
         "tool": "code_reality.scip_refs",
         "producer": producer,
+        "selection": selection,
     });
+    // S4 identity keys (the source-set fingerprint family) describe the
+    // INDEX's corpus contract, not the disk. Fresh pairs are stamped
+    // ONLY when the index document set equals the current disk corpus
+    // for the index's faces (one walk — stamping a fingerprint of
+    // drifted disk state over an old index would launder a delete into
+    // freshness). On a mismatch (or failed recompute) the PRIOR keys are
+    // PRESERVED verbatim: they still truthfully describe this unchanged
+    // index, so the next staleness evaluation compares them against
+    // drifted disk and the delete/rename stays visible (codex blocker —
+    // the earlier drop-the-keys design degraded to mtime-only). Never
+    // fabricate keys: a legacy keyless meta stays keyless until a real
+    // rebuild stamps a consistent pair.
+    let prior = load_meta(index_path).0;
+    let preserve_prior_keys = |payload: &mut serde_json::Value| {
+        if let Some(m) = &prior {
+            for key in [
+                "source_faces",
+                "source_set_fingerprint",
+                "js_ts_profile_fingerprint",
+            ] {
+                if let Some(v) = m.get(key) {
+                    if !v.is_null() {
+                        payload[key] = v.clone();
+                    }
+                }
+            }
+        }
+    };
+    let mut stamped_fresh_keys = false;
+    if let Ok(loaded) = load_index(index_path) {
+        let faces: BTreeSet<crate::language::LanguageFace> = loaded
+            .index
+            .documents
+            .iter()
+            .filter_map(|d| crate::language::LanguageFace::from_path(Path::new(&d.relative_path)))
+            .collect();
+        if !faces.is_empty() {
+            if let Ok(walk) = walk_sources(repo) {
+                let disk = walk.paths_for_faces(&faces);
+                let docs: BTreeSet<String> = loaded
+                    .index
+                    .documents
+                    .iter()
+                    .map(|d| d.relative_path.clone())
+                    .collect();
+                if disk == docs {
+                    let names: Vec<&str> = faces.iter().map(|f| f.meta_name()).collect();
+                    payload["source_faces"] = serde_json::json!(names);
+                    payload["source_set_fingerprint"] =
+                        serde_json::json!(walk.fingerprint_for_faces(&faces));
+                    if faces.contains(&crate::language::LanguageFace::JavaScript)
+                        || faces.contains(&crate::language::LanguageFace::TypeScript)
+                    {
+                        payload["js_ts_profile_fingerprint"] =
+                            serde_json::json!(js_ts_profile_fingerprint(repo));
+                    }
+                    stamped_fresh_keys = true;
+                }
+            }
+        }
+    }
+    let prior_had_keys = prior.as_ref().is_some_and(|m| {
+        m.get("source_set_fingerprint")
+            .is_some_and(|v| !v.is_null())
+    });
+    if !stamped_fresh_keys {
+        preserve_prior_keys(&mut payload);
+        if prior_had_keys {
+            eprintln!(
+                "[WARN] stamp-meta：索引文檔集與磁碟語料不一致——保留既有 source-set fingerprint（drift 保持可見；重跑 build 產出一致配對）\n"
+            );
+        }
+    }
     let text = format!("{}\n", serde_json::to_string_pretty(&payload).unwrap());
     std::fs::write(&sidecar, &text)
         .map_err(|e| StampError::Write(format!("sidecar 寫入失敗：{}", e)))?;

@@ -223,7 +223,7 @@ def main():
       CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE occurrences (
         seq INTEGER PRIMARY KEY, symbol TEXT NOT NULL, rel_path TEXT NOT NULL,
-        line INTEGER NOT NULL, is_def INTEGER NOT NULL);
+        line INTEGER NOT NULL, is_def INTEGER NOT NULL, col INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE symbol_tails (symbol TEXT PRIMARY KEY, tail TEXT NOT NULL, method TEXT);
       CREATE INDEX idx_symbol_tails_method ON symbol_tails(method);
     """)
@@ -231,7 +231,7 @@ def main():
     for rel, line, ch, name, def_line in defs:
         seq += 1
         sym = sym_of(rel, line, name)
-        conn.execute("INSERT INTO occurrences VALUES (?,?,?,?,1)",
+        conn.execute("INSERT INTO occurrences VALUES (?,?,?,?,1,0)",
                      (seq, sym, rel, def_line))
         conn.execute("INSERT OR REPLACE INTO symbol_tails VALUES (?,?,?)",
                      (sym, name + "().", name))
@@ -239,12 +239,12 @@ def main():
         sym = sym_of(rel, line, name)
         for r, ln in sites:
             seq += 1
-            conn.execute("INSERT INTO occurrences VALUES (?,?,?,?,0)",
+            conn.execute("INSERT INTO occurrences VALUES (?,?,?,?,0,0)",
                          (seq, sym, r, ln))
     head = subprocess.run(["git", "-C", repo, "rev-parse", "HEAD"],
                           capture_output=True, text=True).stdout.strip()
     conn.executemany("INSERT OR REPLACE INTO meta VALUES (?,?)", [
-        ("schema", "1"), ("head", head),
+        ("schema", "4"), ("head", head),
         ("producer", "lsp-harvest(pyright-langserver)"),
     ])
     conn.commit()

@@ -51,22 +51,25 @@ fn name_pat_boundaries_match_python_docstring() {
 #[test]
 fn type_method_matcher_requires_marker_or_trait_decl() {
     let q = Query::parse("EventStoreLifecycle.open");
-    assert!(matches_query(IMPL_VARIANT, &q)); // marker [EventStoreLifecycle]
-    assert!(matches_query(TRAIT_DECL, &q)); // trait decl Type#method
-    assert!(matches_query(INHERENT, &q)); // marker
-                                          // name tail matches but neither marker nor trait decl
+    assert!(matches_query(IMPL_VARIANT, None, &q)); // marker [EventStoreLifecycle]
+    assert!(matches_query(TRAIT_DECL, None, &q)); // trait decl Type#method
+    assert!(matches_query(INHERENT, None, &q)); // marker
+                                                // name tail matches but neither marker nor trait decl
     assert!(!matches_query(
         "rust-analyzer cargo x 0.1.0 kernel/impl#[Other]open().",
+        None,
         &q
     ));
     // trait decl preceded by word char (e.g. MyEventStoreLifecycle#) must not match;
     // nor a `#`-preceded form (Python `(?<![\w#])` excludes both)
     assert!(!matches_query(
         "rust-analyzer cargo x 0.1.0 kernel/trait#MyEventStoreLifecycle#open().",
+        None,
         &q
     ));
     assert!(!matches_query(
         "rust-analyzer cargo x 0.1.0 kernel/trait#EventStoreLifecycle#open().",
+        None,
         &q
     ));
 }
@@ -74,9 +77,9 @@ fn type_method_matcher_requires_marker_or_trait_decl() {
 #[test]
 fn bare_matcher_is_name_tail_only() {
     let q = Query::parse("open");
-    assert!(matches_query(IMPL_VARIANT, &q));
-    assert!(matches_query(TRAIT_DECL, &q));
-    assert!(!matches_query("kernel/my_open().", &q));
+    assert!(matches_query(IMPL_VARIANT, None, &q));
+    assert!(matches_query(TRAIT_DECL, None, &q));
+    assert!(!matches_query("kernel/my_open().", None, &q));
 }
 
 #[test]
@@ -106,26 +109,34 @@ fn bare_matcher_accepts_class_tail_end_anchored() {
     let class = "pyrefly python mosaic_alpha 0.1.0 `m`/ConditionBase#";
     let q = Query::parse("ConditionBase");
     assert!(
-        matches_query(class, &q),
+        matches_query(class, None, &q),
         "bare class name resolves (AIR-33)"
     );
     // prefix poisoning and mid-chain classes never match
     assert!(!matches_query(
         "pyrefly python p 0.1 `m`/MyConditionBase#",
+        None,
         &q
     ));
-    assert!(!matches_query("pyrefly python p 0.1 `m`/Outer#Inner#", &q));
+    assert!(!matches_query(
+        "pyrefly python p 0.1 `m`/Outer#Inner#",
+        None,
+        &q
+    ));
     assert!(matches_query(
         "pyrefly python p 0.1 `m`/Outer#Inner#",
+        None,
         &Query::parse("Inner")
     ));
     assert!(!matches_query(
         "pyrefly python p 0.1 `m`/Outer#Inner#",
+        None,
         &Query::parse("Outer")
     ));
     // fn tail matching unchanged
     assert!(matches_query(
         "rust-analyzer cargo x 0.1.0 kernel/open().",
+        None,
         &Query::parse("open")
     ));
 }
@@ -139,16 +150,23 @@ fn bare_class_arm_is_python_face_gated() {
     let q = Query::parse("BuildError");
     assert!(!matches_query(
         "rust-analyzer cargo code-reality 0.6.3 build/BuildError#",
+        None,
         &q
     ));
-    assert!(matches_query("pyrefly python p 0.1 `m`/BuildError#", &q));
+    assert!(matches_query(
+        "pyrefly python p 0.1 `m`/BuildError#",
+        None,
+        &q
+    ));
     assert!(matches_query(
         "scip-python python p 0.1 `m`/BuildError#",
+        None,
         &q
     ));
     // fn-tail matching stays face-agnostic (frozen face)
     assert!(matches_query(
         "rust-analyzer cargo x 0.1.0 kernel/open().",
+        None,
         &Query::parse("open")
     ));
 }

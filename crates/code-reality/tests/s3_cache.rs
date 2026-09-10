@@ -109,7 +109,7 @@ fn stale_guards_all_four_signals() {
     tamper(&db, "UPDATE meta SET value = '9' WHERE key = 'schema'");
     let reason = stale_reason(&idx, &db).unwrap();
     assert!(
-        reason.contains("schema 版本不符（9 ≠ 2）"),
+        reason.contains("schema 版本不符（9 ≠ 4）"),
         "got: {}",
         reason
     );

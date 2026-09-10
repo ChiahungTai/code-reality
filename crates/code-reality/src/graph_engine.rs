@@ -465,13 +465,6 @@ static ENTRY_NAME_PATTERNS: LazyLock<Vec<regex::Regex>> = LazyLock::new(|| {
 static PHP_ENTRY_PATTERNS: LazyLock<Vec<regex::Regex>> =
     LazyLock::new(|| pats(&[r"^(boot|register)$", r"^__invoke$"]));
 
-static TEST_FILE_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(
-        r"([\\/]__tests__[\\/]|\.spec\.[jt]sx?$|\.test\.[jt]sx?$|[\\/]test_[^/\\]*\.py$)",
-    )
-    .expect("test-file pattern")
-});
-
 /// SECURITY_KEYWORDS (constants.py:32) — substring match on lowered
 /// name/qualified_name.
 const SECURITY_KEYWORDS: [&str; 25] = [
@@ -502,8 +495,12 @@ const SECURITY_KEYWORDS: [&str; 25] = [
     "privilege",
 ];
 
+/// Test-file classification delegates to the shared path policy (S3
+/// single source — `crate::engine::is_test_path`); the local regex
+/// retired after the DB/query disagreement was folded into one union
+/// policy.
 fn is_test_file(file_path: &str) -> bool {
-    TEST_FILE_RE.is_match(file_path)
+    crate::engine::is_test_path(file_path)
 }
 
 fn has_framework_decorator(node: &GraphNodeLite) -> bool {

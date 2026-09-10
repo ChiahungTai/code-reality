@@ -427,8 +427,13 @@ impl CodeRealityServer {
     }
 
     /// Completeness governance: graph_audit missing list reconciled
-    /// against SCIP refs (in-process two-pass).
-    #[tool(description = "Completeness audit: graph_audit gaps × SCIP refs (two-pass)")]
+    /// against SCIP refs (in-process two-pass). Rust-only completeness
+    /// oracle: JS/TS-containing graphs return a partial/unsupported
+    /// non-passing result (S6 boundary — use refs/callers/graph queries
+    /// for JS/TS structural facts).
+    #[tool(
+        description = "Completeness audit: graph_audit gaps × SCIP refs (two-pass). Rust-only oracle — partial/non-passing when the graph carries JS/TS (no JS/TS completeness oracle this arc)."
+    )]
     pub async fn audit(
         &self,
         Parameters(AuditParams { repo_root }): Parameters<AuditParams>,
@@ -834,7 +839,7 @@ impl CodeRealityServer {
 
     /// One-shot data-plane build. Same lib as `code-reality build`.
     #[tool(
-        description = "One-shot data-plane build: detect language face, spawn producers (pyrefly-index / rust-analyzer scip), rebuild graph.db + indexes. WRITES <repo>/.code-reality/ (index slot, graph.db). LONG-RUNNING: minutes-level on large repos, no progress reporting — the call blocks until done; set your client timeout accordingly. Same lib as `code-reality build --repo <repo>`"
+        description = "One-shot data-plane build: detect language faces, spawn producers (pyrefly-index / rust-analyzer scip / scip-typescript — external JS/TS prerequisite), rebuild graph.db + indexes. WRITES <repo>/.code-reality/ (index slot, graph.db). LONG-RUNNING: minutes-level on large repos, no progress reporting — the call blocks until done; set your client timeout accordingly. Same lib as `code-reality build --repo <repo>`"
     )]
     pub async fn build(
         &self,
@@ -845,10 +850,10 @@ impl CodeRealityServer {
         }): Parameters<BuildParams>,
     ) -> Result<CallToolResult, McpError> {
         if let Some(p) = producer.as_deref() {
-            if p != "rust" && p != "python" {
+            if crate::language::ProducerFamily::parse_cli(p).is_none() {
                 return Err(McpError::new(
                     ErrorCode::INVALID_PARAMS,
-                    format!("producer 須為 rust 或 python，收到：{p}"),
+                    format!("producer 須為 rust、python 或 typescript，收到：{p}"),
                     None,
                 ));
             }
