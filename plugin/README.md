@@ -21,11 +21,17 @@ daemon) and the usage skill:
 ## Prerequisites (the binaries)
 
 Two acquisition faces, one binary layer (PyPI). The MCP spawn wrapper
-self-heals the uv face: on every session start it version-checks the
-pinned bin (`--version` prints `<ver>+<rev>`, prefix compare) and,
-when missing or stale, installs the exact plugin-pinned versions with
-`uv tool install --force` — first-session bootstrap, network needed
-once (an offline first session fails loud and retries the next one).
+self-heals the uv face: on every session start it resolves the canonical
+executable directory with `uv tool dir --bin`, version-checks the three
+installed distribution faces (`code-reality-mcp`, `code-reality-lsp-bridge`,
+and `pyrefly-index`) against the plugin pin, and installs all three exact
+versions with `uv tool install --force` when any face is missing or stale.
+It rechecks those binaries after install and fails loud unless the uv face
+actually converged. The bridge wrapper resolves that same uv directory and
+waits for its pinned bridge during the twin bootstrap. `PATH`/cargo resolution
+is the developer face and is used only with `CODE_REALITY_BOOTSTRAP=off`.
+First-session bootstrap needs network once; an offline first session fails
+loud and retries the next one.
 
 1. **PyPI wheels via uv (main face)** — consumer path, no Rust
    toolchain, identical on Claude Code and ZCode. Manual install (or
