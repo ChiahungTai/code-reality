@@ -120,6 +120,9 @@ pub fn count_sources(repo: &Path) -> Result<SourceInventory, String> {
     // Composed (not duplicated) from the shared corpus list; the build
     // detector additionally skips `target` (OUT_DIR artifacts are not
     // source — the staleness walk keeps .py there for the python face).
+    // Detection is deliberately profile-UNFILTERED (superset walk:
+    // over-selecting a face degrades to a leg that skips on its empty
+    // governed corpus; under-selecting would silently drop sources).
     let mut skips: Vec<&str> = crate::engine::SKIP_DIRS.to_vec();
     skips.push("target");
     let mut stack = vec![repo.to_path_buf()];
@@ -214,9 +217,129 @@ fn validate_partial(path: &Path) -> Result<(), BuildError> {
     Ok(())
 }
 
+/// Outcome of the Python producer leg (TS-leg mirror).
+#[derive(Debug)]
+enum PyProduceOutcome {
+    /// The governed (profile-filtered) Python corpus is empty — the leg
+    /// is intentionally absent, not a failure (TS `SkippedByProfile`
+    /// precedent; feeds the same empty-convergence terminal).
+    SkippedByProfile,
+    /// Validated, governed-filtered partial written to the staged path.
+    Staged {
+        producer_version: Option<String>,
+        indexed_docs: usize,
+        /// Governed documents the producer did NOT emit (F1 narrowed:
+        /// warn, never fail — one unparsable file must not sink the build).
+        missing_governed: Vec<String>,
+    },
+}
+
+/// Governed Python source documents: repo-relative, `/`-normalized —
+/// the producer-side corpus authority for the staged partial (AD-11:
+/// the same effective policy the freshness walk applies, so a file
+/// cannot be excluded from the SCIP face while staying
+/// freshness-relevant, or vice versa).
+fn collect_py_corpus(repo: &Path) -> Result<BTreeSet<String>, String> {
+    let walk = crate::engine::walk_sources(repo)?;
+    Ok(walk
+        .py
+        .iter()
+        .map(|p| p.replace('\\', "/"))
+        .collect::<BTreeSet<String>>())
+}
+
+/// Remove profile-excluded documents from a staged Python partial, in
+/// place (AD-7: "a way to remove profile-excluded documents from the
+/// final partial index"). Drop-if-excluded — NOT retain-if-governed
+/// (unlike the TS exact-set check): the Python producer is spawned with
+/// just `--repo`, so its own walk is the corpus authority and a document
+/// outside the governed set that is NOT profile-excluded (symlink corpus,
+/// path-shape surprises, producer/disk TOCTOU) must survive — only an
+/// explicit profile prefix removes a document. Returns the retained
+/// document count plus the governed documents the producer did not emit
+/// (F1 narrowed: surfaced as a build WARN, never a failure).
+fn filter_python_partial(
+    part: &Path,
+    governed: &BTreeSet<String>,
+    profile: Option<&crate::profile::Profile>,
+) -> Result<(usize, Vec<String>), String> {
+    use protobuf::Message;
+    // The staged partial's mtime IS the slot mtime (merge publishes by
+    // rename, which preserves it) — and the churn loop-guard compares
+    // source mtimes against it. Rewriting the bytes must not refresh the
+    // clock past an in-build source edit, or a still-churning repo would
+    // read as converged. Snapshot and restore around the rewrite.
+    let mtime = std::fs::metadata(part)
+        .and_then(|m| m.modified())
+        .map_err(|e| format!("stat {} 失敗：{e}", part.display()))?;
+    let bytes = std::fs::read(part).map_err(|e| format!("讀 {} 失敗：{e}", part.display()))?;
+    let mut index = scip::types::Index::parse_from_bytes(&bytes)
+        .map_err(|e| format!("pyrefly-index 產出無法解析（{}）：{e}", part.display()))?;
+    index.documents.retain(|d| {
+        !crate::profile::is_excluded(
+            &crate::js_ts_corpus::normalize_rel(&d.relative_path),
+            profile,
+        )
+    });
+    let kept = index.documents.len();
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    for d in &index.documents {
+        seen.insert(crate::js_ts_corpus::normalize_rel(&d.relative_path));
+    }
+    let missing: Vec<String> = governed
+        .iter()
+        .filter(|g| !seen.contains(*g))
+        .cloned()
+        .collect();
+    let payload = index
+        .write_to_bytes()
+        .map_err(|e| format!("SCIP 序列化失敗：{e}"))?;
+    std::fs::write(part, payload).map_err(|e| format!("寫 {} 失敗：{e}", part.display()))?;
+    std::fs::File::options()
+        .write(true)
+        .open(part)
+        .and_then(|f| f.set_modified(mtime))
+        .map_err(|e| format!("還原 {} mtime 失敗：{e}", part.display()))?;
+    Ok((kept, missing))
+}
+
 /// Python leg, staged (S1: every leg writes an explicit partial — the
 /// producer's own sidecar invalidation keys off its output path, so a
-/// pid-keyed part cannot touch the live slot's sidecars).
+/// pid-keyed part cannot touch the live slot's sidecars). The external
+/// `pyrefly-index` takes no profile input, so the governed filter lands
+/// here at the merge/normalize layer (AD-7), mirroring the TS
+/// `filter_to_governed` post-step.
+fn stage_python_leg(
+    repo: &Path,
+    part: &Path,
+    roots: &[PathBuf],
+) -> Result<PyProduceOutcome, BuildError> {
+    let governed = collect_py_corpus(repo).map_err(BuildError::Env)?;
+    if governed.is_empty() {
+        return Ok(PyProduceOutcome::SkippedByProfile);
+    }
+    // Loaded once for the drop-if-excluded post-step (the walk above
+    // loaded it too — TOML parse cost is trivial beside a producer run).
+    let profile = crate::profile::load_profile(repo).map_err(BuildError::Env)?;
+    let version = stage_python(repo, part, roots)?;
+    validate_partial(part)?;
+    let (kept, missing) =
+        filter_python_partial(part, &governed, profile.as_ref()).map_err(BuildError::Env)?;
+    if kept == 0 {
+        return Err(BuildError::Env(format!(
+            "pyrefly-index 索引 0 個 governed 文檔（語料 {} 檔）——producer 語料與 governed 語料無交集",
+            governed.len()
+        )));
+    }
+    Ok(PyProduceOutcome::Staged {
+        producer_version: version,
+        indexed_docs: kept,
+        missing_governed: missing,
+    })
+}
+
+/// Raw spawn of the external `pyrefly-index` (no profile input — the
+/// governed filter is the caller's post-step, see [`stage_python_leg`]).
 fn stage_python(repo: &Path, part: &Path, roots: &[PathBuf]) -> Result<Option<String>, BuildError> {
     let bin = resolve_bin(
         "pyrefly-index",
@@ -407,6 +530,20 @@ pub fn build_repo(
         indexes_skipped: 0,
         notes: Vec::new(),
     };
+    // Effective exclusion set with provenance (additive semantics): the
+    // first note, so every report — success or empty-convergence — states
+    // what was filtered and where each prefix came from. A malformed
+    // profile is not reported here; the legs/walk fail loud with it.
+    if let Ok(profile) = crate::profile::load_profile(&resolved) {
+        let eff = crate::profile::effective_excludes(profile.as_ref());
+        rep.notes.push(format!(
+            "排除集：{}",
+            eff.iter()
+                .map(|(e, s)| format!("{e}（{s}）"))
+                .collect::<Vec<_>>()
+                .join("、")
+        ));
+    }
 
     // ---- stage every requested leg (ORDERED); a later-leg failure must
     // leave the pre-build live slot byte-identical ----
@@ -420,12 +557,35 @@ pub fn build_repo(
     for family in &selected {
         let part = slot_dir.join(format!(".part-{attempt}-{}.scip", family.cli_name()));
         match family {
-            ProducerFamily::Python => match stage_python(&resolved, &part, roots) {
-                Ok(version) => {
-                    validate_partial(&part)?;
+            ProducerFamily::Python => match stage_python_leg(&resolved, &part, roots) {
+                Ok(PyProduceOutcome::SkippedByProfile) => {
+                    rep.notes.push(
+                        "python 語言面：governed 語料為空（profile exclude）——略過此腿".to_string(),
+                    );
+                    continue;
+                }
+                Ok(PyProduceOutcome::Staged {
+                    producer_version,
+                    indexed_docs,
+                    missing_governed,
+                }) => {
                     all_policy_empty = false;
-                    if let Some(v) = version {
+                    if let Some(v) = producer_version {
                         rep.producers.push(format!("pyrefly-index {v}"));
+                    }
+                    rep.notes
+                        .push(format!("python 腿：{indexed_docs} governed 文檔"));
+                    if !missing_governed.is_empty() {
+                        rep.notes.push(format!(
+                            "[WARN] python 腿未索引 {} 個 governed 文檔（producer 漏產——本次發佈成功但語料不全，例：{}）",
+                            missing_governed.len(),
+                            missing_governed
+                                .iter()
+                                .take(3)
+                                .cloned()
+                                .collect::<Vec<_>>()
+                                .join("、")
+                        ));
                     }
                 }
                 Err(e) => {

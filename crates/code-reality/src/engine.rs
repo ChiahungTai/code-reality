@@ -507,10 +507,12 @@ pub fn is_test_path(rel: &str) -> bool {
 /// One disk walk feeding every staleness signal: the per-language file
 /// sets (doc-set comparison), the newest source mtime (cheap trigger),
 /// and the face-scoped source-set fingerprint (S4 add/delete/rename
-/// detection — mtime alone cannot see a deletion). JS/TS files are
-/// profile-excluded HERE (AD-11: producer corpus and freshness corpus
-/// share one effective policy); Python/Rust keep their historical
-/// corpus rules (no profile filter) until a separately reviewed change.
+/// detection — mtime alone cannot see a deletion). Python and JS/TS
+/// files are profile-excluded HERE (AD-11: producer corpus and freshness
+/// corpus share one effective policy); Rust keeps its historical corpus
+/// rules (no profile filter — rust-analyzer is workspace-scoped with no
+/// per-file corpus input, so a walk-side filter would desync freshness
+/// from what the producer actually indexes; recorded exemption).
 #[derive(Debug, Default)]
 pub struct SourceWalk {
     pub py: BTreeSet<String>,
@@ -526,8 +528,8 @@ pub struct SourceWalk {
 }
 
 impl SourceWalk {
-    /// Disk paths for the given faces (JS+TS sets are already governed —
-    /// profile-excluded at walk time).
+    /// Disk paths for the given faces (Python/JS/TS sets are already
+    /// governed — profile-excluded at walk time; Rust is unfiltered).
     pub fn paths_for_faces(
         &self,
         faces: &BTreeSet<crate::language::LanguageFace>,
@@ -587,8 +589,9 @@ impl SourceWalk {
 }
 
 /// Walk `repo` for source files, mirroring the producer's corpus rules
-/// (dot-dirs + [`SKIP_DIRS`]). Fail-loud: a walk error is an error, never
-/// a silent empty set posing as fresh.
+/// (dot-dirs + [`SKIP_DIRS`]) plus the repo-owned profile exclusions for
+/// the Python/JS/TS faces (Rust exempt — see [`SourceWalk`]). Fail-loud:
+/// a walk error is an error, never a silent empty set posing as fresh.
 pub fn walk_sources(repo: &Path) -> Result<SourceWalk, String> {
     let root = resolve_repo(repo);
     // JS/TS corpus policy: repo-owned profile exclusions (loaded once
@@ -626,7 +629,12 @@ pub fn walk_sources(repo: &Path) -> Result<SourceWalk, String> {
                     .unwrap_or_else(|_| name.clone());
                 let m = ent.metadata().and_then(|md| md.modified()).ok();
                 match face {
-                    crate::language::LanguageFace::Python => out.py.insert(rel),
+                    crate::language::LanguageFace::Python => {
+                        if crate::profile::is_excluded(&rel, profile.as_ref()) {
+                            continue;
+                        }
+                        out.py.insert(rel)
+                    }
                     crate::language::LanguageFace::Rust => {
                         if under_target {
                             continue;
@@ -839,8 +847,9 @@ pub fn evaluate_staleness(repo: &Path, slot: &Path) -> Result<StalenessSnapshot,
 /// only extensions already present in the index are compared, so a
 /// python-face index never goes false-stale over stray .rs files (the
 /// reverse blind spot — index language ≠ repo language — is a recorded
-/// v1 boundary). JS/TS compares against the governed (profile-filtered)
-/// walk sets — the same corpus policy the producer applies.
+/// v1 boundary). Python/JS/TS compare against the governed
+/// (profile-filtered) walk sets — the same corpus policy the producer
+/// applies; Rust compares unfiltered (recorded exemption).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DocDelta {
     pub missing: usize,

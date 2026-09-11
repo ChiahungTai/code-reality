@@ -139,8 +139,9 @@ tests are the sole gate face.
   query filtering) + index↔source staleness
   primitives (`SKIP_DIRS` corpus list single-sourced cross-crate — the
   producer imports it; `walk_sources` is the one four-language walk
-  [JS/TS profile-excluded HERE — producer corpus and freshness corpus
-  share the single effective policy] carrying per-face newest maps and
+  [Python/JS/TS profile-excluded HERE — producer corpus and freshness
+  corpus share the single effective policy; Rust exempt
+  (workspace-scoped producer)] carrying per-face newest maps and
   the FNV source-set fingerprint; `evaluate_staleness`/`StalenessSnapshot
   ::needs_rebuild` [mtime OR doc-set drift OR corpus-policy drift — the
   delete/rename blind spot mtime cannot see]; `doc_set_delta` compares

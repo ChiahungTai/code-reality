@@ -285,13 +285,38 @@ pub fn scan_roots(profile: Option<&Profile>) -> &[ScanRoot] {
 }
 
 /// Shared exclusion layer (`exclusions.py:13-16`): directory-granular
-/// prefixes from `profile.exclude`; no profile → `.venv/`.
+/// prefixes, ADDITIVE semantics (user ruling 2026-09-11 — was
+/// replace-on-profile before): builtin [`DEFAULT_EXCLUDE`] ∪
+/// `profile.exclude`. A repo profile can only widen the set, never
+/// narrow the builtin (the old replace rule silently dropped `.venv/`
+/// for every repo carrying a profile).
 pub fn is_excluded(rel_path: &str, profile: Option<&Profile>) -> bool {
-    match profile {
-        // borrow, no Vec rebuild — this sits on per-edge hot loops
-        Some(p) => p.exclude.iter().any(|x| rel_path.starts_with(x.as_str())),
-        None => DEFAULT_EXCLUDE.iter().any(|x| rel_path.starts_with(x)),
+    // borrow, no Vec rebuild — this sits on per-edge hot loops
+    if DEFAULT_EXCLUDE.iter().any(|x| rel_path.starts_with(x)) {
+        return true;
     }
+    match profile {
+        Some(p) => p.exclude.iter().any(|x| rel_path.starts_with(x.as_str())),
+        None => false,
+    }
+}
+
+/// Effective exclusion set with per-entry provenance for the build
+/// report: builtins first, then profile order; a prefix listed in both
+/// collapses to the builtin source.
+pub fn effective_excludes(profile: Option<&Profile>) -> Vec<(String, &'static str)> {
+    let mut out: Vec<(String, &'static str)> = Vec::new();
+    for b in DEFAULT_EXCLUDE {
+        out.push((b.to_string(), "內建"));
+    }
+    if let Some(p) = profile {
+        for x in &p.exclude {
+            if !out.iter().any(|(e, _)| e == x) {
+                out.push((x.clone(), "profile"));
+            }
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -425,6 +450,30 @@ mod tests {
             hazard_registries: vec![],
         };
         assert!(is_excluded("ai-analysis/ep.md", Some(&p)));
-        assert!(!is_excluded(".venv/x.py", Some(&p)));
+        // Additive (2026-09-11 ruling): a profile widens, never narrows —
+        // the builtin survives alongside profile entries.
+        assert!(is_excluded(".venv/x.py", Some(&p)));
+        assert!(!is_excluded(".venv-setup.py", Some(&p)));
+    }
+
+    #[test]
+    fn effective_excludes_provenance_and_dedupe() {
+        assert_eq!(
+            effective_excludes(None),
+            vec![(".venv/".to_string(), "內建")]
+        );
+        let p = Profile {
+            modules: vec![],
+            exclude: vec![".venv/".into(), "dist/".into()],
+            scan_roots: vec![],
+            hazard_registries: vec![],
+        };
+        assert_eq!(
+            effective_excludes(Some(&p)),
+            vec![
+                (".venv/".to_string(), "內建"),
+                ("dist/".to_string(), "profile"),
+            ]
+        );
     }
 }

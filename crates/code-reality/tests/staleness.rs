@@ -53,6 +53,30 @@ fn walk_sources_skips_and_collects() {
 }
 
 #[test]
+fn walk_sources_profile_excludes_python_not_rust() {
+    // AD-11 one-policy: profile exclude shapes the Python walk set (and
+    // hence freshness/doc-set/fingerprint). Rust is the recorded
+    // exemption — workspace-scoped producer, walk stays unfiltered.
+    let (t, repo) = mkrepo(&[
+        ("src/a.py", "x"),
+        ("dist/c.py", "x"),
+        (".venv/lib/b.py", "x"),
+        ("gen/x.rs", "x"),
+        ("src/keep.rs", "x"),
+        (".code-reality.toml", "exclude = [\"dist/\"]\n"),
+    ]);
+    let w = walk_sources(&repo).unwrap();
+    assert_eq!(
+        w.py,
+        BTreeSet::from(["src/a.py".to_string()]),
+        "py walk is governed"
+    );
+    assert!(w.rs.contains("gen/x.rs"), "rust exempt from profile");
+    assert!(w.rs.contains("src/keep.rs"));
+    drop(t);
+}
+
+#[test]
 fn evaluate_staleness_trigger_split() {
     // fresh: slot written after all sources
     let (t, repo) = mkrepo(&[("a.py", "x")]);

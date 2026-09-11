@@ -480,6 +480,231 @@ fn graph_db_path(repo: &Path) -> PathBuf {
     repo.join(".code-reality/graph.db")
 }
 
+// ---------- Python-face profile exclusion (exclude-consistency) ----------
+
+/// SCIP bytes with docs on both sides of a profile boundary. The fake
+/// producer (like the real `pyrefly-index`, which takes no profile
+/// input) emits the excluded doc; the merge-layer filter must narrow
+/// the staged partial to the governed set.
+fn pyfx_boundary_bytes() -> Vec<u8> {
+    use protobuf::Message;
+    use scip::types::{Document, Index, Occurrence};
+    let mut index = Index::new();
+    for (path, names) in [("src/a.py", ["a", "a_aux"]), ("dist/c.py", ["c", "c_aux"])] {
+        let mut d = Document::new();
+        d.relative_path = path.to_string();
+        for name in names {
+            let mut occ = Occurrence::new();
+            occ.symbol = format!("pyrefly python proj 0.1.0 `m`/{name}().");
+            occ.symbol_roles = 1;
+            occ.range = vec![0, 0, 1];
+            d.occurrences.push(occ);
+        }
+        index.documents.push(d);
+    }
+    index.write_to_bytes().unwrap()
+}
+
+fn fake_pyrefly_boundary(dir: &Path) {
+    let fx = dir.join("pyfx-boundary.scip");
+    std::fs::write(&fx, pyfx_boundary_bytes()).unwrap();
+    fake_bin(
+        dir,
+        "pyrefly-index",
+        &format!(
+            "#!/bin/sh
+if [ \"$1\" = \"--version\" ]; then echo 'fake-pyrefly 9.9.9'; exit 0; fi
+{}
+mkdir -p \"$(dirname \"$out\")\"
+cp '{}' \"$out\"
+echo '[OK] fake pyrefly-index'
+",
+            arg_parse_sh(),
+            fx.display()
+        ),
+    );
+}
+
+fn slot_doc_paths(repo: &Path) -> Vec<String> {
+    use protobuf::Message;
+    let bytes = std::fs::read(slot_of(repo)).unwrap();
+    let idx = scip::types::Index::parse_from_bytes(&bytes).unwrap();
+    let mut docs: Vec<String> = idx
+        .documents
+        .iter()
+        .map(|d| d.relative_path.clone())
+        .collect();
+    docs.sort();
+    docs
+}
+
+#[test]
+fn t13_python_leg_drops_profile_excluded_docs() {
+    let t = tempfile::tempdir().unwrap();
+    let repo = mkrepo(
+        &t,
+        &[
+            ("src/a.py", "def a():\n    return 1\n"),
+            ("dist/c.py", "def c():\n    return 3\n"),
+            (".venv/lib/b.py", "def b():\n    return 2\n"),
+            (".code-reality.toml", "exclude = [\"dist/\"]\n"),
+        ],
+    );
+    git_init(&repo);
+    let bindir = tempfile::tempdir().unwrap();
+    fake_pyrefly_boundary(bindir.path());
+    let roots = vec![bindir.path().to_path_buf()];
+
+    let rep = build_repo(&repo, None, &roots).expect("python leg");
+    assert_eq!(rep.face, "python-face");
+    assert_eq!(slot_doc_paths(&repo), vec!["src/a.py".to_string()]);
+    assert!(
+        rep.notes.iter().any(|n| n.contains("governed")),
+        "{:?}",
+        rep.notes
+    );
+}
+
+#[test]
+fn t14_python_leg_without_profile_keeps_dist() {
+    // No profile → DEFAULT_EXCLUDE (`.venv/`) only: dist/ stays governed.
+    // (.venv/ never appears — dot-dirs are corpus-invisible on every face.)
+    let t = tempfile::tempdir().unwrap();
+    let repo = mkrepo(
+        &t,
+        &[
+            ("src/a.py", "def a():\n    return 1\n"),
+            ("dist/c.py", "def c():\n    return 3\n"),
+            (".venv/lib/b.py", "def b():\n    return 2\n"),
+        ],
+    );
+    git_init(&repo);
+    let bindir = tempfile::tempdir().unwrap();
+    fake_pyrefly_boundary(bindir.path());
+    let roots = vec![bindir.path().to_path_buf()];
+
+    let rep = build_repo(&repo, None, &roots).expect("python leg");
+    assert_eq!(rep.face, "python-face");
+    assert_eq!(
+        slot_doc_paths(&repo),
+        vec!["dist/c.py".to_string(), "src/a.py".to_string()]
+    );
+}
+
+#[test]
+fn t16_python_partial_producer_warns_missing_governed() {
+    // F1 narrowed: the producer succeeds but omits a governed file — the
+    // build still publishes (one bad file must not sink indexing) with a
+    // loud WARN naming the missing governed document.
+    use protobuf::Message;
+    use scip::types::{Document, Index, Occurrence};
+    let t = tempfile::tempdir().unwrap();
+    let repo = mkrepo(
+        &t,
+        &[
+            ("src/a.py", "def a():\n    return 1\n"),
+            ("src/b.py", "def b():\n    return 2\n"),
+        ],
+    );
+    git_init(&repo);
+    let bindir = tempfile::tempdir().unwrap();
+    let mut index = Index::new();
+    let mut d = Document::new();
+    d.relative_path = "src/a.py".to_string();
+    for name in ["a", "a_aux", "a_third", "a_fourth"] {
+        let mut occ = Occurrence::new();
+        occ.symbol = format!("pyrefly python proj 0.1.0 `m`/{name}().");
+        occ.symbol_roles = 1;
+        occ.range = vec![0, 0, 1];
+        d.occurrences.push(occ);
+    }
+    index.documents.push(d);
+    let fx = bindir.path().join("pyfx-subset.scip");
+    std::fs::write(&fx, index.write_to_bytes().unwrap()).unwrap();
+    fake_bin(
+        bindir.path(),
+        "pyrefly-index",
+        &format!(
+            "#!/bin/sh
+if [ \"$1\" = \"--version\" ]; then echo 'fake-pyrefly 9.9.9'; exit 0; fi
+{}
+mkdir -p \"$(dirname \"$out\")\"
+cp '{}' \"$out\"
+echo '[OK] fake pyrefly-index'
+",
+            arg_parse_sh(),
+            fx.display()
+        ),
+    );
+    let roots = vec![bindir.path().to_path_buf()];
+
+    let rep = build_repo(&repo, None, &roots).expect("partial publish succeeds");
+    assert_eq!(rep.face, "python-face");
+    assert_eq!(slot_doc_paths(&repo), vec!["src/a.py".to_string()]);
+    let warn = rep
+        .notes
+        .iter()
+        .find(|n| n.contains("未索引") && n.contains("src/b.py"));
+    assert!(
+        warn.is_some(),
+        "missing governed must WARN: {:?}",
+        rep.notes
+    );
+}
+
+#[test]
+fn t17_build_report_prints_effective_excludes() {
+    let t = tempfile::tempdir().unwrap();
+    let repo = mkrepo(
+        &t,
+        &[
+            ("src/a.py", "def a():\n    return 1\n"),
+            (".code-reality.toml", "exclude = [\"dist/\"]\n"),
+        ],
+    );
+    git_init(&repo);
+    let bindir = tempfile::tempdir().unwrap();
+    fake_pyrefly_boundary(bindir.path());
+    let roots = vec![bindir.path().to_path_buf()];
+
+    let rep = build_repo(&repo, None, &roots).expect("python leg");
+    let first = rep.notes.first().expect("report carries排除集");
+    assert!(
+        first.contains("排除集")
+            && first.contains(".venv/（內建）")
+            && first.contains("dist/（profile）"),
+        "unexpected first note: {first}"
+    );
+}
+
+#[test]
+fn t15_python_all_excluded_converges_to_empty() {
+    // TS `s2_ts_only_all_excluded_converges_to_empty` mirror: an
+    // all-profile-excluded Python corpus is a legal empty terminal state
+    // under auto-detection; an explicit override stays a loud error.
+    let t = tempfile::tempdir().unwrap();
+    let repo = mkrepo(
+        &t,
+        &[
+            ("gen/a.py", "x = 1\n"),
+            (".code-reality.toml", "exclude = [\"gen/\"]\n"),
+        ],
+    );
+    let bindir = tempfile::tempdir().unwrap();
+    fake_pyrefly_boundary(bindir.path());
+    let roots = vec![bindir.path().to_path_buf()];
+
+    let rep = build_repo(&repo, None, &roots).expect("empty convergence");
+    assert_eq!(rep.face, "empty(profile-excluded)");
+    assert!(!slot_of(&repo).exists());
+    assert!(!graph_db_path(&repo).exists());
+    let err = build_repo(&repo, Some(ProducerFamily::Python), &roots).unwrap_err();
+    assert!(
+        matches!(err, BuildError::Env(ref m) if m.contains("未產出索引")),
+        "{err:?}"
+    );
+}
+
 fn slot_of(repo: &Path) -> PathBuf {
     repo.join(".code-reality/scip/index.scip")
 }
