@@ -339,6 +339,14 @@ fn stale_snapshot_fails_loud_and_row_stays_pending() {
     ]);
     assert_ne!(out.exit_code, 0, "stale gate must fail loud");
     assert!(out.stderr.contains("stale"), "{}", out.stderr);
+    // remediation must cover the historical-commit case: re-snapshotting at
+    // the current HEAD would capture the WRONG commit — the hint has to say
+    // so (U1 wild finding, ai-rules 11fd0d73 baked-stale)
+    assert!(
+        out.stderr.contains("git checkout"),
+        "stale remediation hint must cover the historical-target re-shot: {}",
+        out.stderr
+    );
     assert!(!repo.join(".tours/delta/e2e-stale-arc.tour").exists());
     let row = manifest_row(&repo, "e2e-stale-arc").expect("pending row must survive failure");
     assert!(

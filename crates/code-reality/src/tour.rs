@@ -422,12 +422,12 @@ fn materialize(argv: &[&str]) -> ToolOutput {
     };
     if let Some(w) = stale_of(&sa.meta) {
         return ToolOutput::crash(format!(
-            "base snapshot stale（fail-loud）：{w}——重跑 `code-reality snapshot --repo <repo>` 後再 materialize"
+            "base snapshot stale（fail-loud）：{w}——snapshot 須在該 commit 現場重拍（HEAD==該 commit：重跑 `code-reality snapshot --repo <repo>`；HEAD 已前進：`git checkout <sha>` → `code-reality build --repo <repo>` → snapshot → 回原分支）後再 materialize"
         ));
     }
     if let Some(w) = stale_of(&sb.meta) {
         return ToolOutput::crash(format!(
-            "target snapshot stale（fail-loud）：{w}——重跑 `code-reality snapshot --repo <repo>` 後再 materialize"
+            "target snapshot stale（fail-loud）：{w}——snapshot 須在該 commit 現場重拍（HEAD==該 commit：重跑 `code-reality snapshot --repo <repo>`；HEAD 已前進：`git checkout <sha>` → `code-reality build --repo <repo>` → snapshot → 回原分支）後再 materialize"
         ));
     }
     let mut stderr = String::new();
