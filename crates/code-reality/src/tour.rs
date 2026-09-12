@@ -199,12 +199,36 @@ fn resolved_pair(repo: &Path, values: &Values) -> Result<(String, String), Strin
     }
 }
 
-/// Canonical ep provenance string: repo-relative when the resolved path is
-/// inside the repo, absolute otherwise (unambiguous repo-root anchoring).
+/// Lexical normalization (no filesystem access): collapses `.`/`..` so
+/// containment checks cannot be escaped by `repo/../outside.md` (codex
+/// final review N1 residual — strip_prefix alone is prefix-lexical and a
+/// joined `..` component slips through).
+fn normalize(p: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for c in p.components() {
+        match c {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                if !out.pop() && !out.as_os_str().is_empty() {
+                    out.pop();
+                }
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    if out.as_os_str().is_empty() {
+        out.push("/");
+    }
+    out
+}
+
+/// Canonical ep provenance string: repo-relative when the resolved (and
+/// normalized) path is inside the repo, absolute otherwise (unambiguous
+/// repo-root anchoring; `..` escapes normalize to the real location).
 fn canonical_ep(repo: &Path, spec: &str) -> String {
     let pb = PathBuf::from(spec);
-    let abs = if pb.is_absolute() { pb } else { repo.join(&pb) };
-    match abs.strip_prefix(repo) {
+    let abs = normalize(&if pb.is_absolute() { pb } else { repo.join(&pb) });
+    match abs.strip_prefix(normalize(repo)) {
         Ok(rel) => rel.to_string_lossy().replace('\\', "/"),
         Err(_) => abs.to_string_lossy().into_owned(),
     }
@@ -342,7 +366,8 @@ fn materialize(argv: &[&str]) -> ToolOutput {
     } else {
         let pb = PathBuf::from(&ep_spec);
         let abs = if pb.is_absolute() { pb } else { repo.join(&pb) };
-        match abs.strip_prefix(&repo) {
+        let abs = normalize(&abs);
+        match abs.strip_prefix(normalize(&repo)) {
             Ok(rel) => (
                 Some(abs.clone()),
                 Some(rel.to_string_lossy().replace('\\', "/")),

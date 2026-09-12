@@ -138,6 +138,11 @@ fn rev(repo: &std::path::Path) -> String {
 }
 
 /// Temp git repo + fabricated S2 snapshot pair + EP md.
+///
+/// `mod.py` content embeds the tag so each fixture produces UNIQUE commit
+/// shas — parallel fixtures with identical content+timestamp would mint
+/// identical shas across repos, muddying which repo owns an object when a
+/// flake surfaces.
 fn e2e_fixture(tag: &str) -> (tempdir::TempDir, std::path::PathBuf, String, String) {
     let tmp = tempdir::TempDir::new_unique();
     let repo = tmp.path().join(tag);
@@ -147,7 +152,11 @@ fn e2e_fixture(tag: &str) -> (tempdir::TempDir, std::path::PathBuf, String, Stri
         "[[module]]\nprefix = \"pkg/\"\n",
     )
     .unwrap();
-    std::fs::write(repo.join("pkg/mod.py"), "# header\ndef keep():\n    pass\n").unwrap();
+    std::fs::write(
+        repo.join("pkg/mod.py"),
+        format!("# header {tag}\ndef keep():\n    pass\n"),
+    )
+    .unwrap();
     std::fs::write(repo.join("ep.md"), "# EP\n\n- pkg/（宣稱）\n").unwrap();
     git(&repo, &["init", "-q"]);
     git(&repo, &["add", "."]);
@@ -155,7 +164,7 @@ fn e2e_fixture(tag: &str) -> (tempdir::TempDir, std::path::PathBuf, String, Stri
     let before = rev(&repo);
     std::fs::write(
         repo.join("pkg/mod.py"),
-        "# header\ndef keep():\n    return 42\n",
+        format!("# header {tag}\ndef keep():\n    return 42\n"),
     )
     .unwrap();
     git(&repo, &["add", "-A"]);
@@ -189,6 +198,7 @@ fn manifest_row(repo: &std::path::Path, arc: &str) -> Option<toml::Table> {
 
 #[test]
 fn register_then_materialize_intent_only_full_chain() {
+    let _guard = E2E_LOCK.lock().unwrap();
     let (_tmp, repo, before, after) = e2e_fixture("e2e-full");
     // register with 7-char shas (R3: rev-parse canonicalization) — pending row
     let out = tour::run(&[
@@ -251,6 +261,7 @@ fn register_then_materialize_intent_only_full_chain() {
 
 #[test]
 fn stale_snapshot_fails_loud_and_row_stays_pending() {
+    let _guard = E2E_LOCK.lock().unwrap();
     let (_tmp, repo, before, after) = e2e_fixture("e2e-stale");
     let out = tour::run(&[
         "tour",
@@ -316,10 +327,17 @@ mod tempdir {
     }
 }
 
+/// Serialize the run()-level e2e tests: each spawns several git processes on
+/// /var/folders tempdirs; observed flake mode is transient object ENOENT
+/// under parallel git on macOS (s5-style crates' tempfile never hit it) —
+/// the shipped code has no shared state, so gate the infra, not the logic.
+static E2E_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[test]
 fn external_ep_keeps_provenance_across_rematerialize() {
     // N1: repo-外 EP——claims provenance 必須跨重產存活（row 保留 ep spec、
     // quality=full），tour step 永不含絕對路徑。
+    let _guard = E2E_LOCK.lock().unwrap();
     let (_tmp, repo, before, after) = e2e_fixture("e2e-ext");
     let outside = _tmp.path().join("outside-ep.md");
     std::fs::write(&outside, "# 外部 EP\n\n- pkg/（宣稱）\n").unwrap();
@@ -373,6 +391,7 @@ fn external_ep_keeps_provenance_across_rematerialize() {
 #[test]
 fn materialize_lone_card_flag_fails_loud() {
     // N2: --card 無 --base/--target＝fail-loud（silent drop 修）。
+    let _guard = E2E_LOCK.lock().unwrap();
     let (_tmp, repo, before, after) = e2e_fixture("e2e-flag");
     let out = tour::run(&[
         "tour",
@@ -399,4 +418,58 @@ fn materialize_lone_card_flag_fails_loud() {
     assert!(out.stderr.contains("註冊形"), "{}", out.stderr);
     let row = manifest_row(&repo, "e2e-flag-arc").unwrap();
     assert!(row.get("cardId").is_none(), "sneaky card must not leak in");
+}
+
+#[test]
+fn relative_dotdot_ep_escape_normalizes_to_absolute() {
+    // N1 residual (final review): `--ep ../outside.md` 的 lexical strip_prefix
+    // 穿透——normalize 後 containment 判定必須把它歸為 repo 外（row 存
+    // absolute），且不得成為 tour step anchor。
+    let _guard = E2E_LOCK.lock().unwrap();
+    let (_tmp, repo, before, after) = e2e_fixture("e2e-dotdot");
+    let outside = _tmp.path().join("outside-dotdot.md");
+    std::fs::write(&outside, "# 外部 EP\n\n- pkg/（宣稱）\n").unwrap();
+    std::fs::copy(&outside, repo.join("outside-dotdot.md")).unwrap();
+    let out = tour::run(&[
+        "tour",
+        "register",
+        "e2e-dotdot-arc",
+        "--repo",
+        repo.to_str().unwrap(),
+        "--base",
+        &before,
+        "--target",
+        &after,
+        "--ep",
+        "../outside-dotdot.md",
+    ]);
+    assert_eq!(out.exit_code, 0, "{}{}", out.stdout, out.stderr);
+    let row = manifest_row(&repo, "e2e-dotdot-arc").unwrap();
+    let ep = row.get("ep").and_then(|v| v.as_str()).unwrap();
+    assert!(
+        ep.starts_with('/') && !ep.contains(".."),
+        "row.ep 必為 normalized absolute: {ep}"
+    );
+    let outside_canonical = std::fs::canonicalize(&outside).unwrap();
+    assert_eq!(
+        ep,
+        outside_canonical.to_str().unwrap(),
+        "canonical 指向真實外部檔（macOS /var→/private/var symlink 已 normalize）"
+    );
+    let out = tour::run(&[
+        "tour",
+        "materialize",
+        "e2e-dotdot-arc",
+        "--repo",
+        repo.to_str().unwrap(),
+    ]);
+    assert_eq!(out.exit_code, 0, "{}{}", out.stdout, out.stderr);
+    let tour: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(repo.join(".tours/delta/e2e-dotdot-arc.tour")).unwrap(),
+    )
+    .unwrap();
+    for s in tour["steps"].as_array().unwrap() {
+        let f = s["file"].as_str().unwrap();
+        assert!(!f.contains(".."), "repo-外 EP 不得作 step anchor: {f}");
+    }
 }
