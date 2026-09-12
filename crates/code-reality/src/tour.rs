@@ -371,6 +371,18 @@ fn materialize(argv: &[&str]) -> ToolOutput {
     if base.is_empty() || target.is_empty() {
         return ToolOutput::crash(format!("row {arc_id} 缺 base/target——以 register 補齊"));
     }
+    // commit-ish resolution on the row-driven path too (codex round-4):
+    // legacy rows from the pre-rev-parse registration form may carry 7-char
+    // shas, which would miss the sha8 snapshot suffix lookup; resolving here
+    // also migrates the row to canonical full shas via the final upsert
+    let base = match resolve_commit(&repo, &base) {
+        Ok(v) => v,
+        Err(e) => return ToolOutput::crash(format!("row {arc_id} base: {e}")),
+    };
+    let target = match resolve_commit(&repo, &target) {
+        Ok(v) => v,
+        Err(e) => return ToolOutput::crash(format!("row {arc_id} target: {e}")),
+    };
     // EP provenance vs tour anchor split (codex re-review N1): the row
     // persists a CANONICAL ep spec (repo-relative when inside the repo,
     // absolute otherwise) so row-driven re-materialization can always

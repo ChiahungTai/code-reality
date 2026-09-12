@@ -254,7 +254,8 @@ tests are the sole gate face.
   `snapshot`, `graph_audit`; not kebab-case) —
   relay minimal-diff contract. (`transition` left the CLI surface at S4 —
   the module stays as the diff domain delta_tour consumes.)
-  Carrier-native additions (`build`, `project`, `refresh`, `hook`) have
+  Carrier-native additions (`build`, `project`, `refresh`, `hook`,
+  `tour`) have
   no Python ancestor and follow the same style.
 - **Schema interop**: the derived db keeps the frozen three-table DDL +
   `SCHEMA_VERSION`; extensions (fn_defs, R3) live in separate sidecars —

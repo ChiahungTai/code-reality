@@ -117,6 +117,10 @@ fn git(repo: &std::path::Path, args: &[&str]) {
         .arg("-C")
         .arg(repo)
         .args(args)
+        .env("GIT_AUTHOR_NAME", "t")
+        .env("GIT_AUTHOR_EMAIL", "t@t")
+        .env("GIT_COMMITTER_NAME", "t")
+        .env("GIT_COMMITTER_EMAIL", "t@t")
         .output()
         .unwrap();
     assert!(
@@ -340,8 +344,9 @@ fn e2e_lock() -> std::sync::MutexGuard<'static, ()> {
 
 #[test]
 fn external_ep_keeps_provenance_across_rematerialize() {
-    // N1: repo-外 EP——claims provenance 必須跨重產存活（row 保留 ep spec、
-    // quality=full），tour step 永不含絕對路徑。
+    // N1: out-of-repo EP — claims provenance must survive re-materialization
+    // (row keeps the ep spec, quality=full); tour steps never carry absolute
+    // paths.
     let _guard = e2e_lock();
     let (_tmp, repo, before, after) = e2e_fixture("e2e-ext");
     let outside = _tmp.path().join("outside-ep.md");
@@ -396,7 +401,7 @@ fn external_ep_keeps_provenance_across_rematerialize() {
 
 #[test]
 fn materialize_lone_card_flag_fails_loud() {
-    // N2: --card 無 --base/--target＝fail-loud（silent drop 修）。
+    // N2: --card without --base/--target must fail loud (silent-drop fix).
     let _guard = e2e_lock();
     let (_tmp, repo, before, after) = e2e_fixture("e2e-flag");
     let out = tour::run(&[
@@ -428,9 +433,10 @@ fn materialize_lone_card_flag_fails_loud() {
 
 #[test]
 fn relative_dotdot_ep_escape_normalizes_to_absolute() {
-    // N1 residual (final review): `--ep ../outside.md` 的 lexical strip_prefix
-    // 穿透——normalize 後 containment 判定必須把它歸為 repo 外（row 存
-    // absolute），且不得成為 tour step anchor。
+    // N1 residual (final review): the lexical strip_prefix in
+    // `--ep ../outside.md` escapes containment — after normalize the
+    // containment decision must classify it as out-of-repo (row stores
+    // absolute), and it must never become a tour step anchor.
     let _guard = e2e_lock();
     let (_tmp, repo, before, after) = e2e_fixture("e2e-dotdot");
     let outside = _tmp.path().join("outside-dotdot.md");
@@ -482,9 +488,11 @@ fn relative_dotdot_ep_escape_normalizes_to_absolute() {
 
 #[test]
 fn in_repo_symlink_ep_resolves_to_real_location() {
-    // round-3 residual: repo/ep-link.md -> ../outside.md——lexical containment
-    // 穿透；realpath 解析後 row 必存外部 absolute provenance，且 step 不得
-    // 出現 ep-link.md（repo-外 EP 不作 step anchor）。
+    // round-3 residual: repo/ep-link.md -> ../outside.md — lexical
+    // containment escape; after realpath resolution the row must store the
+    // out-of-repo absolute provenance, and steps must not contain
+    // ep-link.md (out-of-repo EPs are not step anchors).
+    let _guard = e2e_lock();
     let (_tmp, repo, before, after) = e2e_fixture("e2e-symlink");
     let outside = _tmp.path().join("outside-symlink.md");
     std::fs::write(&outside, "# 外部 EP\n\n- pkg/（宣稱）\n").unwrap();
@@ -529,4 +537,48 @@ fn in_repo_symlink_ep_resolves_to_real_location() {
         assert_ne!(f, "ep-link.md", "symlink EP 不得作 step anchor");
         assert!(!f.starts_with('/'), "絕對路徑不得進 step: {f}");
     }
+}
+
+#[test]
+fn row_driven_materialize_resolves_legacy_short_sha_row() {
+    // codex round-4: legacy rows from the pre-rev-parse registration form
+    // carry 7-char shas verbatim — the row-driven path must resolve them
+    // before the sha8 snapshot lookup, and self-migrate the row to the
+    // canonical full shas via the final upsert.
+    let _guard = e2e_lock();
+    let (_tmp, repo, before, after) = e2e_fixture("e2e-legacy");
+    std::fs::create_dir_all(repo.join(".tours")).unwrap();
+    let manifest_path = repo.join(".tours").join("manifest.toml");
+    let mut m = load(&manifest_path).unwrap();
+    upsert_delta_arc(
+        &mut m,
+        &[
+            ("arcId", toml::Value::String("e2e-legacy-arc".into())),
+            ("base", toml::Value::String(before[..7].to_string())),
+            ("target", toml::Value::String(after[..7].to_string())),
+        ],
+    );
+    dump(&manifest_path, &m).unwrap();
+    let out = tour::run(&[
+        "tour",
+        "materialize",
+        "e2e-legacy-arc",
+        "--repo",
+        repo.to_str().unwrap(),
+    ]);
+    assert_eq!(out.exit_code, 0, "{}{}", out.stdout, out.stderr);
+    let row = manifest_row(&repo, "e2e-legacy-arc").unwrap();
+    assert_eq!(
+        row.get("base").and_then(|v| v.as_str()),
+        Some(before.as_str()),
+        "row self-migrates to the resolved full sha"
+    );
+    assert_eq!(
+        row.get("target").and_then(|v| v.as_str()),
+        Some(after.as_str())
+    );
+    assert_eq!(
+        row.get("tourPath").and_then(|v| v.as_str()),
+        Some(".tours/delta/e2e-legacy-arc.tour")
+    );
 }

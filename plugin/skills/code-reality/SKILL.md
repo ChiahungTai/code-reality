@@ -308,11 +308,14 @@ The MCP face covers the SCIP family, the graph_query family, and the
 data-plane family (build/snapshot/delta_tour/project — write side
 effects, re-adjudicated 2026-08-29). The same binary carries the full
 toolchain: `code-reality <scip_refs|snapshot|graph_audit|
-hub_refs|boundary|boundary_build|build|chain_tour|delta_tour|
+hub_refs|boundary|boundary_build|build|chain_tour|delta_tour|tour|
 tour_manifest|tour_validate|tour_upgrade|runtime_edges|
 graph_query|graph_db|project> --repo <root>`. (Diff consumption runs through
 `delta_tour` — the transition CLI retired; snapshot sidecar pairs feed
-delta_tour directly.)
+delta_tour directly. `tour register|materialize` is the intent-level
+two-phase materialization face: a manifest `[[delta_arc]]` provenance row
+keyed on arcId drives the full recipe — snapshot-pair resolution, stale
+gate, EP claims gate — into `.tours/delta/<arcId>.tour`.)
 
 ### Projection plans (`project`)
 
