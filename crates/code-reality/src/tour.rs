@@ -222,12 +222,28 @@ fn normalize(p: &Path) -> PathBuf {
     out
 }
 
+/// Symlink-aware containment input (codex round-3 review): when the path
+/// exists, resolve it to its REAL location before the repo-containment
+/// decision — a repo-internal symlink pointing outside would otherwise pass
+/// lexical containment and leak an out-of-repo file into the tour as a step
+/// anchor. Non-existent paths fall back to the lexical form.
+fn resolve_existing(p: PathBuf) -> PathBuf {
+    match std::fs::canonicalize(&p) {
+        Ok(real) => normalize(&real),
+        Err(_) => p,
+    }
+}
+
 /// Canonical ep provenance string: repo-relative when the resolved (and
 /// normalized) path is inside the repo, absolute otherwise (unambiguous
 /// repo-root anchoring; `..` escapes normalize to the real location).
 fn canonical_ep(repo: &Path, spec: &str) -> String {
     let pb = PathBuf::from(spec);
-    let abs = normalize(&if pb.is_absolute() { pb } else { repo.join(&pb) });
+    let abs = resolve_existing(normalize(&if pb.is_absolute() {
+        pb
+    } else {
+        repo.join(&pb)
+    }));
     match abs.strip_prefix(normalize(repo)) {
         Ok(rel) => rel.to_string_lossy().replace('\\', "/"),
         Err(_) => abs.to_string_lossy().into_owned(),
@@ -366,7 +382,7 @@ fn materialize(argv: &[&str]) -> ToolOutput {
     } else {
         let pb = PathBuf::from(&ep_spec);
         let abs = if pb.is_absolute() { pb } else { repo.join(&pb) };
-        let abs = normalize(&abs);
+        let abs = resolve_existing(normalize(&abs));
         match abs.strip_prefix(normalize(&repo)) {
             Ok(rel) => (
                 Some(abs.clone()),

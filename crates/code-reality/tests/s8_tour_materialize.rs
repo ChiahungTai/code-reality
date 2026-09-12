@@ -198,7 +198,7 @@ fn manifest_row(repo: &std::path::Path, arc: &str) -> Option<toml::Table> {
 
 #[test]
 fn register_then_materialize_intent_only_full_chain() {
-    let _guard = E2E_LOCK.lock().unwrap();
+    let _guard = e2e_lock();
     let (_tmp, repo, before, after) = e2e_fixture("e2e-full");
     // register with 7-char shas (R3: rev-parse canonicalization) — pending row
     let out = tour::run(&[
@@ -261,7 +261,7 @@ fn register_then_materialize_intent_only_full_chain() {
 
 #[test]
 fn stale_snapshot_fails_loud_and_row_stays_pending() {
-    let _guard = E2E_LOCK.lock().unwrap();
+    let _guard = e2e_lock();
     let (_tmp, repo, before, after) = e2e_fixture("e2e-stale");
     let out = tour::run(&[
         "tour",
@@ -331,13 +331,18 @@ mod tempdir {
 /// /var/folders tempdirs; observed flake mode is transient object ENOENT
 /// under parallel git on macOS (s5-style crates' tempfile never hit it) —
 /// the shipped code has no shared state, so gate the infra, not the logic.
+/// Poison-tolerant: one test's failure must not cascade via lock poisoning.
 static E2E_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn e2e_lock() -> std::sync::MutexGuard<'static, ()> {
+    E2E_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 #[test]
 fn external_ep_keeps_provenance_across_rematerialize() {
     // N1: repo-外 EP——claims provenance 必須跨重產存活（row 保留 ep spec、
     // quality=full），tour step 永不含絕對路徑。
-    let _guard = E2E_LOCK.lock().unwrap();
+    let _guard = e2e_lock();
     let (_tmp, repo, before, after) = e2e_fixture("e2e-ext");
     let outside = _tmp.path().join("outside-ep.md");
     std::fs::write(&outside, "# 外部 EP\n\n- pkg/（宣稱）\n").unwrap();
@@ -356,10 +361,11 @@ fn external_ep_keeps_provenance_across_rematerialize() {
     ]);
     assert_eq!(out.exit_code, 0, "{}{}", out.stdout, out.stderr);
     let row = manifest_row(&repo, "e2e-ext-arc").unwrap();
+    let outside_real = std::fs::canonicalize(&outside).unwrap();
     assert_eq!(
         row.get("ep").and_then(|v| v.as_str()),
-        Some(outside.to_str().unwrap()),
-        "repo-外 EP 以絕對路徑 canonical 持久化"
+        Some(outside_real.to_str().unwrap()),
+        "repo-外 EP 以 realpath absolute canonical 持久化（/var symlink 已解析）"
     );
     for _ in 0..2 {
         let out = tour::run(&[
@@ -374,7 +380,7 @@ fn external_ep_keeps_provenance_across_rematerialize() {
     let row = manifest_row(&repo, "e2e-ext-arc").unwrap();
     assert_eq!(
         row.get("ep").and_then(|v| v.as_str()),
-        Some(outside.to_str().unwrap()),
+        Some(outside_real.to_str().unwrap()),
         "重產後 provenance 仍在（可等價重建 ep_fs）"
     );
     assert_eq!(row.get("quality").and_then(|v| v.as_str()), Some("full"));
@@ -391,7 +397,7 @@ fn external_ep_keeps_provenance_across_rematerialize() {
 #[test]
 fn materialize_lone_card_flag_fails_loud() {
     // N2: --card 無 --base/--target＝fail-loud（silent drop 修）。
-    let _guard = E2E_LOCK.lock().unwrap();
+    let _guard = e2e_lock();
     let (_tmp, repo, before, after) = e2e_fixture("e2e-flag");
     let out = tour::run(&[
         "tour",
@@ -425,7 +431,7 @@ fn relative_dotdot_ep_escape_normalizes_to_absolute() {
     // N1 residual (final review): `--ep ../outside.md` 的 lexical strip_prefix
     // 穿透——normalize 後 containment 判定必須把它歸為 repo 外（row 存
     // absolute），且不得成為 tour step anchor。
-    let _guard = E2E_LOCK.lock().unwrap();
+    let _guard = e2e_lock();
     let (_tmp, repo, before, after) = e2e_fixture("e2e-dotdot");
     let outside = _tmp.path().join("outside-dotdot.md");
     std::fs::write(&outside, "# 外部 EP\n\n- pkg/（宣稱）\n").unwrap();
@@ -471,5 +477,56 @@ fn relative_dotdot_ep_escape_normalizes_to_absolute() {
     for s in tour["steps"].as_array().unwrap() {
         let f = s["file"].as_str().unwrap();
         assert!(!f.contains(".."), "repo-外 EP 不得作 step anchor: {f}");
+    }
+}
+
+#[test]
+fn in_repo_symlink_ep_resolves_to_real_location() {
+    // round-3 residual: repo/ep-link.md -> ../outside.md——lexical containment
+    // 穿透；realpath 解析後 row 必存外部 absolute provenance，且 step 不得
+    // 出現 ep-link.md（repo-外 EP 不作 step anchor）。
+    let (_tmp, repo, before, after) = e2e_fixture("e2e-symlink");
+    let outside = _tmp.path().join("outside-symlink.md");
+    std::fs::write(&outside, "# 外部 EP\n\n- pkg/（宣稱）\n").unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&outside, repo.join("ep-link.md")).unwrap();
+    let out = tour::run(&[
+        "tour",
+        "register",
+        "e2e-symlink-arc",
+        "--repo",
+        repo.to_str().unwrap(),
+        "--base",
+        &before,
+        "--target",
+        &after,
+        "--ep",
+        "ep-link.md",
+    ]);
+    assert_eq!(out.exit_code, 0, "{}{}", out.stdout, out.stderr);
+    let row = manifest_row(&repo, "e2e-symlink-arc").unwrap();
+    let ep = row.get("ep").and_then(|v| v.as_str()).unwrap();
+    let outside_real = std::fs::canonicalize(&outside).unwrap();
+    assert_eq!(
+        ep,
+        outside_real.to_str().unwrap(),
+        "row.ep 必為 realpath absolute"
+    );
+    let out = tour::run(&[
+        "tour",
+        "materialize",
+        "e2e-symlink-arc",
+        "--repo",
+        repo.to_str().unwrap(),
+    ]);
+    assert_eq!(out.exit_code, 0, "{}{}", out.stdout, out.stderr);
+    let tour: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(repo.join(".tours/delta/e2e-symlink-arc.tour")).unwrap(),
+    )
+    .unwrap();
+    for s in tour["steps"].as_array().unwrap() {
+        let f = s["file"].as_str().unwrap();
+        assert_ne!(f, "ep-link.md", "symlink EP 不得作 step anchor");
+        assert!(!f.starts_with('/'), "絕對路徑不得進 step: {f}");
     }
 }
