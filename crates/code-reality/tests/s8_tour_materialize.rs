@@ -80,6 +80,51 @@ fn delta_arc_roundtrip_and_replace_by_arcid() {
 }
 
 #[test]
+fn plain_load_dump_preserves_unknown_keys_in_delta_arc_rows() {
+    // GLM-5.3 review pin (NT audience incident family): a PLAIN load→dump
+    // must preserve unknown keys inside untouched [[delta_arc]] rows — only
+    // upsert_delta_arc is a tool-authoritative full replace. Unknown
+    // top-level keys survive the same roundtrip (pre-existing contract).
+    let tmp = std::env::temp_dir().join(format!(
+        "cr-s8-roundtrip-{}",
+        std::process::id() as u64
+            ^ std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos() as u64
+    ));
+    std::fs::create_dir_all(&tmp).unwrap();
+    let path = tmp.join("manifest.toml");
+    std::fs::write(
+        &path,
+        "version = 1\nunknown_top = \"keep-me\"\n\n[[delta_arc]]\narcId = \"hand-1\"\nbase = \"aaaaaaa1\"\ntarget = \"bbbbbbb1\"\nnote_id = \"nt-audience-7\"\n",
+    )
+    .unwrap();
+    let m = load(&path).unwrap();
+    dump(&path, &m).unwrap();
+    let back = load(&path).unwrap();
+    let row = back
+        .delta_arc
+        .iter()
+        .find(|r| r.get("arcId").and_then(|v| v.as_str()) == Some("hand-1"))
+        .unwrap();
+    assert_eq!(
+        row.get("note_id").and_then(|v| v.as_str()),
+        Some("nt-audience-7"),
+        "unknown keys inside an untouched delta_arc row must survive load→dump"
+    );
+    assert_eq!(
+        back.extra
+            .iter()
+            .find(|(k, _)| k == "unknown_top")
+            .map(|(_, v)| v),
+        Some(&toml::Value::String("keep-me".into())),
+        "unknown top-level keys survive the same roundtrip"
+    );
+    std::fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
 fn snapshot_resolution_hit_miss_ambiguous() {
     let tmp = std::env::temp_dir().join(format!(
         "cr-s8-snap-{}",
@@ -581,4 +626,102 @@ fn row_driven_materialize_resolves_legacy_short_sha_row() {
         row.get("tourPath").and_then(|v| v.as_str()),
         Some(".tours/delta/e2e-legacy-arc.tour")
     );
+}
+
+#[test]
+fn register_over_materialized_arc_resets_row_to_pending() {
+    // GLM-5.3 review pin: re-register on an already-materialized arcId is a
+    // tool-authoritative full replace — tourPath drops (row back to pending)
+    // while the old tour file stays on disk until the next materialize
+    // overwrites the same arcId-keyed path (orphaned tour self-heals).
+    let _guard = e2e_lock();
+    let (_tmp, repo, before, after) = e2e_fixture("e2e-reset");
+    let out = tour::run(&[
+        "tour",
+        "materialize",
+        "e2e-reset-arc",
+        "--repo",
+        repo.to_str().unwrap(),
+        "--base",
+        &before,
+        "--target",
+        &after,
+    ]);
+    assert_eq!(out.exit_code, 0, "{}{}", out.stdout, out.stderr);
+    let row = manifest_row(&repo, "e2e-reset-arc").unwrap();
+    assert_eq!(
+        row.get("tourPath").and_then(|v| v.as_str()),
+        Some(".tours/delta/e2e-reset-arc.tour")
+    );
+    let tour_path = repo.join(".tours/delta/e2e-reset-arc.tour");
+    assert!(tour_path.exists());
+    // register over it: full replace → pending row; stale tour file stays
+    let out = tour::run(&[
+        "tour",
+        "register",
+        "e2e-reset-arc",
+        "--repo",
+        repo.to_str().unwrap(),
+        "--base",
+        &before,
+        "--target",
+        &after,
+    ]);
+    assert_eq!(out.exit_code, 0, "{}{}", out.stdout, out.stderr);
+    let row = manifest_row(&repo, "e2e-reset-arc").unwrap();
+    assert!(
+        row.get("tourPath").is_none(),
+        "register resets the row to pending (full replace)"
+    );
+    assert!(
+        tour_path.exists(),
+        "the stale tour file stays on disk until re-materialize overwrites it"
+    );
+    // row-driven re-materialize overwrites the same path and restores tourPath
+    let out = tour::run(&[
+        "tour",
+        "materialize",
+        "e2e-reset-arc",
+        "--repo",
+        repo.to_str().unwrap(),
+    ]);
+    assert_eq!(out.exit_code, 0, "{}{}", out.stdout, out.stderr);
+    let row = manifest_row(&repo, "e2e-reset-arc").unwrap();
+    assert_eq!(
+        row.get("tourPath").and_then(|v| v.as_str()),
+        Some(".tours/delta/e2e-reset-arc.tour")
+    );
+}
+
+#[test]
+fn materialize_lone_ep_flag_fails_loud() {
+    // flag-face symmetry pin: lone --ep (like lone --card) is rejected on
+    // row-driven materialize — accepting it would silently drop the intent.
+    let _guard = e2e_lock();
+    let (_tmp, repo, before, after) = e2e_fixture("e2e-epflag");
+    let out = tour::run(&[
+        "tour",
+        "register",
+        "e2e-epflag-arc",
+        "--repo",
+        repo.to_str().unwrap(),
+        "--base",
+        &before,
+        "--target",
+        &after,
+    ]);
+    assert_eq!(out.exit_code, 0);
+    let out = tour::run(&[
+        "tour",
+        "materialize",
+        "e2e-epflag-arc",
+        "--repo",
+        repo.to_str().unwrap(),
+        "--ep",
+        "sneaky.md",
+    ]);
+    assert_ne!(out.exit_code, 0, "lone --ep must fail loud");
+    assert!(out.stderr.contains("註冊形"), "{}", out.stderr);
+    let row = manifest_row(&repo, "e2e-epflag-arc").unwrap();
+    assert!(row.get("ep").is_none(), "sneaky ep must not leak in");
 }
