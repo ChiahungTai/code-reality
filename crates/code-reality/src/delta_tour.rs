@@ -543,6 +543,10 @@ pub fn build_tour(
         "title": format!("{task} 變更導覽"),
         "description": summary,
         "steps": steps,
+        // tour-level ref (AIR-80): a delta tour is a historical snapshot —
+        // consumers fork the repo at this commit; never living-reanchor it
+        // to HEAD (reanchoring would make health exact but semantics wrong).
+        "ref": after,
     }))
 }
 

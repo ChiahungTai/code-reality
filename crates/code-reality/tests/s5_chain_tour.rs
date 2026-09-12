@@ -162,6 +162,12 @@ fn build_tours_with_graph_reanchor() {
         .find(|s| s["title"].as_str().unwrap().contains("boot"))
         .unwrap();
     assert_eq!(boot_step["line"], 9);
+    // namespaced CR identity (AIR-80): true SCIP symbol of the selected
+    // definition occurrence (fixture universe: symbol == qname)
+    assert_eq!(
+        boot_step["x-codeReality"]["symbol"].as_str().unwrap(),
+        "pkg/a.py::boot"
+    );
     assert!(
         boot_step["description"]
             .as_str()

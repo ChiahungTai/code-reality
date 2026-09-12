@@ -69,12 +69,14 @@ pub fn git_head(repo: &Path) -> (String, String) {
     }
 }
 
-/// Manifest data model: `version`, `tour` (rel → row), plus unknown
-/// top-level keys preserved for roundtripping.
+/// Manifest data model: `version`, `tour` (rel → row), `delta_arc`
+/// provenance rows (AIR-80 — arcId-keyed materialization bookkeeping),
+/// plus unknown top-level keys preserved for roundtripping.
 #[derive(Debug, Clone, Default)]
 pub struct Manifest {
     pub version: Option<toml::Value>,
     pub tour: BTreeMap<String, toml::Table>,
+    pub delta_arc: Vec<toml::Table>,
     pub extra: Vec<(String, toml::Value)>, // insertion-irrelevant: dump sorts
 }
 
@@ -100,10 +102,45 @@ pub fn load(path: &Path) -> Result<Manifest, String> {
                     }
                 }
             }
+            "delta_arc" => {
+                if let Some(a) = v.as_array() {
+                    for row in a {
+                        if let Some(row_t) = row.as_table() {
+                            m.delta_arc.push(row_t.clone());
+                        }
+                    }
+                }
+            }
             other => m.extra.push((other.to_string(), v)),
         }
     }
     Ok(m)
+}
+
+/// Upsert a `[[delta_arc]]` provenance row by arcId (AIR-80): arcId is the
+/// materialization canonical key (cardId is a join attribute — one card may
+/// span multiple arcs). Rows are tool-authoritative full replaces keyed on
+/// arcId; materialized rows are retained (consumers locate tours by row).
+pub fn upsert_delta_arc(m: &mut Manifest, fields: &[(&str, toml::Value)]) {
+    let arc_id = fields
+        .iter()
+        .find(|(k, _)| *k == "arcId")
+        .and_then(|(_, v)| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let mut row = toml::Table::new();
+    for (k, v) in fields {
+        row.insert((*k).to_string(), v.clone());
+    }
+    if let Some(existing) = m
+        .delta_arc
+        .iter_mut()
+        .find(|r| r.get("arcId").and_then(|v| v.as_str()) == Some(arc_id.as_str()))
+    {
+        *existing = row;
+    } else {
+        m.delta_arc.push(row);
+    }
 }
 
 pub fn upsert(m: &mut Manifest, rel: &str, generator: &str, sources: &[String], commit: &str) {
@@ -228,6 +265,16 @@ pub fn dump(path: &Path, m: &Manifest) -> Result<(), String> {
             .collect();
         unknown.sort_by(|a, b| a.0.cmp(b.0));
         for (k, v) in unknown {
+            lines.push(format!("{} = {}", toml_key(k), toml_value(v)?));
+        }
+    }
+    // delta provenance rows (AIR-80): field order is tool-authoritative,
+    // consumers read tolerantly (missing field = no trigger UI)
+    for row in &m.delta_arc {
+        lines.push("\n[[delta_arc]]".to_string());
+        let mut keys: Vec<(&String, &toml::Value)> = row.iter().collect();
+        keys.sort_by(|a, b| a.0.cmp(b.0));
+        for (k, v) in keys {
             lines.push(format!("{} = {}", toml_key(k), toml_value(v)?));
         }
     }

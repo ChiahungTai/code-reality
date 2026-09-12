@@ -313,6 +313,10 @@ pub struct GraphHit {
     pub g_line: Option<i64>,
     pub g_file: Option<String>,
     pub g_files: Vec<String>,
+    /// True SCIP symbol of the selected definition occurrence (AIR-80):
+    /// identity for CR reanchor maintenance — file+name+nearest-line is a
+    /// lookup key, not a complete identity.
+    pub g_symbol: Option<String>,
 }
 
 impl GraphAnchor {
@@ -345,18 +349,18 @@ impl GraphAnchor {
             .map(|p| p.to_string_lossy().replace('\\', "/"))
             .unwrap_or_default();
         let like = format!("%/{}", like_escape_chain(&rel));
-        let hit: Option<i64> = self
+        let hit: Option<(i64, Option<String>)> = self
             .conn
             .query_row(
-                "SELECT line_start FROM nodes \
+                "SELECT line_start, symbol FROM nodes \
                  WHERE file_path LIKE ?1 ESCAPE '\\' AND name=?2 \
                  AND line_start IS NOT NULL \
                  ORDER BY ABS(line_start-?3), line_start, symbol LIMIT 1",
                 (&like, ident, line_no),
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .ok();
-        if let Some(g_line) = hit {
+        if let Some((g_line, g_symbol)) = hit {
             let delta = g_line - line_no;
             return GraphHit {
                 g: if delta == 0 {
@@ -367,6 +371,7 @@ impl GraphAnchor {
                 g_line: Some(g_line),
                 g_file: None,
                 g_files: vec![],
+                g_symbol,
             };
         }
         if substring_status != "missing" || ident.chars().count() < 4 {
@@ -402,21 +407,24 @@ impl GraphAnchor {
             rows.filter_map(|r| r.ok().flatten()).collect()
         };
         if rels.len() == 1 {
-            let ln: Option<i64> = self
+            let hit: Option<(i64, Option<String>)> = self
                 .conn
                 .query_row(
-                    "SELECT MIN(line_start) FROM nodes WHERE name=?1 \
-                     AND file_path LIKE ?2 ESCAPE '\\'",
+                    "SELECT line_start, symbol FROM nodes WHERE name=?1 \
+                     AND file_path LIKE ?2 ESCAPE '\\' \
+                     AND line_start IS NOT NULL \
+                     ORDER BY line_start, symbol LIMIT 1",
                     (ident, format!("{prefix}{}", like_escape_chain(&rels[0]))),
-                    |r| r.get(0),
+                    |r| Ok((r.get(0)?, r.get(1)?)),
                 )
-                .ok()
-                .flatten();
+                .ok();
+            let (ln, g_symbol) = hit.map(|(l, s)| (Some(l), s)).unwrap_or((None, None));
             return GraphHit {
                 g: "moved-file".into(),
                 g_line: ln,
                 g_file: Some(rels[0].clone()),
                 g_files: vec![],
+                g_symbol,
             };
         }
         if rels.len() > 1 {
@@ -528,6 +536,17 @@ fn step_of(
                 "pattern".into(),
                 serde_json::Value::String(anchor_pattern(&lines[(line - 1) as usize])),
             );
+        }
+    }
+    // namespaced CR identity (AIR-80): the true SCIP symbol of the selected
+    // definition occurrence — CR reanchor maintenance reads this instead of
+    // re-deriving identity from file+name+nearest-line. Absent (not-in-graph
+    // / ambiguous / legacy rows) → field omitted; consumers must tolerate.
+    if let Some(sym) = &g.g_symbol {
+        if !sym.is_empty() {
+            step.as_object_mut()
+                .unwrap()
+                .insert("x-codeReality".into(), serde_json::json!({ "symbol": sym }));
         }
     }
     step

@@ -80,6 +80,7 @@ pub mod runtime_edges;
 pub mod scip_edges;
 pub mod sidecar_migrate;
 pub mod snapshot;
+pub mod tour;
 pub mod tour_manifest;
 pub mod tour_upgrade;
 pub mod tour_validate;

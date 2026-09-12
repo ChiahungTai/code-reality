@@ -141,6 +141,9 @@ fn step_set_from_range_with_collapse_and_anchors() {
     let d_step = steps.last().unwrap();
     assert_eq!(d_step["file"], "pkg/gone.py");
     assert!(d_step["title"].as_str().unwrap().starts_with("−刪檔 ×1"));
+    // tour-level ref (AIR-80): delta is a historical snapshot — consumers
+    // fork at the after commit; never living-reanchor to HEAD
+    assert_eq!(tour["ref"].as_str().unwrap(), after.as_str());
 }
 
 #[test]
