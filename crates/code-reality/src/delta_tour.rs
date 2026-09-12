@@ -430,7 +430,18 @@ pub fn build_tour(
         claims_section
     );
 
-    let ep_on_disk = ep_path.map(|p| p.exists()).unwrap_or(false);
+    // EP anchor resolution (AIR-80 C-2): a relative ep path resolves
+    // against repo_root (not cwd) for the on-disk check, while the anchor
+    // string stays as given — materialize passes repo-relative so the tour
+    // overview step keeps the corpus file contract (never absolute paths).
+    let ep_abs = ep_path.map(|p| {
+        if p.is_absolute() {
+            p.to_path_buf()
+        } else {
+            repo_root.join(p)
+        }
+    });
+    let ep_on_disk = ep_abs.as_ref().map(|p| p.exists()).unwrap_or(false);
     let ep_anchor: Option<String> = if ep_on_disk {
         ep_path.map(|p| p.display().to_string())
     } else {

@@ -107,3 +107,211 @@ fn snapshot_resolution_hit_miss_ambiguous() {
     assert!(amb.contains("歧義"), "{amb}");
     std::fs::remove_dir_all(&tmp).ok();
 }
+
+// ------------------------------------------------- run()-level e2e (R6)
+
+use code_reality::tour;
+
+fn git(repo: &std::path::Path, args: &[&str]) {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+fn rev(repo: &std::path::Path) -> String {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .arg("rev-parse")
+        .arg("HEAD")
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+/// Temp git repo + fabricated S2 snapshot pair + EP md.
+fn e2e_fixture(tag: &str) -> (tempdir::TempDir, std::path::PathBuf, String, String) {
+    let tmp = tempdir::TempDir::new_unique();
+    let repo = tmp.path().join(tag);
+    std::fs::create_dir_all(repo.join("pkg")).unwrap();
+    std::fs::write(
+        repo.join(".code-reality.toml"),
+        "[[module]]\nprefix = \"pkg/\"\n",
+    )
+    .unwrap();
+    std::fs::write(repo.join("pkg/mod.py"), "# header\ndef keep():\n    pass\n").unwrap();
+    std::fs::write(repo.join("ep.md"), "# EP\n\n- pkg/（宣稱）\n").unwrap();
+    git(&repo, &["init", "-q"]);
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-qm", "base"]);
+    let before = rev(&repo);
+    std::fs::write(
+        repo.join("pkg/mod.py"),
+        "# header\ndef keep():\n    return 42\n",
+    )
+    .unwrap();
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-qm", "the change"]);
+    let after = rev(&repo);
+    // fabricated S2 snapshots (producer equivalent: <repo>-<sha8>.json)
+    let snaps = repo.join(".code-reality").join("snapshots");
+    std::fs::create_dir_all(&snaps).unwrap();
+    for (sha, files) in [(&before, "pkg/mod.py"), (&after, "pkg/mod.py")] {
+        let body = serde_json::json!({
+            "_meta": {"commit": sha, "repo": tag},
+            "files": [files],
+            "module_edges": [],
+        });
+        std::fs::write(
+            snaps.join(format!("e2e-{}.json", &sha[..8])),
+            body.to_string(),
+        )
+        .unwrap();
+    }
+    (tmp, repo, before, after)
+}
+
+fn manifest_row(repo: &std::path::Path, arc: &str) -> Option<toml::Table> {
+    let m = load(&repo.join(".tours").join("manifest.toml")).unwrap();
+    m.delta_arc
+        .iter()
+        .find(|r| r.get("arcId").and_then(|v| v.as_str()) == Some(arc))
+        .cloned()
+}
+
+#[test]
+fn register_then_materialize_intent_only_full_chain() {
+    let (_tmp, repo, before, after) = e2e_fixture("e2e-full");
+    // register with 7-char shas (R3: rev-parse canonicalization) — pending row
+    let out = tour::run(&[
+        "tour",
+        "register",
+        "e2e-arc",
+        "--repo",
+        repo.to_str().unwrap(),
+        "--base",
+        &before[..7],
+        "--target",
+        &after[..7],
+        "--ep",
+        "ep.md",
+        "--card",
+        "E2E-1",
+    ]);
+    assert_eq!(out.exit_code, 0, "{}{}", out.stdout, out.stderr);
+    let row = manifest_row(&repo, "e2e-arc").expect("pending row persisted");
+    assert!(
+        row.get("tourPath").is_none(),
+        "register must not set tourPath"
+    );
+    assert!(!repo.join(".tours/delta/e2e-arc.tour").exists());
+    // intent-only materialize (row-driven, no flags)
+    let out = tour::run(&[
+        "tour",
+        "materialize",
+        "e2e-arc",
+        "--repo",
+        repo.to_str().unwrap(),
+    ]);
+    assert_eq!(out.exit_code, 0, "{}{}", out.stdout, out.stderr);
+    let row = manifest_row(&repo, "e2e-arc").expect("row survives materialize");
+    assert_eq!(
+        row.get("tourPath").and_then(|v| v.as_str()),
+        Some(".tours/delta/e2e-arc.tour")
+    );
+    assert_eq!(row.get("quality").and_then(|v| v.as_str()), Some("full"));
+    assert_eq!(row.get("cardId").and_then(|v| v.as_str()), Some("E2E-1"));
+    let tour: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(repo.join(".tours/delta/e2e-arc.tour")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(tour["ref"].as_str().unwrap(), after.as_str());
+    // overview step anchors the EP by its REPO-RELATIVE path (never absolute)
+    assert_eq!(tour["steps"][0]["file"], "ep.md");
+    // overwrite: same arcId → same tourPath, row not duplicated
+    let out = tour::run(&[
+        "tour",
+        "materialize",
+        "e2e-arc",
+        "--repo",
+        repo.to_str().unwrap(),
+    ]);
+    assert_eq!(out.exit_code, 0);
+    let m = load(&repo.join(".tours").join("manifest.toml")).unwrap();
+    assert_eq!(m.delta_arc.len(), 1, "arcId is the canonical key");
+}
+
+#[test]
+fn stale_snapshot_fails_loud_and_row_stays_pending() {
+    let (_tmp, repo, before, after) = e2e_fixture("e2e-stale");
+    let out = tour::run(&[
+        "tour",
+        "register",
+        "e2e-stale-arc",
+        "--repo",
+        repo.to_str().unwrap(),
+        "--base",
+        &before,
+        "--target",
+        &after,
+    ]);
+    assert_eq!(out.exit_code, 0);
+    // poison the target snapshot with a stale marker
+    let snap = repo.join(format!(".code-reality/snapshots/e2e-{}.json", &after[..8]));
+    let mut v: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&snap).unwrap()).unwrap();
+    v["_meta"]["stale"] = serde_json::json!("graph sha beb86429 != HEAD 11fd0d73");
+    std::fs::write(&snap, v.to_string()).unwrap();
+    let out = tour::run(&[
+        "tour",
+        "materialize",
+        "e2e-stale-arc",
+        "--repo",
+        repo.to_str().unwrap(),
+    ]);
+    assert_ne!(out.exit_code, 0, "stale gate must fail loud");
+    assert!(out.stderr.contains("stale"), "{}", out.stderr);
+    assert!(!repo.join(".tours/delta/e2e-stale-arc.tour").exists());
+    let row = manifest_row(&repo, "e2e-stale-arc").expect("pending row must survive failure");
+    assert!(
+        row.get("tourPath").is_none(),
+        "failed materialize must not set tourPath"
+    );
+}
+
+mod tempdir {
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+
+    pub struct TempDir(pub PathBuf);
+    impl TempDir {
+        pub fn new_unique() -> Self {
+            let p = std::env::temp_dir().join(format!(
+                "cr-s8-e2e-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            std::fs::create_dir_all(&p).unwrap();
+            TempDir(p)
+        }
+        pub fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = Command::new("rm").arg("-rf").arg(&self.0).status();
+        }
+    }
+}
