@@ -315,3 +315,88 @@ mod tempdir {
         }
     }
 }
+
+#[test]
+fn external_ep_keeps_provenance_across_rematerialize() {
+    // N1: repo-外 EP——claims provenance 必須跨重產存活（row 保留 ep spec、
+    // quality=full），tour step 永不含絕對路徑。
+    let (_tmp, repo, before, after) = e2e_fixture("e2e-ext");
+    let outside = _tmp.path().join("outside-ep.md");
+    std::fs::write(&outside, "# 外部 EP\n\n- pkg/（宣稱）\n").unwrap();
+    let out = tour::run(&[
+        "tour",
+        "register",
+        "e2e-ext-arc",
+        "--repo",
+        repo.to_str().unwrap(),
+        "--base",
+        &before,
+        "--target",
+        &after,
+        "--ep",
+        outside.to_str().unwrap(),
+    ]);
+    assert_eq!(out.exit_code, 0, "{}{}", out.stdout, out.stderr);
+    let row = manifest_row(&repo, "e2e-ext-arc").unwrap();
+    assert_eq!(
+        row.get("ep").and_then(|v| v.as_str()),
+        Some(outside.to_str().unwrap()),
+        "repo-外 EP 以絕對路徑 canonical 持久化"
+    );
+    for _ in 0..2 {
+        let out = tour::run(&[
+            "tour",
+            "materialize",
+            "e2e-ext-arc",
+            "--repo",
+            repo.to_str().unwrap(),
+        ]);
+        assert_eq!(out.exit_code, 0, "{}{}", out.stdout, out.stderr);
+    }
+    let row = manifest_row(&repo, "e2e-ext-arc").unwrap();
+    assert_eq!(
+        row.get("ep").and_then(|v| v.as_str()),
+        Some(outside.to_str().unwrap()),
+        "重產後 provenance 仍在（可等價重建 ep_fs）"
+    );
+    assert_eq!(row.get("quality").and_then(|v| v.as_str()), Some("full"));
+    let tour: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(repo.join(".tours/delta/e2e-ext-arc.tour")).unwrap(),
+    )
+    .unwrap();
+    for s in tour["steps"].as_array().unwrap() {
+        let f = s["file"].as_str().unwrap();
+        assert!(!f.starts_with('/'), "絕對路徑不得進 step file: {f}");
+    }
+}
+
+#[test]
+fn materialize_lone_card_flag_fails_loud() {
+    // N2: --card 無 --base/--target＝fail-loud（silent drop 修）。
+    let (_tmp, repo, before, after) = e2e_fixture("e2e-flag");
+    let out = tour::run(&[
+        "tour",
+        "register",
+        "e2e-flag-arc",
+        "--repo",
+        repo.to_str().unwrap(),
+        "--base",
+        &before,
+        "--target",
+        &after,
+    ]);
+    assert_eq!(out.exit_code, 0);
+    let out = tour::run(&[
+        "tour",
+        "materialize",
+        "e2e-flag-arc",
+        "--repo",
+        repo.to_str().unwrap(),
+        "--card",
+        "SNEAKY",
+    ]);
+    assert_ne!(out.exit_code, 0, "lone --card must fail loud");
+    assert!(out.stderr.contains("註冊形"), "{}", out.stderr);
+    let row = manifest_row(&repo, "e2e-flag-arc").unwrap();
+    assert!(row.get("cardId").is_none(), "sneaky card must not leak in");
+}

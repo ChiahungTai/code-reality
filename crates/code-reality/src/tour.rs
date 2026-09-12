@@ -79,8 +79,8 @@ const HELP: &str = concat!(
     "  --repo REPO           repo 根（預設 cwd）\n",
     "  --base BASE_SHA       弧 baseline commit（commit-ish，內部 rev-parse 解析）\n",
     "  --target TARGET_SHA   弧 target commit（commit-ish）\n",
-    "  --ep EP_MD            EP markdown 路徑（repo-relative；缺席→quality=degraded）\n",
-    "  --card CARD_ID        join 屬性（一卡可多弧；可選）\n",
+    "  --ep EP_MD            EP markdown 路徑（僅註冊形；repo-relative canonical 化；缺席→quality=degraded）\n",
+    "  --card CARD_ID        join 屬性（僅註冊形；row-driven materialize 帶旗標＝fail-loud）\n",
 );
 
 fn row_str(row: &toml::Table, key: &str) -> String {
@@ -199,10 +199,22 @@ fn resolved_pair(repo: &Path, values: &Values) -> Result<(String, String), Strin
     }
 }
 
+/// Canonical ep provenance string: repo-relative when the resolved path is
+/// inside the repo, absolute otherwise (unambiguous repo-root anchoring).
+fn canonical_ep(repo: &Path, spec: &str) -> String {
+    let pb = PathBuf::from(spec);
+    let abs = if pb.is_absolute() { pb } else { repo.join(&pb) };
+    match abs.strip_prefix(repo) {
+        Ok(rel) => rel.to_string_lossy().replace('\\', "/"),
+        Err(_) => abs.to_string_lossy().into_owned(),
+    }
+}
+
 fn arc_fields(
     arc_id: &str,
     base: &str,
     target: &str,
+    repo: &Path,
     values: &Values,
 ) -> Vec<(&'static str, toml::Value)> {
     let mut fields: Vec<(&'static str, toml::Value)> = vec![
@@ -211,7 +223,7 @@ fn arc_fields(
         ("target", toml::Value::String(target.to_string())),
     ];
     if let Some(ep) = values.get("--ep").and_then(|v| v.clone()) {
-        fields.push(("ep", toml::Value::String(ep)));
+        fields.push(("ep", toml::Value::String(canonical_ep(repo, &ep))));
     }
     if let Some(c) = values.get("--card").and_then(|v| v.clone()) {
         fields.push(("cardId", toml::Value::String(c)));
@@ -237,7 +249,10 @@ fn register(argv: &[&str]) -> ToolOutput {
         Ok(v) => v,
         Err(e) => return ToolOutput::crash(e),
     };
-    upsert_delta_arc(&mut manifest, &arc_fields(&arc_id, &base, &target, &values));
+    upsert_delta_arc(
+        &mut manifest,
+        &arc_fields(&arc_id, &base, &target, &repo, &values),
+    );
     if let Err(e) = std::fs::create_dir_all(repo.join(".tours")) {
         return ToolOutput::crash(format!(".tours 建立失敗：{e}"));
     }
@@ -272,6 +287,17 @@ fn materialize(argv: &[&str]) -> ToolOutput {
         Ok(m) => m,
         Err(e) => return ToolOutput::crash(e),
     };
+    // flag face (codex re-review N2): --card/--ep belong to the registration
+    // form only — accepted without --base/--target they would be silently
+    // dropped, so fail loud instead.
+    if (values.contains_key("--card") || values.contains_key("--ep"))
+        && !values.contains_key("--base")
+        && !values.contains_key("--target")
+    {
+        return ToolOutput::crash(
+            "--card/--ep 僅註冊形有效——row-driven materialize 需與 --base/--target 成對，否則忽略即 silent drop",
+        );
+    }
     // registration form (base/target on flags): resolve and PERSIST first —
     // a later failure must not erase the row (R1)
     if values.contains_key("--base") || values.contains_key("--target") {
@@ -279,7 +305,10 @@ fn materialize(argv: &[&str]) -> ToolOutput {
             Ok(v) => v,
             Err(e) => return ToolOutput::crash(e),
         };
-        upsert_delta_arc(&mut manifest, &arc_fields(&arc_id, &base, &target, &values));
+        upsert_delta_arc(
+            &mut manifest,
+            &arc_fields(&arc_id, &base, &target, &repo, &values),
+        );
         if let Err(e) = std::fs::create_dir_all(repo.join(".tours")) {
             return ToolOutput::crash(format!(".tours 建立失敗：{e}"));
         }
@@ -302,26 +331,23 @@ fn materialize(argv: &[&str]) -> ToolOutput {
     if base.is_empty() || target.is_empty() {
         return ToolOutput::crash(format!("row {arc_id} 缺 base/target——以 register 補齊"));
     }
-    // EP dual-path (codex review R2): FS access is repo-root-anchored and
-    // absolute (cwd-independent); the tour anchor string stays repo-relative
-    // (corpus file contract — never absolute paths in step files). A
-    // repo-外 EP is used for claims only, not as a step anchor.
-    let ep_raw = values.get("--ep").and_then(|v| v.clone()).or_else(|| {
-        let e = row_str(&row, "ep");
-        (!e.is_empty()).then_some(e)
-    });
-    let (ep_fs, ep_tour): (Option<PathBuf>, Option<String>) = match &ep_raw {
-        None => (None, None),
-        Some(p) => {
-            let pb = PathBuf::from(p);
-            let abs = if pb.is_absolute() { pb } else { repo.join(&pb) };
-            match abs.strip_prefix(&repo) {
-                Ok(rel) => (
-                    Some(abs.clone()),
-                    Some(rel.to_string_lossy().replace('\\', "/")),
-                ),
-                Err(_) => (Some(abs), None),
-            }
+    // EP provenance vs tour anchor split (codex re-review N1): the row
+    // persists a CANONICAL ep spec (repo-relative when inside the repo,
+    // absolute otherwise) so row-driven re-materialization can always
+    // rebuild ep_fs; ep_tour (step anchor) only exists for in-repo EPs —
+    // absolute paths never enter tour steps. quality = claims completeness.
+    let ep_spec = row_str(&row, "ep");
+    let (ep_fs, ep_tour): (Option<PathBuf>, Option<String>) = if ep_spec.is_empty() {
+        (None, None)
+    } else {
+        let pb = PathBuf::from(&ep_spec);
+        let abs = if pb.is_absolute() { pb } else { repo.join(&pb) };
+        match abs.strip_prefix(&repo) {
+            Ok(rel) => (
+                Some(abs.clone()),
+                Some(rel.to_string_lossy().replace('\\', "/")),
+            ),
+            Err(_) => (Some(abs), None),
         }
     };
     let snapshots = repo.join(".code-reality").join("snapshots");
@@ -389,11 +415,13 @@ fn materialize(argv: &[&str]) -> ToolOutput {
     if let Err(e) = std::fs::write(&out_path, to_json_indent1(&tour)) {
         return ToolOutput::crash(format!("{} 寫入失敗：{e}", out_path.display()));
     }
-    // row upsert: tourPath + quality (tool-owned full replace keyed on arcId)
-    let quality = if ep_tour.is_some() {
-        "full"
-    } else {
+    // row upsert (tool-owned full replace keyed on arcId): quality = claims
+    // completeness; ep provenance (canonical spec) and cardId are preserved
+    // so intent-only re-materialization is idempotent (codex re-review N1)
+    let quality = if ep_spec.is_empty() {
         "degraded"
+    } else {
+        "full"
     };
     let tour_rel = format!(".tours/delta/{arc_id}.tour");
     let mut fields: Vec<(&'static str, toml::Value)> = vec![
@@ -403,8 +431,8 @@ fn materialize(argv: &[&str]) -> ToolOutput {
         ("quality", toml::Value::String(quality.to_string())),
         ("tourPath", toml::Value::String(tour_rel.clone())),
     ];
-    if let Some(rel) = &ep_tour {
-        fields.push(("ep", toml::Value::String(rel.clone())));
+    if !ep_spec.is_empty() {
+        fields.push(("ep", toml::Value::String(ep_spec)));
     }
     let card_id = row_str(&row, "cardId");
     if !card_id.is_empty() {
