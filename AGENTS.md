@@ -6,8 +6,8 @@ end state (R7, 2026-08-26): the frozen-Python parity oracle and both Python
 copies retired after byte-identical acceptance on real corpora (NT
 query/graph_audit `--json`/`--audit`, mosaic `hub_refs --json` — gate
 record in `ai-analysis/execution-plans/_done/`). Migration history:
-`ai-analysis/execution-plans/ep-rust-migration.md` + per-segment child EPs
-in `_done/`.
+`ai-analysis/execution-plans/_done/ep-rust-migration.md` + per-segment
+child EPs in `_done/`.
 
 **Repo facts belong to each repo** — the scanned repo's `.code-reality.toml`
 profile owns module/exclusion/registry knowledge; the tool layer embeds no
