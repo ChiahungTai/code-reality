@@ -13,7 +13,7 @@ in `_done/`.
 profile owns module/exclusion/registry knowledge; the tool layer embeds no
 repo-specific special cases. Tool facts & pitfalls:
 `plugin/skills/code-reality/SKILL.md` (versioned with the plugin,
-standalone-consumer face); wiring / when-to-run: ai-rules
+standalone-consumer face); wiring / when-to-run: ai-guide
 `skills/code-reality/SKILL.md` (deployed via symlink to four
 harnesses).
 
@@ -78,7 +78,7 @@ install|remove --repo <repo>` the opt-in `.githooks/post-commit` wiring
 - Tool semantics split: standalone tool facts & pitfalls live in
   `plugin/skills/code-reality/SKILL.md` (versioned with the plugin —
   carries the drift-discipline header); consumer-ecosystem wiring
-  ("when to run") stays in ai-rules `skills/code-reality/SKILL.md`
+  ("when to run") stays in ai-guide `skills/code-reality/SKILL.md`
 
 ## Capabilities
 

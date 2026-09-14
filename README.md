@@ -3,7 +3,7 @@
 Meta-layer tooling that lives *above* repositories: structural facts, governance
 audits, and narrative artifacts consumed by AI coding sessions.
 
-Migrated from `ai-rules` (2026-08-25). Repo-specific knowledge stays in each
+Migrated from `ai-guide` (2026-08-25). Repo-specific knowledge stays in each
 consumed repo's `.code-reality.toml` profile — the tool layer embeds no
 repo-specific special cases.
 
