@@ -21,6 +21,11 @@
 #   commit     "chore(release): v<new> — <subject>" (bump-only commit;
 #              preflight cleanliness guarantees the isolation)
 #   tag+push   annotated v<new>; push origin main + tag
+#   wheels     readiness barrier: watch THIS tag's release-wheels run
+#              to green, then probe PyPI for all three dists at the
+#              new version — the marketplace slice must not expose a
+#              plugin pin the registry cannot serve yet (v0.9.1 race,
+#              2026-09-14)
 #   slice      bash scripts/dist-marketplace.sh (local-market machines
 #              see the new version only after this — the second miss)
 #   report     CI watch hint + consumer next steps
@@ -31,9 +36,11 @@
 #
 # macOS-only (BSD sed -i ''). Interruption recovery: if it dies between
 # commit and push, finish manually with `git push origin main "v<new>"`;
-# if it dies mid-bump (dirty half-edited tree), `git checkout --` the
-# five faces + Cargo.lock. Rerun after a full success is refused
-# ("already at <ver>") by design.
+# if it dies in the wheels barrier (tag already pushed), resolve CI/PyPI
+# per the printed command, then finish with
+# `bash scripts/dist-marketplace.sh`; if it dies mid-bump (dirty
+# half-edited tree), `git checkout --` the five faces + Cargo.lock.
+# Rerun after a full success is refused ("already at <ver>") by design.
 set -euo pipefail
 trap 'rm -f marketplace.json.rel-tmp .claude-plugin/marketplace.json.rel-tmp plugin/.claude-plugin/plugin.json.rel-tmp' EXIT
 
@@ -140,12 +147,47 @@ git tag -a "v$new" -m "release: v$new — $subject"
 git push origin main "v$new"
 echo "  pushed main + tag v$new"
 
+# ---------- wheels readiness barrier ----------
+# The plugin face becomes updatable the moment the marketplace slice
+# below is regenerated, but the binaries it exact-pins only exist on
+# PyPI once CI finishes (trusted publishing, minutes). Slicing first
+# opens a race: a plugin refreshed inside the window pins a version
+# the registry cannot serve, and the wrapper fails loud at bootstrap
+# (v0.9.1 incident). Order: watch THIS tag's release-wheels run to
+# green, then probe the registry itself — CI green proves the publish
+# job ran, the probe proves the state the wrapper actually consumes.
+# Scope: this gates the local-slice face only; GitHub-marketplace
+# consumers see main the moment it is pushed and rely on the same
+# fail-loud self-heal, not on this barrier.
+run_id=""
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  run_id=$(gh run list --workflow release-wheels.yml --branch "v$new" \
+    --limit 1 --json databaseId -q '.[0].databaseId' 2>/dev/null || true)
+  if [ -n "$run_id" ]; then break; fi
+  sleep 3
+done
+[ -n "$run_id" ] || die "no release-wheels run found for tag v$new — check 'gh run list --workflow release-wheels.yml' before slicing"
+echo "  wheels barrier: watching run $run_id (CI build, minutes — hands off the plugin until done)"
+gh run watch "$run_id" --interval 30 --exit-status \
+  || die "wheels CI FAILED — tag already pushed; inspect 'gh run view $run_id --log-failed', fix forward, and cut the next patch release"
+wheels_ok=""
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+  if curl -sf -o /dev/null "https://pypi.org/pypi/code-reality/$new/json" \
+    && curl -sf -o /dev/null "https://pypi.org/pypi/pyrefly-producer/$new/json" \
+    && curl -sf -o /dev/null "https://pypi.org/pypi/code-reality-lsp-bridge/$new/json"; then
+    wheels_ok=1
+    break
+  fi
+  sleep 15
+done
+[ -n "$wheels_ok" ] || die "PyPI does not serve $new for all three dists (CI green but registry missing or lagging). Recovery: verify https://pypi.org/pypi/code-reality/$new/json manually, then finish with: bash scripts/dist-marketplace.sh"
+echo "  wheels live on PyPI: all three dists at $new"
+
 # ---------- local slice ----------
 bash scripts/dist-marketplace.sh
 
 # ---------- report ----------
 echo
 echo "[release] done. Next:"
-echo "  1. CI: gh run watch \$(gh run list --workflow release-wheels.yml --limit 1 --json databaseId -q '.[0].databaseId') --exit-status"
-echo "  2. ZCode: refresh the code-reality-market panel -> update plugin -> new session"
-echo "  3. wheels land on PyPI when CI goes green (uvx consumers see $new then)"
+echo "  1. ZCode: refresh the code-reality-market panel -> update plugin -> new session"
+echo "  2. wheels verified live on PyPI at $new (uvx consumers see them now)"
