@@ -112,3 +112,20 @@ install|remove --repo <repo>` the opt-in `.githooks/post-commit` wiring
 
 `cargo test`（Rust suites are the sole test face post-R7 — the Python
 parity harness retired with the oracle; history in the archived EPs）.
+
+## Build artifact hygiene
+
+`target/` only grows — cargo never reaps artifacts orphaned by toolchain
+or profile changes (measured 2026-09-18: 36.4GiB accumulated vs 4.1GiB
+for a fresh full rebuild of the same sources). Cold rebuild is cheap on
+the dev machine (debug ~85s, release ~2m36s), so keep it lean by
+discipline:
+
+- `cargo clean` when `target/` exceeds ~10GiB or monthly — total
+  regeneration cost is the two measurements above; no sweep tooling or
+  scheduling needed.
+- One-shot builds (agent-dispatched / CI — they never reuse incremental
+  state) prefix `CARGO_INCREMENTAL=0`: the incremental cache
+  (`target/debug/incremental/`, ~12GiB at its worst) only pays off for
+  interactive edit-compile loops (local dev, rust-analyzer flycheck) —
+  keep it enabled there.
