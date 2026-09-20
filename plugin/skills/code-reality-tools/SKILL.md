@@ -1,5 +1,5 @@
 ---
-name: code-reality
+name: code-reality-tools
 description: "Running code-reality tools (symbol truth queries, caller edges, closures, completeness audits, hub/hazard checks) or authoring .code-reality.toml profiles. Use when you need refs/defs for a symbol, who calls it, whether a graph.db is complete, or whether a symbol is safe to delete. Tool availability: repo root has .code-reality.toml, or code-reality --help exits 0."
 when_to_use: "Symbol lookup beyond grep (trait disambiguation), caller-edge queries, delete-safety checks, graph completeness audits, .code-reality.toml authoring, or interpreting pyrefly refs density and delta_tour claims output."
 license: MIT

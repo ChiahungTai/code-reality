@@ -12,8 +12,10 @@ child EPs in `_done/`.
 **Repo facts belong to each repo** — the scanned repo's `.code-reality.toml`
 profile owns module/exclusion/registry knowledge; the tool layer embeds no
 repo-specific special cases. Tool facts & pitfalls:
-`plugin/skills/code-reality/SKILL.md` (versioned with the plugin,
-standalone-consumer face); wiring / when-to-run: ai-guide
+`plugin/skills/code-reality-tools/SKILL.md` (versioned with the plugin,
+standalone-consumer face; skill id `code-reality-tools` — deliberately
+distinct from ai-guide's `code-reality` skill so both can coexist in one
+session's skill registry without dedup shadowing); wiring / when-to-run: ai-guide
 `skills/code-reality/SKILL.md` (deployed via symlink to four
 harnesses).
 
@@ -76,7 +78,7 @@ install|remove --repo <repo>` the opt-in `.githooks/post-commit` wiring
   hazard families + sidecar_migrate + build + mcp_server), exit-semantics table,
   parity history
 - Tool semantics split: standalone tool facts & pitfalls live in
-  `plugin/skills/code-reality/SKILL.md` (versioned with the plugin —
+  `plugin/skills/code-reality-tools/SKILL.md` (versioned with the plugin —
   carries the drift-discipline header); consumer-ecosystem wiring
   ("when to run") stays in ai-guide `skills/code-reality/SKILL.md`
 
