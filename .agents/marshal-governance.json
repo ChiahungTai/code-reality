@@ -1,0 +1,11 @@
+{
+  "protocol": 1,
+  "trunk": "main",
+  "invariantLevel": "branch",
+  "sourceRoots": [
+    "^crates/"
+  ],
+  "allowlist": [
+    "^\\.agents/marshal-governance\\.json$"
+  ]
+}
