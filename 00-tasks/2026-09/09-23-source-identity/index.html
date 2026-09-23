@@ -79,14 +79,15 @@
 <button type="button" id="expand-btn" class="collapse-tab" aria-expanded="false" aria-controls="sidebar" aria-label="展開章節導覽" onclick="return setCollapsed(false,true)">›</button>
 <nav id="sidebar" aria-label="章節導覽">
   <div class="brand">
-    <span class="badge plan">📋 計畫</span>
+    <span class="badge done">✅ 完成</span>
     <h1>source identity——dirty-WT freshness EP 簡報殼</h1>
-    <div class="meta">task baseline 68d7636<br>projection：ep.md sha 2be478e71c825950（未 commit；含旗艦 5.3 審訂 R20-R25）<br>2026-09-23 · code-reality 主權線</div>
+    <div class="meta">task baseline 68d7636 · branch head 0e2c564<br>projection：ep.md sha 2be478e71c825950<br>2026-09-23 · code-reality 主權線</div>
   </div>
   <ul>
     <li><a href="#s1" onclick="return go('s1',this)"><span class="num">01</span>總覽與決策</a></li>
     <li><a href="#s2" onclick="return go('s2',this)"><span class="num">02</span>核心設計與段落</a></li>
-    <li><a href="#s3" onclick="return go('s3',this)"><span class="num">03</span>回源</a></li>
+    <li><a href="#s3" onclick="return go('s3',this)"><span class="num">03</span>實作與驗收</a></li>
+    <li><a href="#s4" onclick="return go('s4',this)"><span class="num">04</span>回源</a></li>
   </ul>
   <div class="backlinks">
     <span>← 本 repo 無 backlog board（正當跳過）</span><br>
@@ -112,8 +113,8 @@
     <div class="card"><div class="lab">已凍結決策（D1-D16）／TC</div><div class="num-big">16／17</div></div>
   </div>
   <div class="frame-wrap degraded">
-    <div class="bar"><span>圖槽位（降級）：identity 資料流總覽圖——待 mermaid 渲染補位</span></div>
-    <div class="degraded-body"><b>圖尚未產生</b>——<code>walk_sources → gate → compose_identity → stamp/heal/freshness face</code> 資料流圖於實作弧 hook 2 一次產。</div>
+    <div class="bar"><span>圖槽位（降級）：identity 資料流總覽圖——demand-driven</span></div>
+    <div class="degraded-body"><b>圖未產（比例原則）</b>——資料流＝<code>walk_sources → stat-gate → compose_identity → stamp(WriteBack=Full)／heal／freshness face</code>；需要渲染版（mermaid）說一聲即補。</div>
   </div>
 </section>
 
@@ -126,7 +127,7 @@
     <li><b>三態 policy 分域</b>：<code>Full</code>＝stamp/build 全量重 hash＋整檔重寫 cache（indexed identity 永遠從實際 bytes 滿算——query 端污染最壞 false-stale 安全方向）；<code>WriteBack</code>＝default slot 查詢；<code>ReadOnly</code>＝explicit／<code>CODE_REALITY_IDENTITY_CACHE=off</code>。</li>
   </ul>
   <div class="note"><b>judge 親證的兩條信任路徑裁決</b>：①torn-plane guard（graph.db 落後 slot 強制 heal）從 source_newer 拆獨立欄、needs_rebuild 無條件保留——原稿寫法會讓 identity slot 靜默跳過它；②stamp 路徑永不信任 cache（D13）——否則 stamp 與 eval 同源同污 ⇒ drift 恆 false。</div>
-  <h3>段落（<span class="tag-plan">S1-S4 計畫中</span>）</h3>
+  <h3>段落（已實作——branch <code>ep-source-identity</code>）</h3>
   <table>
     <tr><th>段</th><th>範圍</th><th>關鍵驗證</th></tr>
     <tr><td><code>S1</code></td><td>identity.rs 計算層（walk 單點接入＋cache 三態）</td><td>決定論／touch 冪等／cache≡全量／crash-only／nanos 精度</td></tr>
@@ -137,6 +138,25 @@
 </section>
 
 <section id="s3">
+  <h2>實作與驗收</h2>
+  <div class="sub">flash 實作（bridge glm write-mode）→ orchestrator clean-env gate → muse review → 5.3 judge ACCEPT</div>
+  <h3>做了什麼（檔案地圖）</h3>
+  <ul class="dots">
+    <li><b>新核心</b>：<code>src/identity.rs</code>（lazy-hash 計算層＋三態 cache policy）、<code>src/freshness.rs</code>（verdict face lib）、<code>bin/code-reality/main.rs</code> 註冊 <code>freshness</code> 子命令。</li>
+    <li><b>接線</b>：<code>engine.rs</code>（SourceWalk records 升格、stamp fresh/preserve 五鍵、identity_drift 欄＋graph_lags 無條件）、<code>build.rs</code>／<code>refresh.rs</code>／<code>js_ts_corpus.rs</code>（五 caller 穿線）、<code>Cargo.toml</code>＋sha2。</li>
+    <li><b>測試</b>：<code>tests/source_identity.rs</code>（625 行，TC-1..16＋C1 pin）、既有四測試檔機械改寫；docs 三面（root/crates AGENTS.md＋plugin SKILL.md）同步。</li>
+  </ul>
+  <h3>驗證證據</h3>
+  <ul class="dots">
+    <li><code>cargo test --workspace</code>：550 passed／0 failed（60 suites；orchestrator clean-env 重跑）——唯一差異＝lsp-bridge <code>rust_backend</code> 冷載 flake 一次（已知家族，隔離重跑 4/4 綠，EP 未觸該 crate）。</li>
+    <li>修正輪：5.3 judge C1（partial-meta 需退化 legacy——gate 加 stamped face set＋pin 測試）＋C2（torn-plane CLI 斷言）已落地，scoped 綠後 commit <code>0e2c564</code>。</li>
+    <li>L4 消費端演練：no-slot exit 2／fresh <code>current-tree</code>／WT edit <code>content-drift</code>＋<code>committed-baseline</code>／rsync 形 JSON 逐鍵可判讀。</li>
+    <li>審查鏈：muse 全 diff（needs-attention，2 low 已裁決收斂）＋5.3 judge 獨立監督（C3/C4 正面確認 R22/D13/D17 落地、無 vacuous-green）——<b>verdict ACCEPT</b>；codex 腿 transport 閘降級（記帳本）。</li>
+  </ul>
+  <div class="note"><b>遞延清單（judge 裁定）</b>：①版本 bump＋pin 五處鎖步＝release SOP 條件（bump-without-publish 會讓 pinned consumer 拉不到版——遞延是技術正確）；②unix-only 測試 cfg(unix) 家族級 hygiene（低優先債）；③delta tour 條件不符（無 snapshot pair）未產。</div>
+</section>
+
+<section id="s4">
   <h2>回源</h2>
   <div class="sub">殼是展示層——本體（source of record）與證據鏈全在 repo</div>
   <div class="frame-wrap degraded">
