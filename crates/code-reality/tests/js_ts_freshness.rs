@@ -16,6 +16,7 @@ mod support;
 
 use code_reality::build::{build_repo, ensure_fresh, HealOutcome};
 use code_reality::engine::evaluate_staleness;
+use code_reality::identity::IdentityCachePolicy;
 use code_reality::language::ProducerFamily;
 use protobuf::Message;
 use scip::types::{Document, Index, Occurrence};
@@ -102,7 +103,7 @@ fn s4_delete_detected_by_fingerprint_not_mtime() {
     // DELETE with the surviving sources all OLDER than the slot: the
     // mtime-only rule sees nothing; the fingerprint must.
     std::fs::remove_file(l.repo.join("src/a.mjs")).unwrap();
-    let snap = evaluate_staleness(&l.repo, &slot_of(&l.repo)).unwrap();
+    let snap = evaluate_staleness(&l.repo, &slot_of(&l.repo), IdentityCachePolicy::WriteBack).unwrap();
     assert!(!snap.source_newer, "mtime must be silent here");
     assert_eq!(
         snap.doc_set_drift,
@@ -122,7 +123,7 @@ fn s4_delete_detected_by_fingerprint_not_mtime() {
         vec!["app.py".to_string(), "src/b.mjs".to_string()]
     );
     // converged: no loop
-    let snap2 = evaluate_staleness(&l.repo, &slot_of(&l.repo)).unwrap();
+    let snap2 = evaluate_staleness(&l.repo, &slot_of(&l.repo), IdentityCachePolicy::WriteBack).unwrap();
     assert!(!snap2.needs_rebuild(), "{snap2:?}");
 }
 
@@ -136,7 +137,7 @@ fn s4_rename_detected_and_converges() {
     std::thread::sleep(std::time::Duration::from_millis(20));
     // rename preserves mtime — mtime stays silent, fingerprint fires
     std::fs::rename(l.repo.join("src/a.mjs"), l.repo.join("src/renamed.mjs")).unwrap();
-    let snap = evaluate_staleness(&l.repo, &slot_of(&l.repo)).unwrap();
+    let snap = evaluate_staleness(&l.repo, &slot_of(&l.repo), IdentityCachePolicy::WriteBack).unwrap();
     assert!(!snap.source_newer);
     assert_eq!(snap.doc_set_drift, Some(true));
     let out = ensure_fresh(&l.repo, &l.roots).unwrap();
@@ -160,7 +161,7 @@ fn s4_excluded_edit_is_silent_included_edit_stales() {
     // share one policy — AD-11 / SM-24)
     std::thread::sleep(std::time::Duration::from_millis(30));
     std::fs::write(l.repo.join("dist/gen.mjs"), "generated v2\n").unwrap();
-    let snap = evaluate_staleness(&l.repo, &slot_of(&l.repo)).unwrap();
+    let snap = evaluate_staleness(&l.repo, &slot_of(&l.repo), IdentityCachePolicy::WriteBack).unwrap();
     assert!(
         !snap.needs_rebuild(),
         "excluded edit must not stale: {snap:?}"
@@ -168,7 +169,7 @@ fn s4_excluded_edit_is_silent_included_edit_stales() {
     // included edit: exactly the expected transition
     std::thread::sleep(std::time::Duration::from_millis(30));
     std::fs::write(l.repo.join("src/a.mjs"), "export const a = 2;\n").unwrap();
-    let snap2 = evaluate_staleness(&l.repo, &slot_of(&l.repo)).unwrap();
+    let snap2 = evaluate_staleness(&l.repo, &slot_of(&l.repo), IdentityCachePolicy::WriteBack).unwrap();
     assert!(snap2.source_newer, "included edit stales: {snap2:?}");
 }
 
@@ -192,7 +193,7 @@ fn s4_profile_policy_change_triggers_rebuild() {
     // any source mtime — corpus_policy_drift must fire
     std::thread::sleep(std::time::Duration::from_millis(30));
     std::fs::write(l.repo.join(".code-reality.toml"), "exclude = [\"gen/\"]\n").unwrap();
-    let snap = evaluate_staleness(&l.repo, &slot_of(&l.repo)).unwrap();
+    let snap = evaluate_staleness(&l.repo, &slot_of(&l.repo), IdentityCachePolicy::WriteBack).unwrap();
     assert!(!snap.source_newer, "no mtime movement: {snap:?}");
     assert_eq!(snap.corpus_policy_drift, Some(true), "{snap:?}");
     let out = ensure_fresh(&l.repo, &l.roots).unwrap();
@@ -213,7 +214,7 @@ fn s4_face_isolation_python_only_slot_ignores_ts() {
     build_repo(&l.repo, Some(ProducerFamily::Python), &l.roots).expect("py-only build");
     std::thread::sleep(std::time::Duration::from_millis(30));
     std::fs::write(l.repo.join("src/a.mjs"), "export const a = 2;\n").unwrap();
-    let snap = evaluate_staleness(&l.repo, &slot_of(&l.repo)).unwrap();
+    let snap = evaluate_staleness(&l.repo, &slot_of(&l.repo), IdentityCachePolicy::WriteBack).unwrap();
     assert!(
         !snap.needs_rebuild(),
         "a newer .ts/.mjs must not stale a python-only face: {snap:?}"
@@ -242,7 +243,7 @@ fn s4_legacy_meta_without_keys_uses_baseline_behavior() {
     .unwrap();
     std::thread::sleep(std::time::Duration::from_millis(30));
     std::fs::remove_file(l.repo.join("src/a.mjs")).unwrap();
-    let snap = evaluate_staleness(&l.repo, &slot).unwrap();
+    let snap = evaluate_staleness(&l.repo, &slot, IdentityCachePolicy::WriteBack).unwrap();
     assert_eq!(
         snap.doc_set_drift, None,
         "legacy meta: no fingerprint compare"
@@ -280,7 +281,7 @@ fn s4_stamp_preserves_prior_identity_keys_when_docs_differ_from_disk() {
     assert!(meta_after.contains("source_faces"), "{meta_after}");
 
     // and the preserved keys keep the delete visible: drift fires
-    let snap = evaluate_staleness(&l.repo, &slot).unwrap();
+    let snap = evaluate_staleness(&l.repo, &slot, IdentityCachePolicy::WriteBack).unwrap();
     assert_eq!(snap.doc_set_drift, Some(true), "{snap:?}");
     assert!(snap.needs_rebuild(), "{snap:?}");
 }
@@ -377,7 +378,7 @@ fn s4_all_excluded_corpus_heals_to_empty_then_fresh() {
     // exclude the whole JS corpus — corpus-policy drift fires, the heal
     // must converge to empty
     std::fs::write(l.repo.join(".code-reality.toml"), "exclude = [\"src/\"]\n").unwrap();
-    let snap = evaluate_staleness(&l.repo, &slot_of(&l.repo)).unwrap();
+    let snap = evaluate_staleness(&l.repo, &slot_of(&l.repo), IdentityCachePolicy::WriteBack).unwrap();
     assert!(snap.needs_rebuild(), "{snap:?}");
     let out = ensure_fresh(&l.repo, &l.roots).unwrap();
     assert!(matches!(out, HealOutcome::Healed { .. }), "{out:?}");
@@ -399,17 +400,17 @@ fn s4_auto_index_heals_on_new_language_arrival() {
     let l = lab(&[("src/a.mjs", "export const a = 1;\n")]);
     build_repo(&l.repo, None, &l.roots).expect("auto ts-only build");
     // sanity: JS-only, faces={javascript}
-    let snap = evaluate_staleness(&l.repo, &slot_of(&l.repo)).unwrap();
+    let snap = evaluate_staleness(&l.repo, &slot_of(&l.repo), IdentityCachePolicy::WriteBack).unwrap();
     assert!(!snap.needs_rebuild(), "{snap:?}");
     std::thread::sleep(std::time::Duration::from_millis(30));
     // a Python file arrives — mtime-newer on a face the stamp lacks
     std::fs::write(l.repo.join("app.py"), "x = 1\n").unwrap();
-    let snap2 = evaluate_staleness(&l.repo, &slot_of(&l.repo)).unwrap();
+    let snap2 = evaluate_staleness(&l.repo, &slot_of(&l.repo), IdentityCachePolicy::WriteBack).unwrap();
     assert!(snap2.needs_rebuild(), "new face must trigger: {snap2:?}");
     let out = ensure_fresh(&l.repo, &l.roots).unwrap();
     assert!(matches!(out, HealOutcome::Healed { .. }), "{out:?}");
     // healed: the rebuilt index carries both faces; next check Fresh
-    let snap3 = evaluate_staleness(&l.repo, &slot_of(&l.repo)).unwrap();
+    let snap3 = evaluate_staleness(&l.repo, &slot_of(&l.repo), IdentityCachePolicy::WriteBack).unwrap();
     assert!(!snap3.needs_rebuild(), "{snap3:?}");
 }
 
@@ -420,14 +421,14 @@ fn s4_torn_graph_lags_slot_forces_heal() {
     // (it would otherwise read Fresh forever).
     let l = lab(&[("src/a.mjs", "export const a = 1;\n")]);
     build_repo(&l.repo, None, &l.roots).expect("build");
-    assert!(!evaluate_staleness(&l.repo, &slot_of(&l.repo))
+    assert!(!evaluate_staleness(&l.repo, &slot_of(&l.repo), IdentityCachePolicy::WriteBack)
         .unwrap()
         .needs_rebuild());
     // simulate the torn state: bump the SLOT mtime past the graph
     let bytes = std::fs::read(slot_of(&l.repo)).unwrap();
     std::thread::sleep(std::time::Duration::from_millis(30));
     std::fs::write(slot_of(&l.repo), &bytes).unwrap();
-    let snap = evaluate_staleness(&l.repo, &slot_of(&l.repo)).unwrap();
+    let snap = evaluate_staleness(&l.repo, &slot_of(&l.repo), IdentityCachePolicy::WriteBack).unwrap();
     assert!(
         snap.needs_rebuild(),
         "graph older than slot must heal: {snap:?}"
@@ -439,7 +440,7 @@ fn s4_torn_graph_lags_slot_forces_heal() {
     let gm = g.metadata().unwrap().modified().unwrap();
     let sm = slot_of(&l.repo).metadata().unwrap().modified().unwrap();
     assert!(gm > sm, "graph must land after the slot");
-    assert!(!evaluate_staleness(&l.repo, &slot_of(&l.repo))
+    assert!(!evaluate_staleness(&l.repo, &slot_of(&l.repo), IdentityCachePolicy::WriteBack)
         .unwrap()
         .needs_rebuild());
 }

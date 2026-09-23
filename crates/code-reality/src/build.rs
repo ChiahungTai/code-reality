@@ -86,6 +86,9 @@ pub struct Report {
     pub indexes_created: usize,
     pub indexes_skipped: usize,
     pub notes: Vec<String>,
+    /// Content-addressed source identity stamped into the meta (None on
+    /// a legacy/preserved stamp) — additive `build --json` key.
+    pub source_identity: Option<String>,
 }
 
 /// Error families map onto different exits (EP review finding 4):
@@ -243,7 +246,7 @@ fn collect_py_corpus(repo: &Path) -> Result<BTreeSet<String>, String> {
     let walk = crate::engine::walk_sources(repo)?;
     Ok(walk
         .py
-        .iter()
+        .keys()
         .map(|p| p.replace('\\', "/"))
         .collect::<BTreeSet<String>>())
 }
@@ -529,6 +532,7 @@ pub fn build_repo(
         indexes_created: 0,
         indexes_skipped: 0,
         notes: Vec::new(),
+        source_identity: None,
     };
     // Effective exclusion set with provenance (additive semantics): the
     // first note, so every report — success or empty-convergence — states
@@ -658,6 +662,11 @@ pub fn build_repo(
             let _ = std::fs::remove_file(crate::cache::sqlite_path(&slot));
             let _ = std::fs::remove_file(crate::engine::meta_path(&slot));
             let _ = std::fs::remove_file(crate::fndefs::fndefs_path(&slot));
+            // D12 second half: the identity cache is NOT on the
+            // superseded-sidecar list at the publish point (its entries
+            // self-validate via the stat gate), but the empty terminal
+            // state removes the whole data plane — the cache goes too.
+            let _ = std::fs::remove_file(crate::identity::cache_path_for_slot(&slot));
             let _ = std::fs::remove_file(&slot);
             let _ = std::fs::remove_file(graph_db::db_path(&resolved));
             rep.face = "empty(profile-excluded)".to_string();
@@ -728,6 +737,11 @@ pub fn build_repo(
             resolved.display()
         ));
     }
+    // Report what was ACTUALLY stamped (read-back, not a prediction) —
+    // None on a legacy/preserved stamp.
+    rep.source_identity = crate::engine::load_meta(&slot)
+        .0
+        .and_then(|m| m["source_identity"].as_str().map(str::to_string));
 
     if let Some(sel) = producer {
         let omitted: Vec<&str> = ProducerFamily::ORDERED
@@ -954,7 +968,7 @@ pub fn heal_outcome_after_rebuild_err(
     slot: &Path,
     err: String,
 ) -> Result<HealOutcome, String> {
-    let snap = crate::engine::evaluate_staleness(repo, slot)?;
+    let snap = crate::engine::evaluate_staleness(repo, slot, crate::identity::IdentityCachePolicy::WriteBack)?;
     if !snap.needs_rebuild() {
         Ok(HealOutcome::Healed {
             secs: 0.0,
@@ -996,7 +1010,7 @@ fn run_heal_locked(
             }
             // Loop guard (SM-9): a rebuild that still leaves the slot
             // behind warns once and serves — never loops.
-            let snap = crate::engine::evaluate_staleness(repo, slot)?;
+            let snap = crate::engine::evaluate_staleness(repo, slot, crate::identity::IdentityCachePolicy::WriteBack)?;
             let doc_delta = match crate::engine::load_index(slot) {
                 Ok(loaded) => {
                     let docs: BTreeSet<String> = loaded
@@ -1083,7 +1097,7 @@ fn wait_peer_and_reevaluate(
         .join(".heal.lock");
     loop {
         if !lock_path.exists() {
-            let snap = crate::engine::evaluate_staleness(repo, slot)?;
+            let snap = crate::engine::evaluate_staleness(repo, slot, crate::identity::IdentityCachePolicy::WriteBack)?;
             // churn guard BEFORE the HealedByPeer return — a peer whose
             // heal failed to converge (armed marker) must not be reported
             // as having fixed it (codex P0-4)
@@ -1130,7 +1144,8 @@ pub fn ensure_fresh(repo: &Path, roots: &[PathBuf]) -> Result<HealOutcome, Strin
     if !slot.exists() {
         return Ok(HealOutcome::Fresh);
     }
-    let snap = crate::engine::evaluate_staleness(&repo, &slot)?;
+    let snap =
+        crate::engine::evaluate_staleness(&repo, &slot, crate::identity::IdentityCachePolicy::WriteBack)?;
     // Churn guard (AIR-33 ③ + codex P0-4): an armed marker means the
     // last heal FAILED TO CONVERGE — checked BEFORE any Fresh
     // short-circuit, because a non-converged heal can leave the slot
@@ -1171,6 +1186,7 @@ fn render(rep: Report, json: bool) -> ToolOutput {
             "edges": rep.edges,
             "graph_rebuilt": rep.graph_rebuilt,
             "indexes": {"created": rep.indexes_created, "skipped": rep.indexes_skipped},
+            "source_identity": rep.source_identity,
             "notes": notes,
         });
         return ToolOutput {

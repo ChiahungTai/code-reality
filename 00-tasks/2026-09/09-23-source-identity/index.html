@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>source identity——dirty-WT freshness EP 簡報殼</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2129; --border:#30363d;
+    --fg:#e6edf3; --muted:#8b949e; --accent:#58a6ff; --green:#3fb950;
+    --amber:#d29922; --rose:#f85149; --violet:#bc8cff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--fg);font-family:-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;display:flex}
+  /* ── sidebar ── */
+  nav#sidebar{width:264px;min-width:264px;background:var(--panel);border-right:1px solid var(--border);padding:20px 0;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;overflow-y:auto;overflow-x:hidden;transition:width .18s ease,min-width .18s ease,padding .18s ease}
+  nav#sidebar .brand{padding:0 20px 16px;border-bottom:1px solid var(--border);white-space:normal}
+  nav#sidebar .brand .badge{display:inline-block;border-radius:12px;padding:2px 10px;font-size:13px;font-weight:600;white-space:nowrap}
+  nav#sidebar .brand .badge.plan{background:#1f6f3c33;border:1px solid #2ea04366;color:var(--green)}
+  nav#sidebar .brand .badge.progress{background:#2d220066;border:1px solid #d2992266;color:var(--amber)}
+  nav#sidebar .brand .badge.done{background:#1f6f3c33;border:1px solid #2ea04366;color:var(--green)}
+  nav#sidebar .brand h1{font-size:15.5px;margin-top:8px;line-height:1.45}
+  nav#sidebar .brand .meta{font-size:11.5px;color:var(--muted);margin-top:8px;line-height:1.7;font-family:ui-monospace,Menlo,monospace}
+  nav#sidebar ul{list-style:none;padding:10px 0;flex:1}
+  nav#sidebar li a{display:flex;align-items:center;gap:10px;padding:9px 20px;color:var(--muted);text-decoration:none;font-size:13.5px;border-left:2px solid transparent;white-space:nowrap}
+  nav#sidebar li a .num{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--fg);background:var(--panel2);border:1px solid var(--border);border-radius:5px;padding:1px 6px;min-width:26px;text-align:center}
+  nav#sidebar li a:hover{color:var(--fg);background:#1f242c}
+  nav#sidebar li a.active{color:var(--fg);background:#1f242c;border-left-color:var(--accent)}
+  nav#sidebar .backlinks{padding:14px 20px;border-top:1px solid var(--border);font-size:12px;line-height:2;white-space:nowrap}
+  nav#sidebar .backlinks a{color:var(--accent);text-decoration:none}
+  /* ── 可折疊 sidebar：nav width→0、main flex 吃滿 ── */
+  body.sidebar-collapsed nav#sidebar{width:0;min-width:0;padding-left:0;padding-right:0;border-right:0}
+  body.sidebar-collapsed main{max-width:none}
+  /* ── main ── */
+  main{flex:1;min-width:0;max-width:1480px;padding:26px 34px;overflow-y:auto}
+  section{display:none}
+  section.active{display:block}
+  section h2{font-size:20px;margin-bottom:4px}
+  section .sub{color:var(--muted);font-size:13px;margin-bottom:18px}
+  section h3{font-size:14.5px;color:var(--accent);margin:18px 0 8px}
+  p,li{font-size:14px;line-height:1.75;color:var(--fg)}
+  ul.dots{list-style:none;margin:6px 0}
+  ul.dots li{padding-left:18px;position:relative;margin:4px 0}
+  ul.dots li::before{content:"";position:absolute;left:2px;top:9px;width:6px;height:6px;border-radius:50%;background:var(--accent)}
+  .cardrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin:14px 0}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:14px 16px}
+  .card .t{font-size:13px;font-weight:700;margin-bottom:6px}
+  .card .t.c{color:var(--accent)}.card .t.r{color:var(--rose)}.card .t.g{color:var(--green)}.card .t.v{color:var(--violet)}.card .t.a{color:var(--amber)}
+  .card p{font-size:12.5px;color:var(--muted);line-height:1.65}
+  .tag-plan{display:inline-block;font-size:11.5px;color:var(--violet);border:1px solid #6e40c966;background:#6e40c622;border-radius:10px;padding:1px 8px;margin-left:8px;white-space:nowrap;vertical-align:middle}
+  .num-big{font-size:26px;font-weight:800;font-family:ui-monospace,Menlo,monospace}
+  .frame-wrap{margin-top:14px;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--panel)}
+  .frame-wrap .bar{display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-bottom:1px solid var(--border);font-size:12px;color:var(--muted);font-family:ui-monospace,Menlo,monospace}
+  .frame-wrap .bar a{color:var(--accent);text-decoration:none}
+  iframe{width:100%;height:calc(100vh - 190px);min-height:640px;border:0;display:block;background:#fff}
+  .frame-wrap.degraded .degraded-body{padding:22px 18px;font-size:13.5px;line-height:1.8;color:var(--muted)}
+  .frame-wrap.degraded .degraded-body b{color:var(--fg)}
+  .frame-wrap.degraded .degraded-body code{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--accent);background:#1b222c;border-radius:4px;padding:1px 5px}
+  table{border-collapse:collapse;width:100%;margin:10px 0;font-size:13px}
+  th,td{border:1px solid var(--border);padding:7px 11px;text-align:left;vertical-align:top;line-height:1.6}
+  th{background:var(--panel2);color:var(--muted);font-weight:600;font-size:12px}
+  td code{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--accent);background:#1b222c;border-radius:4px;padding:1px 5px}
+  .kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:14px 0}
+  .kpi .card{text-align:left}
+  .kpi .lab{font-size:11.5px;color:var(--muted)}
+  .note{border-left:3px solid var(--amber);background:#2d220066;padding:10px 14px;border-radius:0 6px 6px 0;font-size:13px;line-height:1.7;margin:12px 0}
+  .src{font-size:12px;color:var(--muted);font-family:ui-monospace,Menlo,monospace;line-height:1.9}
+  .src a{color:var(--accent);text-decoration:none}
+  .collapse-tab{position:fixed;top:50%;z-index:30;width:26px;height:64px;padding:0;cursor:pointer;background:var(--panel2);border:1px solid var(--border);color:var(--muted);font-size:13px;line-height:1;border-radius:0 8px 8px 0}
+  .collapse-tab:hover{color:var(--fg);border-color:var(--accent)}
+  #collapse-btn{left:264px;transform:translateY(-50%)}
+  body.sidebar-collapsed #collapse-btn{display:none}
+  #expand-btn{left:0;top:20px;transform:none;border-radius:0 8px 8px 0;display:none}
+  body.sidebar-collapsed #expand-btn{display:block}
+</style>
+</head>
+<body>
+<button type="button" id="expand-btn" class="collapse-tab" aria-expanded="false" aria-controls="sidebar" aria-label="展開章節導覽" onclick="return setCollapsed(false,true)">›</button>
+<nav id="sidebar" aria-label="章節導覽">
+  <div class="brand">
+    <span class="badge plan">📋 計畫</span>
+    <h1>source identity——dirty-WT freshness EP 簡報殼</h1>
+    <div class="meta">task baseline 68d7636<br>projection：ep.md sha 2be478e71c825950（未 commit；含旗艦 5.3 審訂 R20-R25）<br>2026-09-23 · code-reality 主權線</div>
+  </div>
+  <ul>
+    <li><a href="#s1" onclick="return go('s1',this)"><span class="num">01</span>總覽與決策</a></li>
+    <li><a href="#s2" onclick="return go('s2',this)"><span class="num">02</span>核心設計與段落</a></li>
+    <li><a href="#s3" onclick="return go('s3',this)"><span class="num">03</span>回源</a></li>
+  </ul>
+  <div class="backlinks">
+    <span>← 本 repo 無 backlog board（正當跳過）</span><br>
+    <a href="ep.md">EP 全文（md 本體）</a><br>
+    <a href="references/research.md">段落 0 研究材料</a>
+  </div>
+</nav>
+<button type="button" id="collapse-btn" class="collapse-tab" aria-expanded="true" aria-controls="sidebar" aria-label="收合章節導覽" onclick="return setCollapsed(true,true)">‹</button>
+<main>
+
+<section id="s1">
+  <h2>總覽與決策</h2>
+  <div class="sub">fresh ⇔ indexed_source_identity == requested_consumer_source_identity——把「宣稱 fresh」從 mtime 啟發式升級為內容身分</div>
+  <ul class="dots">
+    <li><b>問題</b>：現行 index 軸 staleness＝mtime＋路徑集——內容換了 mtime 沒動（rsync -a／tar 回存／同尺寸原地編輯）→ 三面訊號全靜默。AIR-135.2 禁的正是這個 silent-stale。</li>
+    <li><b>方案</b>：content-addressed identity（同內容 ⇒ 同身分，touch/rebase/stash 冪等）＋stat-gated per-file hash cache＋新 CLI face <code>freshness</code>——消費端（ai-guide review-engine preflight）由此可比對宣稱 fresh。</li>
+    <li><b>決策亮點</b>：git machinery 否決（度量「與 HEAD 距離」非「內容身分」——stash/rebase 翻 churn）；graph.db 軸不動但 torn-plane guard <b>無條件保留</b>（judge 親證 engine.rs:839 折疊點）；head-drift 不判死（對稱既有 t15 行為）；MCP 不加（CLI 權威面先例）。</li>
+  </ul>
+  <div class="kpi">
+    <div class="card"><div class="lab">steady-state freshness gate（NT 級語料實測）</div><div class="num-big">39.5ms</div></div>
+    <div class="card"><div class="lab">冷全量 hash（3,418 檔／66.1MB）</div><div class="num-big">495ms</div></div>
+    <div class="card"><div class="lab">EP review findings（雙腿＋judge＋快審）</div><div class="num-big">19 全採</div></div>
+    <div class="card"><div class="lab">已凍結決策（D1-D16）／TC</div><div class="num-big">16／17</div></div>
+  </div>
+  <div class="frame-wrap degraded">
+    <div class="bar"><span>圖槽位（降級）：identity 資料流總覽圖——待 mermaid 渲染補位</span></div>
+    <div class="degraded-body"><b>圖尚未產生</b>——<code>walk_sources → gate → compose_identity → stamp/heal/freshness face</code> 資料流圖於實作弧 hook 2 一次產。</div>
+  </div>
+</section>
+
+<section id="s2">
+  <h2>核心設計與段落</h2>
+  <div class="sub">三態 cache policy 分域；兩條信任路徑裁決經 judge 親證回寫</div>
+  <h3>identity 語義</h3>
+  <ul class="dots">
+    <li><code>sha256("cr-identity-v1\0" + Σ sorted(face\0rel\0size\0content_hash\0))</code>——mtime 不進身分本體（只作 cache gate）；face 字串＝<code>meta_name()</code>（與 source_faces 同語彙）。</li>
+    <li><b>三態 policy 分域</b>：<code>Full</code>＝stamp/build 全量重 hash＋整檔重寫 cache（indexed identity 永遠從實際 bytes 滿算——query 端污染最壞 false-stale 安全方向）；<code>WriteBack</code>＝default slot 查詢；<code>ReadOnly</code>＝explicit／<code>CODE_REALITY_IDENTITY_CACHE=off</code>。</li>
+  </ul>
+  <div class="note"><b>judge 親證的兩條信任路徑裁決</b>：①torn-plane guard（graph.db 落後 slot 強制 heal）從 source_newer 拆獨立欄、needs_rebuild 無條件保留——原稿寫法會讓 identity slot 靜默跳過它；②stamp 路徑永不信任 cache（D13）——否則 stamp 與 eval 同源同污 ⇒ drift 恆 false。</div>
+  <h3>段落（<span class="tag-plan">S1-S4 計畫中</span>）</h3>
+  <table>
+    <tr><th>段</th><th>範圍</th><th>關鍵驗證</th></tr>
+    <tr><td><code>S1</code></td><td>identity.rs 計算層（walk 單點接入＋cache 三態）</td><td>決定論／touch 冪等／cache≡全量／crash-only／nanos 精度</td></tr>
+    <tr><td><code>S2</code></td><td>stamp_meta_core 新增 identity keys＋anti-laundering 延伸</td><td>preserve 五鍵延伸／docs-only head-sync 不動 identity 值／stamp 污染免疫</td></tr>
+    <tr><td><code>S3</code></td><td>evaluate_staleness＋needs_rebuild 權威翻轉（graph_lags 無條件）</td><td>rsync 情境走 rebuild／torn guard identity 版／t13-t22 回歸</td></tr>
+    <tr><td><code>S4</code></td><td>freshness CLI face（exit 0/1/2＋JSON 十鍵＋serves 值域）</td><td>五態契約 pin／explicit 零寫現狀 pin／消費端 L4 演練</td></tr>
+  </table>
+</section>
+
+<section id="s3">
+  <h2>回源</h2>
+  <div class="sub">殼是展示層——本體（source of record）與證據鏈全在 repo</div>
+  <div class="frame-wrap degraded">
+    <div class="bar"><span>圖槽位（降級）：待 mermaid 圖補位</span></div>
+    <div class="degraded-body"><b>圖尚未產生</b>——本節無獨立圖需求；審查證據鏈見 EP review ledger（EP 本體「EP review」節，R1-R19）。</div>
+  </div>
+  <p class="src">
+    EP：<a href="ep.md">00-tasks/2026-09/09-23-source-identity/ep.md</a><br>
+    task baseline：68d763601ca79ec5531737444615934318ab0f9e · projection source：ep.md sha256 2be478e71c825950（未 commit；含旗艦 5.3 審訂 R20-R25）· 卡：無 board（正當跳過）
+  </p>
+</section>
+
+</main>
+<script>
+function go(id,el){
+  var section=document.getElementById(id);
+  if(!section||!section.matches('main section'))return false;
+  document.querySelectorAll('main section').forEach(s=>s.classList.remove('active'));
+  section.classList.add('active');
+  document.querySelectorAll('#sidebar li a').forEach(a=>a.classList.remove('active'));
+  if(el)el.classList.add('active');
+  history.replaceState(null,'','#'+id);
+  return false;
+}
+var SIDEBAR_KEY='illustrate-shell-sidebar-collapsed';
+function setCollapsed(c,moveFocus){
+  document.body.classList.toggle('sidebar-collapsed',!!c);
+  try{localStorage.setItem(SIDEBAR_KEY,c?'1':'0');}catch(e){}
+  var sidebar=document.getElementById('sidebar');
+  sidebar.toggleAttribute('inert',!!c);
+  if(c)sidebar.setAttribute('aria-hidden','true');else sidebar.removeAttribute('aria-hidden');
+  document.querySelectorAll('#collapse-btn,#expand-btn').forEach(function(b){
+    b.setAttribute('aria-expanded',String(!c));
+  });
+  if(moveFocus)document.getElementById(c?'expand-btn':'collapse-btn').focus();
+  return false;
+}
+(function init(){
+  var c=false;
+  try{c=localStorage.getItem(SIDEBAR_KEY)==='1';}catch(e){}
+  if(c)setCollapsed(true);
+  var h=location.hash.slice(1);
+  var candidate=h&&document.getElementById(h);
+  var target=(candidate&&candidate.matches('main section'))?h:null;
+  if(!target){
+    var framed=document.querySelector('main section .frame-wrap');
+    target=framed?framed.closest('section').id:document.querySelector('main section').id;
+  }
+  var link=document.querySelector('#sidebar li a[href="#'+target+'"]');
+  go(target,link);
+})();
+</script>
+</body>
+</html>

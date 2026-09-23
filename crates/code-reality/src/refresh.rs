@@ -98,7 +98,8 @@ fn refresh_run(toks: &[&str]) -> ToolOutput {
     };
     // Snapshot first (Fresh is a unit variant — the head-sync decision
     // needs the drift bit the outcome does not carry).
-    let snap = match evaluate_staleness(&repo, &slot) {
+    let snap = match evaluate_staleness(&repo, &slot, crate::identity::IdentityCachePolicy::WriteBack)
+    {
         Ok(s) => s,
         Err(e) => {
             stderr.push_str(&format!(

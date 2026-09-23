@@ -126,12 +126,19 @@ Responses embed `[SRC]` provenance lines (index version/commit) and a
   a stale slot rebuild it before answering — single-flight across
   concurrent sessions through `.code-reality/scip/.heal.lock`. A rebuild
   that still leaves the slot behind warns once and serves (detection vs
-  corpus mismatch never loops). Under an ACTIVE writer (a heal that
-  finishes and still finds sources newer than the slot) a churn
-  cooldown marker (`.heal-churn`, 10min) is armed — later queries inside
-  the window serve the existing index with a WARN instead of re-burning
-  a minutes-scale heal that cannot converge anyway; a head drift (commit
-  boundary) always overrides, and a converging heal clears the marker.
+  corpus mismatch never loops). Since the source identity EP the
+  rebuild decision is identity-authoritative: a slot whose meta carries
+  the identity keys rebuilds on `identity_drift` (content-addressed —
+  the mtime-only blind spot, e.g. a same-size content swap under a
+  preserved mtime, is closed at this layer), while the torn-plane guard
+  (graph.db older than the slot) stays unconditional and legacy keyless
+  slots keep the baseline mtime/fingerprint criteria. Under an ACTIVE
+  writer (a heal that finishes and still finds sources newer than the
+  slot) a churn cooldown marker (`.heal-churn`, 10min) is armed — later
+  queries inside the window serve the existing index with a WARN
+  instead of re-burning a minutes-scale heal that cannot converge
+  anyway; a head drift (commit boundary) always overrides, and a
+  converging heal clears the marker.
   `CODE_REALITY_AUTOHEAL=off` reverts to warn-only;
   `CODE_REALITY_HEAL_COOLDOWN_SECS=0` disables the cooldown; explicit
   `--index` paths and the write modes are never
@@ -157,6 +164,53 @@ Responses embed `[SRC]` provenance lines (index version/commit) and a
   upgrades a managed script in place on content diff (byte-identical is
   a no-op) — the one-command migration for template updates; an
   old-format hook still invoking `refresh` gets a log nudge to upgrade.
+
+### Freshness verdict face (source identity)
+
+- `code-reality freshness --repo <repo> [--json]` answers one question
+  for a cross-repo consumer: does the indexed source identity equal the
+  current source identity, dirty working tree included? Verdict face,
+  zero heal (the only write is the identity cache;
+  `CODE_REALITY_IDENTITY_CACHE=off` makes every identity computation
+  fully read-only). Exits: fresh=0 / stale=1 (a legal answer — stdout
+  still carries the verdict) / no-slot, usage, or check-failure=2 with
+  loud guidance that names the build command and the empty-terminal
+  state (an all-excluded corpus legitimately has NO slot — absence is
+  never read as fresh). Head drift never kills fresh; the JSON
+  discloses it in `head_drift`.
+- JSON contract: `{repo, slot, fresh, stale_reasons, head_drift, faces,
+  indexed_source_identity, current_source_identity, identity_algo,
+  serves}`. `stale_reasons` vocabulary: `torn-plane` (graph.db older
+  than the slot), `content-drift` (identity mismatch — includes the
+  mtime-preserved swap shape and a newly arrived language face),
+  `doc-set-drift`, `policy-drift` (both reported but non-fatal in
+  identity mode), `legacy-signals` (keyless meta judged by the baseline
+  criteria). `serves`: `current-tree` (fresh — the consumer may claim
+  fresh), `committed-baseline` (stale/torn — graph answers describe the
+  committed baseline, the WT delta lives in live LSP), `legacy-signals`
+  (keyless meta — interpret by the baseline criteria; the identity
+  fields are null there because the current side is not computed).
+- **Identity definition** (cross-repo comparable contract):
+  `sha256("cr-identity-v1\0" + Σ sorted-by-rel "{face}\0{rel}\0{size}\0{content_hash}\0")`
+  — same content ⇒ same identity, so touch / stash round-trips /
+  rebase replays are idempotent; mtime gates the per-file hash cache
+  only, never the identity body.
+- **Cache-validity residual risk (disclosed)**: the query-side per-file
+  cache reuses a content hash when `(size, mtime[secs+nanos])` match
+  exactly — a same-size swap whose mtime is restored to the exact
+  nanosecond (a precise forgery; ordinary rsync -a/tar restores and
+  same-second formatter rewrites do NOT match to the nanosecond) can
+  slip the query-side gate. This is accepted and bounded: the
+  stamp/build path ALWAYS recomputes the indexed identity from actual
+  bytes (never the cache), the worst query-side outcome is a false
+  stale (safe direction — a rebuild purges the cache) or this
+  documented residual, and any suspicious cache (corrupt, downgraded
+  version, foreign repo binding) is discarded wholesale and recomputed.
+- **Naming discrimination**: the `cr-freshness` leaf crate and the
+  `tests/freshness.rs` pin file are the BINARY version-freshness axis
+  (`--version` rev-mismatch WARN). The `freshness` SUBCOMMAND and
+  `tests/source_identity.rs` are the INDEX source-identity axis. They
+  share a name and nothing else.
 
 ### Slot discipline
 
@@ -310,7 +364,7 @@ effects, re-adjudicated 2026-08-29). The same binary carries the full
 toolchain: `code-reality <scip_refs|snapshot|graph_audit|
 hub_refs|boundary|boundary_build|build|chain_tour|delta_tour|tour|
 tour_manifest|tour_validate|tour_upgrade|runtime_edges|
-graph_query|graph_db|project> --repo <root>`. (Diff consumption runs through
+graph_query|graph_db|project|refresh|freshness> --repo <root>`. (Diff consumption runs through
 `delta_tour` — the transition CLI retired; snapshot sidecar pairs feed
 delta_tour directly. `tour register|materialize` is the intent-level
 two-phase materialization face: a manifest `[[delta_arc]]` provenance row

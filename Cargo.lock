@@ -557,6 +557,7 @@ dependencies = [
  "scip",
  "serde",
  "serde_json",
+ "sha2",
  "single-clustering",
  "tempfile",
  "tokio",

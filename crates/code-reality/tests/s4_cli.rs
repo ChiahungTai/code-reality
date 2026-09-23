@@ -290,11 +290,18 @@ fn stamp_meta_writes_sidecar_and_is_idempotent() {
     ]));
     assert_eq!(out.exit_code, 0, "stderr: {}", out.stderr);
     let head = code_reality::engine::git_head(&repo).unwrap();
+    // repo_name is the stamped path's basename — derive it so the pin
+    // holds on any checkout name (the face format is what's frozen).
+    let repo_name = repo
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
     assert_eq!(
         out.stdout,
         format!(
-            "[OK] meta stamped：{}（code-reality @ {}）\n",
+            "[OK] meta stamped：{}（{} @ {}）\n",
             code_reality::engine::meta_path(&idx).display(),
+            repo_name,
             &head[..7]
         )
     );

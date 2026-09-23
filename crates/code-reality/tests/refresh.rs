@@ -238,7 +238,7 @@ fn refresh_heals_stale_via_real_producer() {
     assert_eq!(out.exit_code, 0, "stderr={}", out.stderr);
     assert!(out.stderr.contains("已重產"), "stderr={}", out.stderr);
     let slot = repo.join(".code-reality/scip/index.scip");
-    let snap = code_reality::engine::evaluate_staleness(&repo, &slot).unwrap();
+    let snap = code_reality::engine::evaluate_staleness(&repo, &slot, code_reality::identity::IdentityCachePolicy::WriteBack).unwrap();
     assert!(!snap.source_newer, "post-refresh slot is fresh");
 }
 

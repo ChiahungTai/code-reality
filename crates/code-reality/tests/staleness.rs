@@ -4,6 +4,7 @@
 //! auto-heal (S3).
 
 use code_reality::engine::*;
+use code_reality::identity::IdentityCachePolicy;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -41,13 +42,13 @@ fn walk_sources_skips_and_collects() {
         ("notes.txt", "x"),
     ]);
     let w = walk_sources(&repo).unwrap();
-    assert!(w.py.contains("a.py"));
-    assert!(w.py.contains("target/b.py"), "target stays walkable");
-    assert!(!w.py.contains("venv/c.py"));
-    assert!(!w.py.contains("node_modules/d.py"));
-    assert!(!w.py.contains("__pycache__/e.py"));
-    assert!(!w.py.contains(".hidden/f.py"));
-    assert!(w.rs.contains("sub/g.rs"));
+    assert!(w.py.contains_key("a.py"));
+    assert!(w.py.contains_key("target/b.py"), "target stays walkable");
+    assert!(!w.py.contains_key("venv/c.py"));
+    assert!(!w.py.contains_key("node_modules/d.py"));
+    assert!(!w.py.contains_key("__pycache__/e.py"));
+    assert!(!w.py.contains_key(".hidden/f.py"));
+    assert!(w.rs.contains_key("sub/g.rs"));
     assert!(w.newest.is_some());
     drop(t);
 }
@@ -67,12 +68,12 @@ fn walk_sources_profile_excludes_python_not_rust() {
     ]);
     let w = walk_sources(&repo).unwrap();
     assert_eq!(
-        w.py,
+        w.py.keys().cloned().collect::<BTreeSet<String>>(),
         BTreeSet::from(["src/a.py".to_string()]),
         "py walk is governed"
     );
-    assert!(w.rs.contains("gen/x.rs"), "rust exempt from profile");
-    assert!(w.rs.contains("src/keep.rs"));
+    assert!(w.rs.contains_key("gen/x.rs"), "rust exempt from profile");
+    assert!(w.rs.contains_key("src/keep.rs"));
     drop(t);
 }
 
@@ -81,20 +82,20 @@ fn evaluate_staleness_trigger_split() {
     // fresh: slot written after all sources
     let (t, repo) = mkrepo(&[("a.py", "x")]);
     let slot = slot_with(&repo, ANY_BYTES);
-    let s = evaluate_staleness(&repo, &slot).unwrap();
+    let s = evaluate_staleness(&repo, &slot, IdentityCachePolicy::WriteBack).unwrap();
     assert!(!s.source_newer);
     assert_eq!(s.head_drift, None, "unstamped → no head info");
 
     // edit after slot → trigger (SM-3, the line-drift incident shape)
     std::thread::sleep(std::time::Duration::from_millis(20));
     std::fs::write(repo.join("a.py"), "y").unwrap();
-    assert!(evaluate_staleness(&repo, &slot).unwrap().source_newer);
+    assert!(evaluate_staleness(&repo, &slot, IdentityCachePolicy::WriteBack).unwrap().source_newer);
 
     // re-freshen slot, then a NEW file → trigger (SM-2, missing-file shape)
     std::fs::write(&slot, ANY_BYTES).unwrap();
     std::thread::sleep(std::time::Duration::from_millis(20));
     std::fs::write(repo.join("new_mod.py"), "z").unwrap();
-    assert!(evaluate_staleness(&repo, &slot).unwrap().source_newer);
+    assert!(evaluate_staleness(&repo, &slot, IdentityCachePolicy::WriteBack).unwrap().source_newer);
     drop(t);
 }
 
@@ -109,7 +110,7 @@ fn evaluate_staleness_head_drift_without_git() {
         "{\"head\": \"deadbeef\", \"repo\": \"x\"}\n",
     )
     .unwrap();
-    let s = evaluate_staleness(&repo, &slot).unwrap();
+    let s = evaluate_staleness(&repo, &slot, IdentityCachePolicy::WriteBack).unwrap();
     assert_eq!(s.head_drift, None);
     drop(t);
 }
@@ -140,13 +141,13 @@ fn evaluate_staleness_head_drift_in_git_repo() {
     let slot = slot_with(&repo, ANY_BYTES);
     std::fs::write(meta_path(&slot), "{\"head\": \"deadbeef\"}\n").unwrap();
     assert_eq!(
-        evaluate_staleness(&repo, &slot).unwrap().head_drift,
+        evaluate_staleness(&repo, &slot, IdentityCachePolicy::WriteBack).unwrap().head_drift,
         Some(true)
     );
     let head = git_head(&repo).unwrap();
     std::fs::write(meta_path(&slot), format!("{{\"head\": \"{head}\"}}\n")).unwrap();
     assert_eq!(
-        evaluate_staleness(&repo, &slot).unwrap().head_drift,
+        evaluate_staleness(&repo, &slot, IdentityCachePolicy::WriteBack).unwrap().head_drift,
         Some(false)
     );
     drop(t);
@@ -160,12 +161,12 @@ fn walk_sources_rust_face_skips_target() {
         ("target/tool.py", "x"),          // pyrefly DOES index .py under target
     ]);
     let w = walk_sources(&repo).unwrap();
-    assert!(w.rs.contains("crates/a.rs"));
+    assert!(w.rs.contains_key("crates/a.rs"));
     assert!(
-        !w.rs.contains("target/debug/out/gen.rs"),
+        !w.rs.contains_key("target/debug/out/gen.rs"),
         "rust face skips target/"
     );
-    assert!(w.py.contains("target/tool.py"), "python face keeps target/");
+    assert!(w.py.contains_key("target/tool.py"), "python face keeps target/");
     drop(t);
 }
 

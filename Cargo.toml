@@ -11,6 +11,7 @@ scip = "0.9"
 protobuf = "3"
 rusqlite = { version = "0.40", features = ["bundled"] }
 serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.10"
 tempfile = "3"
 toml = "0.9"
 libc = "0.2"

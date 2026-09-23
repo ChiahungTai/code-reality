@@ -143,19 +143,55 @@ tests are the sole gate face.
   corpus share the single effective policy; Rust exempt
   (workspace-scoped producer)] carrying per-face newest maps and
   the FNV source-set fingerprint; `evaluate_staleness`/`StalenessSnapshot
-  ::needs_rebuild` [mtime OR doc-set drift OR corpus-policy drift — the
-  delete/rename blind spot mtime cannot see]; `doc_set_delta` compares
+  ::needs_rebuild` [identity-authoritative since the source identity EP:
+  a comparable slot (meta carries source_faces + source_identity +
+  identity_algo) rebuilds on `identity_drift` with mtime demoted to
+  non-fatal (touch idempotent), `graph_lags` split OUT of source_newer
+  as an UNCONDITIONAL torn-plane trigger (muse P1-3), and the legacy
+  trio (mtime OR doc-set drift OR corpus-policy drift) preserved for
+  keyless slots — zero identity/hash cost on the legacy face; the
+  current-side identity is computed over eval_faces = stamped∪detected
+  on auto, pinned on explicit — the exact mirror of the mtime scope];
+  `doc_set_delta` compares
   BOTH missing and extra; `stamp_meta_core` shared by the cli
   stamp mode and the refresh head-sync — face-accurate producer string,
   preserve-prior-identity-keys on corpus mismatch [the keys describe
   the INDEX; preserving them keeps drift visible — dropping them would
-  launder a delete into mtime-only freshness]) / `language` (domain —
+  launder a delete into mtime-only freshness; the preserve set is five
+  keys (three fingerprint + source_identity + identity_algo) and a
+  failed identity recompute takes the preserve branch too — never a
+  partial fresh stamp; the stamp path recomputes identity from actual
+  bytes via `IdentityCachePolicy::Full`, immune to query-side cache
+  pollution]) / `language` (domain —
   `LanguageFace` [document language, extension single source] vs
   `ProducerFamily` [executable leg; JS+TS share the typescript family]
   with the frozen ORDERED merge order) / `js_ts_corpus` (domain — the
   governed JS/TS source set; the single answer to "which JS/TS
   documents belong to this repo" on both the producer and freshness
-  sides) / `ts_producer` (adapter — the scip-typescript leg:
+  sides) / `identity` (domain — content-addressed source identity, EP
+  09-23-source-identity: `compute_identity` assembles
+  `sha256("cr-identity-v1\0" + Σ sorted-by-rel "{face}\0{rel}\0{size}\0{content_hash}\0")`
+  — mtime is NOT in the body (touch/rebase/stash idempotent), only in
+  the `(size, mtime[secs+nanos])` gate of the slot-sibling
+  `identity-cache.json` (D16: repo-bound payload, crash-only discard on
+  any inconsistency, merged atomic write with out-of-set pruning,
+  `CODE_REALITY_IDENTITY_CACHE=off` → ReadOnly = never read AND never
+  write); hashing is LAZY (D17 — `SourceRecord` carries no hash, so
+  `walk_sources` stays pure path+stat, path-face consumers pay nothing,
+  legacy slots never hash); policies are caller-declared — Full on the
+  stamp face (D13: the indexed identity never trusts a cache),
+  WriteBack on query faces; a per-file read failure is fail-loud Err
+  (D15)) / `freshness` (adapter — the consumer-facing verdict face
+  `code-reality freshness --repo <repo> [--json]`: zero heal (the only
+  write is the identity cache), exit fresh=0 / stale=1 (a legal answer
+  constructed directly, not fail/crash) / no-slot·usage·check-failure=2
+  with guidance that names the empty-terminal state and never claims
+  fresh; JSON carries the indexed/current identity pair, `serves` ∈
+  current-tree/committed-baseline/legacy-signals, `head_drift`
+  disclosed and never fatal (D14); NAMING NEIGHBORS: the `cr-freshness`
+  leaf crate and `tests/freshness.rs` are the BINARY version-freshness
+  axis — this module and `tests/source_identity.rs` are the index
+  source-identity axis) / `ts_producer` (adapter — the scip-typescript leg:
   existing-config-first with the full-coverage predicate [partial
   coverage falls back to the derived explicit-files sidecar, which
   must converge exactly — the target repo's config is never mutated],
@@ -249,7 +285,11 @@ tests are the sole gate face.
   face): missing `.tours` dir = WARN + exit 0 (corpus-less skip
   preserved), dir present but zero `*.tour` on disk = FAIL + exit 1
   (layout/extension anomaly — aligns with tour_upgrade's crash on the
-  same state).
+  same state); `freshness` (source identity EP) is a verdict THREE-state:
+  fresh=0 / stale=1 (a legal answer — stdout still carries the verdict;
+  the ToolOutput is constructed directly since `fail` is 2 and `crash`
+  is 1+[FAIL]) / no-slot·usage·env·check-failure=2 fail-loud with build
+  guidance + the empty-terminal note, never claiming fresh (D9/SM-17).
 - **Subcommand names mirror Python module names verbatim** (`scip_refs`,
   `snapshot`, `graph_audit`; not kebab-case) —
   relay minimal-diff contract. (`transition` left the CLI surface at S4 —

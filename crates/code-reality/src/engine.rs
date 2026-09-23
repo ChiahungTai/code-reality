@@ -515,10 +515,10 @@ pub fn is_test_path(rel: &str) -> bool {
 /// from what the producer actually indexes; recorded exemption).
 #[derive(Debug, Default)]
 pub struct SourceWalk {
-    pub py: BTreeSet<String>,
-    pub rs: BTreeSet<String>,
-    pub js: BTreeSet<String>,
-    pub ts: BTreeSet<String>,
+    pub py: BTreeMap<String, crate::identity::SourceRecord>,
+    pub rs: BTreeMap<String, crate::identity::SourceRecord>,
+    pub js: BTreeMap<String, crate::identity::SourceRecord>,
+    pub ts: BTreeMap<String, crate::identity::SourceRecord>,
     /// Newest across ALL walked faces — the legacy staleness basis for
     /// indexes without stamped face metadata.
     pub newest: Option<std::time::SystemTime>,
@@ -528,6 +528,21 @@ pub struct SourceWalk {
 }
 
 impl SourceWalk {
+    /// All records merged across faces, keyed by rel (globally unique —
+    /// the face is a function of the extension). BTreeMap iteration is
+    /// rel-sorted: [`crate::identity::compute_identity`]'s
+    /// byte-determinism basis. Records carry no content hash (D17) —
+    /// hashing happens only at the identity assembly point.
+    pub fn records(&self) -> BTreeMap<String, crate::identity::SourceRecord> {
+        self.py
+            .iter()
+            .chain(self.rs.iter())
+            .chain(self.js.iter())
+            .chain(self.ts.iter())
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
+    }
+
     /// Disk paths for the given faces (Python/JS/TS sets are already
     /// governed — profile-excluded at walk time; Rust is unfiltered).
     pub fn paths_for_faces(
@@ -537,10 +552,10 @@ impl SourceWalk {
         let mut out = BTreeSet::new();
         for face in faces {
             match face {
-                crate::language::LanguageFace::Python => out.extend(self.py.iter().cloned()),
-                crate::language::LanguageFace::Rust => out.extend(self.rs.iter().cloned()),
-                crate::language::LanguageFace::JavaScript => out.extend(self.js.iter().cloned()),
-                crate::language::LanguageFace::TypeScript => out.extend(self.ts.iter().cloned()),
+                crate::language::LanguageFace::Python => out.extend(self.py.keys().cloned()),
+                crate::language::LanguageFace::Rust => out.extend(self.rs.keys().cloned()),
+                crate::language::LanguageFace::JavaScript => out.extend(self.js.keys().cloned()),
+                crate::language::LanguageFace::TypeScript => out.extend(self.ts.keys().cloned()),
             }
         }
         out
@@ -577,7 +592,7 @@ impl SourceWalk {
                 crate::language::LanguageFace::JavaScript => &self.js,
                 crate::language::LanguageFace::TypeScript => &self.ts,
             };
-            for p in paths {
+            for p in paths.keys() {
                 fnv1a64(&mut h, face.meta_name());
                 fnv1a64(&mut h, "\0");
                 fnv1a64(&mut h, p);
@@ -627,19 +642,36 @@ pub fn walk_sources(repo: &Path) -> Result<SourceWalk, String> {
                     .strip_prefix(&root)
                     .map(|p| p.to_string_lossy().into_owned())
                     .unwrap_or_else(|_| name.clone());
-                let m = ent.metadata().and_then(|md| md.modified()).ok();
+                // The record capture point (D17): one stat, already paid
+                // — size+mtime feed the identity cache gate; the content
+                // hash itself happens only inside compute_identity.
+                let md = ent.metadata().ok();
+                let (size, mtime) = match &md {
+                    Some(md) => (
+                        md.len(),
+                        crate::identity::systemtime_tuple(md.modified().ok()),
+                    ),
+                    None => (0, (0, 0)),
+                };
+                let rec = crate::identity::SourceRecord {
+                    face,
+                    rel: rel.clone(),
+                    size,
+                    mtime,
+                };
+                let m = md.and_then(|md| md.modified().ok());
                 match face {
                     crate::language::LanguageFace::Python => {
                         if crate::profile::is_excluded(&rel, profile.as_ref()) {
                             continue;
                         }
-                        out.py.insert(rel)
+                        out.py.insert(rel, rec)
                     }
                     crate::language::LanguageFace::Rust => {
                         if under_target {
                             continue;
                         }
-                        out.rs.insert(rel)
+                        out.rs.insert(rel, rec)
                     }
                     crate::language::LanguageFace::JavaScript
                     | crate::language::LanguageFace::TypeScript => {
@@ -647,9 +679,9 @@ pub fn walk_sources(repo: &Path) -> Result<SourceWalk, String> {
                             continue;
                         }
                         if face == crate::language::LanguageFace::JavaScript {
-                            out.js.insert(rel)
+                            out.js.insert(rel, rec)
                         } else {
-                            out.ts.insert(rel)
+                            out.ts.insert(rel, rec)
                         }
                     }
                 };
@@ -672,23 +704,52 @@ pub fn walk_sources(repo: &Path) -> Result<SourceWalk, String> {
 /// unstamped WARN is source_line's single source, never duplicated here.
 /// `doc_set_drift`/`corpus_policy_drift=None` = legacy metadata without
 /// the S4 fingerprint keys (baseline mtime behavior applies).
+///
+/// Source identity EP: `identity_drift=None` = the meta carries no
+/// comparable identity pair (legacy slot — zero hash cost, D8), and the
+/// mtime/fingerprint signals keep their baseline authority. When
+/// `identity_drift` is `Some`, the decision flips to the
+/// content-addressed axis: mtime-newness is no longer fatal (touch is
+/// idempotent, D3) and `identity_drift` replaces it, while
+/// `doc_set_drift`/`corpus_policy_drift` keep being REPORTED (feeding
+/// the freshness reasons and the SM-16 degradation disclosure) without
+/// being fatal. `graph_lags` is split out of `source_newer` and stays
+/// an UNCONDITIONAL rebuild trigger (muse P1-3 torn-plane guard, judge
+/// R1 — never short-circuited by a matching identity).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StalenessSnapshot {
+    /// Raw mtime-newness of the scoped corpus (no graph_lags folding).
     pub source_newer: bool,
+    /// graph.db older than the slot — torn data plane (muse P1-3).
+    pub graph_lags: bool,
     pub doc_set_drift: Option<bool>,
     pub corpus_policy_drift: Option<bool>,
+    /// `Some(current != stamped)` when the meta carries a comparable
+    /// identity pair; `None` = legacy (not computed).
+    pub identity_drift: Option<bool>,
     pub head_drift: Option<bool>,
+    /// Faces the evaluation was scoped to (stamped ∪ detected on auto,
+    /// pinned on explicit) — the freshness face's `faces` field.
+    pub eval_faces: BTreeSet<crate::language::LanguageFace>,
+    /// Stamped identity value (identity mode only; None = legacy).
+    pub stamped_identity: Option<String>,
+    /// Current-side identity value (identity mode only; None = legacy —
+    /// not computed at all, D8 zero-cost face).
+    pub current_identity: Option<String>,
 }
 
 impl StalenessSnapshot {
-    /// The rebuild decision (S4): mtime-newness OR source-set drift
-    /// (add/delete/rename — mtime alone cannot see a deletion) OR
-    /// JS/TS corpus-policy drift. Callers deciding whether producer
-    /// work is required use this, never the bare `source_newer` bit.
+    /// The rebuild decision — identity-authoritative (source identity
+    /// EP): in identity mode a content drift replaces mtime-newness as
+    /// the fatal signal; in legacy mode the baseline trio applies. The
+    /// torn-plane guard fires in BOTH modes, unconditionally.
     pub fn needs_rebuild(&self) -> bool {
-        self.source_newer
-            || self.doc_set_drift == Some(true)
-            || self.corpus_policy_drift == Some(true)
+        self.identity_drift == Some(true)
+            || self.graph_lags
+            || (self.identity_drift.is_none()
+                && (self.source_newer
+                    || self.doc_set_drift == Some(true)
+                    || self.corpus_policy_drift == Some(true)))
     }
 }
 
@@ -747,7 +808,12 @@ fn parse_stamped_faces(
 /// faces; an EXPLICIT producer override keeps its pinned faces (muse
 /// P0-1). A graph.db older than the slot is a torn data plane (index
 /// published, graph build failed) and forces a heal (muse P1-3).
-pub fn evaluate_staleness(repo: &Path, slot: &Path) -> Result<StalenessSnapshot, String> {
+pub fn evaluate_staleness(
+    repo: &Path,
+    slot: &Path,
+    policy: crate::identity::IdentityCachePolicy,
+) -> Result<StalenessSnapshot, String> {
+    let root = resolve_repo(repo);
     let walk = walk_sources(repo)?;
     let slot_m = slot
         .metadata()
@@ -818,6 +884,9 @@ pub fn evaluate_staleness(repo: &Path, slot: &Path) -> Result<StalenessSnapshot,
     // Torn data plane: the slot published but the graph build failed —
     // the prior graph lags the slot forever unless this forces the heal
     // (muse P1-3; graph normally lands milliseconds after the slot).
+    // SPLIT out of source_newer (source identity EP): needs_rebuild
+    // consumes it unconditionally — identity equality must never
+    // short-circuit the torn-plane guard (judge R1).
     let graph_lags = slot
         .parent()
         .map(|d| d.parent().map(|p| p.join("graph.db")))
@@ -826,6 +895,7 @@ pub fn evaluate_staleness(repo: &Path, slot: &Path) -> Result<StalenessSnapshot,
         .and_then(|m| m.modified().ok())
         .is_some_and(|gm| gm < slot_m);
     let stamped = meta
+        .as_ref()
         .and_then(|m| m["head"].as_str().map(str::to_string))
         .filter(|s| !s.is_empty());
     let head_drift = match stamped {
@@ -835,11 +905,54 @@ pub fn evaluate_staleness(repo: &Path, slot: &Path) -> Result<StalenessSnapshot,
             Err(_) => None,
         },
     };
+    // Identity axis (source identity EP): computed ONLY when the meta
+    // carries the full comparable triple (source_faces + source_identity
+    // + identity_algo) — any absence or algo mismatch is a legacy slot
+    // and pays ZERO hash cost (D8/R22: no partial triple ever bombs).
+    // The current side is scoped to eval_faces — the exact mirror of
+    // the mtime scope (auto = stamped ∪ detected: a newly arrived
+    // language must drift; explicit = pinned). Read failure is
+    // fail-loud (D15) — the caller owns the degradation face.
+    let stamped_identity_val = meta
+        .as_ref()
+        .and_then(|m| m["source_identity"].as_str().map(str::to_string));
+    let stamped_algo = meta
+        .as_ref()
+        .and_then(|m| m["identity_algo"].as_str().map(str::to_string));
+    let mut identity_drift = None;
+    let mut current_identity = None;
+    if let (Some(eval), Some(stamped_val)) = (&eval_faces, &stamped_identity_val) {
+        if stamped_algo.as_deref() == Some(crate::identity::IDENTITY_ALGO) {
+            let policy = crate::identity::resolve_policy(policy);
+            let mut cache = crate::identity::IdentityCache::load(
+                crate::identity::cache_path_for_slot(slot),
+                &root,
+            );
+            let current = crate::identity::compute_identity(
+                &root,
+                &walk.records(),
+                eval,
+                policy,
+                &mut cache,
+            )?;
+            identity_drift = Some(current.value != *stamped_val);
+            current_identity = Some(current.value);
+        }
+    }
     Ok(StalenessSnapshot {
-        source_newer: source_newer || graph_lags,
+        source_newer,
+        graph_lags,
         doc_set_drift,
         corpus_policy_drift,
+        identity_drift,
         head_drift,
+        eval_faces: eval_faces.unwrap_or_default(),
+        stamped_identity: if identity_drift.is_some() {
+            stamped_identity_val
+        } else {
+            None
+        },
+        current_identity,
     })
 }
 
@@ -870,16 +983,16 @@ pub fn doc_set_delta(docs: &BTreeSet<String>, walk: &SourceWalk) -> DocDelta {
         .any(|d| d.ends_with(".ts") || d.ends_with(".tsx"));
     let mut disk: BTreeSet<&String> = BTreeSet::new();
     if has_py {
-        disk.extend(walk.py.iter());
+        disk.extend(walk.py.keys());
     }
     if has_rs {
-        disk.extend(walk.rs.iter());
+        disk.extend(walk.rs.keys());
     }
     if has_js {
-        disk.extend(walk.js.iter());
+        disk.extend(walk.js.keys());
     }
     if has_ts {
-        disk.extend(walk.ts.iter());
+        disk.extend(walk.ts.keys());
     }
     let missing_list: Vec<&String> = disk
         .iter()
@@ -980,6 +1093,8 @@ pub fn stamp_meta_core(
                 "source_faces",
                 "source_set_fingerprint",
                 "js_ts_profile_fingerprint",
+                "source_identity",
+                "identity_algo",
             ] {
                 if let Some(v) = m.get(key) {
                     if !v.is_null() {
@@ -1007,17 +1122,44 @@ pub fn stamp_meta_core(
                     .map(|d| d.relative_path.clone())
                     .collect();
                 if disk == docs {
-                    let names: Vec<&str> = faces.iter().map(|f| f.meta_name()).collect();
-                    payload["source_faces"] = serde_json::json!(names);
-                    payload["source_set_fingerprint"] =
-                        serde_json::json!(walk.fingerprint_for_faces(&faces));
-                    if faces.contains(&crate::language::LanguageFace::JavaScript)
-                        || faces.contains(&crate::language::LanguageFace::TypeScript)
-                    {
-                        payload["js_ts_profile_fingerprint"] =
-                            serde_json::json!(js_ts_profile_fingerprint(repo));
+                    // Identity first (source identity EP): its recompute
+                    // must succeed before ANY fresh key lands — a
+                    // failure here keeps stamped_fresh_keys false and
+                    // the preserve branch below stays truthful (failed
+                    // recompute ≡ mismatch; a partial fresh stamp would
+                    // pair a new fingerprint with a stale identity).
+                    // D13: Full policy — the indexed identity always
+                    // comes from actual bytes, never a query-side cache.
+                    let policy =
+                        crate::identity::resolve_policy(crate::identity::IdentityCachePolicy::Full);
+                    let mut cache = crate::identity::IdentityCache::load(
+                        crate::identity::cache_path_for_slot(index_path),
+                        repo,
+                    );
+                    match crate::identity::compute_identity(
+                        &resolve_repo(repo),
+                        &walk.records(),
+                        &faces,
+                        policy,
+                        &mut cache,
+                    ) {
+                        Ok(identity) => {
+                            let names: Vec<&str> = faces.iter().map(|f| f.meta_name()).collect();
+                            payload["source_faces"] = serde_json::json!(names);
+                            payload["source_set_fingerprint"] =
+                                serde_json::json!(walk.fingerprint_for_faces(&faces));
+                            if faces.contains(&crate::language::LanguageFace::JavaScript)
+                                || faces.contains(&crate::language::LanguageFace::TypeScript)
+                            {
+                                payload["js_ts_profile_fingerprint"] =
+                                    serde_json::json!(js_ts_profile_fingerprint(repo));
+                            }
+                            payload["source_identity"] = serde_json::json!(identity.value);
+                            payload["identity_algo"] = serde_json::json!(identity.algo);
+                            stamped_fresh_keys = true;
+                        }
+                        Err(_) => {} // → preserve branch
                     }
-                    stamped_fresh_keys = true;
                 }
             }
         }
@@ -1025,12 +1167,13 @@ pub fn stamp_meta_core(
     let prior_had_keys = prior.as_ref().is_some_and(|m| {
         m.get("source_set_fingerprint")
             .is_some_and(|v| !v.is_null())
+            || m.get("source_identity").is_some_and(|v| !v.is_null())
     });
     if !stamped_fresh_keys {
         preserve_prior_keys(&mut payload);
         if prior_had_keys {
             eprintln!(
-                "[WARN] stamp-meta：索引文檔集與磁碟語料不一致——保留既有 source-set fingerprint（drift 保持可見；重跑 build 產出一致配對）\n"
+                "[WARN] stamp-meta：索引文檔集與磁碟語料不一致——保留既有 source-set fingerprint／source identity（drift 保持可見；重跑 build 產出一致配對）\n"
             );
         }
     }

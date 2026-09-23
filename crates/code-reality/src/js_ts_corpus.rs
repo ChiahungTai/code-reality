@@ -33,8 +33,8 @@ pub fn collect_js_ts_corpus(repo: &Path) -> Result<JsTsCorpus, String> {
     // on backslash-separated walks, muse P2-10).
     let mut files = walk
         .js
-        .iter()
-        .chain(walk.ts.iter())
+        .keys()
+        .chain(walk.ts.keys())
         .map(|p| p.replace('\\', "/"))
         .collect::<BTreeSet<String>>();
     let files2 = std::mem::take(&mut files);

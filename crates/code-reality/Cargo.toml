@@ -10,6 +10,7 @@ scip = { workspace = true }
 protobuf = { workspace = true }
 rusqlite = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 toml = { workspace = true }
 libc = { workspace = true }
 regex = { workspace = true }

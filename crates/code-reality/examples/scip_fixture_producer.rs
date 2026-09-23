@@ -80,7 +80,7 @@ fn py_mode(repo: &Path, output: &Path) -> Result<(), String> {
     let walk = walk_sources(repo)?;
     let mut docs: Vec<(String, String)> = walk
         .py
-        .iter()
+        .keys()
         .map(|rel| {
             let name = PathBuf::from(rel)
                 .file_stem()
