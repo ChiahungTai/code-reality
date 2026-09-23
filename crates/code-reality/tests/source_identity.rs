@@ -338,8 +338,42 @@ fn tc13_torn_plane_guard_survives_identity_mode() {
         snap.needs_rebuild(),
         "graph_lags must be unconditional in identity mode: {snap:?}"
     );
+    // C2 (5.3 judge): the torn-plane reason survives to the CLI face —
+    // the verdict JSON must name it, or a mapping typo ships unnoticed.
+    let vout = freshness(&l.repo, true);
+    assert_eq!(vout.exit_code, 1, "torn plane is stale: {vout:?}");
+    let v = verdict_json(&vout);
+    assert_eq!(
+        v["stale_reasons"],
+        serde_json::json!(["torn-plane"]),
+        "identity matched + content unchanged ⇒ torn-plane is the only fatal reason"
+    );
     let out = ensure_fresh(&l.repo, &l.roots).unwrap();
     assert!(matches!(out, HealOutcome::Healed { .. }), "{out:?}");
+}
+
+/// C1 (5.3 judge): a hand-forged auto-mode meta carrying the identity
+/// pair but no `source_faces` must degrade to LEGACY (no identity
+/// compare) — the identity baseline is the stamped face set mirrored
+/// to eval scope (R22); a detected-scope fallback would silently
+/// compute a scope that was never stamped. Tool-written meta always
+/// carries all keys atomically, so this shape is out-of-band only.
+#[test]
+fn c1_partial_identity_meta_degrades_to_legacy() {
+    let l = lab(&[("app.py", "x = 1\n")]);
+    build_repo(&l.repo, None, &l.roots).expect("build");
+    let slot = slot_of(&l.repo);
+    std::fs::write(
+        code_reality::engine::meta_path(&slot),
+        r#"{"repo": "/x", "head": "h", "stamped_at": "2026-01-01T00:00:00+00:00", "tool": "t", "producer": "p", "selection": "auto", "source_identity": "deadbeef", "identity_algo": "sha256-v1"}"#,
+    )
+    .unwrap();
+    let snap = evaluate_staleness(&l.repo, &slot, WB).unwrap();
+    assert_eq!(
+        snap.identity_drift,
+        None,
+        "partial triple (no source_faces) ⇒ legacy, never detected-scope identity"
+    );
 }
 
 /// TC-15 (SM-13): stash push → stale; stash pop (content restored,

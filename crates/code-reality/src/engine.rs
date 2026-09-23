@@ -921,7 +921,14 @@ pub fn evaluate_staleness(
         .and_then(|m| m["identity_algo"].as_str().map(str::to_string));
     let mut identity_drift = None;
     let mut current_identity = None;
-    if let (Some(eval), Some(stamped_val)) = (&eval_faces, &stamped_identity_val) {
+    // Identity requires the STAMPED face set (judge C1): the identity
+    // baseline is defined over the stamped scope mirrored to eval — a
+    // meta carrying the identity pair without `source_faces` was never
+    // stamped by this tool, so it degrades to legacy rather than
+    // computing a detected-scope identity that was never recorded.
+    if let (Some(_stamped), Some(eval), Some(stamped_val)) =
+        (stamped_faces.as_ref(), &eval_faces, &stamped_identity_val)
+    {
         if stamped_algo.as_deref() == Some(crate::identity::IDENTITY_ALGO) {
             let policy = crate::identity::resolve_policy(policy);
             let mut cache = crate::identity::IdentityCache::load(
