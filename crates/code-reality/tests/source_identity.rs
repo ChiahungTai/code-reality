@@ -51,11 +51,7 @@ fn stamped_meta(repo: &Path) -> serde_json::Value {
 /// Clean no-cache identity over the repo's current disk corpus (all faces).
 fn clean_identity(repo: &Path) -> String {
     let walk = code_reality::engine::walk_sources(repo).unwrap();
-    let faces: BTreeSet<LanguageFace> = walk
-        .newest_by_face
-        .keys()
-        .copied()
-        .collect();
+    let faces: BTreeSet<LanguageFace> = walk.newest_by_face.keys().copied().collect();
     let records: BTreeMap<String, code_reality::identity::SourceRecord> = walk.records();
     compute_identity(
         &code_reality::engine::resolve_repo(repo),
@@ -71,7 +67,10 @@ fn clean_identity(repo: &Path) -> String {
 /// TC-8a: a consistent build stamps the identity pair (value + algo).
 #[test]
 fn tc8_stamp_writes_identity_keys_on_consistent_pair() {
-    let l = lab(&[("app.py", "x = 1\n"), ("src/a.mjs", "export const a = 1;\n")]);
+    let l = lab(&[
+        ("app.py", "x = 1\n"),
+        ("src/a.mjs", "export const a = 1;\n"),
+    ]);
     build_repo(&l.repo, None, &l.roots).expect("build");
     let meta = stamped_meta(&l.repo);
     let identity = meta["source_identity"].as_str().expect("identity stamped");
@@ -81,7 +80,11 @@ fn tc8_stamp_writes_identity_keys_on_consistent_pair() {
         "{identity}"
     );
     assert_eq!(meta["identity_algo"], "sha256-v1");
-    assert_eq!(identity, clean_identity(&l.repo), "stamped ≡ clean recompute");
+    assert_eq!(
+        identity,
+        clean_identity(&l.repo),
+        "stamped ≡ clean recompute"
+    );
 }
 
 /// TC-8b (D13): the stamp face is immune to a poisoned query-side
@@ -90,7 +93,10 @@ fn tc8_stamp_writes_identity_keys_on_consistent_pair() {
 /// bytes (Full bypasses the gate).
 #[test]
 fn tc8_stamp_is_immune_to_cache_pollution() {
-    let l = lab(&[("app.py", "x = 1\n"), ("src/a.mjs", "export const a = 1;\n")]);
+    let l = lab(&[
+        ("app.py", "x = 1\n"),
+        ("src/a.mjs", "export const a = 1;\n"),
+    ]);
     build_repo(&l.repo, None, &l.roots).expect("build");
     let clean = clean_identity(&l.repo);
     let cache_path = cache_path_for_slot(&slot_of(&l.repo));
@@ -101,7 +107,9 @@ fn tc8_stamp_is_immune_to_cache_pollution() {
     let mut cache = IdentityCache::load(cache_path.clone(), &l.repo);
     compute_identity(
         &code_reality::engine::resolve_repo(&l.repo),
-        &code_reality::engine::walk_sources(&l.repo).unwrap().records(),
+        &code_reality::engine::walk_sources(&l.repo)
+            .unwrap()
+            .records(),
         &BTreeSet::from([LanguageFace::Python, LanguageFace::JavaScript]),
         IdentityCachePolicy::WriteBack,
         &mut cache,
@@ -113,11 +121,7 @@ fn tc8_stamp_is_immune_to_cache_pollution() {
     assert!(entries.len() >= 2, "warm cache covers the corpus");
     let victim = entries.keys().next().unwrap().clone();
     entries[&victim]["hash"] = serde_json::json!(format!("{:0>64}", "poisoned"));
-    std::fs::write(
-        &cache_path,
-        serde_json::to_string_pretty(&payload).unwrap(),
-    )
-    .unwrap();
+    std::fs::write(&cache_path, serde_json::to_string_pretty(&payload).unwrap()).unwrap();
 
     // Rebuild: the stamp recomputes Full — the poisoned entry is ignored
     // AND overwritten with the true value.
@@ -162,7 +166,10 @@ fn tc8_docs_only_head_sync_keeps_identity_value() {
 /// visible for the identity axis exactly like the fingerprint axis).
 #[test]
 fn tc8_preserve_extends_to_identity_keys() {
-    let l = lab(&[("app.py", "x = 1\n"), ("src/a.mjs", "export const a = 1;\n")]);
+    let l = lab(&[
+        ("app.py", "x = 1\n"),
+        ("src/a.mjs", "export const a = 1;\n"),
+    ]);
     build_repo(&l.repo, None, &l.roots).expect("build");
     let stamped = stamped_meta(&l.repo)["source_identity"]
         .as_str()
@@ -203,7 +210,10 @@ fn keep_mtime(p: &Path, t: std::time::SystemTime) {
 /// identity drift fires.
 #[test]
 fn tc4_dirty_wt_edit_fires_identity_drift() {
-    let l = lab(&[("app.py", "x = 1\n"), ("src/a.mjs", "export const a = 1;\n")]);
+    let l = lab(&[
+        ("app.py", "x = 1\n"),
+        ("src/a.mjs", "export const a = 1;\n"),
+    ]);
     build_repo(&l.repo, None, &l.roots).expect("build");
     let snap0 = evaluate_staleness(&l.repo, &slot_of(&l.repo), WB).unwrap();
     assert_eq!(snap0.identity_drift, Some(false), "{snap0:?}");
@@ -212,7 +222,11 @@ fn tc4_dirty_wt_edit_fires_identity_drift() {
     std::thread::sleep(std::time::Duration::from_millis(20));
     std::fs::write(l.repo.join("src/a.mjs"), "export const a = 2;\n").unwrap();
     let snap = evaluate_staleness(&l.repo, &slot_of(&l.repo), WB).unwrap();
-    assert_eq!(snap.identity_drift, Some(true), "dirty WT detected: {snap:?}");
+    assert_eq!(
+        snap.identity_drift,
+        Some(true),
+        "dirty WT detected: {snap:?}"
+    );
     assert!(snap.needs_rebuild(), "{snap:?}");
     assert_eq!(
         snap.current_identity.as_deref(),
@@ -238,11 +252,11 @@ fn tc4_dirty_wt_edit_fires_identity_drift() {
 fn tc5_mtime_preserved_swap_rebuilds_not_serves() {
     let lab_mtime = |repo: &Path| repo.join("app.py").metadata().unwrap().modified().unwrap();
     let restore_secs_only = |p: &Path, t: std::time::SystemTime| {
-        let secs = t
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        keep_mtime(p, std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(secs));
+        let secs = t.duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+        keep_mtime(
+            p,
+            std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(secs),
+        );
     };
 
     // size-same form: content_hash route (tar-restore granularity)
@@ -294,9 +308,16 @@ fn tc5_mtime_preserved_swap_rebuilds_not_serves() {
 /// by a .mjs edit — the identity eval scope is the pinned face.
 #[test]
 fn tc9_explicit_pinned_face_scope_ignores_other_faces() {
-    let l = lab(&[("app.py", "x = 1\n"), ("src/a.mjs", "export const a = 1;\n")]);
-    build_repo(&l.repo, Some(code_reality::language::ProducerFamily::Python), &l.roots)
-        .expect("py-only build");
+    let l = lab(&[
+        ("app.py", "x = 1\n"),
+        ("src/a.mjs", "export const a = 1;\n"),
+    ]);
+    build_repo(
+        &l.repo,
+        Some(code_reality::language::ProducerFamily::Python),
+        &l.roots,
+    )
+    .expect("py-only build");
     let snap0 = evaluate_staleness(&l.repo, &slot_of(&l.repo), WB).unwrap();
     assert_eq!(
         snap0.eval_faces,
@@ -370,8 +391,7 @@ fn c1_partial_identity_meta_degrades_to_legacy() {
     .unwrap();
     let snap = evaluate_staleness(&l.repo, &slot, WB).unwrap();
     assert_eq!(
-        snap.identity_drift,
-        None,
+        snap.identity_drift, None,
         "partial triple (no source_faces) ⇒ legacy, never detected-scope identity"
     );
 }
@@ -381,7 +401,10 @@ fn c1_partial_identity_meta_degrades_to_legacy() {
 /// design could not deliver (D1).
 #[test]
 fn tc15_stash_roundtrip_converges_fresh() {
-    let l = lab(&[("app.py", "x = 1\n"), ("src/a.mjs", "export const a = 1;\n")]);
+    let l = lab(&[
+        ("app.py", "x = 1\n"),
+        ("src/a.mjs", "export const a = 1;\n"),
+    ]);
     build_repo(&l.repo, None, &l.roots).expect("build");
     let original = "export const a = 1;\n".to_string();
     let slot = slot_of(&l.repo);
@@ -411,12 +434,18 @@ fn tc15_stash_roundtrip_converges_fresh() {
 /// policy movement, but it is no longer a fatal signal.
 #[test]
 fn tc16_noop_exclude_change_is_fresh_with_degraded_signal() {
-    let l = lab(&[("app.py", "x = 1\n"), ("src/a.mjs", "export const a = 1;\n")]);
+    let l = lab(&[
+        ("app.py", "x = 1\n"),
+        ("src/a.mjs", "export const a = 1;\n"),
+    ]);
     build_repo(&l.repo, None, &l.roots).expect("build");
     std::thread::sleep(std::time::Duration::from_millis(20));
     // the pattern matches nothing — zero corpus effect
-    std::fs::write(l.repo.join(".code-reality.toml"), "exclude = [\"nothing-here/\"]\n")
-        .unwrap();
+    std::fs::write(
+        l.repo.join(".code-reality.toml"),
+        "exclude = [\"nothing-here/\"]\n",
+    )
+    .unwrap();
     let snap = evaluate_staleness(&l.repo, &slot_of(&l.repo), WB).unwrap();
     assert_eq!(
         snap.corpus_policy_drift,
@@ -435,7 +464,10 @@ fn tc16_noop_exclude_change_is_fresh_with_degraded_signal() {
 /// hash cost) — same shape as s4_legacy_meta_without_keys.
 #[test]
 fn legacy_meta_keeps_baseline_semantics_and_zero_identity() {
-    let l = lab(&[("app.py", "x = 1\n"), ("src/a.mjs", "export const a = 1;\n")]);
+    let l = lab(&[
+        ("app.py", "x = 1\n"),
+        ("src/a.mjs", "export const a = 1;\n"),
+    ]);
     build_repo(&l.repo, None, &l.roots).expect("build");
     let slot = slot_of(&l.repo);
     std::fs::write(
@@ -466,7 +498,10 @@ fn verdict_json(out: &code_reality::ToolOutput) -> serde_json::Value {
 #[test]
 fn tc7_freshness_json_contract_four_states() {
     // ---- state 1: fresh ----
-    let l = lab(&[("app.py", "x = 1\n"), ("src/a.mjs", "export const a = 1;\n")]);
+    let l = lab(&[
+        ("app.py", "x = 1\n"),
+        ("src/a.mjs", "export const a = 1;\n"),
+    ]);
     build_repo(&l.repo, None, &l.roots).expect("build");
     let out = freshness(&l.repo, true);
     assert_eq!(out.exit_code, 0, "fresh exits 0: {out:?}");
@@ -503,8 +538,10 @@ fn tc7_freshness_json_contract_four_states() {
     assert_eq!(v["identity_algo"], serde_json::json!("sha256-v1"));
     assert_eq!(v["serves"], serde_json::json!("current-tree"));
     assert_eq!(
-        v["repo"], 
-        serde_json::json!(code_reality::engine::resolve_repo(&l.repo).display().to_string())
+        v["repo"],
+        serde_json::json!(code_reality::engine::resolve_repo(&l.repo)
+            .display()
+            .to_string())
     );
     assert_eq!(
         v["slot"],
@@ -516,7 +553,13 @@ fn tc7_freshness_json_contract_four_states() {
     );
 
     // ---- state 2: stale (dirty WT) ----
-    let ajs_mtime = l.repo.join("src/a.mjs").metadata().unwrap().modified().unwrap();
+    let ajs_mtime = l
+        .repo
+        .join("src/a.mjs")
+        .metadata()
+        .unwrap()
+        .modified()
+        .unwrap();
     std::thread::sleep(std::time::Duration::from_millis(20));
     std::fs::write(l.repo.join("src/a.mjs"), "export const a = 2;\n").unwrap();
     let out = freshness(&l.repo, true);
@@ -553,11 +596,14 @@ fn tc7_freshness_json_contract_four_states() {
     );
     assert_eq!(v["serves"], serde_json::json!("legacy-signals"));
     assert!(
-        v["indexed_source_identity"].is_null()
-            && v["current_source_identity"].is_null(),
+        v["indexed_source_identity"].is_null() && v["current_source_identity"].is_null(),
         "legacy: current is NOT computed — no comparable face"
     );
-    assert_eq!(v["identity_algo"], serde_json::json!("sha256-v1"), "tool algo id, not a computation claim");
+    assert_eq!(
+        v["identity_algo"],
+        serde_json::json!("sha256-v1"),
+        "tool algo id, not a computation claim"
+    );
 
     // legacy-FRESH half: restore the corpus file's mtime — the CONTENT
     // stays changed (identity mode called this stale above), but the
@@ -577,7 +623,15 @@ fn tc7_freshness_json_contract_four_states() {
     std::fs::write(l2.repo.join("docs.md"), "v2\n").unwrap();
     for args in [
         vec!["add", "-A"],
-        vec!["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "docs"],
+        vec![
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-qm",
+            "docs",
+        ],
     ] {
         let st = std::process::Command::new("git")
             .args(&args)
@@ -587,11 +641,22 @@ fn tc7_freshness_json_contract_four_states() {
         assert!(st.success(), "git {args:?} failed");
     }
     let out = freshness(&l2.repo, true);
-    assert_eq!(out.exit_code, 0, "head drift does not kill fresh (D14): {out:?}");
+    assert_eq!(
+        out.exit_code, 0,
+        "head drift does not kill fresh (D14): {out:?}"
+    );
     let v = verdict_json(&out);
     assert_eq!(v["fresh"], serde_json::json!(true));
-    assert_eq!(v["head_drift"], serde_json::json!(true), "disclosed, not fatal");
-    assert_eq!(v["stale_reasons"], serde_json::json!([]), "head never enters reasons");
+    assert_eq!(
+        v["head_drift"],
+        serde_json::json!(true),
+        "disclosed, not fatal"
+    );
+    assert_eq!(
+        v["stale_reasons"],
+        serde_json::json!([]),
+        "head never enters reasons"
+    );
     assert_eq!(v["serves"], serde_json::json!("current-tree"));
 }
 
@@ -604,7 +669,10 @@ fn tc7_no_slot_fails_loud_with_empty_terminal_note() {
     let out = freshness(t.path(), true);
     assert_eq!(out.exit_code, 2, "{out:?}");
     assert!(out.stdout.is_empty(), "no-slot produces no JSON: {out:?}");
-    assert!(out.stderr.contains("build"), "names the remediation: {out:?}");
+    assert!(
+        out.stderr.contains("build"),
+        "names the remediation: {out:?}"
+    );
     assert!(
         out.stderr.contains("空終態") || out.stderr.contains("排除"),
         "carries the empty-terminal explanation: {out:?}"
@@ -637,7 +705,10 @@ fn tc7_route_and_usage_faces() {
     assert_eq!(out.exit_code, 2, "missing --repo is a usage fail: {out:?}");
     let out = code_reality::freshness::run(&["freshness", "--help"]);
     assert_eq!(out.exit_code, 0);
-    assert!(out.stdout.contains("usage: code-reality freshness"), "{out:?}");
+    assert!(
+        out.stdout.contains("usage: code-reality freshness"),
+        "{out:?}"
+    );
 
     let bin = env!("CARGO_BIN_EXE_code-reality");
     let t = tempfile::tempdir().unwrap();

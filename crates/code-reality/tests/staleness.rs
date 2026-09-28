@@ -89,13 +89,21 @@ fn evaluate_staleness_trigger_split() {
     // edit after slot → trigger (SM-3, the line-drift incident shape)
     std::thread::sleep(std::time::Duration::from_millis(20));
     std::fs::write(repo.join("a.py"), "y").unwrap();
-    assert!(evaluate_staleness(&repo, &slot, IdentityCachePolicy::WriteBack).unwrap().source_newer);
+    assert!(
+        evaluate_staleness(&repo, &slot, IdentityCachePolicy::WriteBack)
+            .unwrap()
+            .source_newer
+    );
 
     // re-freshen slot, then a NEW file → trigger (SM-2, missing-file shape)
     std::fs::write(&slot, ANY_BYTES).unwrap();
     std::thread::sleep(std::time::Duration::from_millis(20));
     std::fs::write(repo.join("new_mod.py"), "z").unwrap();
-    assert!(evaluate_staleness(&repo, &slot, IdentityCachePolicy::WriteBack).unwrap().source_newer);
+    assert!(
+        evaluate_staleness(&repo, &slot, IdentityCachePolicy::WriteBack)
+            .unwrap()
+            .source_newer
+    );
     drop(t);
 }
 
@@ -141,13 +149,17 @@ fn evaluate_staleness_head_drift_in_git_repo() {
     let slot = slot_with(&repo, ANY_BYTES);
     std::fs::write(meta_path(&slot), "{\"head\": \"deadbeef\"}\n").unwrap();
     assert_eq!(
-        evaluate_staleness(&repo, &slot, IdentityCachePolicy::WriteBack).unwrap().head_drift,
+        evaluate_staleness(&repo, &slot, IdentityCachePolicy::WriteBack)
+            .unwrap()
+            .head_drift,
         Some(true)
     );
     let head = git_head(&repo).unwrap();
     std::fs::write(meta_path(&slot), format!("{{\"head\": \"{head}\"}}\n")).unwrap();
     assert_eq!(
-        evaluate_staleness(&repo, &slot, IdentityCachePolicy::WriteBack).unwrap().head_drift,
+        evaluate_staleness(&repo, &slot, IdentityCachePolicy::WriteBack)
+            .unwrap()
+            .head_drift,
         Some(false)
     );
     drop(t);
@@ -166,7 +178,10 @@ fn walk_sources_rust_face_skips_target() {
         !w.rs.contains_key("target/debug/out/gen.rs"),
         "rust face skips target/"
     );
-    assert!(w.py.contains_key("target/tool.py"), "python face keeps target/");
+    assert!(
+        w.py.contains_key("target/tool.py"),
+        "python face keeps target/"
+    );
     drop(t);
 }
 

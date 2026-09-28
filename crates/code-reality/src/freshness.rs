@@ -83,13 +83,13 @@ pub fn freshness(repo: &Path, json: bool) -> ToolOutput {
             repo.display()
         ));
     }
-    let snap = match evaluate_staleness(&repo, &slot, resolve_policy(IdentityCachePolicy::WriteBack))
-    {
-        Ok(s) => s,
-        // D15 propagation: a check failure has NO fallback answer on a
-        // verdict face — exit 2, never a degraded verdict.
-        Err(e) => return ToolOutput::fail(format!("freshness 檢查失敗（{e}）")),
-    };
+    let snap =
+        match evaluate_staleness(&repo, &slot, resolve_policy(IdentityCachePolicy::WriteBack)) {
+            Ok(s) => s,
+            // D15 propagation: a check failure has NO fallback answer on a
+            // verdict face — exit 2, never a degraded verdict.
+            Err(e) => return ToolOutput::fail(format!("freshness 檢查失敗（{e}）")),
+        };
     // D14: head drift never kills fresh (AIR-135.2's LHS has no HEAD);
     // it is disclosed via `head_drift` only.
     let fresh = !snap.needs_rebuild();
@@ -144,7 +144,10 @@ pub fn freshness(repo: &Path, json: bool) -> ToolOutput {
     let mut stdout = if fresh {
         format!("[OK] fresh——serves {serves}\n")
     } else {
-        format!("[WARN] stale——serves {serves}（reasons：{}）\n", reasons.join("、"))
+        format!(
+            "[WARN] stale——serves {serves}（reasons：{}）\n",
+            reasons.join("、")
+        )
     };
     if head_drift {
         stdout.push_str(
