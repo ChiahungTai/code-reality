@@ -1,0 +1,21 @@
+   Compiling code-reality v0.9.3 (/Users/ctai/.codex/worktrees/5967/code-reality/crates/code-reality)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.53s
+     Running tests/publication.rs (target/debug/deps/publication-7ce257cea3d36424)
+
+running 1 test
+
+thread 'replaced_index_without_restamp_cannot_serve_current_tree' (74964527) panicked at crates/code-reality/tests/publication.rs:106:5:
+assertion `left != right` failed
+  left: String("current-tree")
+ right: "current-tree"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test replaced_index_without_restamp_cannot_serve_current_tree ... FAILED
+
+failures:
+
+failures:
+    replaced_index_without_restamp_cannot_serve_current_tree
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.63s
+
+error: test failed, to rerun pass `-p code-reality --test publication`

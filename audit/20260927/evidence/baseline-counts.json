@@ -1,0 +1,24 @@
+{
+  "cargo-test-workspace": {
+    "exit": 101,
+    "suite_results": 9,
+    "counts": {
+      "passed": 141,
+      "failed": 1,
+      "ignored": 0,
+      "measured": 0,
+      "filtered_out": 0
+    }
+  },
+  "cargo-test-isolated": {
+    "exit": 0,
+    "suite_results": 60,
+    "counts": {
+      "passed": 551,
+      "failed": 0,
+      "ignored": 0,
+      "measured": 0,
+      "filtered_out": 0
+    }
+  }
+}

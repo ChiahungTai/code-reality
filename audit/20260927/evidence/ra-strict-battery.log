@@ -1,0 +1,69 @@
+   Compiling serde_core v1.0.229
+   Compiling proc-macro2 v1.0.107
+   Compiling num-traits v0.2.19
+   Compiling getrandom v0.4.3
+   Compiling futures-channel v0.3.34
+   Compiling serde_json v1.0.151
+   Compiling futures-io v0.3.34
+   Compiling slab v0.4.12
+   Compiling hashbrown v0.17.1
+   Compiling rmcp v3.1.4
+   Compiling quote v1.0.47
+   Compiling syn v3.0.4
+   Compiling syn v2.0.119
+   Compiling darling_core v0.24.1
+   Compiling serde_derive_internals v0.30.0
+   Compiling uuid v1.25.0
+   Compiling tempfile v3.27.0
+   Compiling tracing-attributes v0.1.31
+   Compiling futures-macro v0.3.34
+   Compiling serde_derive v1.0.229
+   Compiling tokio-macros v2.7.2
+   Compiling ref-cast-impl v1.0.27
+   Compiling thiserror-impl v2.0.20
+   Compiling schemars_derive v1.2.2
+   Compiling ref-cast v1.0.27
+   Compiling tokio v1.53.1
+   Compiling futures-util v0.3.34
+   Compiling tracing v0.1.44
+   Compiling thiserror v2.0.20
+   Compiling darling_macro v0.24.1
+   Compiling indexmap v2.14.0
+   Compiling darling v0.24.1
+   Compiling serde v1.0.229
+   Compiling futures-executor v0.3.34
+   Compiling futures v0.3.34
+   Compiling rmcp-macros v3.1.4
+   Compiling tokio-util v0.7.19
+   Compiling chrono v0.4.45
+   Compiling schemars v1.2.2
+   Compiling code-reality-lsp-bridge v0.9.3 (/Users/ctai/.codex/worktrees/5967/code-reality/crates/code-reality-lsp-bridge)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.42s
+     Running tests/ra_equivalence_battery.rs (target/debug/deps/ra_equivalence_battery-5272b033e37b1b20)
+
+running 1 test
+
+thread 'rust_hover_roundtrip_vs_frozen_baseline' (73130036) panicked at crates/code-reality-lsp-bridge/tests/ra_equivalence_battery.rs:62:13:
+rust-analyzer version drift under strict battery: live 2026-05-25) vs frozen 1.96.0 — regenerate the baseline
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test rust_hover_roundtrip_vs_frozen_baseline ... FAILED
+
+failures:
+
+failures:
+    rust_hover_roundtrip_vs_frozen_baseline
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `-p code-reality-lsp-bridge --test ra_equivalence_battery`
+Error: client exited without proper shutdown sequence
+
+Stack backtrace:
+   0: <std::backtrace::Backtrace>::create
+   1: <anyhow::Error>::msg::<alloc::string::String>
+   2: anyhow::__private::format_err
+   3: rust_analyzer::run_server
+   4: std::sys::backtrace::__rust_begin_short_backtrace::<<stdx::thread::Builder>::spawn<rust_analyzer::run_server, core::result::Result<(), anyhow::Error>>::{closure#0}, core::result::Result<(), anyhow::Error>>
+   5: <std::thread::lifecycle::spawn_unchecked<<stdx::thread::Builder>::spawn<rust_analyzer::run_server, core::result::Result<(), anyhow::Error>>::{closure#0}, core::result::Result<(), anyhow::Error>>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+   6: <std::sys::thread::unix::Thread>::new::thread_start
+   7: __pthread_cond_wait

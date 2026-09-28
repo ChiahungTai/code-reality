@@ -1,0 +1,11 @@
+{
+  "label": "A-freshness",
+  "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality freshness --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/evidence/data/run5/A-in-build-mutation --json",
+  "env_overrides": {
+    "CODE_REALITY_IDENTITY_CACHE": "off",
+    "PATH_prefix": "/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/evidence/data/run5/bin"
+  },
+  "exit": 0,
+  "stdout": "{\n \"repo\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/evidence/data/run5/A-in-build-mutation\",\n \"slot\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/evidence/data/run5/A-in-build-mutation/.code-reality/scip/index.scip\",\n \"fresh\": true,\n \"stale_reasons\": [],\n \"head_drift\": false,\n \"faces\": [\n  \"python\"\n ],\n \"indexed_source_identity\": \"fde44f1a507daa153c058b82bae4e4f2f676b4223eb7463390e20e5eea4d3e72\",\n \"current_source_identity\": \"fde44f1a507daa153c058b82bae4e4f2f676b4223eb7463390e20e5eea4d3e72\",\n \"identity_algo\": \"sha256-v1\",\n \"serves\": \"current-tree\"\n}\n",
+  "stderr": ""
+}

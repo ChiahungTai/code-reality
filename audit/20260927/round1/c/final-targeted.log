@@ -1,0 +1,55 @@
+   Compiling code-reality v0.9.3 (/Users/ctai/.codex/worktrees/5967/code-reality/crates/code-reality)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.02s
+     Running tests/graph_db.rs (target/debug/deps/graph_db-6836c5f3c105a8b7)
+
+running 10 tests
+test is_test_rel_covers_rust_and_python_conventions ... ok
+test missing_cache_is_loud ... ok
+test build_fails_loud_on_stale_lsp_sidecar_superseded_by_newer_index ... ok
+test build_stamps_snapshot_metadata ... ok
+test build_creates_producer_keyed_schema ... ok
+test edge_sites_match_scip_edges_derivation ... ok
+test lsp_cache_builds_with_nearest_preceding_attribution ... ok
+test build_materializes_engine_read_chain_indexes ... ok
+test ensure_indexes_is_idempotent_on_built_db ... ok
+test build_is_idempotent_and_leaves_no_temp ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/publication.rs (target/debug/deps/publication-7ce257cea3d36424)
+
+running 9 tests
+test four_same_process_writers_publish_complete_graphs ... ok
+test source_edit_while_waiting_for_publication_preserves_old_plane ... ok
+test missing_main_graph_is_torn_alternate_is_optional ... ok
+test fresh_manual_stamp_has_no_consumption_evidence ... ok
+test replaced_index_without_restamp_cannot_serve_current_tree ... ok
+test policy_edit_during_production_rejects_publication ... ok
+test replaced_index_cannot_inherit_identity ... ok
+test production_edit_preserves_published_artifacts ... ok
+test manual_restamp_cannot_certify_content_edit ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.57s
+
+     Running tests/refresh.rs (target/debug/deps/refresh-550ed40772717fbe)
+
+running 16 tests
+test broken_release_bin_falls_through_to_dev_face ... ok
+test refresh_arg_guards ... ok
+test hook_install_refuses_active_local_hooks ... ok
+test hook_install_allows_rerun_with_inert_local_hooks ... ok
+test hook_install_upgrades_managed_script_in_place ... ok
+test hook_install_refuses_managed_hook_with_foreign_hooks_path ... ok
+test release_first_roots_prefers_non_cargo_home ... ok
+test hook_install_bytes_idempotent_and_reverse ... ok
+test hook_install_refuses_unmanaged_hook_and_foreign_hooks_path ... ok
+test refresh_docs_only_head_syncs_meta_only ... ok
+test refresh_does_not_nudge_current_format_or_absent_hook ... ok
+test refresh_nudges_old_format_managed_hook ... ok
+test refresh_heals_stale_via_real_producer ... ok
+test hook_non_numeric_marker_is_sanitized ... ok
+test hook_dead_runner_marker_is_respawned ... ok
+test hook_burst_coalesces_into_one_tail_refresh ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.21s
+

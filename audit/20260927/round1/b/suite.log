@@ -1,0 +1,194 @@
+   Compiling code-reality-lsp-bridge v0.9.3 (/Users/ctai/.codex/worktrees/5967/code-reality/crates/code-reality-lsp-bridge)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.67s
+     Running unittests src/lib.rs (target/debug/deps/code_reality_lsp_bridge-ec3d423d7dbec305)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/code-reality-lsp-bridge.rs (target/debug/deps/code_reality_lsp_bridge-9d366fb03d0a9eb8)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/bridge.rs (target/debug/deps/bridge-477b3be2e1d2f1f3)
+
+running 17 tests
+test backend_spawn_failure_is_loud ... ok
+test hover_missing_file_is_loud ... ok
+starting generic LSP server
+starting generic LSP server
+starting generic LSP server
+starting generic LSP server
+starting generic LSP server
+starting generic LSP server
+starting generic LSP server
+starting generic LSP server
+starting generic LSP server
+starting generic LSP server
+test backend_death_surfaces_loud_error ... ok
+starting generic LSP server
+test hover_function_def ... ok
+test hover_variable_type ... ok
+test hover_after_out_of_band_disk_edit ... ok
+starting generic LSP server
+starting generic LSP server
+starting generic LSP server
+shutting down server
+test session_handshake_and_shutdown ... ok
+starting generic LSP server
+test hover_null_position_returns_no_hover ... ok
+test check_repeat_without_edit_returns_cache_immediately ... ok
+test check_strict_reports_both_errors ... ok
+test check_file_cjk_filename_converges ... ok
+test lru_evict_preserves_overlay_edits ... ok
+test edit_then_check_reflects_new_content ... ok
+test busy_channel_does_not_break_other_file_convergence ... ok
+test check_file_timeout_path_warns ... ok
+test poisoned_cache_entry_does_not_converge ... ok
+test stalled_half_window_recovers_via_force_reopen ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.12s
+
+     Running tests/equivalence_battery.rs (target/debug/deps/equivalence_battery-23e2a1d751d67c60)
+
+running 1 test
+starting generic LSP server
+shutting down server
+test hover_parity_vs_pyright_baseline ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+     Running tests/lifecycle.rs (target/debug/deps/lifecycle-c72ffadf0cc891ae)
+
+running 8 tests
+test rejected_initialization_is_synchronously_terminal_and_reaped ... ok
+test healthy_diagnostics_and_server_request_reply ... ok
+test cached_check_rejects_known_death ... ok
+blocked concurrent_shutdown=false elapsed_ms=401 shutdown=None pid=11490 alive=false rescue=false result=Err("timeout waiting for transport write acknowledgement")
+interaction deadline elapsed_ms=417 reaped=true
+test check_deadline_includes_pending_interaction_wait ... ok
+test blocked_write_check_deadline_includes_sync ... ok
+initialize write deadline elapsed_ms=3005 reaped=true
+test blocked_initialize_write_uses_check_entry_deadline ... ok
+blocked concurrent_shutdown=true elapsed_ms=8107 shutdown=Some(8.005690958s) pid=11491 alive=false rescue=false result=Err("language server backend died — restart the bridge to recover")
+test concurrent_shutdown_bounds_blocked_write_and_reaps ... ok
+large-request shutdown elapsed_ms=8011 reaped=true transport_joined=true
+flood-client shutdown elapsed_ms=8009 reaped=true transport_joined=true
+test shutdown_bounds_request_write_and_reader_reply_backpressure ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 16.78s
+
+     Running tests/lsp_status_availability.rs (target/debug/deps/lsp_status_availability-6dd0730819e56ef3)
+
+running 3 tests
+test present_backend_reports_session_state ... ok
+test availability_probe_resolves_like_spawn ... ok
+test missing_backend_reports_unavailable_with_hint ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ra_equivalence_battery.rs (target/debug/deps/ra_equivalence_battery-3c38f9a610b03c37)
+
+running 2 tests
+
+thread 'full_version_identity_never_silently_skips' (75017706) panicked at crates/code-reality-lsp-bridge/tests/ra_equivalence_battery.rs:104:5:
+assertion `left == right` failed: rust-analyzer version drift: equivalence was NOT verified; review the oracle independently
+  left: "1.96.1 (ac68faa2 2026-05-25)"
+ right: "1.96.0 (ac68faa2 2026-05-25)"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'full_version_identity_never_silently_skips' (75017706) panicked at crates/code-reality-lsp-bridge/tests/ra_equivalence_battery.rs:104:5:
+assertion `left == right` failed: rust-analyzer version drift: equivalence was NOT verified; review the oracle independently
+  left: "1.96.0 (deadbeef 2026-05-25)"
+ right: "1.96.0 (ac68faa2 2026-05-25)"
+
+thread 'full_version_identity_never_silently_skips' (75017706) panicked at crates/code-reality-lsp-bridge/tests/ra_equivalence_battery.rs:104:5:
+assertion `left == right` failed: rust-analyzer version drift: equivalence was NOT verified; review the oracle independently
+  left: "1.96.0 (ac68faa2 2026-05-26)"
+ right: "1.96.0 (ac68faa2 2026-05-25)"
+test full_version_identity_never_silently_skips ... ok
+2026-09-27T19:07:31.319077+08:00  WARN notify error: No path was found. about ["/Users/ctai/.codex/worktrees/5967/code-reality/rust-analyzer.toml"]
+2026-09-27T19:07:31.319728+08:00  WARN notify error: No path was found. about ["/Users/ctai/Library/Application Support/rust-analyzer/rust-analyzer.toml"]
+2026-09-27T19:07:32.208812+08:00  WARN notify error: No path was found. about ["/Users/ctai/.codex/worktrees/5967/code-reality/rust-analyzer.toml"]
+2026-09-27T19:07:32.209353+08:00  WARN notify error: No path was found. about ["/Users/ctai/Library/Application Support/rust-analyzer/rust-analyzer.toml"]
+[OK] frozen hover write_message executed at 11:9
+[OK] frozen hover read_message executed at 19:9
+test rust_hover_roundtrip_vs_frozen_baseline ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.02s
+
+     Running tests/rust_backend.rs (target/debug/deps/rust_backend-c91e9d694494a06c)
+
+running 4 tests
+test route_by_extension ... ok
+starting generic LSP server
+2026-09-27T19:07:39.456435+08:00  WARN notify error: No path was found. about ["/Users/ctai/.codex/worktrees/5967/code-reality/rust-analyzer.toml"]
+2026-09-27T19:07:39.457081+08:00  WARN notify error: No path was found. about ["/Users/ctai/Library/Application Support/rust-analyzer/rust-analyzer.toml"]
+2026-09-27T19:07:40.957722+08:00  WARN notify error: No path was found. about ["/Users/ctai/.codex/worktrees/5967/code-reality/rust-analyzer.toml"]
+2026-09-27T19:07:40.958281+08:00  WARN notify error: No path was found. about ["/Users/ctai/Library/Application Support/rust-analyzer/rust-analyzer.toml"]
+shutting down server
+test mixed_language_sessions_are_independent ... ok
+2026-09-27T19:07:47.780247+08:00  WARN notify error: No path was found. about ["/Users/ctai/.codex/worktrees/5967/code-reality/rust-analyzer.toml"]
+2026-09-27T19:07:47.78115+08:00  WARN notify error: No path was found. about ["/Users/ctai/Library/Application Support/rust-analyzer/rust-analyzer.toml"]
+2026-09-27T19:07:49.31923+08:00  WARN notify error: No path was found. about ["/Users/ctai/.codex/worktrees/5967/code-reality/rust-analyzer.toml"]
+2026-09-27T19:07:49.319838+08:00  WARN notify error: No path was found. about ["/Users/ctai/Library/Application Support/rust-analyzer/rust-analyzer.toml"]
+2026-09-27T19:07:55.987398+08:00  WARN overly long loop turn took 108.526042ms (event handling took 108.509333ms): PrimeCaches(End { cancelled: false })
+test rust_edit_then_check_native_diagnostics ... ok
+2026-09-27T19:08:10.850969+08:00  WARN notify error: No path was found. about ["/Users/ctai/.codex/worktrees/5967/code-reality/rust-analyzer.toml"]
+2026-09-27T19:08:10.851973+08:00  WARN notify error: No path was found. about ["/Users/ctai/Library/Application Support/rust-analyzer/rust-analyzer.toml"]
+2026-09-27T19:08:11.8121+08:00  WARN notify error: No path was found. about ["/Users/ctai/.codex/worktrees/5967/code-reality/rust-analyzer.toml"]
+2026-09-27T19:08:11.812644+08:00  WARN notify error: No path was found. about ["/Users/ctai/Library/Application Support/rust-analyzer/rust-analyzer.toml"]
+starting generic LSP server
+test rust_backend_death_leaves_python_alive ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 37.56s
+
+     Running tests/ts_backend.rs (target/debug/deps/ts_backend-92e5c8a5c89a5083)
+
+running 20 tests
+test langspec_rejects_foreign_and_unsupported_extensions ... ok
+test langspec_extension_table_exact ... ok
+test backend_command_display_renders_program_plus_args ... ok
+test resolver_falls_back_to_bare_name_on_miss ... ok
+test resolver_explicit_override_short_circuits ... ok
+test backend_command_constructor_shapes ... ok
+test session_for_routes_eight_extensions_before_spawn ... ok
+test status_present_ts_backend_reports_session_state ... ok
+test resolver_honors_node_bin_dir_roots ... ok
+test resolver_prefers_workspace_node_modules ... ok
+test status_missing_ts_backend_reports_unavailable_with_guidance ... ok
+test status_report_lists_three_families_in_order ... ok
+starting generic LSP server
+fake_lsp_server: --stdio argument required (typed backend args contract)
+test typescript_backend_requires_stdio_arg ... ok
+test out_of_band_disk_edit_is_synced ... ok
+test six_extensions_route_with_exact_language_ids ... ok
+test lru_close_reopen_retains_unpersisted_edit ... ok
+test ts_diagnostics_push_then_converge_after_correction ... ok
+fake_lsp_server: --stdio argument required (typed backend args contract)
+fake_lsp_server: --stdio argument required (typed backend args contract)
+test spawn_argv_equivalence_and_stdio ... ok
+test workspace_node_modules_backend_is_spawned ... ok
+2026-09-27T19:08:18.184215+08:00  WARN notify error: No path was found. about ["/Users/ctai/.codex/worktrees/5967/code-reality/rust-analyzer.toml"]
+2026-09-27T19:08:18.184842+08:00  WARN notify error: No path was found. about ["/Users/ctai/Library/Application Support/rust-analyzer/rust-analyzer.toml"]
+2026-09-27T19:08:19.741824+08:00  WARN notify error: No path was found. about ["/Users/ctai/.codex/worktrees/5967/code-reality/rust-analyzer.toml"]
+2026-09-27T19:08:19.742289+08:00  WARN notify error: No path was found. about ["/Users/ctai/Library/Application Support/rust-analyzer/rust-analyzer.toml"]
+test backend_death_isolation_both_directions ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.68s
+
+     Running tests/version_face.rs (target/debug/deps/version_face-9d71cd3ef2d69aba)
+
+running 1 test
+test version_face_carries_rev ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.19s
+
+   Doc-tests code_reality_lsp_bridge
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

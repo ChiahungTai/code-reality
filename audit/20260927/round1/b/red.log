@@ -1,0 +1,37 @@
+   Compiling code-reality-lsp-bridge v0.9.3 (/Users/ctai/.codex/worktrees/5967/code-reality/crates/code-reality-lsp-bridge)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.36s
+     Running tests/lifecycle.rs (target/debug/deps/lifecycle-3e0759f7c98ee747)
+
+running 5 tests
+
+thread 'rejected_initialization_is_synchronously_terminal_and_reaped' (74935291) panicked at crates/code-reality-lsp-bridge/tests/lifecycle.rs:38:5:
+failed init must be terminal before returning
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test rejected_initialization_is_synchronously_terminal_and_reaped ... FAILED
+
+thread 'cached_check_rejects_known_death' (74935288) panicked at crates/code-reality-lsp-bridge/tests/lifecycle.rs:31:81:
+called `Result::unwrap_err()` on an `Ok` value: "count=0\n"
+test cached_check_rejects_known_death ... FAILED
+test healthy_diagnostics_and_server_request_reply ... ok
+blocked concurrent_shutdown=false elapsed_ms=2007 shutdown=None pid=80261 alive=false rescue=true result=Err("Broken pipe (os error 32)")
+
+thread 'blocked_write_check_deadline_includes_sync' (74935287) panicked at crates/code-reality-lsp-bridge/tests/lifecycle.rs:55:5:
+deadline required external rescue
+test blocked_write_check_deadline_includes_sync ... FAILED
+blocked concurrent_shutdown=true elapsed_ms=12105 shutdown=Some(12.003783583s) pid=80262 alive=false rescue=true result=Err("Broken pipe (os error 32)")
+
+thread 'concurrent_shutdown_bounds_blocked_write_and_reaps' (74935289) panicked at crates/code-reality-lsp-bridge/tests/lifecycle.rs:55:5:
+deadline required external rescue
+test concurrent_shutdown_bounds_blocked_write_and_reaps ... FAILED
+
+failures:
+
+failures:
+    blocked_write_check_deadline_includes_sync
+    cached_check_rejects_known_death
+    concurrent_shutdown_bounds_blocked_write_and_reaps
+    rejected_initialization_is_synchronously_terminal_and_reaped
+
+test result: FAILED. 1 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.72s
+
+error: test failed, to rerun pass `-p code-reality-lsp-bridge --test lifecycle`

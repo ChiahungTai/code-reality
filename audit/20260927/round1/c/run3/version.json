@@ -1,0 +1,8 @@
+{
+  "label": "version",
+  "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality --version",
+  "exit": 0,
+  "stdout": "0.9.3+eaa5d24\n",
+  "stderr": "",
+  "elapsed": 0.012273000087589025
+}

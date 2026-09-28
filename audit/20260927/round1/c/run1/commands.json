@@ -1,0 +1,26 @@
+[
+  {
+    "label": "version",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality --version",
+    "exit": 0,
+    "stdout": "0.9.3+eaa5d24\n",
+    "stderr": "",
+    "elapsed": 1.2988331250380725
+  },
+  {
+    "label": "A-stable-build",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run1/A-production-drift --json",
+    "exit": 0,
+    "stdout": "{\n \"repo\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run1/A-production-drift\",\n \"face\": \"python-face\",\n \"producers\": [\n  \"pyrefly-index round1-independent-deriving-fixture\"\n ],\n \"index\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run1/A-production-drift/.code-reality/scip/index.scip\",\n \"nodes\": 2,\n \"edges\": 0,\n \"graph_rebuilt\": false,\n \"indexes\": {\n  \"created\": 0,\n  \"skipped\": 4\n },\n \"source_identity\": \"b26a8298b240703e49491ad8bf18b1311788e38a085624640320a4c2e839fc33\",\n \"notes\": [\n  \"\u6392\u9664\u96c6\uff1a.venv/\uff08\u5167\u5efa\uff09\",\n  \"python \u817f\uff1a1 governed \u6587\u6a94\",\n  \"\u5168\u91cf\u91cd\u7522\uff1aproducer \u6bcf\u6b21\u91cd\u5efa\uff08\u51aa\u7b49\uff09\"\n ]\n}\n",
+    "stderr": "",
+    "elapsed": 0.860027958988212
+  },
+  {
+    "label": "A-stable-freshness",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality freshness --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run1/A-production-drift --json",
+    "exit": 0,
+    "stdout": "{\n \"repo\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run1/A-production-drift\",\n \"slot\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run1/A-production-drift/.code-reality/scip/index.scip\",\n \"fresh\": true,\n \"stale_reasons\": [],\n \"head_drift\": false,\n \"faces\": [\n  \"python\"\n ],\n \"indexed_source_identity\": \"b26a8298b240703e49491ad8bf18b1311788e38a085624640320a4c2e839fc33\",\n \"current_source_identity\": \"b26a8298b240703e49491ad8bf18b1311788e38a085624640320a4c2e839fc33\",\n \"identity_algo\": \"sha256-v1\",\n \"serves\": \"current-tree\"\n}\n",
+    "stderr": "",
+    "elapsed": 0.012482375022955239
+  }
+]

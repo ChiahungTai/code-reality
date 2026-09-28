@@ -1,0 +1,3 @@
+first=Err("initialize handshake failed: server error on `initialize`: {\"code\":-32603,\"message\":\"transient initialization failure\"}")
+second=Err("language server backend died (command: /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/evidence/lsp/probe backend reject-once) — restart the bridge to recover"); dead=true; pid=None
+fresh_session_control=Ok(Object {"jsonrpc": String("2.0"), "id": Number(2), "result": Null})

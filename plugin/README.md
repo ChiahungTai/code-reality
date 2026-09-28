@@ -16,7 +16,17 @@ daemon) and the usage skill:
   `.py` → pyrefly (`hover` / `check_file` / `edit_file` / `lsp_status`),
   `.rs` → rust-analyzer (same tools), and the six JS/TS extensions →
   typescript-language-server (same tools). Each backend spawns lazily
-  and independently.
+  and independently. Current checks reject known backend death, including
+  before accepting cached diagnostics. Failed initialization is terminal for
+  that session; restart the bridge to recover. Transport writes await bounded
+  acknowledgements; check and shutdown budgets start at their respective entry
+  points, and child cleanup does not depend on the stdin writer lock.
+
+MCP cancellation suppresses response delivery; already-started blocking work
+can continue and publish files. Closing the stdio transport may await that
+work and does not imply rollback. Tool output and internal-error text are
+bounded with a UTF-8-safe truncation marker; parameter-validation errors
+are outside this bound. JSON framing adds overhead.
 
 ## Prerequisites (the binaries)
 
@@ -30,6 +40,8 @@ It rechecks those binaries after install and fails loud unless the uv face
 actually converged. The bridge wrapper resolves that same uv directory and
 waits for its pinned bridge during the twin bootstrap. `PATH`/cargo resolution
 is the developer face and is used only with `CODE_REALITY_BOOTSTRAP=off`.
+The pin accepts the exact release, optionally followed by `+build-revision`;
+neighboring releases and prerelease suffixes do not satisfy it.
 First-session bootstrap needs network once; an offline first session fails
 loud and retries the next one.
 

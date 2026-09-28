@@ -1,0 +1,23 @@
+   Compiling code-reality v0.9.3 (/Users/ctai/.codex/worktrees/5967/code-reality/crates/code-reality)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 15.18s
+     Running tests/publication.rs (target/debug/deps/publication-7ce257cea3d36424)
+
+running 5 tests
+
+thread 'four_same_process_writers_publish_complete_graphs' (74959275) panicked at crates/code-reality/tests/publication.rs:90:9:
+derived table flows must be materialized
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test four_same_process_writers_publish_complete_graphs ... FAILED
+test production_edit_preserves_published_artifacts ... ok
+test replaced_index_cannot_inherit_identity ... ok
+test manual_restamp_cannot_certify_content_edit ... ok
+test missing_main_graph_is_torn_alternate_is_optional ... ok
+
+failures:
+
+failures:
+    four_same_process_writers_publish_complete_graphs
+
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.10s
+
+error: test failed, to rerun pass `-p code-reality --test publication`

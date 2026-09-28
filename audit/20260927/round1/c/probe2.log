@@ -1,0 +1,13 @@
+WARN `--no-project` was provided, but no project was found
+WARN `--no-project` was provided, but no project was found
+Traceback (most recent call last):
+  File "/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/demo_publication.py", line 177, in <module>
+    main()
+    ~~~~^^
+  File "/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/demo_publication.py", line 162, in main
+    run("D-owner-death-recovery", ["graph_db", "build", "--repo", str(d), "--json"])
+    ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/demo_publication.py", line 72, in run
+    assert result.returncode == expected, (label, result.returncode, result.stderr)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ('D-owner-death-recovery', 1, '[FAIL] data-plane writer busy (5s wait budget); retry after the active writer finishes\n')

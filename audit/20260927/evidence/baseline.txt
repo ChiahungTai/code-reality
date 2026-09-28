@@ -1,0 +1,5 @@
+?? audit/
+eaa5d2462ea7821021ad0ea87403484ac0e47538 chore(release): v0.9.3 — source identity freshness face — content-addressed dirty-WT identity
+rustc 1.96.0 (ac68faa20 2026-05-25)
+cargo 1.96.0 (30a34c682 2026-05-25)
+Darwin arm64

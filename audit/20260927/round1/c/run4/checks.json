@@ -1,0 +1,34 @@
+[
+  "production edit rejects publication; prior slot/meta/graph byte-identical",
+  "manual restamp retains prior identity and stale content verdict",
+  "graph publication failure -> missing/torn -> refresh recovery; own temp cleanup",
+  {
+    "concurrency": "graph",
+    "writers": 4,
+    "nodes": 5000,
+    "derived_counts": {
+      "flows": 0,
+      "flow_memberships": 0,
+      "communities": 1
+    }
+  },
+  {
+    "concurrency": "mixed",
+    "writers": 4,
+    "nodes": 5000,
+    "derived_counts": {
+      "flows": 0,
+      "flow_memberships": 0,
+      "communities": 1
+    }
+  },
+  "bounded busy <8s and OS releases lock after SIGKILL",
+  {
+    "derived_nonempty": {
+      "flows": 1,
+      "flow_memberships": 8,
+      "communities": 1
+    },
+    "concurrent_writers": 4
+  }
+]

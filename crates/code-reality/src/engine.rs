@@ -720,7 +720,7 @@ pub fn walk_sources(repo: &Path) -> Result<SourceWalk, String> {
 pub struct StalenessSnapshot {
     /// Raw mtime-newness of the scoped corpus (no graph_lags folding).
     pub source_newer: bool,
-    /// graph.db older than the slot — torn data plane (muse P1-3).
+    /// Required main graph absent or older than the slot: torn data plane.
     pub graph_lags: bool,
     pub doc_set_drift: Option<bool>,
     pub corpus_policy_drift: Option<bool>,
@@ -887,13 +887,15 @@ pub fn evaluate_staleness(
     // SPLIT out of source_newer (source identity EP): needs_rebuild
     // consumes it unconditionally — identity equality must never
     // short-circuit the torn-plane guard (judge R1).
-    let graph_lags = slot
-        .parent()
-        .map(|d| d.parent().map(|p| p.join("graph.db")))
-        .flatten()
-        .and_then(|g| g.metadata().ok())
-        .and_then(|m| m.modified().ok())
-        .is_some_and(|gm| gm < slot_m);
+    // Only the canonical main slot requires a graph. Projection/alternate
+    // indexes are legitimate index-only inputs.
+    let canonical_slot = default_index_path(&root)?;
+    let is_main = resolve_repo(slot) == resolve_repo(&canonical_slot);
+    let graph_lags = is_main
+        && crate::graph_db::db_path(&root)
+            .metadata()
+            .and_then(|m| m.modified())
+            .map_or(true, |gm| gm < slot_m);
     let stamped = meta
         .as_ref()
         .and_then(|m| m["head"].as_str().map(str::to_string))
@@ -929,7 +931,12 @@ pub fn evaluate_staleness(
     if let (Some(_stamped), Some(eval), Some(stamped_val)) =
         (stamped_faces.as_ref(), &eval_faces, &stamped_identity_val)
     {
-        if stamped_algo.as_deref() == Some(crate::identity::IDENTITY_ALGO) {
+        if stamped_algo.as_deref() == Some(crate::identity::IDENTITY_ALGO)
+            && meta
+                .as_ref()
+                .and_then(|m| m["index_sha256"].as_str())
+                .is_some()
+        {
             let policy = crate::identity::resolve_policy(policy);
             let mut cache = crate::identity::IdentityCache::load(
                 crate::identity::cache_path_for_slot(slot),
@@ -942,7 +949,14 @@ pub fn evaluate_staleness(
                 policy,
                 &mut cache,
             )?;
-            identity_drift = Some(current.value != *stamped_val);
+            let bound_index = meta
+                .as_ref()
+                .and_then(|m| m["index_sha256"].as_str())
+                .unwrap();
+            identity_drift = Some(
+                current.value != *stamped_val
+                    || crate::identity::artifact_hash(slot)? != bound_index,
+            );
             current_identity = Some(current.value);
         }
     }
@@ -1015,6 +1029,54 @@ pub fn doc_set_delta(docs: &BTreeSet<String>, walk: &SourceWalk) -> DocDelta {
 
 // ---------- stamp core (S4) ----------
 
+/// Production interval observation. Full uncached hashes plus corpus policy;
+/// endpoint equality does not rule out ABA or edits after the final check.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct ProductionIdentity {
+    pub(crate) faces: BTreeSet<crate::language::LanguageFace>,
+    pub(crate) docs: BTreeSet<String>,
+    pub(crate) identity: crate::identity::Identity,
+    fingerprint: String,
+    profile: Option<String>,
+    js_ts_profile: String,
+}
+
+impl ProductionIdentity {
+    pub(crate) fn capture(
+        repo: &Path,
+        producer: Option<crate::language::ProducerFamily>,
+    ) -> Result<Self, String> {
+        let walk = walk_sources(repo)?;
+        let records = walk.records();
+        let faces: BTreeSet<_> = records
+            .values()
+            .map(|r| r.face)
+            .filter(|f| producer.is_none_or(|p| f.producer() == p))
+            .collect();
+        let identity = crate::identity::compute_identity(
+            repo,
+            &records,
+            &faces,
+            crate::identity::IdentityCachePolicy::ReadOnly,
+            &mut crate::identity::IdentityCache::disabled(),
+        )?;
+        let profile_path = repo.join(".code-reality.toml");
+        let profile = match std::fs::metadata(&profile_path) {
+            Ok(_) => Some(crate::identity::artifact_hash(&profile_path)?),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(format!("profile identity: {e}")),
+        };
+        Ok(Self {
+            docs: walk.paths_for_faces(&faces),
+            fingerprint: walk.fingerprint_for_faces(&faces),
+            faces,
+            identity,
+            profile,
+            js_ts_profile: js_ts_profile_fingerprint(repo),
+        })
+    }
+}
+
 /// Stamp-write failure split so the cli `--stamp-meta` mode keeps its two
 /// frozen faces (git-warn + HEAD fail; write fail) while the refresh
 /// head-sync renders both to stderr.
@@ -1032,18 +1094,30 @@ impl std::fmt::Display for StampError {
     }
 }
 
-/// Stamp-write core shared by the umbrella build (face-accurate producer
-/// string from the legs it ran), the refresh head-sync (preserves the
-/// existing producer value), and the cli `--stamp-meta` mode (frozen
-/// stdout face; resolve-on-fresh). Returns the stamped head; the payload
-/// key order (repo/head/stamped_at/tool/producer) is the frozen Python
-/// dict order.
+/// Manual/head-sync stamp: preserve byte-bound provenance, never certify
+/// current sources as consumed. The umbrella build uses the private locked
+/// entry with a validated production observation. Returns the stamped head;
+/// repo/head/stamped_at/tool/producer retain the frozen payload key order.
 pub fn stamp_meta_core(
     repo: &Path,
     index_path: &Path,
     roots: &[PathBuf],
     producer: Option<&str>,
     selection: Option<&str>,
+) -> Result<String, StampError> {
+    let writer =
+        crate::publication_writer::WriterGuard::acquire(repo).map_err(StampError::Write)?;
+    stamp_meta_locked(repo, index_path, roots, producer, selection, None, &writer)
+}
+
+pub(crate) fn stamp_meta_locked(
+    repo: &Path,
+    index_path: &Path,
+    roots: &[PathBuf],
+    producer: Option<&str>,
+    selection: Option<&str>,
+    validated: Option<&ProductionIdentity>,
+    _writer: &crate::publication_writer::WriterGuard,
 ) -> Result<String, StampError> {
     let head = git_head(repo).map_err(StampError::Git)?;
     // Face-accurate provenance: explicit wins; otherwise preserve an
@@ -1081,27 +1155,25 @@ pub fn stamp_meta_core(
         "producer": producer,
         "selection": selection,
     });
-    // S4 identity keys (the source-set fingerprint family) describe the
-    // INDEX's corpus contract, not the disk. Fresh pairs are stamped
-    // ONLY when the index document set equals the current disk corpus
-    // for the index's faces (one walk — stamping a fingerprint of
-    // drifted disk state over an old index would launder a delete into
-    // freshness). On a mismatch (or failed recompute) the PRIOR keys are
-    // PRESERVED verbatim: they still truthfully describe this unchanged
-    // index, so the next staleness evaluation compares them against
-    // drifted disk and the delete/rename stays visible (codex blocker —
-    // the earlier drop-the-keys design degraded to mtime-only). Never
-    // fabricate keys: a legacy keyless meta stays keyless until a real
-    // rebuild stamps a consistent pair.
+    // Manual/head-sync stamps cannot establish consumption evidence. Preserve
+    // prior identity only for identical index bytes and the same repo/scope.
     let prior = load_meta(index_path).0;
+    let index_hash = crate::identity::artifact_hash(index_path).map_err(StampError::Write)?;
     let preserve_prior_keys = |payload: &mut serde_json::Value| {
         if let Some(m) = &prior {
+            if m["index_sha256"].as_str() != Some(index_hash.as_str())
+                || m["repo"] != payload["repo"]
+                || m["selection"] != payload["selection"]
+            {
+                return;
+            }
             for key in [
                 "source_faces",
                 "source_set_fingerprint",
                 "js_ts_profile_fingerprint",
                 "source_identity",
                 "identity_algo",
+                "index_sha256",
             ] {
                 if let Some(v) = m.get(key) {
                     if !v.is_null() {
@@ -1111,78 +1183,29 @@ pub fn stamp_meta_core(
             }
         }
     };
-    let mut stamped_fresh_keys = false;
-    if let Ok(loaded) = load_index(index_path) {
-        let faces: BTreeSet<crate::language::LanguageFace> = loaded
+    if let Some(a) = validated {
+        let loaded = load_index(index_path).map_err(StampError::Write)?;
+        let docs: BTreeSet<_> = loaded
             .index
             .documents
             .iter()
-            .filter_map(|d| crate::language::LanguageFace::from_path(Path::new(&d.relative_path)))
+            .map(|d| d.relative_path.clone())
             .collect();
-        if !faces.is_empty() {
-            if let Ok(walk) = walk_sources(repo) {
-                let disk = walk.paths_for_faces(&faces);
-                let docs: BTreeSet<String> = loaded
-                    .index
-                    .documents
-                    .iter()
-                    .map(|d| d.relative_path.clone())
-                    .collect();
-                if disk == docs {
-                    // Identity first (source identity EP): its recompute
-                    // must succeed before ANY fresh key lands — a
-                    // failure here keeps stamped_fresh_keys false and
-                    // the preserve branch below stays truthful (failed
-                    // recompute ≡ mismatch; a partial fresh stamp would
-                    // pair a new fingerprint with a stale identity).
-                    // D13: Full policy — the indexed identity always
-                    // comes from actual bytes, never a query-side cache.
-                    let policy =
-                        crate::identity::resolve_policy(crate::identity::IdentityCachePolicy::Full);
-                    let mut cache = crate::identity::IdentityCache::load(
-                        crate::identity::cache_path_for_slot(index_path),
-                        repo,
-                    );
-                    match crate::identity::compute_identity(
-                        &resolve_repo(repo),
-                        &walk.records(),
-                        &faces,
-                        policy,
-                        &mut cache,
-                    ) {
-                        Ok(identity) => {
-                            let names: Vec<&str> = faces.iter().map(|f| f.meta_name()).collect();
-                            payload["source_faces"] = serde_json::json!(names);
-                            payload["source_set_fingerprint"] =
-                                serde_json::json!(walk.fingerprint_for_faces(&faces));
-                            if faces.contains(&crate::language::LanguageFace::JavaScript)
-                                || faces.contains(&crate::language::LanguageFace::TypeScript)
-                            {
-                                payload["js_ts_profile_fingerprint"] =
-                                    serde_json::json!(js_ts_profile_fingerprint(repo));
-                            }
-                            payload["source_identity"] = serde_json::json!(identity.value);
-                            payload["identity_algo"] = serde_json::json!(identity.algo);
-                            stamped_fresh_keys = true;
-                        }
-                        Err(_) => {} // → preserve branch
-                    }
-                }
+        if docs == a.docs && !a.faces.is_empty() {
+            payload["source_faces"] =
+                serde_json::json!(a.faces.iter().map(|f| f.meta_name()).collect::<Vec<_>>());
+            payload["source_set_fingerprint"] = serde_json::json!(a.fingerprint);
+            if a.faces.contains(&crate::language::LanguageFace::JavaScript)
+                || a.faces.contains(&crate::language::LanguageFace::TypeScript)
+            {
+                payload["js_ts_profile_fingerprint"] = serde_json::json!(a.js_ts_profile);
             }
+            payload["source_identity"] = serde_json::json!(a.identity.value);
+            payload["identity_algo"] = serde_json::json!(a.identity.algo);
+            payload["index_sha256"] = serde_json::json!(index_hash);
         }
-    }
-    let prior_had_keys = prior.as_ref().is_some_and(|m| {
-        m.get("source_set_fingerprint")
-            .is_some_and(|v| !v.is_null())
-            || m.get("source_identity").is_some_and(|v| !v.is_null())
-    });
-    if !stamped_fresh_keys {
+    } else {
         preserve_prior_keys(&mut payload);
-        if prior_had_keys {
-            eprintln!(
-                "[WARN] stamp-meta：索引文檔集與磁碟語料不一致——保留既有 source-set fingerprint／source identity（drift 保持可見；重跑 build 產出一致配對）\n"
-            );
-        }
     }
     let text = format!("{}\n", serde_json::to_string_pretty(&payload).unwrap());
     std::fs::write(&sidecar, &text)

@@ -72,7 +72,12 @@ pub struct DerivedReport {
 /// over the fresh db and writes flows/communities back, plus the
 /// nodes.community_id column.
 pub fn materialize_derived(repo: &Path) -> Result<DerivedReport, String> {
+    let _writer = crate::publication_writer::WriterGuard::acquire(repo)?;
     let db = db_path(repo);
+    materialize_derived_at(&db)
+}
+
+fn materialize_derived_at(db: &Path) -> Result<DerivedReport, String> {
     if !db.exists() {
         return Err(format!(
             "graph.db 不在：{}（先 graph_db build）",
@@ -575,6 +580,15 @@ fn attribute_nearest(
 /// edge ontology). Core over an explicit index path; the CLI face
 /// resolves the in-repo slot.
 pub fn build_from_cache_at(repo: &Path, index_path: &Path) -> Result<BuildReport, String> {
+    let writer = crate::publication_writer::WriterGuard::acquire(repo)?;
+    build_from_cache_locked(repo, index_path, &writer)
+}
+
+pub(crate) fn build_from_cache_locked(
+    repo: &Path,
+    index_path: &Path,
+    _writer: &crate::publication_writer::WriterGuard,
+) -> Result<BuildReport, String> {
     let cache_db = cache::sqlite_path(index_path);
     if !cache_db.exists() && !index_path.exists() {
         return Err(format!(
@@ -746,15 +760,8 @@ pub fn build_from_cache_at(repo: &Path, index_path: &Path) -> Result<BuildReport
     std::fs::create_dir_all(dir).map_err(|e| format!("目錄建立失敗（{}）：{e}", dir.display()))?;
     crate::engine::write_data_dir_gitignore(dir)
         .map_err(|e| format!("graph_db 資料目錄自帶 ignore 失敗：{e}"))?;
-    let tmp_db = dir.join("graph.db.tmp-build");
-    if let Err(e) = std::fs::remove_file(&tmp_db) {
-        if e.kind() != std::io::ErrorKind::NotFound {
-            eprintln!(
-                "[WARN] 舊 build 暫存檔清除失敗（{}）：{e}",
-                tmp_db.display()
-            );
-        }
-    }
+    let temp = crate::publication_writer::TempDb::new(dir)?;
+    let tmp_db = &temp.0;
     let mut g = Connection::open(&tmp_db).map_err(|e| format!("graph.db 建立失敗：{e}"))?;
     g.execute_batch("PRAGMA busy_timeout = 5000;")
         .map_err(|e| format!("graph.db busy_timeout 設定失敗：{e}"))?;
@@ -897,6 +904,9 @@ pub fn build_from_cache_at(repo: &Path, index_path: &Path) -> Result<BuildReport
         .map_err(|e| format!("nodes_fts 重建失敗：{e}"))?;
     tx.commit().map_err(|e| format!("graph.db 提交失敗：{e}"))?;
     drop(g);
+    // Derived tables belong to this same unpublished generation. A failure
+    // leaves the previous complete graph intact.
+    let derived = materialize_derived_at(tmp_db)?;
     std::fs::rename(&tmp_db, &db).map_err(|e| {
         format!(
             "graph.db 原子替換失敗（{} → {}）：{e}",
@@ -906,7 +916,6 @@ pub fn build_from_cache_at(repo: &Path, index_path: &Path) -> Result<BuildReport
     })?;
     // derived tables (detect_changes hard-joins them — the build face is
     // the writer under the ops-untouched constraint)
-    let derived = materialize_derived(repo)?;
     Ok(BuildReport {
         nodes,
         edges,
@@ -951,6 +960,14 @@ pub struct EnsureIndexesReport {
 /// with the legacy consumer cutover (chain_tour reads the self-owned db;
 /// the same covering index lives in ENGINE_INDEX_DDL now).
 pub fn ensure_indexes(repo: &Path) -> Result<EnsureIndexesReport, String> {
+    let writer = crate::publication_writer::WriterGuard::acquire(repo)?;
+    ensure_indexes_locked(repo, &writer)
+}
+
+pub(crate) fn ensure_indexes_locked(
+    repo: &Path,
+    _writer: &crate::publication_writer::WriterGuard,
+) -> Result<EnsureIndexesReport, String> {
     let mut created = 0usize;
     let mut skipped = 0usize;
     let db = db_path(repo);

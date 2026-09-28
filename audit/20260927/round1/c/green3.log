@@ -1,0 +1,17 @@
+   Compiling code-reality v0.9.3 (/Users/ctai/.codex/worktrees/5967/code-reality/crates/code-reality)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.04s
+     Running tests/publication.rs (target/debug/deps/publication-7ce257cea3d36424)
+
+running 9 tests
+test four_same_process_writers_publish_complete_graphs ... ok
+test production_edit_preserves_published_artifacts ... ok
+test manual_restamp_cannot_certify_content_edit ... ok
+test replaced_index_without_restamp_cannot_serve_current_tree ... ok
+test replaced_index_cannot_inherit_identity ... ok
+test source_edit_while_waiting_for_publication_preserves_old_plane ... ok
+test fresh_manual_stamp_has_no_consumption_evidence ... ok
+test missing_main_graph_is_torn_alternate_is_optional ... ok
+test policy_edit_during_production_rejects_publication ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.37s
+

@@ -32,3 +32,28 @@ the program — the bridge always supplies the fixed `--stdio` argument
 itself (typed argv, no shell).
 
 See the [repository README](../../README.md) for the tool semantics.
+
+Each session uses one bounded serialized writer queue for requests,
+notifications, initialization and replies to server requests. A dedicated
+thread owns nonblocking stdin; acknowledgement and response waits use the
+same absolute deadline as interaction acquisition. Child ownership is
+independent of the writer, so shutdown can kill and reap without waiting
+for a blocked write. Cleanup joins both transport threads. This transport
+uses Unix file descriptors (the distributed platform is macOS).
+
+`check_file` starts its per-language deadline at entry, including lazy
+initialization and document synchronization. A transport timeout or partial
+frame invalidates the session and reaps its child; failed initialization is
+also terminal before returning. Restart the bridge (or construct a new
+session) to retry. Known backend death is checked on entry and before
+accepting diagnostics, including a warm cached result. A responsive backend
+that misses diagnostic convergence still yields the explicit not-converged
+warning; overlay, version, mutation-time and quiescence gates are retained.
+
+Shutdown has a total ten-second budget from entry, reserving its last two
+seconds for forced cleanup. Application deadlines do not guarantee bounds
+on arbitrary kernel or filesystem hangs. The Rust equivalence battery
+requires the complete frozen rust-analyzer version and executes both frozen
+hover comparisons; a different version is a failure in every mode, never
+a passing skip. Declaration anchors follow source movement without changing
+the frozen expected hovers.

@@ -1,0 +1,22 @@
+   Compiling code-reality-lsp-bridge v0.9.3 (/Users/ctai/.codex/worktrees/5967/code-reality/crates/code-reality-lsp-bridge)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.39s
+     Running tests/lifecycle.rs (target/debug/deps/lifecycle-c72ffadf0cc891ae)
+
+running 8 tests
+test rejected_initialization_is_synchronously_terminal_and_reaped ... ok
+test cached_check_rejects_known_death ... ok
+test healthy_diagnostics_and_server_request_reply ... ok
+interaction deadline elapsed_ms=409 reaped=true
+blocked concurrent_shutdown=false elapsed_ms=402 shutdown=None pid=3561 alive=false rescue=false result=Err("timeout waiting for transport write acknowledgement")
+test check_deadline_includes_pending_interaction_wait ... ok
+test blocked_write_check_deadline_includes_sync ... ok
+initialize write deadline elapsed_ms=3006 reaped=true
+test blocked_initialize_write_uses_check_entry_deadline ... ok
+blocked concurrent_shutdown=true elapsed_ms=8105 shutdown=Some(8.002397875s) pid=3562 alive=false rescue=false result=Err("language server backend died — restart the bridge to recover")
+test concurrent_shutdown_bounds_blocked_write_and_reaps ... ok
+large-request shutdown elapsed_ms=8007 reaped=true transport_joined=true
+flood-client shutdown elapsed_ms=8010 reaped=true transport_joined=true
+test shutdown_bounds_request_write_and_reader_reply_backpressure ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 16.79s
+

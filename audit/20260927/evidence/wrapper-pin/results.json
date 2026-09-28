@@ -1,0 +1,56 @@
+[
+  {
+    "face": "code-reality",
+    "wanted": "0.9.3",
+    "actual": "0.9.3+testrev",
+    "exit": 0,
+    "stdout": "SERVED code-reality-mcp 0.9.3+testrev",
+    "stderr": "",
+    "attempted_install": false
+  },
+  {
+    "face": "code-reality",
+    "wanted": "0.9.3",
+    "actual": "0.9.30+testrev",
+    "exit": 0,
+    "stdout": "SERVED code-reality-mcp 0.9.30+testrev",
+    "stderr": "",
+    "attempted_install": false
+  },
+  {
+    "face": "code-reality",
+    "wanted": "0.9.3",
+    "actual": "0.9.3-rc1+testrev",
+    "exit": 0,
+    "stdout": "SERVED code-reality-mcp 0.9.3-rc1+testrev",
+    "stderr": "",
+    "attempted_install": false
+  },
+  {
+    "face": "code-reality-lsp-bridge",
+    "wanted": "0.9.3",
+    "actual": "0.9.3+testrev",
+    "exit": 0,
+    "stdout": "SERVED code-reality-lsp-bridge 0.9.3+testrev",
+    "stderr": "",
+    "attempted_install": false
+  },
+  {
+    "face": "code-reality-lsp-bridge",
+    "wanted": "0.9.3",
+    "actual": "0.9.30+testrev",
+    "exit": 0,
+    "stdout": "SERVED code-reality-lsp-bridge 0.9.30+testrev",
+    "stderr": "",
+    "attempted_install": false
+  },
+  {
+    "face": "code-reality-lsp-bridge",
+    "wanted": "0.9.3",
+    "actual": "0.9.3-rc1+testrev",
+    "exit": 0,
+    "stdout": "SERVED code-reality-lsp-bridge 0.9.3-rc1+testrev",
+    "stderr": "",
+    "attempted_install": false
+  }
+]

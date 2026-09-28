@@ -1,0 +1,11 @@
+{
+  "label": "A-build",
+  "command": "/Users/ctai/.cargo/bin/code-reality build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/evidence/data/run1/A-in-build-mutation --json",
+  "env_overrides": {
+    "CODE_REALITY_IDENTITY_CACHE": "off",
+    "PATH_prefix": "/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/evidence/data/run1/bin"
+  },
+  "exit": 2,
+  "stdout": "",
+  "stderr": "[FAIL] build: producer 產出空索引（<128 bytes）——workspace 載入可能失敗；rust-analyzer scip 需傳 repo 目錄（非 Cargo.toml）\n"
+}

@@ -1,0 +1,112 @@
+## Independent fresh review — frozen working tree
+
+**Scope inspected (source-derived, no execution, no index):** `audit/20260927/round1/review-tracked.diff` (all hunks, lines 1–2349), `review-identity.json` (32 files). Changed sources read directly: [publication_writer.rs](/Users/ctai/.codex/worktrees/5967/code-reality/crates/code-reality/src/publication_writer.rs), [transport.rs](/Users/ctai/.codex/worktrees/5967/code-reality/crates/code-reality-lsp-bridge/src/transport.rs), `session.rs` (terminate/lock/spawn/shutdown/sync paths), `server.rs:389-495` (`check_file_impl`), `engine.rs:892-1214` (torn-plane, identity, `stamp_meta_locked`), `build.rs:412-823` (cleanup/publish/publication fence), `graph_db.rs:582-933` (locked build, TempDb, derived), `freshness.rs:90-143`, `mcp_server.rs:212-274`, `cli.rs:468-504`, `refresh.rs:99-129`, new tests `publication.rs`, `mcp_error_delivery_regression.rs`, `lifecycle.rs` + `lifecycle_backend.rs` fixture, `test-plugin-wrapper.sh` boundary block.
+
+**Not read:** EP, discussion, findings, worker receipts. All conclusions below are code-confirmed static paths unless labeled theoretical. No runtime facts are claimed — probes were not executed.
+
+**Verdict:** No blocking correctness defect found in the changed contracts. The six cross-component boundaries I was asked to challenge (deadlines, writer ownership, publication ordering, portability, false greens, doc overclaims) are handled honestly in both code and updated docs. Remaining items are Low/Info hardening notes with verification recipes for main.
+
+---
+
+### F1 — Info: sidecar stamp is writer-serialized but not reader-atomic
+**Severity:** Low (safe-direction transient, pre-existing pattern).
+**File:** `crates/code-reality/src/engine.rs:1210-1212`
+
+```rust
+std::fs::write(&sidecar, &text)
+```
+
+**Causal path:** `build_repo` holds `WriterGuard` across `merge_and_publish → stamp_meta_locked → build_from_cache_locked` ([build.rs](/Users/ctai/.codex/worktrees/5967/code-reality/crates/code-reality/src/build.rs:667)). `stamp_meta_locked` serializes cooperating writers, but concurrent *readers* (`evaluate_staleness → load_meta`) do not take the guard. `fs::write` truncates in place, so a reader racing the stamp can observe torn JSON.
+
+**Evidence (code-confirmed):** `load_meta` maps corrupt/missing to `(None, WARN)` ([engine.rs](/Users/ctai/.codex/worktrees/5967/code-reality/crates/code-reality/src/engine.rs:1217-1248)), which degrades to legacy (`identity_drift=None`). `needs_rebuild` then falls back to mtime/docset trio — a transient spurious rebuild (safe direction), not false-fresh, because sources are unchanged at that instant. Introduced docs do not claim reader atomicity ("Readers do not take this lock", `publication_writer.rs:5`; "Non-cooperating writers and live source edits are outside scope").
+
+**Suggested verification:** loop `freshness` concurrently with `build` on a small repo; assert no `current-tree` false claim, only transient `legacy-signals`/rebuild. Consider atomic sidecar publish (tmp+rename, same pattern as `merge_and_publish`/graph TempDb) if the transient proves noisy.
+
+---
+
+### F2 — Info: MCP collapses Env(2)/Core(1) to one code
+**Severity:** Low, pre-existing (helper rename only).
+**File:** `crates/code-reality/src/mcp_server.rs:255-274`
+
+All `exit_code != 0` map to `ErrorCode::INTERNAL_ERROR` via `internal_error()`. CLI distinguishes `fail(2)` env vs `crash(1)` core; the MCP face does not propagate that split. Docs do not claim otherwise, and the regression test pins `-32603` + cap + survival. No fix requested; note only for consumers that need programmatic Env/Core routing — they must use CLI exit codes.
+
+---
+
+### F3 — Low: `edit_file` has two sequential 30s windows, no single entry budget
+**Severity:** Low (theoretical contention doubling, introduced inconsistency).
+**File:** `crates/code-reality-lsp-bridge/src/server.rs:523-531`
+
+```rust
+s.sync_open(&path)?;      // REQUEST_TIMEOUT internally
+s.apply_edit(&path, content)?; // REQUEST_TIMEOUT again
+```
+
+`check_file` was unified to one entry deadline (`call_start + slow_timeout_ms`, `server.rs:390-391`) and shutdown to a 10s entry budget (`session.rs:518-520`). `edit_file_impl` and `hover_impl` (`sync_open` then hover-retry) retain composed windows (up to ~60s for edit under contention). Documented budgets name check/shutdown only, so this is not a doc overclaim, but a boundary worth pinning.
+
+**Suggested verification:** blocked-stdin fixture + concurrent `edit_file`; assert bounded return and reaped child. If accepted as-is, extend the lifecycle doc line to name edit/hover composition explicitly.
+
+---
+
+### F4 — Info (by design): interaction contention is terminal for the session
+**Severity:** Info, introduced behavior made explicit.
+**Files:** `crates/code-reality-lsp-bridge/src/session.rs:343-362`, `454-463`; `server.rs:404-415`
+
+`request_until` holds `interaction` across spawn + response wait. `check_file_impl` probes `lock_until(&overlay/diag_cache, deadline)` per iteration; on interaction-wait expiry `lock_until` calls `terminate()` (sets `dead`, kills/reaps). A healthy backend under contention therefore dies and requires bridge/session restart ("restart the bridge to recover"). The test `check_deadline_includes_pending_interaction_wait` (`lifecycle.rs:187-210`) codifies this.
+
+Code-confirmed and doc-honest ("Failed initialization is terminal", "Transport failure terminates the session"). Not a defect, but main should record the trade: contention → death, not just caller timeout. Callers with parallel check/request traffic should serialize or expect session recycling.
+
+---
+
+### F5 — Info: server→client reply path uses a fixed 30s deadline
+**Severity:** Info (theoretical backpressure, bounded).
+**File:** `crates/code-reality-lsp-bridge/src/transport.rs:214-218`
+
+```rust
+Instant::now() + Duration::from_secs(30)
+```
+
+Reader-thread replies bypass the caller's deadline. Under `flood-client` (20k server requests) the bounded channel (cap 8) + nonblocking writer drain sequentially; a blocked stdin stalls diagnostics processing until `dead` is set. Shutdown/`terminate` sets `dead` first, so `stop()` remains joinable (test `shutdown_bounds_request_write_and_reader_reply_backpressure` covers it). Healthy-path flood delay is theoretical; no unbounded hang found (writer `Pipe` enforces per-frame `frame.deadline`, `transport.rs:184-192`).
+
+---
+
+### F6 — Low: 5s writer-busy window vs long umbrella hold
+**Severity:** Low (theoretical under large-repo load, introduced tuning).
+**Files:** [publication_writer.rs](/Users/ctai/.codex/worktrees/5967/code-reality/crates/code-reality/src/publication_writer.rs:27-43); `build.rs:667-818`
+
+`WriterGuard::acquire` waits 5s then returns controlled busy. The umbrella build holds the guard across `merge_and_publish + stamp + graph build + ensure_indexes + cache repopulate`. Graph materialization on a large corpus can exceed seconds (docs themselves warn "minutes-level" for the whole build, though producer legs run *before* the guard). Contention then surfaces as spurious busy for concurrent explicit `graph_db build`/`ensure_indexes`/`stamp_meta` callers.
+
+Code-confirmed ordering is correct (no live mutation before both fences pass, staged cleanup on reject, `build.rs:657-683`). Docs honestly say "retry after the active writer finishes". Suggested verification (not performed): time guard hold on a large fixture; concurrent explicit builds; confirm busy → retry converges rather than wedging. Consider documenting expected hold order (seconds, not minutes) or raising only with evidence.
+
+---
+
+### F7 — Checked, no defect: canonical-main vs alternate graph policy
+**Files:** `engine.rs:892-898`; `freshness.rs:96-121`; `publication.rs:48-71`
+
+`is_main = resolve_repo(slot) == resolve_repo(canonical_slot)`; `graph_lags = is_main && missing-or-older`. Both sides canonicalize existing files, so symlink (`/tmp` → `/private/tmp`) and relative invocations compare canonical-to-canonical. Missing slot errors earlier at `slot.metadata` (`engine.rs:818-821`), so the "missing file returns uncanonicalized" case cannot reach `is_main` for the evaluated slot. Alternate/projection copies are correctly graph-optional and the test pins torn-main + optional-alternate + `ensure_fresh` repair. No false-fresh path found statically.
+
+---
+
+### Portability — checked, no defect
+`publication_writer` (`flock`) and `transport` (`fcntl` O_NONBLOCK) add `libc` (workspace-pinned, `Cargo.toml` delta). `std::os::fd::AsRawFd`, `kill`/`sleep` fixtures, and `#![cfg(unix)]` regression gate are Unix-only. Distribution docs consistently claim macOS arm64 wheels + macOS-resident transport ("This transport uses Unix file descriptors (the distributed platform is macOS)"). Linux also provides both calls, so the note underclaims rather than overclaims. No Windows compile path exists — consistent with stated platform, not a portability bug.
+
+---
+
+### Test false-green review — no green found that hides the claim
+- **RA battery** (`ra_equivalence_battery.rs`): loud-skip removed; `require_version` demands full `release (rev date)` equality and `full_version_identity_never_silently_skips` pins three drift shapes. Hover anchors resolve from `pub fn {label}<` declaration lines — a signature move fails loud ("missing declaration anchor"), not silent. Correct direction (no passing skip).
+- **Publication** (`publication.rs`): real FS/SQLite, independent of hash algo per header. Negative legs are genuine (restamp-after-edit retains old identity + `identity_drift=Some(true)`; replaced index yields null identity; production-drift rejects with bytes byte-identical). `four_same_process_writers` only asserts `communities>0` + FK-join zero because the fixture has no CALLS flows — the comment states this; not a vacuous green, but main should note flow-table assertions are readability-only on this fixture.
+- **Lifecycle** (`lifecycle.rs`): real pipes, 4MiB writes, wall-clock + `kill -9`/`kill -0` + reap assertions. `blocked()` asserts *no external rescue needed* and prints elapsed/pid/alive diagnostics — failure is loud.
+- **MCP regression** (`mcp_error_delivery_regression.rs`): real stdio, 1.2MB stderr → cap+marker+survival, cancellation-suppresses-delivery vs started-work-publishes, EOF-awaits-work, unwind-kills-process-group. The cancellation leg uses producers that `exit 2` with marker files; it demonstrates delivery/EOF semantics, not successful post-cancel graph publication — the test does not overclaim beyond that.
+- **Wrapper** (`test-plugin-wrapper.sh`): `"$pin"|"$pin+rev"` shell pattern correctly accepts `0.9.3`/`0.9.3+rev` and rejects `0.9.30+rev`/`-rc1+rev` on both faces; post-install verification asserts 3-face convergence. No pattern hole found.
+
+---
+
+### Documentation overclaims — none found; new text is carefully bounded
+Sampled deltas now carry the residuals explicitly: "endpoint fences do not provide an immutable snapshot, ABA protection" / "edits after the final check remain possible" (AGENTS.md, README.md, SKILL.md); "not a serialized frame bound" for the 1MiB text cap; "do not bound arbitrary OS/filesystem hangs" for LSP deadlines; "alternate/projection indexes are graph-optional"; "manual/head-only restamps … never recomputing current source into trusted old-index provenance". The `+rev` acceptance line ("exact release, optionally followed by `+rev`; neighboring releases and prereleases do not satisfy") matches the tested shell pattern. No statement was found that promises what the code does not do.
+
+---
+
+### Unverified limits (must gate any "verified" claim by main)
+- No commands executed: all timing (5s busy, 30s handshake/request, 10s shutdown, check entry budgets), thread-join boundedness, and kill/reap behavior are code-read, not reproduced.
+- No graph index available: caller/impact conclusions are `rg`-plus-read derived (all `stamp_meta*`/`build_from_cache*`/`ensure_indexes*`/`WriterGuard`/`TempDb` sites enumerated via text search), not index-verified.
+- Concurrency (parallel builds, parallel check/request, flood backpressure, torn-sidecar read race) and large-corpus hold times were not exercised.
+- OS/filesystem hangs, NFS `flock` behavior, and Windows compilation were not tested — explicitly outside the stated platform contract.

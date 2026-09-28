@@ -1,0 +1,11 @@
+{
+  "label": "A-refresh",
+  "command": "/Users/ctai/.cargo/bin/code-reality refresh --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/evidence/data/run1/A-in-build-mutation",
+  "env_overrides": {
+    "CODE_REALITY_IDENTITY_CACHE": "off",
+    "PATH_prefix": "/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/evidence/data/run1/bin"
+  },
+  "exit": 0,
+  "stdout": "",
+  "stderr": "[WARN] 索引過期檢查失敗（stat /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/evidence/data/run1/A-in-build-mutation/.code-reality/scip/index.scip 失敗：No such file or directory (os error 2)）——背景 refresh 結束\n"
+}

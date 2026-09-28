@@ -1,0 +1,19 @@
+   Compiling code-reality v0.9.3 (/Users/ctai/.codex/worktrees/5967/code-reality/crates/code-reality)
+warning: function `artifact_hash` is never used
+   --> crates/code-reality/src/identity.rs:351:15
+    |
+351 | pub(crate) fn artifact_hash(path: &Path) -> Result<String, String> {
+    |               ^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `code-reality` (lib test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.89s
+     Running unittests src/lib.rs (target/debug/deps/code_reality-a65133763f34ffb5)
+
+running 2 tests
+test mcp_server::error_cap_regression::panic_payload_obeys_same_cap ... ok
+test mcp_server::error_cap_regression::final_error_text_boundary_and_combined_streams ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 63 filtered out; finished in 0.00s
+

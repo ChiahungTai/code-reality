@@ -1,0 +1,17 @@
+WARN `--no-project` was provided, but no project was found
+Traceback (most recent call last):
+  File "/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/demo_publication.py", line 177, in <module>
+    main()
+    ~~~~^^
+  File "/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/demo_publication.py", line 103, in main
+    before = plane(a)
+  File "/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/demo_publication.py", line 85, in plane
+    return {str(p): p.read_bytes() for p in artifacts(repo)}
+                    ~~~~~~~~~~~~^^
+  File "/Users/ctai/.local/share/uv/python/cpython-3.14.4-macos-aarch64-none/lib/python3.14/pathlib/__init__.py", line 777, in read_bytes
+    with self.open(mode='rb', buffering=0) as f:
+         ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ctai/.local/share/uv/python/cpython-3.14.4-macos-aarch64-none/lib/python3.14/pathlib/__init__.py", line 771, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run1/A-production-drift/.code-reality/scip/index.meta.json'

@@ -1,0 +1,4 @@
+check_after_ms=35270; result=Err(Timeout); configured_check_deadline_ms=20000
+shutdown_after_ms=35270; result=Err(Empty)
+external_kill_releases_check=Err("Broken pipe (os error 32)")
+external_kill_releases_shutdown=Ok(())

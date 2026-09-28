@@ -1,0 +1,32 @@
+   Compiling code-reality-lsp-bridge v0.9.3 (/Users/ctai/.codex/worktrees/5967/code-reality/crates/code-reality-lsp-bridge)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.35s
+     Running tests/ra_equivalence_battery.rs (target/debug/deps/ra_equivalence_battery-3c38f9a610b03c37)
+
+running 2 tests
+
+thread 'full_version_identity_never_silently_skips' (74978473) panicked at crates/code-reality-lsp-bridge/tests/ra_equivalence_battery.rs:96:5:
+assertion `left == right` failed: rust-analyzer version drift: equivalence was NOT verified; review the oracle independently
+  left: "1.96.1 (ac68faa2 2026-05-25)"
+ right: "1.96.0 (ac68faa2 2026-05-25)"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'full_version_identity_never_silently_skips' (74978473) panicked at crates/code-reality-lsp-bridge/tests/ra_equivalence_battery.rs:96:5:
+assertion `left == right` failed: rust-analyzer version drift: equivalence was NOT verified; review the oracle independently
+  left: "1.96.0 (deadbeef 2026-05-25)"
+ right: "1.96.0 (ac68faa2 2026-05-25)"
+
+thread 'full_version_identity_never_silently_skips' (74978473) panicked at crates/code-reality-lsp-bridge/tests/ra_equivalence_battery.rs:96:5:
+assertion `left == right` failed: rust-analyzer version drift: equivalence was NOT verified; review the oracle independently
+  left: "1.96.0 (ac68faa2 2026-05-26)"
+ right: "1.96.0 (ac68faa2 2026-05-25)"
+test full_version_identity_never_silently_skips ... ok
+2026-09-27T19:03:29.44766+08:00  WARN notify error: No path was found. about ["/Users/ctai/.codex/worktrees/5967/code-reality/rust-analyzer.toml"]
+2026-09-27T19:03:29.449234+08:00  WARN notify error: No path was found. about ["/Users/ctai/Library/Application Support/rust-analyzer/rust-analyzer.toml"]
+2026-09-27T19:03:30.213705+08:00  WARN notify error: No path was found. about ["/Users/ctai/.codex/worktrees/5967/code-reality/rust-analyzer.toml"]
+2026-09-27T19:03:30.214534+08:00  WARN notify error: No path was found. about ["/Users/ctai/Library/Application Support/rust-analyzer/rust-analyzer.toml"]
+[OK] frozen hover write_message executed at 11:9
+[OK] frozen hover read_message executed at 19:9
+test rust_hover_roundtrip_vs_frozen_baseline ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.83s
+

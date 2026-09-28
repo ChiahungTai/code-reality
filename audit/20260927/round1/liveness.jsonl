@@ -1,0 +1,9 @@
+{"schema":"liveness/1","event":"armed","jobId":"job-mujovbzm-pe9ntp","armedAt":"2026-09-27T18:42:14.106961+08:00","pid":38734}
+{"schema":"liveness/1","event":"armed","jobId":"job-mujovc2p-sisy9g","armedAt":"2026-09-27T18:42:14.107360+08:00","pid":38734}
+{"schema":"liveness/1","event":"armed","jobId":"job-mujovgbo-3n4mqu","armedAt":"2026-09-27T18:42:14.107432+08:00","pid":38734}
+{"schema":"liveness/1","event":"heartbeat","jobId":"job-mujovbzm-pe9ntp","ts":"2026-09-27T18:42:14.107491+08:00","pid":38734}
+{"schema":"liveness/1","event":"heartbeat","jobId":"job-mujovc2p-sisy9g","ts":"2026-09-27T18:42:14.107491+08:00","pid":38734}
+{"schema":"liveness/1","event":"heartbeat","jobId":"job-mujovgbo-3n4mqu","ts":"2026-09-27T18:42:14.107491+08:00","pid":38734}
+{"schema":"liveness/1","event":"collected","jobId":"job-mujovbzm-pe9ntp","exitState":"terminal-non-completed","collectedAt":"2026-09-27T18:42:28.268937+08:00"}
+{"schema":"liveness/1","event":"collected","jobId":"job-mujovc2p-sisy9g","exitState":"terminal-non-completed","collectedAt":"2026-09-27T18:42:28.269440+08:00"}
+{"schema":"liveness/1","event":"collected","jobId":"job-mujovgbo-3n4mqu","exitState":"terminal-non-completed","collectedAt":"2026-09-27T18:42:28.269512+08:00"}

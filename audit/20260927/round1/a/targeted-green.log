@@ -1,0 +1,43 @@
+   Compiling code-reality v0.9.3 (/Users/ctai/.codex/worktrees/5967/code-reality/crates/code-reality)
+warning: associated function `capture` is never used
+    --> crates/code-reality/src/engine.rs:1030:19
+     |
+1029 | impl ProductionIdentity {
+     | ----------------------- associated function in this implementation
+1030 |     pub(crate) fn capture(repo: &Path, producer: Option<crate::language::ProducerFamily>) -> Result<Self, String> {
+     |                   ^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `code-reality` (lib) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.30s
+     Running tests/mcp_error_delivery_regression.rs (target/debug/deps/mcp_error_delivery_regression-711517b3bb1bc6a9)
+
+running 2 tests
+test oversized_error_is_bounded_and_stdio_survives ... ok
+test cancellation_and_eof_retain_started_work ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.60s
+
+     Running tests/plugin_wrapper.rs (target/debug/deps/plugin_wrapper-be01ae09d1aee3f0)
+
+running 1 test
+test plugin_wrapper_regression ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.52s
+
+     Running tests/s6_mcp_server.rs (target/debug/deps/s6_mcp_server-f7be3e4d32618e22)
+
+running 9 tests
+test bin_help_face ... ok
+test closure_optional_depth_and_missing_param_types ... ok
+test tools_route_through_the_lib ... ok
+test data_plane_tools_route_loud_errors ... ok
+test http_server_serves_initialize_and_tools_list ... ok
+test mcp_snapshot_and_delta_tour_end_to_end ... ok
+test minimal_detail_drops_members_and_aggregates_pairs ... ok
+test get_community_drill_down_and_flows_limit ... ok
+test oversized_output_hits_the_byte_cap_backstop ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 39.83s
+

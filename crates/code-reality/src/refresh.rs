@@ -98,8 +98,11 @@ fn refresh_run(toks: &[&str]) -> ToolOutput {
     };
     // Snapshot first (Fresh is a unit variant — the head-sync decision
     // needs the drift bit the outcome does not carry).
-    let snap = match evaluate_staleness(&repo, &slot, crate::identity::IdentityCachePolicy::WriteBack)
-    {
+    let snap = match evaluate_staleness(
+        &repo,
+        &slot,
+        crate::identity::IdentityCachePolicy::WriteBack,
+    ) {
         Ok(s) => s,
         Err(e) => {
             stderr.push_str(&format!(
@@ -118,7 +121,7 @@ fn refresh_run(toks: &[&str]) -> ToolOutput {
                 // head-sync only: sources are current, provenance lags —
                 // re-stamp instead of paying a full re-produce
                 match stamp_meta_core(&repo, &slot, &producer_roots(), None, None) {
-                    Ok(_) => stderr.push_str("[OK] refresh：索引新鮮，meta head 已同步\n"),
+                    Ok(_) => stderr.push_str("[OK] refresh：meta head 已同步（source provenance retained, not recertified）\n"),
                     Err(e) => {
                         stderr.push_str(&format!("[WARN] refresh：head-sync stamp 失敗（{e}）\n"))
                     }

@@ -3,7 +3,7 @@
 //! (same-engine oracle — the P2 gate). Normalization joins ALL
 //! ```rust fences in order (module path + signature); the battery
 //! first asserts the PATH rust-analyzer version matches the frozen
-//! one (drift → loud skip, not a false fail) and warms up with a
+//! one (drift is a hard failure in every mode) and warms up with a
 //! discarded hover (during workspace load the module-path fence may
 //! be absent).
 
@@ -45,47 +45,31 @@ fn rust_hover_roundtrip_vs_frozen_baseline() {
         LangSpec::rust(),
     ));
 
-    // Version pin: rust-analyzer on PATH must match the frozen one;
-    // drift skips LOUDLY rather than failing on text drift.
-    if let Err(e) = session.request("shutdown", serde_json::Value::Null) {
-        panic!("ra failed to start: {e}");
-    }
-    let live_version = session.server_info();
-    let frozen = baseline["_version"].as_str().unwrap_or("?");
-    // server_info is "<name> <version>"; compare the version token.
-    let live = live_version.rsplit(' ').next().unwrap_or("");
-    let frozen_v = frozen.split(' ').next().unwrap_or("");
-    if live != frozen_v {
-        // BRIDGE_STRICT_BATTERY=1 turns the loud skip into a fail
-        // (local acceptance runs); plain CI keeps it as a skip.
-        if std::env::var("BRIDGE_STRICT_BATTERY").ok().as_deref() == Some("1") {
-            panic!(
-                "rust-analyzer version drift under strict battery: live {live} vs frozen {frozen_v} — regenerate the baseline"
-            );
-        }
-        eprintln!(
-            "[SKIP] rust-analyzer version drift: live {live} vs frozen {frozen_v} — regenerate the baseline"
-        );
-        return;
-    }
-
     let file = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("src/framing.rs")
         .to_string_lossy()
         .to_string();
 
-    // Warm-up hover (discarded): module-path fence appears only after
-    // the workspace finishes loading.
-    let warmed = hover_impl(&session, &file, 11, 10).unwrap();
-    if !warmed.contains("framing") {
-        eprintln!("[WARN] warm-up hover lacks module path: {warmed}");
-    }
-
-    let cases: &[(&str, u32, u32)] = &[("write_message", 11, 10), ("read_message", 19, 10)];
+    // Opening a document initializes the session without shutting it down.
+    session.sync_open(Path::new(&file)).unwrap();
+    require_version(
+        &session.server_info(),
+        baseline["_version"].as_str().unwrap(),
+    );
+    let source = std::fs::read_to_string(&file).unwrap();
+    let cases = ["write_message", "read_message"].map(|label| {
+        let anchor = format!("pub fn {label}<");
+        let (line, text) = source
+            .lines()
+            .enumerate()
+            .find(|(_, text)| text.starts_with(&anchor))
+            .unwrap_or_else(|| panic!("missing declaration anchor {label}"));
+        (label, line as u32, (text.find(label).unwrap() + 2) as u32)
+    });
     for (label, line, ch) in cases {
         let deadline = std::time::Instant::now() + Duration::from_secs(30);
         loop {
-            let hover = hover_impl(&session, &file, *line, *ch).unwrap();
+            let hover = hover_impl(&session, &file, line, ch).unwrap();
             let got = normalize(&hover);
             // During load the module-path fence may be missing — the
             // got text then differs; retry until stable or deadline.
@@ -98,6 +82,7 @@ fn rust_hover_roundtrip_vs_frozen_baseline() {
                     got, want,
                     "{label} ({line}:{ch}) round-trip mismatch\nraw: {hover}"
                 );
+                eprintln!("[OK] frozen hover {label} executed at {line}:{ch}");
                 break;
             }
             assert!(
@@ -108,5 +93,30 @@ fn rust_hover_roundtrip_vs_frozen_baseline() {
         }
     }
 
-    session.shutdown().ok();
+    session.shutdown().unwrap();
+}
+
+// S: frozen version identity includes release, revision AND build date.
+fn require_version(live: &str, frozen: &str) {
+    let live = live
+        .strip_prefix("rust-analyzer ")
+        .expect("unexpected server name");
+    assert_eq!(live, frozen, "rust-analyzer version drift: equivalence was NOT verified; review the oracle independently");
+}
+
+#[test]
+fn full_version_identity_never_silently_skips() {
+    let frozen = "1.96.0 (ac68faa2 2026-05-25)";
+    require_version(&format!("rust-analyzer {frozen}"), frozen);
+    for different in [
+        "1.96.1 (ac68faa2 2026-05-25)",
+        "1.96.0 (deadbeef 2026-05-25)",
+        "1.96.0 (ac68faa2 2026-05-26)",
+    ] {
+        assert!(std::panic::catch_unwind(|| require_version(
+            &format!("rust-analyzer {different}"),
+            frozen
+        ))
+        .is_err());
+    }
 }

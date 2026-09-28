@@ -387,21 +387,32 @@ pub fn hover_impl(s: &LspSession, file: &str, line: u32, character: u32) -> Resu
 }
 
 pub fn check_file_impl(s: &LspSession, file: &str) -> Result<String, String> {
+    let call_start = std::time::Instant::now();
+    let deadline = call_start + std::time::Duration::from_millis(s.lang.slow_timeout_ms);
+    s.check_alive()?;
     let path = PathBuf::from(file);
     let uri = LspSession::file_uri(&path);
-    let mut mutation_at = s.sync_open(&path)?;
+    let mut mutation_at = s.sync_open_until(&path, deadline)?;
     let mut overlay_version = s
-        .overlay
-        .lock()
-        .unwrap()
+        .lock_until(&s.overlay, deadline)?
         .get(&path)
         .map(|e| e.version)
         .unwrap_or(1);
-    let call_start = std::time::Instant::now();
-    let deadline = call_start + std::time::Duration::from_millis(s.lang.slow_timeout_ms);
     let half = std::time::Duration::from_millis(s.lang.slow_timeout_ms / 2);
     let mut reissued = false;
+    let mut last_diags = None;
     loop {
+        s.check_alive()?;
+        if std::time::Instant::now() >= deadline {
+            let partial = last_diags
+                .as_deref()
+                .map(format_diags)
+                .unwrap_or_else(|| "no diagnostics received yet".to_string());
+            s.check_alive()?;
+            return Ok(format!(
+                "{partial}\n[WARN] not converged within the deadline"
+            ));
+        }
         // F1: the freshness basis is the NEWER of this call's own
         // mutation and the overlay entry's last_mutation (stamped at
         // every mutation origin on the session side) — a nudge-path
@@ -410,9 +421,7 @@ pub fn check_file_impl(s: &LspSession, file: &str) -> Result<String, String> {
         // of whichever origins exist. None → fresh below is a defensive
         // default (post-F1 the overlay entry always carries a stamp).
         let overlay_mut = s
-            .overlay
-            .lock()
-            .unwrap()
+            .lock_until(&s.overlay, deadline)?
             .get(&path)
             .and_then(|e| e.last_mutation);
         let basis = mutation_at.max(overlay_mut);
@@ -422,7 +431,8 @@ pub fn check_file_impl(s: &LspSession, file: &str) -> Result<String, String> {
         // mutation basis, and (c) be per-URI quiesced. A pure
         // push model means no new push arrives without a mutation, so
         // waiting without these guards serves stale answers.
-        let entry = s.diag_cache.lock().unwrap().get(&uri).cloned();
+        let entry = s.lock_until(&s.diag_cache, deadline)?.get(&uri).cloned();
+        last_diags = entry.as_ref().map(|e| e.diagnostics.clone());
         let fresh = match &entry {
             Some(e) => basis.map(|b| e.last_push > b).unwrap_or(true),
             None => false,
@@ -444,6 +454,7 @@ pub fn check_file_impl(s: &LspSession, file: &str) -> Result<String, String> {
             };
             let quiesced = std::time::Instant::now().duration_since(e.last_push) >= s.quiesce;
             if version_ok && fresh && quiesced {
+                s.check_alive()?;
                 return Ok(format_diags(&e.diagnostics));
             }
         }
@@ -473,23 +484,11 @@ pub fn check_file_impl(s: &LspSession, file: &str) -> Result<String, String> {
                 }
             };
             if stalled {
-                mutation_at = Some(s.force_reopen(&path)?);
+                mutation_at = Some(s.force_reopen_until(&path, deadline)?);
                 overlay_version = 1;
                 reissued = true;
                 continue;
             }
-        }
-        if std::time::Instant::now() >= deadline {
-            let partial = s
-                .diag_cache
-                .lock()
-                .unwrap()
-                .get(&uri)
-                .map(|e| format_diags(&e.diagnostics))
-                .unwrap_or_else(|| "no diagnostics received yet".to_string());
-            return Ok(format!(
-                "{partial}\n[WARN] not converged within the deadline"
-            ));
         }
         std::thread::sleep(std::time::Duration::from_millis(50));
     }

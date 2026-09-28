@@ -1,0 +1,35 @@
+   Compiling code-reality-lsp-bridge v0.9.3 (/Users/ctai/.codex/worktrees/5967/code-reality/crates/code-reality-lsp-bridge)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.52s
+     Running tests/lifecycle.rs (target/debug/deps/lifecycle-c72ffadf0cc891ae)
+
+running 8 tests
+
+thread 'blocked_initialize_write_uses_check_entry_deadline' (74987629) panicked at crates/code-reality-lsp-bridge/tests/lifecycle.rs:89:59:
+called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test blocked_initialize_write_uses_check_entry_deadline ... FAILED
+
+thread 'cached_check_rejects_known_death' (74987631) panicked at crates/code-reality-lsp-bridge/tests/lifecycle.rs:28:40:
+called `Result::unwrap()` on an `Err` value: "initialize handshake failed: timeout waiting for response to `initialize`"
+test cached_check_rejects_known_death ... FAILED
+test rejected_initialization_is_synchronously_terminal_and_reaped ... ok
+test healthy_diagnostics_and_server_request_reply ... ok
+blocked concurrent_shutdown=false elapsed_ms=402 shutdown=None pid=253 alive=false rescue=false result=Err("timeout waiting for transport write acknowledgement")
+interaction deadline elapsed_ms=406 reaped=true
+test check_deadline_includes_pending_interaction_wait ... ok
+test blocked_write_check_deadline_includes_sync ... ok
+blocked concurrent_shutdown=true elapsed_ms=8112 shutdown=Some(8.007138458s) pid=251 alive=false rescue=false result=Err("language server backend died — restart the bridge to recover")
+test concurrent_shutdown_bounds_blocked_write_and_reaps ... ok
+large-request shutdown elapsed_ms=8011 reaped=true transport_joined=true
+flood-client shutdown elapsed_ms=8010 reaped=true transport_joined=true
+test shutdown_bounds_request_write_and_reader_reply_backpressure ... ok
+
+failures:
+
+failures:
+    blocked_initialize_write_uses_check_entry_deadline
+    cached_check_rejects_known_death
+
+test result: FAILED. 6 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 17.62s
+
+error: test failed, to rerun pass `-p code-reality-lsp-bridge --test lifecycle`

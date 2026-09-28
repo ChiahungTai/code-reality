@@ -510,9 +510,8 @@ pub fn build_repo(
     // spawn_blocking runs two builds in one daemon — a shared
     // `.part-<pid>` namespace lets them overwrite/rename/clean each
     // other's partials, S1 EP "unique to one build attempt"). With
-    // unique names, racing builds only race the final rename — last
-    // writer publishes its own COMPLETE merged index, never a torn or
-    // foreign-partial slot.
+    // unique names, producers can stage concurrently. Publication is
+    // serialized by WriterGuard after interval revalidation.
     static ATTEMPT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let attempt = format!(
         "{pid}-{}",
@@ -548,6 +547,11 @@ pub fn build_repo(
                 .join("、")
         ));
     }
+
+    // Capture A before any producer. Endpoint validation is not an immutable
+    // snapshot: ABA and edits after the final observation remain possible.
+    let production_a =
+        crate::engine::ProductionIdentity::capture(&resolved, producer).map_err(BuildError::Env)?;
 
     // ---- stage every requested leg (ORDERED); a later-leg failure must
     // leave the pre-build live slot byte-identical ----
@@ -650,6 +654,33 @@ pub fn build_repo(
             path: part,
         });
     }
+    // Compare after production, then again under publication ownership. No
+    // live index/meta/graph mutation is allowed before both checks succeed.
+    let publication = (|| {
+        let after = crate::engine::ProductionIdentity::capture(&resolved, producer)?;
+        if after != production_a {
+            return Err(
+                "source identity/policy changed during production; prior data plane preserved"
+                    .to_string(),
+            );
+        }
+        let writer = crate::publication_writer::WriterGuard::acquire(&resolved)?;
+        let locked = crate::engine::ProductionIdentity::capture(&resolved, producer)?;
+        if locked != production_a {
+            return Err(
+                "source identity/policy changed before publication; prior data plane preserved"
+                    .to_string(),
+            );
+        }
+        Ok(writer)
+    })();
+    let writer = match publication {
+        Ok(w) => w,
+        Err(e) => {
+            cleanup_staged(&slot_dir, &attempt);
+            return Err(BuildError::Env(e));
+        }
+    };
     if staged.is_empty() {
         if producer.is_none() && all_policy_empty {
             // Empty convergence: auto-detection selected only faces whose
@@ -717,7 +748,7 @@ pub fn build_repo(
     // override pins the face scope; auto lets freshness union with
     // newly detected faces (muse P0-1).
     let producer_str = rep.producers.join("; ");
-    if let Err(e) = crate::engine::stamp_meta_core(
+    if let Err(e) = crate::engine::stamp_meta_locked(
         &resolved,
         &slot,
         roots,
@@ -731,9 +762,11 @@ pub fn build_repo(
         } else {
             "auto"
         }),
+        Some(&production_a),
+        &writer,
     ) {
         rep.notes.push(format!(
-            "stamp-meta 失敗（{e}）——手動補：code-reality scip_refs --repo {} --stamp-meta",
+            "stamp-meta failed ({e}); rebuild to establish production provenance: code-reality build --repo {}",
             resolved.display()
         ));
     }
@@ -757,12 +790,32 @@ pub fn build_repo(
     rep.notes
         .push("全量重產：producer 每次重建（冪等）".to_string());
 
-    let g = graph_db::build_from_cache_at(&resolved, &slot).map_err(BuildError::Core)?;
+    // Drop query-side cached hashes from the superseded generation. This is
+    // not provenance: only production_a can authorize the stamp above.
+    let _ = std::fs::remove_file(crate::identity::cache_path_for_slot(&slot));
+    let g =
+        graph_db::build_from_cache_locked(&resolved, &slot, &writer).map_err(BuildError::Core)?;
     rep.nodes = g.nodes;
     rep.edges = g.edges;
-    let ir = graph_db::ensure_indexes(&resolved).map_err(BuildError::Core)?;
+    let ir = graph_db::ensure_indexes_locked(&resolved, &writer).map_err(BuildError::Core)?;
     rep.indexes_created = ir.created;
     rep.indexes_skipped = ir.skipped;
+    // Repopulate the disposable query cache with full reads, independently of
+    // the authoritative A stamp. A later source edit can only change this
+    // query optimization, never the identity that the producer consumed.
+    let walk = crate::engine::walk_sources(&resolved).map_err(BuildError::Core)?;
+    let mut cache = crate::identity::IdentityCache::load(
+        crate::identity::cache_path_for_slot(&slot),
+        &resolved,
+    );
+    crate::identity::compute_identity(
+        &resolved,
+        &walk.records(),
+        &production_a.faces,
+        crate::identity::resolve_policy(crate::identity::IdentityCachePolicy::Full),
+        &mut cache,
+    )
+    .map_err(BuildError::Core)?;
     // A converged explicit build ends any churn window — later queries
     // heal normally (run_heal_locked clears this too; idempotent).
     let _ = std::fs::remove_file(churn_marker(&slot));
@@ -968,7 +1021,11 @@ pub fn heal_outcome_after_rebuild_err(
     slot: &Path,
     err: String,
 ) -> Result<HealOutcome, String> {
-    let snap = crate::engine::evaluate_staleness(repo, slot, crate::identity::IdentityCachePolicy::WriteBack)?;
+    let snap = crate::engine::evaluate_staleness(
+        repo,
+        slot,
+        crate::identity::IdentityCachePolicy::WriteBack,
+    )?;
     if !snap.needs_rebuild() {
         Ok(HealOutcome::Healed {
             secs: 0.0,
@@ -1010,7 +1067,11 @@ fn run_heal_locked(
             }
             // Loop guard (SM-9): a rebuild that still leaves the slot
             // behind warns once and serves — never loops.
-            let snap = crate::engine::evaluate_staleness(repo, slot, crate::identity::IdentityCachePolicy::WriteBack)?;
+            let snap = crate::engine::evaluate_staleness(
+                repo,
+                slot,
+                crate::identity::IdentityCachePolicy::WriteBack,
+            )?;
             let doc_delta = match crate::engine::load_index(slot) {
                 Ok(loaded) => {
                     let docs: BTreeSet<String> = loaded
@@ -1097,7 +1158,11 @@ fn wait_peer_and_reevaluate(
         .join(".heal.lock");
     loop {
         if !lock_path.exists() {
-            let snap = crate::engine::evaluate_staleness(repo, slot, crate::identity::IdentityCachePolicy::WriteBack)?;
+            let snap = crate::engine::evaluate_staleness(
+                repo,
+                slot,
+                crate::identity::IdentityCachePolicy::WriteBack,
+            )?;
             // churn guard BEFORE the HealedByPeer return — a peer whose
             // heal failed to converge (armed marker) must not be reported
             // as having fixed it (codex P0-4)
@@ -1144,8 +1209,11 @@ pub fn ensure_fresh(repo: &Path, roots: &[PathBuf]) -> Result<HealOutcome, Strin
     if !slot.exists() {
         return Ok(HealOutcome::Fresh);
     }
-    let snap =
-        crate::engine::evaluate_staleness(&repo, &slot, crate::identity::IdentityCachePolicy::WriteBack)?;
+    let snap = crate::engine::evaluate_staleness(
+        &repo,
+        &slot,
+        crate::identity::IdentityCachePolicy::WriteBack,
+    )?;
     // Churn guard (AIR-33 ③ + codex P0-4): an armed marker means the
     // last heal FAILED TO CONVERGE — checked BEFORE any Fresh
     // short-circuit, because a non-converged heal can leave the slot

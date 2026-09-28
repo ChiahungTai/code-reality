@@ -1,0 +1,27 @@
+[
+  {
+    "mode": "large-error",
+    "producer_started": true,
+    "response_bytes": 1200151,
+    "error_code": -32603,
+    "error_message_bytes": 1200087,
+    "truncated_marker": false,
+    "server_exit": 0
+  },
+  {
+    "mode": "cancel",
+    "producer_started": true,
+    "server_responsive_after_cancel": true,
+    "producer_completed_after_cancel": true,
+    "pending_response_ids": [],
+    "server_exit": 0
+  },
+  {
+    "mode": "eof",
+    "producer_started": true,
+    "alive_after_eof_500ms": true,
+    "exit_elapsed_after_eof_seconds": 3.051,
+    "producer_completed_after_eof": true,
+    "server_exit": 0
+  }
+]

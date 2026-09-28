@@ -1,0 +1,11 @@
+{
+  "label": "version",
+  "command": "/Users/ctai/.cargo/bin/code-reality --version",
+  "env_overrides": {
+    "CODE_REALITY_IDENTITY_CACHE": "off",
+    "PATH_prefix": "/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/evidence/data/run1/bin"
+  },
+  "exit": 0,
+  "stdout": "0.9.3+eaa5d24\n",
+  "stderr": ""
+}

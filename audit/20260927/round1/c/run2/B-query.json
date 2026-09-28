@@ -1,0 +1,8 @@
+{
+  "label": "B-query",
+  "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality graph_query hub --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run2/B-graphfail",
+  "exit": 0,
+  "stdout": "[OK] graph_query hub\n[]",
+  "stderr": "",
+  "elapsed": 0.005186666967347264
+}

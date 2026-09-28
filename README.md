@@ -110,6 +110,13 @@ An HTTP resident mode also exists (`code-reality-mcp`, port 8200,
 launchd plist in `launchd/`) for multi-harness sharing on one machine —
 not needed for the plugin path.
 
+MCP cancellation stops response delivery, not already-started blocking
+work. A cancelled build can continue and publish its outputs; cancellation
+does not imply rollback. Closing the stdio transport can wait for active
+work to finish. Tool output and internal-error text are bounded with an
+explicit truncation marker; parameter-validation errors are outside this
+bound. JSON framing adds its own overhead.
+
 Per-repo prerequisites for the query tools: run
 `code-reality build --repo <repo>` — it detects the language face
 (.py/.rs), spawns the matching producer (pyrefly-index /
@@ -122,11 +129,12 @@ scip_refs-family queries also self-heal a stale index before answering
 install --repo <repo>` opts a repo into a post-commit background
 `code-reality refresh` (docs-only commits re-stamp provenance instead
 of re-producing).
-Manual chain (equivalent, for debugging): `rust-analyzer scip <repo>`
+Manual chain (for data availability and debugging, not equivalent source
+identity provenance): `rust-analyzer scip <repo>`
 or `pyrefly-index --repo <repo>` →
 (`code-reality scip_refs --stamp-meta`/`--build-cache` optional
-accelerators — going straight to `graph_db build` after pyrefly-index
-alone is safe: the write invalidates superseded sidecar artifacts and
+maintenance steps — going straight to `graph_db build` after pyrefly-index
+alone can populate the graph: the write invalidates superseded sidecar artifacts and
 the build fails loud on a cache db older than `index.scip`); all
 graph-reading tools (engine, audit, chain_tour, hub_refs/hazard,
 snapshot) read a self-owned db at `<repo>/.code-reality/graph.db` —
@@ -134,6 +142,18 @@ produce it with `code-reality graph_db build --repo <repo>` (any
 producer cache); the refresh chain is purely producer-side (the
 CRG-era `.code-review-graph/` import face was fully removed with the
 W5 legacy-db cleanup).
+
+Orchestrated `build` captures uncached source identity and corpus policy
+before production, compares them after production and again under shared
+publication ownership, then binds that captured identity to the published
+index bytes. Manual or docs-only restamping preserves prior provenance only
+when the index bytes, repository and selection still match; it cannot certify
+current source as consumed by an older index. These endpoint checks are not
+an immutable snapshot and do not exclude ABA edits or edits after the final
+check. A missing or older graph for the canonical main slot is torn; alternate
+and projection indexes remain graph-optional. Cooperating graph writers share
+bounded publication ownership and return a controlled busy error on contention;
+derived tables are built before the temporary database is renamed into place.
 `graph_db ensure_indexes --repo <repo>` is an idempotent follow-up that
 adds the engine read-chain indexes to dbs built before that schema
 revision. The `.code-reality/` directory is repo-local derived data

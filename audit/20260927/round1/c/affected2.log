@@ -1,0 +1,162 @@
+   Compiling code-reality v0.9.3 (/Users/ctai/.codex/worktrees/5967/code-reality/crates/code-reality)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.97s
+     Running tests/build.rs (target/debug/deps/build-e255e09df440faef)
+
+running 33 tests
+test t10_run_non_dir_fails_loud ... ok
+test t11_empty_repo_env_fail ... ok
+test t15_python_all_excluded_converges_to_empty ... ok
+test t12_edge_dedupe_doubled_index_converges ... ok
+test t14_stale_heals_and_releases_lock ... ok
+test t17_build_report_prints_effective_excludes ... ok
+test t13_python_leg_drops_profile_excluded_docs ... ok
+test t15_head_drift_only_no_rebuild ... ok
+test t1_count_sources_detection_matrix ... ok
+test t14_python_leg_without_profile_keeps_dist ... ok
+test t16_producer_fail_serve_stale_lock_released ... ok
+test t16_python_partial_producer_warns_missing_governed ... ok
+test t13_fresh_noop_is_zero_spawn ... ok
+test t17_half_success_probe ... ok
+test t18_churn_cooldown_skips_reheal_within_window ... ok
+test t18_false_stale_warns_once_no_loop ... ok
+test t2_resolve_bin_injection ... ok
+test t3_run_usage_and_producer_validation ... ok
+test t20_readonly_slot_dir_serves_stale ... ok
+test t19_head_drift_overrides_cooldown_and_convergence_clears ... ok
+test t23_sm15_staleness_check_err_face ... ok
+test t4_python_leg_e2e_and_idempotent_rerun ... ok
+test t8_missing_bin_is_env_fail_with_hint ... ok
+test t21_cli_heal_across_query_modes ... ok
+test t5_rust_empty_index_guard ... ok
+test t20_cooldown_env_zero_disables ... ok
+test t6_rust_leg_e2e ... ok
+test t9_child_failure_maps_env_with_stderr_and_rust_hint ... ok
+test t22_cli_off_switch_and_non_heal_faces ... ok
+test t7_mixed_repo_unified_graph_concat ... ok
+test t21_wait_peer_respects_armed_marker ... ok
+test t19_lock_escape_and_single_flight ... ok
+test t22_expired_marker_lets_heal_resume ... ok
+
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.75s
+
+     Running tests/graph_db.rs (target/debug/deps/graph_db-6836c5f3c105a8b7)
+
+running 10 tests
+test is_test_rel_covers_rust_and_python_conventions ... ok
+test missing_cache_is_loud ... ok
+test build_fails_loud_on_stale_lsp_sidecar_superseded_by_newer_index ... ok
+test build_stamps_snapshot_metadata ... ok
+test edge_sites_match_scip_edges_derivation ... ok
+test build_materializes_engine_read_chain_indexes ... ok
+test build_creates_producer_keyed_schema ... ok
+test lsp_cache_builds_with_nearest_preceding_attribution ... ok
+test ensure_indexes_is_idempotent_on_built_db ... ok
+test build_is_idempotent_and_leaves_no_temp ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/js_ts_boundaries.rs (target/debug/deps/js_ts_boundaries-ae4ff80dd2d59d6b)
+
+running 7 tests
+test s6_hazard_qualified_js_target_also_unsupported ... ok
+test s6_hazard_js_target_unsupported_both_flag_and_auto ... ok
+test s6_project_rejects_js_ts_planned_sources ... ok
+test s6_hazard_python_target_in_mixed_repo_still_supported ... ok
+test s6_pure_js_graph_audit_never_clean ... ok
+test s6_scip_refs_audit_wrapper_routes_the_same_guard ... ok
+test s6_mixed_graph_audit_is_partial_not_clean ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests/js_ts_build.rs (target/debug/deps/js_ts_build-7c43af608b01c4c4)
+
+running 12 tests
+test s1_mcp_producer_validation_accepts_typescript ... ok
+test node_tool_roots_order_and_env ... ok
+test s2_missing_binary_env_hint_slot_preserved ... ok
+test s2_ts_only_all_excluded_converges_to_empty ... ok
+test s2_derived_mode_success_and_report ... ok
+test s2_repo_local_node_modules_bin_wins ... ok
+test s2_all_js_excluded_skips_leg_in_mixed_repo ... ok
+test s1_later_leg_failure_leaves_slot_byte_identical ... ok
+test s1_concurrent_builds_do_not_collide_on_staging ... ok
+test s1_malformed_later_part_preserves_slot ... ok
+test s1_py_ts_mixed_face_and_override_notes ... ok
+test s1_three_family_merge_is_ordered_and_deterministic ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.21s
+
+     Running tests/js_ts_freshness.rs (target/debug/deps/js_ts_freshness-a436029464fe9288)
+
+running 12 tests
+test s4_nonconverged_heal_arms_cooldown_not_fresh ... ok
+test s4_face_isolation_python_only_slot_ignores_ts ... ok
+test s4_all_excluded_corpus_heals_to_empty_then_fresh ... ok
+test s4_rename_detected_and_converges ... ok
+test s4_stamp_preserves_prior_identity_keys_when_docs_differ_from_disk ... ok
+test s4_torn_graph_lags_slot_forces_heal ... ok
+test s4_profile_policy_change_triggers_rebuild ... ok
+test s4_delete_detected_by_fingerprint_not_mtime ... ok
+test s4_legacy_meta_without_keys_uses_baseline_behavior ... ok
+test s4_auto_index_heals_on_new_language_arrival ... ok
+test s4_excluded_edit_is_silent_included_edit_stales ... ok
+test s4_ts_producer_drift_note_on_flagged_path ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.37s
+
+     Running tests/js_ts_graph.rs (target/debug/deps/js_ts_graph-3e4458f15a3559ee)
+
+running 7 tests
+test s3_rust_regression_types_stay_filtered_and_untestable ... ok
+test s3_queryable_policy_and_bare_class_query ... ok
+test s3_test_file_classification_shared ... ok
+test s3_calls_vs_references_edges ... ok
+test s3_calls_match_on_non_ascii_utf16_lines ... ok
+test s3_language_labels_and_node_kinds ... ok
+test s3_coverage_denominators_recorded ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/refresh.rs (target/debug/deps/refresh-550ed40772717fbe)
+
+running 16 tests
+test broken_release_bin_falls_through_to_dev_face ... ok
+test refresh_arg_guards ... ok
+test hook_install_refuses_active_local_hooks ... ok
+test hook_install_allows_rerun_with_inert_local_hooks ... ok
+test hook_install_refuses_managed_hook_with_foreign_hooks_path ... ok
+test hook_install_upgrades_managed_script_in_place ... ok
+test release_first_roots_prefers_non_cargo_home ... ok
+test hook_install_bytes_idempotent_and_reverse ... ok
+test hook_install_refuses_unmanaged_hook_and_foreign_hooks_path ... ok
+test refresh_docs_only_head_syncs_meta_only ... ok
+test refresh_does_not_nudge_current_format_or_absent_hook ... ok
+test refresh_nudges_old_format_managed_hook ... ok
+test refresh_heals_stale_via_real_producer ... ok
+test hook_dead_runner_marker_is_respawned ... ok
+test hook_non_numeric_marker_is_sanitized ... ok
+test hook_burst_coalesces_into_one_tail_refresh ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.58s
+
+     Running tests/source_identity.rs (target/debug/deps/source_identity-6427cba5bc442c51)
+
+running 15 tests
+test tc7_route_and_usage_faces ... ok
+test tc13_torn_plane_guard_survives_identity_mode ... ok
+test tc7_no_slot_fails_loud_with_empty_terminal_note ... ok
+test c1_partial_identity_meta_degrades_to_legacy ... ok
+test tc8_docs_only_head_sync_keeps_identity_value ... ok
+test tc15_stash_roundtrip_converges_fresh ... ok
+test tc16_noop_exclude_change_is_fresh_with_degraded_signal ... ok
+test legacy_meta_keeps_baseline_semantics_and_zero_identity ... ok
+test tc4_dirty_wt_edit_fires_identity_drift ... ok
+test tc9_explicit_pinned_face_scope_ignores_other_faces ... ok
+test tc7_freshness_json_contract_four_states ... ok
+test tc8_preserve_extends_to_identity_keys ... ok
+test tc8_stamp_is_immune_to_cache_pollution ... ok
+test tc8_stamp_writes_identity_keys_on_consistent_pair ... ok
+test tc5_mtime_preserved_swap_rebuilds_not_serves ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.13s
+

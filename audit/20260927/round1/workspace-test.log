@@ -1,0 +1,1001 @@
+   Compiling code-reality v0.9.3 (/Users/ctai/.codex/worktrees/5967/code-reality/crates/code-reality)
+   Compiling code-reality-lsp-bridge v0.9.3 (/Users/ctai/.codex/worktrees/5967/code-reality/crates/code-reality-lsp-bridge)
+   Compiling pyrefly-producer v0.9.3 (/Users/ctai/.codex/worktrees/5967/code-reality/crates/pyrefly-producer)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 16.30s
+     Running unittests src/lib.rs (target/debug/deps/code_reality-9aed9a78378e5ced)
+
+running 65 tests
+test common::tests::edge_kinds_pinned ... ok
+test common::tests::days_from_civil_roundtrips_engine_civil ... ok
+test argparse::tests::ddash_separator_and_negative_positional ... ok
+test common::tests::epoch_to_utc_iso_zero_micros_omits_frac ... ok
+test argparse::tests::help_faces ... ok
+test argparse::tests::error_family ... ok
+test common::tests::utc_now_micros_shape ... ok
+test common::anchor_pattern_tests::space_escaping_matches_python_re_escape_bytes ... ok
+test argparse::tests::basics_flags_and_positionals ... ok
+test argparse::tests::short_inline_forms ... ok
+test argparse::tests::abbrev_and_inline_and_last_wins ... ok
+test common::tests::repo_relative_outside_is_none ... ok
+test graph_db::tests::python_prefixes_cover_all_python_producers ... ok
+test graph_db::tests::js_ts_documents_drive_labels_and_unknown_falls_back ... ok
+test common::tests::json_indent1_matches_python_shapes ... ok
+test common::tests::local_epoch_iso_renders_offset_and_auto_frac ... ok
+test common::tests::iso_parse_offset_forms ... ok
+test identity::tests::identity_entry_format_pin ... ok
+test identity::tests::identity_is_content_sensitive ... ok
+test identity::tests::face_scoping_excludes_other_faces ... ok
+test common::tests::anchor_pattern_shape ... ok
+test identity::tests::cache_store_prunes_out_of_set_entries ... ok
+test identity::tests::identity_is_touch_idempotent ... ok
+test identity::tests::read_failure_fails_loud ... ok
+test js_ts_calls::tests::computed_dynamic_and_dynamic_import_no_guess ... ok
+test identity::tests::symlinked_source_is_invisible_to_identity ... ok
+test js_ts_calls::tests::direct_method_optional_and_new ... ok
+test js_ts_calls::tests::missing_file_degrades_loud ... ok
+test identity::tests::same_second_same_size_rewrite_is_detected ... ok
+test js_ts_calls::tests::broken_parse_degrades_loud_no_marks ... ok
+test js_ts_calls::tests::decorator_tagged_template_and_jsx_element_forms ... ok
+test identity::tests::identity_equal_across_equivalent_trees ... ok
+test js_ts_calls::tests::type_only_and_import_references_are_not_calls ... ok
+test js_ts_calls::tests::non_ascii_prefix_columns_are_utf16 ... ok
+test identity::tests::corrupt_cache_discards_and_recomputes ... ok
+test js_ts_calls::tests::generic_and_await_calls ... ok
+test js_ts_corpus::tests::normalize_rel_shapes ... ok
+test identity::tests::cache_path_equals_full_recompute ... ok
+test language::tests::extension_table_for_all_eight_faces ... ok
+test language::tests::graph_labels_and_meta_names ... ok
+test language::tests::producer_mapping_and_order ... ok
+test js_ts_corpus::tests::malformed_profile_fails_loud ... ok
+test js_ts_corpus::tests::all_excluded_is_empty_not_error ... ok
+test profile::tests::effective_excludes_provenance_and_dedupe ... ok
+test profile::tests::claims_regex_never_matches_without_rules ... ok
+test profile::tests::exclusion_default_and_profile ... ok
+test profile::tests::depth_float_and_bool_crash_with_py_repr ... ok
+test profile::tests::module_of_f6_and_depth_and_generic ... ok
+test profile::tests::missing_profile_is_none ... ok
+test profile::tests::hazard_registry_parsed_and_prefix_checked ... ok
+test profile::tests::missing_scan_root_key_is_schema_crash ... ok
+test py_calls::tests::missing_file_degrades_loud ... ok
+test profile::tests::prefix_without_slash_crashes ... ok
+test js_ts_calls::tests::six_extension_routing ... ok
+test js_ts_corpus::tests::profile_exclusion_removes_generated_tree_only ... ok
+test profile::tests::unknown_key_message_lists_sorted_keys ... ok
+test mcp_server::error_cap_regression::panic_payload_obeys_same_cap ... ok
+test py_calls::tests::collects_line_and_callee_name ... ok
+test mcp_server::error_cap_regression::final_error_text_boundary_and_combined_streams ... ok
+test js_ts_corpus::tests::six_extensions_and_skips ... ok
+test ts_producer::tests::in_process_unrelated_existing_error_does_not_fallback ... ok
+test ts_producer::tests::in_process_zero_file_existing_config_retries_derived_once ... ok
+test ts_producer::tests::in_process_filter_drops_non_governed_documents ... ok
+test ts_producer::tests::in_process_partial_existing_config_falls_back_to_exact_derived ... ok
+test graph_audit::tests::coverage_decision_matrix ... ok
+
+test result: ok. 65 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running unittests src/bin/code-reality/main.rs (target/debug/deps/code_reality-5bac56523408910e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/code-reality-mcp/main.rs (target/debug/deps/code_reality_mcp-47a5c17513a9aede)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/build.rs (target/debug/deps/build-36d7685b3b4ff667)
+
+running 33 tests
+test t10_run_non_dir_fails_loud ... ok
+test t11_empty_repo_env_fail ... ok
+test t15_python_all_excluded_converges_to_empty ... ok
+test t12_edge_dedupe_doubled_index_converges ... ok
+test t13_fresh_noop_is_zero_spawn ... ok
+test t16_producer_fail_serve_stale_lock_released ... ok
+test t14_stale_heals_and_releases_lock ... ok
+test t15_head_drift_only_no_rebuild ... ok
+test t1_count_sources_detection_matrix ... ok
+test t16_python_partial_producer_warns_missing_governed ... ok
+test t17_half_success_probe ... ok
+test t17_build_report_prints_effective_excludes ... ok
+test t14_python_leg_without_profile_keeps_dist ... ok
+test t13_python_leg_drops_profile_excluded_docs ... ok
+test t18_churn_cooldown_skips_reheal_within_window ... ok
+test t18_false_stale_warns_once_no_loop ... ok
+test t2_resolve_bin_injection ... ok
+test t3_run_usage_and_producer_validation ... ok
+test t20_readonly_slot_dir_serves_stale ... ok
+test t23_sm15_staleness_check_err_face ... ok
+test t4_python_leg_e2e_and_idempotent_rerun ... ok
+test t21_cli_heal_across_query_modes ... ok
+test t8_missing_bin_is_env_fail_with_hint ... ok
+test t5_rust_empty_index_guard ... ok
+test t6_rust_leg_e2e ... ok
+test t19_head_drift_overrides_cooldown_and_convergence_clears ... ok
+test t9_child_failure_maps_env_with_stderr_and_rust_hint ... ok
+test t22_cli_off_switch_and_non_heal_faces ... ok
+test t19_lock_escape_and_single_flight ... ok
+test t20_cooldown_env_zero_disables ... ok
+test t7_mixed_repo_unified_graph_concat ... ok
+test t21_wait_peer_respects_armed_marker ... ok
+test t22_expired_marker_lets_heal_resume ... ok
+
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.24s
+
+     Running tests/callers.rs (target/debug/deps/callers-155c6f737df5f7a8)
+
+running 11 tests
+test closure_zero_frontier_stable_shape ... ok
+test fn_spans_skips_and_warns_on_unexpected_enc_len ... ok
+test closure_seed_reentry_counts_as_cycle ... ok
+test fn_spans_absent_enc_skips_silently ... ok
+test attribute_same_width_tie_first_seen_wins ... ok
+test attribute_item_level_and_grouping_order ... ok
+test closure_cycle_detection_no_infinite_loop ... ok
+test fn_spans_parses_four_and_three_element_enc ... ok
+test closure_depth_truncation_and_aggregation ... ok
+test attribute_innermost_nested_and_boundaries_inclusive ... ok
+test refs_rows_flat_scan_order_and_non_def_only ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/callers_cli.rs (target/debug/deps/callers_cli-85e6b3cb21f9c4b2)
+
+running 13 tests
+test depth_requires_closure ... ok
+test callers_closure_mutex ... ok
+test build_cache_with_callers_and_no_query_fails_loudly ... ok
+test no_query_with_callers_hits_frozen_final_guard ... ok
+test callers_no_def_exit_1 ... ok
+test callers_output_exact_shape ... ok
+test stamp_meta_with_closure_fails_loudly ... ok
+test callers_zero_refs_stable_shape ... ok
+test closure_depth1_is_callers_set ... ok
+test callers_mode_answers_python_class_query ... ok
+test closure_depth2_and_depth3_cycle ... ok
+test abbreviations_resolve_and_c_is_ambiguous ... ok
+test depth_value_family ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/fndefs.rs (target/debug/deps/fndefs-52ec395864152530)
+
+running 7 tests
+test fndefs_path_is_full_filename_plus_suffix ... ok
+test absent_sidecar_uses_protobuf_and_never_builds ... ok
+test sidecar_roundtrip_matches_protobuf_spans ... ok
+test build_cache_stdout_frozen_and_three_table_bytes_untouched ... ok
+test rebuild_failure_falls_back_to_protobuf_spans ... ok
+test stale_sidecar_warns_and_rebuilds ... ok
+test stale_guards_index_mtime_schema_and_head ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/freshness.rs (target/debug/deps/freshness-7b8cbe09548e2a21)
+
+running 5 tests
+test umbrella_version_face_carries_rev ... ok
+test mcp_rejects_unknown_arg_loudly ... ok
+test mcp_help_face_answers_on_stdout ... ok
+test mcp_version_face_carries_rev ... ok
+test mcp_arg_priority_is_ordered ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.31s
+
+     Running tests/graph_db.rs (target/debug/deps/graph_db-a00c3ce3bfc16881)
+
+running 10 tests
+test is_test_rel_covers_rust_and_python_conventions ... ok
+test missing_cache_is_loud ... ok
+test build_fails_loud_on_stale_lsp_sidecar_superseded_by_newer_index ... ok
+test build_creates_producer_keyed_schema ... ok
+test build_stamps_snapshot_metadata ... ok
+test build_materializes_engine_read_chain_indexes ... ok
+test ensure_indexes_is_idempotent_on_built_db ... ok
+test edge_sites_match_scip_edges_derivation ... ok
+test lsp_cache_builds_with_nearest_preceding_attribution ... ok
+test build_is_idempotent_and_leaves_no_temp ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests/graph_db_fixture.rs (target/debug/deps/graph_db_fixture-872df87b50de07bc)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/graph_engine.rs (target/debug/deps/graph_engine-f54027ab91000da0)
+
+running 30 tests
+test gq_run_bad_numeric_flag_is_loud ... ok
+test gq_run_comma_encoding_rejects_empty_segments ... ok
+test gq_run_missing_repo_is_loud ... ok
+test document_symbols_at_outlines_file ... ok
+test communities_cohesion_and_cross_edges_survive_symbol_ne_qname ... ok
+test flow_adjacency_calls_and_tested_by_semantics ... ok
+test communities_directory_grouping_naming_cohesion ... ok
+test impact_radius_bare_basename_seeds_all_same_suffix_files ... ok
+test architecture_overview_cross_edges_and_warnings ... ok
+test bridge_brandes_directed_normalized_positive_only ... ok
+test hub_counts_all_edge_rows_and_excludes_zero_degree ... ok
+test gq_run_hub_end_to_end ... ok
+test affected_flows_filters_by_changed_files ... ok
+test detect_changes_composition ... ok
+test impact_radius_cap_truncation ... ok
+test open_missing_db_fails_loud ... ok
+test parse_unified_diff_hunks ... ok
+test impact_radius_excludes_verilog_extra ... ok
+test impact_radius_path_matching_edges ... ok
+test impact_radius_relative_path_suffix_fallback ... ok
+test impact_radius_relaxation_scores_and_order ... ok
+test load_edges_keeps_rowid_order_and_all_kinds ... ok
+test load_nodes_excludes_files_and_keeps_rowid_order ... ok
+test leiden_separates_clusters_and_is_deterministic ... ok
+test minimal_context_envelope ... ok
+test map_changes_overlap_and_suffix_fallback ... ok
+test review_context_structural_keys ... ok
+test trace_flows_entries_bfs_and_criticality ... ok
+test risk_score_six_factors_handcheck ... ok
+test search_fts_then_like_fallback ... ok
+
+test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+
+     Running tests/js_ts_boundaries.rs (target/debug/deps/js_ts_boundaries-c8d37554834dfdcb)
+
+running 7 tests
+test s6_hazard_qualified_js_target_also_unsupported ... ok
+test s6_hazard_js_target_unsupported_both_flag_and_auto ... ok
+test s6_project_rejects_js_ts_planned_sources ... ok
+test s6_hazard_python_target_in_mixed_repo_still_supported ... ok
+test s6_pure_js_graph_audit_never_clean ... ok
+test s6_scip_refs_audit_wrapper_routes_the_same_guard ... ok
+test s6_mixed_graph_audit_is_partial_not_clean ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+     Running tests/js_ts_build.rs (target/debug/deps/js_ts_build-9c2d4f1eb86c3833)
+
+running 12 tests
+test s1_mcp_producer_validation_accepts_typescript ... ok
+test node_tool_roots_order_and_env ... ok
+test s2_missing_binary_env_hint_slot_preserved ... ok
+test s2_ts_only_all_excluded_converges_to_empty ... ok
+test s2_all_js_excluded_skips_leg_in_mixed_repo ... ok
+test s2_repo_local_node_modules_bin_wins ... ok
+test s2_derived_mode_success_and_report ... ok
+test s1_py_ts_mixed_face_and_override_notes ... ok
+test s1_concurrent_builds_do_not_collide_on_staging ... ok
+test s1_malformed_later_part_preserves_slot ... ok
+test s1_later_leg_failure_leaves_slot_byte_identical ... ok
+test s1_three_family_merge_is_ordered_and_deterministic ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.90s
+
+     Running tests/js_ts_freshness.rs (target/debug/deps/js_ts_freshness-a6cc03e6b8cb87f5)
+
+running 12 tests
+test s4_all_excluded_corpus_heals_to_empty_then_fresh ... ok
+test s4_nonconverged_heal_arms_cooldown_not_fresh ... ok
+test s4_face_isolation_python_only_slot_ignores_ts ... ok
+test s4_auto_index_heals_on_new_language_arrival ... ok
+test s4_rename_detected_and_converges ... ok
+test s4_torn_graph_lags_slot_forces_heal ... ok
+test s4_excluded_edit_is_silent_included_edit_stales ... ok
+test s4_legacy_meta_without_keys_uses_baseline_behavior ... ok
+test s4_stamp_preserves_prior_identity_keys_when_docs_differ_from_disk ... ok
+test s4_delete_detected_by_fingerprint_not_mtime ... ok
+test s4_profile_policy_change_triggers_rebuild ... ok
+test s4_ts_producer_drift_note_on_flagged_path ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.51s
+
+     Running tests/js_ts_graph.rs (target/debug/deps/js_ts_graph-878fcd041f8f9d19)
+
+running 7 tests
+test s3_rust_regression_types_stay_filtered_and_untestable ... ok
+test s3_queryable_policy_and_bare_class_query ... ok
+test s3_calls_match_on_non_ascii_utf16_lines ... ok
+test s3_test_file_classification_shared ... ok
+test s3_calls_vs_references_edges ... ok
+test s3_language_labels_and_node_kinds ... ok
+test s3_coverage_denominators_recorded ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/mcp_error_delivery_regression.rs (target/debug/deps/mcp_error_delivery_regression-0af7a5116fdb27c1)
+
+running 3 tests
+test oversized_error_is_bounded_and_stdio_survives ... ok
+test unwind_cleans_up_started_producer_without_explicit_close ... ok
+test cancellation_and_eof_retain_started_work ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.77s
+
+     Running tests/plugin_wrapper.rs (target/debug/deps/plugin_wrapper-b76b1cf4e30f1abb)
+
+running 1 test
+test plugin_wrapper_regression ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.20s
+
+     Running tests/project.rs (target/debug/deps/project-b970b76442ed5a09)
+
+running 11 tests
+test real_overlay_gen_e2e_when_built ... ok
+test run_arg_faces ... ok
+test missing_real_index_gives_build_guidance ... ok
+test missing_bin_gives_install_guidance ... ok
+test invalid_stem_fails_loud ... ok
+test happy_path_graft_hole_missing_labels ... ok
+test graph_rev_mismatch_warns ... ok
+test minter_failure_is_env_exit_two ... ok
+test wrong_plan_identity_fails_loud_with_real_prefix ... ok
+test two_slots_coexist_without_interference ... ok
+test real_slot_stays_byte_identical_and_rerun_idempotent ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.72s
+
+     Running tests/publication.rs (target/debug/deps/publication-5fc22a0d1580f7a7)
+
+running 9 tests
+test four_same_process_writers_publish_complete_graphs ... ok
+test missing_main_graph_is_torn_alternate_is_optional ... ok
+test source_edit_while_waiting_for_publication_preserves_old_plane ... ok
+test policy_edit_during_production_rejects_publication ... ok
+test replaced_index_cannot_inherit_identity ... ok
+test manual_restamp_cannot_certify_content_edit ... ok
+test replaced_index_without_restamp_cannot_serve_current_tree ... ok
+test production_edit_preserves_published_artifacts ... ok
+test fresh_manual_stamp_has_no_consumption_evidence ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.26s
+
+     Running tests/refresh.rs (target/debug/deps/refresh-88db328e84fe28af)
+
+running 16 tests
+test broken_release_bin_falls_through_to_dev_face ... ok
+test refresh_arg_guards ... ok
+test hook_install_refuses_active_local_hooks ... ok
+test hook_install_allows_rerun_with_inert_local_hooks ... ok
+test hook_install_upgrades_managed_script_in_place ... ok
+test hook_install_refuses_managed_hook_with_foreign_hooks_path ... ok
+test release_first_roots_prefers_non_cargo_home ... ok
+test hook_install_bytes_idempotent_and_reverse ... ok
+test hook_install_refuses_unmanaged_hook_and_foreign_hooks_path ... ok
+test refresh_docs_only_head_syncs_meta_only ... ok
+test refresh_does_not_nudge_current_format_or_absent_hook ... ok
+test refresh_nudges_old_format_managed_hook ... ok
+test refresh_heals_stale_via_real_producer ... ok
+test hook_dead_runner_marker_is_respawned ... ok
+test hook_non_numeric_marker_is_sanitized ... ok
+test hook_burst_coalesces_into_one_tail_refresh ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.61s
+
+     Running tests/s1_foundation.rs (target/debug/deps/s1_foundation-a71ef7fd2ea14378)
+
+running 8 tests
+test tooloutput_fail_shape ... ok
+test json_indent1_pretty_shapes ... ok
+test make_meta_key_order_and_injected_commit ... ok
+test d2_time_oracle_pinned ... ok
+test tear_guard_detects_mid_read_rewrite ... ok
+test connect_ro_mode_ro_branch_with_wal_file ... ok
+test connect_ro_immutable_branch_without_wal ... ok
+test make_meta_git_failure_is_err ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/s1_skeleton.rs (target/debug/deps/s1_skeleton-c017ec8104517e0d)
+
+running 2 tests
+test fail_output_is_stderr_fail_line_with_exit_2 ... ok
+test msg_line_appends_trailing_newline ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/s2_engine.rs (target/debug/deps/s2_engine-45db678c542ed41f)
+
+running 20 tests
+test class_tail_captures_trailing_class_identifier ... ok
+test bare_class_arm_is_python_face_gated ... ok
+test bare_matcher_is_name_tail_only ... ok
+test bare_matcher_accepts_class_tail_end_anchored ... ok
+test fn_tail_captures_full_trailing_identifier ... ok
+test ln_is_one_based_and_negative_when_range_missing ... ok
+test find_defs_resolves_python_class_def ... ok
+test find_defs_and_refs_scan_order_and_symbol_sort ... ok
+test name_pat_boundaries_match_python_docstring ... ok
+test report_assembles_poc_verified_byte_shape ... ok
+test report_empty_defs_is_warn_exit_1 ... ok
+test data_dir_gitignore_fails_loud_when_root_blocked ... ok
+test tail_takes_last_space_part_when_more_than_four ... ok
+test type_method_matcher_requires_marker_or_trait_decl ... ok
+test slot_resolution_is_in_repo ... ok
+test resolve_repo_boundary_semantics ... ok
+test data_dir_gitignore_is_single_star_and_idempotent ... ok
+test meta_corrupt_shapes_warn_and_return_none ... ok
+test git_head_fails_loudly_outside_a_repo ... ok
+test source_line_variants ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests/s2_snapshot.rs (target/debug/deps/s2_snapshot-3ee48a3f67906326)
+
+running 16 tests
+test detect_stale_three_levels ... ok
+test default_out_dir_is_in_repo_and_self_ignored ... ok
+test cli_missing_db_crash_message ... ok
+test export_files_face_is_all_kinds ... ok
+test help_face_bytes ... ok
+test cli_subdir_repo_is_git_root_crash ... ok
+test usage_error_exit_2 ... ok
+test export_counts_same_module_files_and_skips_excluded ... ok
+test cli_empty_set_warn_zero_edge_db ... ok
+test cli_empty_set_warn ... ok
+test cli_empty_set_warn_kind_distribution ... ok
+test build_snapshot_writes_committed_label ... ok
+test cli_stale_warn_line_shape ... ok
+test cli_ok_line_and_sidecar_schema ... ok
+test mixed_kind_files_union_module_edges_structural ... ok
+test export_resolves_symbols_via_nodes_with_dangling_fallback ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+     Running tests/s3_cache.rs (target/debug/deps/s3_cache-eb247cdf56cf7212)
+
+running 9 tests
+test open_face_no_db_never_builds ... ok
+test docs_fully_filtered_counter_is_loud ... ok
+test build_stats_and_ingest_filter ... ok
+test crash_leftover_tmp_is_cleaned_by_rebuild ... ok
+test class_tailed_symbols_ingest_and_answer_bare_queries ... ok
+test protobuf_and_sqlite_faces_agree ... ok
+test open_face_rebuild_failure_falls_back_to_protobuf ... ok
+test open_face_stale_rebuilds_and_serves_sqlite ... ok
+test stale_guards_all_four_signals ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/s3_transition.rs (target/debug/deps/s3_transition-a1649f5a2199474f)
+
+running 13 tests
+test diff_same_set_empty ... ok
+test diff_multi_kind_pair_not_false_reversed ... ok
+test claims_three_buckets_and_none ... ok
+test diff_reversed_reports_added_direction ... ok
+test load_snapshot_rejects_bad_schema ... ok
+test degenerate_json_face_warning ... ok
+test summarize_marks_degenerate_pairs ... ok
+test files_only_change_counts_as_changed_module ... ok
+test cross_face_files_diff_warns ... ok
+test cross_generation_pair_warns ... ok
+test sync281e07e_relative_unknown_dir_not_claimed ... ok
+test sync281e07e_relative_path_claim_verified_against_repo ... ok
+test sync281e07e_without_repo_root_regex_only ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/s4_cli.rs (target/debug/deps/s4_cli-f01c32ad62315fcc)
+
+running 11 tests
+test mutex_family_verbatim_messages ... ok
+test empty_string_query_lands_on_final_guard ... ok
+test index_resolution_failures ... ok
+test query_stdout_full_shape_on_fixture ... ok
+test stamp_meta_git_failure_is_exit_2 ... ok
+test stamp_meta_on_default_slot_ensures_data_dir_ignore ... ok
+test build_cache_stats_line_on_fixture ... ok
+test query_with_repo_no_meta_yields_src_repo_part_only ... ok
+test stamp_meta_writes_sidecar_and_is_idempotent ... ok
+test unstamped_remediation_split_by_divergence ... ok
+test head_drift_warn_e2e ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+     Running tests/s4_graph_audit.rs (target/debug/deps/s4_graph_audit-84da0291853c5afa)
+
+running 16 tests
+test ordered_counter_bump_semantics ... ok
+test cli_help_and_usage_family ... ok
+test cli_env_gate_missing_db_exit_2 ... ok
+test audit_targets_double_key_file_name_attribution ... ok
+test risk_scan_indented_impl_inside_inline_mod ... ok
+test risk_scan_overlap_sorted_not_first_seen ... ok
+test scip_audit_guard_family_before_index_resolution ... ok
+test fn_re_modifier_prefixes ... ok
+test risk_scan_kernel_triple_impl_per_block_counting ... ok
+test risk_scan_unclosed_impl_conservative_bloat ... ok
+test parse_ra_symbols_filters_kind_and_preserves_order ... ok
+test audit_targets_sqlite_face_matches_protobuf ... ok
+test audit_assembles_missing_and_vacuous_warn ... ok
+test audit_default_scope_is_risk_files_all_flag_expands ... ok
+test db_functions_kind_includes_test_and_resolves_path ... ok
+test db_functions_dedupes_synthesized_shadow_rows ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/s4b_hazard_hubrefs.rs (target/debug/deps/s4b_hazard_hubrefs-467c706752583f6c)
+
+running 33 tests
+test classify_rg_lines_splits ... ok
+test cli_help_and_usage_family ... ok
+test cli_missing_db_crash_exit_1 ... ok
+test caller_files_set ... ok
+test aggregate_tie_keeps_first_seen ... ok
+test getattr_dispatch_shape ... ok
+test aggregate_counts_split_top_and_outside ... ok
+test dotted_base_and_nested_class_walk ... ok
+test method_name_forms ... ok
+test json_payload_and_compact_bytes ... ok
+test pattern_builders ... ok
+test plain_class_no_traits_and_missing_symbol_safe ... ok
+test protocol_and_importlib_detectors ... ok
+test protocol_detected ... ok
+test registry_detection_by_prefix_and_suffix ... ok
+test require_ok_faces ... ok
+test resident_vs_full_and_gate ... ok
+test refs_query_callers_reads_new_db_with_test_flags ... ok
+test static_edge_gap_two_forms_and_set_diff ... ok
+test str_enum_comma_form_detected ... ok
+test strentenum_detected_with_values ... ok
+test strentenum_dispatch_counts_and_excludes_definition ... ok
+test rg_runner_strips_prefix_and_honors_exclusions ... ok
+test syntax_error_source_safe ... ok
+test resolve_qualified_dotted_producer_key_retries_qname_lookup ... ok
+test resolve_symbol_end_to_end_on_new_db ... ok
+test resolve_symbol_missing_db_and_unknown_symbol_fail_loud ... ok
+test fs_fallback_restores_class_facts_and_registry_hazard ... ok
+test rg_runner_builder_patterns_compatible ... ok
+test symbol_facts_unique_and_degraded ... ok
+test fs_fallback_ambiguous_or_missing_stays_degraded ... ok
+test resolve_qualified_faces ... ok
+test stale_head_warn_faces ... ok
+
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests/s5_boundary.rs (target/debug/deps/s5_boundary-0ff6c3a4198a1757)
+
+running 7 tests
+test pyi_module_rindex_semantics ... ok
+test screaming_snake_conversion ... ok
+test default_out_dir_is_in_repo_and_self_ignored ... ok
+test scan_rust_extracts_all_three_kinds ... ok
+test build_boundary_reconciliation ... ok
+test cli_build_and_query ... ok
+test build_sidecar_and_query_roundtrip ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests/s5_chain_tour.rs (target/debug/deps/s5_chain_tour-37e608e853713cf6)
+
+running 13 tests
+test dup_family_decision_redirect_semantics ... ok
+test best_ident_call_position_wins ... ok
+test graph_anchor_rejects_legacy_schema_loudly ... ok
+test prefix_and_blocks_and_frames ... ok
+test consumer_db_defaults_to_self_owned ... ok
+test anchor_tiebreak_is_deterministic_on_wider_candidate_set ... ok
+test cli_faces ... ok
+test write_tours_nn_prefix_and_primary ... ok
+test build_tours_skips_external_and_anchors ... ok
+test build_tours_with_graph_reanchor ... ok
+test regen_orphan_source_family_warns ... ok
+test regen_explicit_out_dir_dup_warns_both_families ... ok
+test regen_refreshes_pattern_when_same_line_content_changes ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests/s5_delta_tour.rs (target/debug/deps/s5_delta_tour-63d7742d70c5cbe4)
+
+running 7 tests
+test cli_faces ... ok
+test kebab_and_cleanup ... ok
+test degenerate_warning_is_additive_steps_still_render ... ok
+test degenerate_pair_tour_carries_warning ... ok
+test step_set_from_range_with_collapse_and_anchors ... ok
+test cli_end_to_end_with_snapshots ... ok
+test claims_three_states ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.35s
+
+     Running tests/s5_runtime_edges.rs (target/debug/deps/s5_runtime_edges-26a46e5ec2095e81)
+
+running 8 tests
+test missing_tid_or_dur_is_loud ... ok
+test cli_faces_and_boolean_optional_action ... ok
+test pid_tid_grouping_prevents_cross_process_edges ... ok
+test nesting_extraction_nearest_ancestor ... ok
+test aggregate_stats_count_desc_and_nearest_rank_p95 ... ok
+test name_parsing ... ok
+test repo_only_keeps_one_endpoint_inside ... ok
+test cli_end_to_end_output_faces ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/s5_tour_trio.rs (target/debug/deps/s5_tour_trio-17c0c3daa3e49c74)
+
+running 17 tests
+test ts_key_strips_number_prefix ... ok
+test sanitize_brackets_and_crossrefs ... ok
+test manifest_tours_root_walk ... ok
+test manifest_upsert_dump_roundtrip_with_unknown_keys ... ok
+test validate_corpus_dir_with_zero_tours_fails_loud ... ok
+test validate_all_excluded_corpus_stays_warn_green ... ok
+test iter_tours_excludes_delta_by_default ... ok
+test build_step_pattern_decl_and_backtick_fallback ... ok
+test validate_missing_corpus_dir_stays_warn_green ... ok
+test manifest_init_scan_generator_guess_and_skip_dirs ... ok
+test validate_absolute_tours_dir_matches_relative ... ok
+test validate_happy_path_fails_zero_nonzero_tours ... ok
+test upgrade_dry_run_and_apply ... ok
+test validate_manifest_mode_fails_zero ... ok
+test validate_link_and_anchor_faces ... ok
+test manifest_and_upgrade_repo_relative_forms_resolve ... ok
+test validate_repo_relative_form_matches_absolute ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+     Running tests/s6_mcp_server.rs (target/debug/deps/s6_mcp_server-1f57f4a3c420fa76)
+
+running 9 tests
+test closure_optional_depth_and_missing_param_types ... ok
+test tools_route_through_the_lib ... ok
+test data_plane_tools_route_loud_errors ... ok
+test bin_help_face ... ok
+test mcp_snapshot_and_delta_tour_end_to_end ... ok
+test http_server_serves_initialize_and_tools_list ... ok
+test minimal_detail_drops_members_and_aggregates_pairs ... ok
+test get_community_drill_down_and_flows_limit ... ok
+test oversized_output_hits_the_byte_cap_backstop ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 26.94s
+
+     Running tests/s7_sidecar_migrate.rs (target/debug/deps/s7_sidecar_migrate-aae00955e503f611)
+
+running 8 tests
+test nonexistent_repo_fails_fast_without_fabricating_tree ... ok
+test run_faces_repo_required_ensured_and_idempotent_output ... ok
+test old_slot_index_detects_retired_home_slot ... ok
+test copy_verified_preserves_bytes_and_mtime ... ok
+test dual_presence_file_reports_no_false_move ... ok
+test migrates_slot_dir_with_mtimes_and_drops_union ... ok
+test rerun_is_zero_action ... ok
+test both_exist_never_overwrites ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/s8_tour_materialize.rs (target/debug/deps/s8_tour_materialize-b275717c30b24811)
+
+running 12 tests
+test delta_arc_roundtrip_and_replace_by_arcid ... ok
+test plain_load_dump_preserves_unknown_keys_in_delta_arc_rows ... ok
+test snapshot_resolution_hit_miss_ambiguous ... ok
+test in_repo_symlink_ep_resolves_to_real_location ... ok
+test row_driven_materialize_resolves_legacy_short_sha_row ... ok
+test materialize_lone_ep_flag_fails_loud ... ok
+test register_over_materialized_arc_resets_row_to_pending ... ok
+test register_then_materialize_intent_only_full_chain ... ok
+test external_ep_keeps_provenance_across_rematerialize ... ok
+test relative_dotdot_ep_escape_normalizes_to_absolute ... ok
+test materialize_lone_card_flag_fails_loud ... ok
+test stale_snapshot_fails_loud_and_row_stays_pending ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.75s
+
+     Running tests/scip_edges.rs (target/debug/deps/scip_edges-7d8fb288229c2d77)
+
+running 3 tests
+test filter_workspace_drops_callees_without_def ... ok
+test derive_matches_callers_oracle_for_open ... ok
+test derive_report_totals_add_up_and_rows_sorted ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/source_identity.rs (target/debug/deps/source_identity-5fc687c952e2ca60)
+
+running 15 tests
+test tc7_route_and_usage_faces ... ok
+test tc13_torn_plane_guard_survives_identity_mode ... ok
+test tc7_no_slot_fails_loud_with_empty_terminal_note ... ok
+test c1_partial_identity_meta_degrades_to_legacy ... ok
+test tc8_docs_only_head_sync_keeps_identity_value ... ok
+test tc15_stash_roundtrip_converges_fresh ... ok
+test legacy_meta_keeps_baseline_semantics_and_zero_identity ... ok
+test tc16_noop_exclude_change_is_fresh_with_degraded_signal ... ok
+test tc4_dirty_wt_edit_fires_identity_drift ... ok
+test tc9_explicit_pinned_face_scope_ignores_other_faces ... ok
+test tc7_freshness_json_contract_four_states ... ok
+test tc8_preserve_extends_to_identity_keys ... ok
+test tc8_stamp_is_immune_to_cache_pollution ... ok
+test tc8_stamp_writes_identity_keys_on_consistent_pair ... ok
+test tc5_mtime_preserved_swap_rebuilds_not_serves ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.90s
+
+     Running tests/staleness.rs (target/debug/deps/staleness-5230854ca07f8539)
+
+running 8 tests
+test doc_set_delta_face_scoped_missing_extra ... ok
+test walk_sources_rust_face_skips_target ... ok
+test walk_sources_profile_excludes_python_not_rust ... ok
+test walk_sources_skips_and_collects ... ok
+test evaluate_staleness_head_drift_without_git ... ok
+test walk_sources_newest_is_max_and_read_failure_is_err ... ok
+test evaluate_staleness_trigger_split ... ok
+test evaluate_staleness_head_drift_in_git_repo ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running unittests src/lib.rs (target/debug/deps/code_reality_lsp_bridge-431651c5d645729f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/code-reality-lsp-bridge.rs (target/debug/deps/code_reality_lsp_bridge-6e54ba8359b0ffde)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/bridge.rs (target/debug/deps/bridge-a96865c9d5ba4aa8)
+
+running 17 tests
+test backend_spawn_failure_is_loud ... ok
+test hover_missing_file_is_loud ... ok
+starting generic LSP server
+starting generic LSP server
+starting generic LSP server
+starting generic LSP server
+starting generic LSP server
+starting generic LSP server
+starting generic LSP server
+starting generic LSP server
+starting generic LSP server
+starting generic LSP server
+test backend_death_surfaces_loud_error ... ok
+starting generic LSP server
+test hover_function_def ... ok
+test hover_variable_type ... ok
+test hover_after_out_of_band_disk_edit ... ok
+starting generic LSP server
+starting generic LSP server
+starting generic LSP server
+shutting down server
+test session_handshake_and_shutdown ... ok
+starting generic LSP server
+test hover_null_position_returns_no_hover ... ok
+test check_file_cjk_filename_converges ... ok
+test check_strict_reports_both_errors ... ok
+test check_repeat_without_edit_returns_cache_immediately ... ok
+test lru_evict_preserves_overlay_edits ... ok
+test busy_channel_does_not_break_other_file_convergence ... ok
+test edit_then_check_reflects_new_content ... ok
+test check_file_timeout_path_warns ... ok
+test stalled_half_window_recovers_via_force_reopen ... ok
+test poisoned_cache_entry_does_not_converge ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.04s
+
+     Running tests/equivalence_battery.rs (target/debug/deps/equivalence_battery-51b1d3bd035918ea)
+
+running 1 test
+starting generic LSP server
+shutting down server
+test hover_parity_vs_pyright_baseline ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+     Running tests/lifecycle.rs (target/debug/deps/lifecycle-d605a720ae84eefe)
+
+running 8 tests
+test rejected_initialization_is_synchronously_terminal_and_reaped ... ok
+test cached_check_rejects_known_death ... ok
+test healthy_diagnostics_and_server_request_reply ... ok
+test check_deadline_includes_pending_interaction_wait ... ok
+test blocked_write_check_deadline_includes_sync ... ok
+test blocked_initialize_write_uses_check_entry_deadline ... ok
+test concurrent_shutdown_bounds_blocked_write_and_reaps ... ok
+test shutdown_bounds_request_write_and_reader_reply_backpressure ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 17.34s
+
+     Running tests/lsp_status_availability.rs (target/debug/deps/lsp_status_availability-b06a14b9a4bd8267)
+
+running 3 tests
+test present_backend_reports_session_state ... ok
+test availability_probe_resolves_like_spawn ... ok
+test missing_backend_reports_unavailable_with_hint ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ra_equivalence_battery.rs (target/debug/deps/ra_equivalence_battery-91371c1e1466b3d0)
+
+running 2 tests
+test full_version_identity_never_silently_skips ... ok
+2026-09-27T23:06:08.908798+08:00  WARN notify error: No path was found. about ["/Users/ctai/.codex/worktrees/5967/code-reality/rust-analyzer.toml"]
+2026-09-27T23:06:08.909526+08:00  WARN notify error: No path was found. about ["/Users/ctai/Library/Application Support/rust-analyzer/rust-analyzer.toml"]
+2026-09-27T23:06:09.950845+08:00  WARN notify error: No path was found. about ["/Users/ctai/.codex/worktrees/5967/code-reality/rust-analyzer.toml"]
+2026-09-27T23:06:09.951346+08:00  WARN notify error: No path was found. about ["/Users/ctai/Library/Application Support/rust-analyzer/rust-analyzer.toml"]
+test rust_hover_roundtrip_vs_frozen_baseline ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.97s
+
+     Running tests/rust_backend.rs (target/debug/deps/rust_backend-0466fe1520aa4ff4)
+
+running 4 tests
+test route_by_extension ... ok
+2026-09-27T23:06:16.981766+08:00  WARN notify error: No path was found. about ["/Users/ctai/.codex/worktrees/5967/code-reality/rust-analyzer.toml"]
+2026-09-27T23:06:16.982562+08:00  WARN notify error: No path was found. about ["/Users/ctai/Library/Application Support/rust-analyzer/rust-analyzer.toml"]
+2026-09-27T23:06:18.457163+08:00  WARN notify error: No path was found. about ["/Users/ctai/.codex/worktrees/5967/code-reality/rust-analyzer.toml"]
+2026-09-27T23:06:18.457861+08:00  WARN notify error: No path was found. about ["/Users/ctai/Library/Application Support/rust-analyzer/rust-analyzer.toml"]
+starting generic LSP server
+test rust_backend_death_leaves_python_alive ... ok
+starting generic LSP server
+2026-09-27T23:06:22.845908+08:00  WARN notify error: No path was found. about ["/Users/ctai/.codex/worktrees/5967/code-reality/rust-analyzer.toml"]
+2026-09-27T23:06:22.846574+08:00  WARN notify error: No path was found. about ["/Users/ctai/Library/Application Support/rust-analyzer/rust-analyzer.toml"]
+2026-09-27T23:06:24.349112+08:00  WARN notify error: No path was found. about ["/Users/ctai/.codex/worktrees/5967/code-reality/rust-analyzer.toml"]
+2026-09-27T23:06:24.349995+08:00  WARN notify error: No path was found. about ["/Users/ctai/Library/Application Support/rust-analyzer/rust-analyzer.toml"]
+shutting down server
+test mixed_language_sessions_are_independent ... ok
+2026-09-27T23:06:28.705423+08:00  WARN notify error: No path was found. about ["/Users/ctai/.codex/worktrees/5967/code-reality/rust-analyzer.toml"]
+2026-09-27T23:06:28.706219+08:00  WARN notify error: No path was found. about ["/Users/ctai/Library/Application Support/rust-analyzer/rust-analyzer.toml"]
+2026-09-27T23:06:30.193162+08:00  WARN notify error: No path was found. about ["/Users/ctai/.codex/worktrees/5967/code-reality/rust-analyzer.toml"]
+2026-09-27T23:06:30.194052+08:00  WARN notify error: No path was found. about ["/Users/ctai/Library/Application Support/rust-analyzer/rust-analyzer.toml"]
+test rust_edit_then_check_native_diagnostics ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 33.09s
+
+     Running tests/ts_backend.rs (target/debug/deps/ts_backend-d5df53f4f16b9e26)
+
+running 20 tests
+test langspec_extension_table_exact ... ok
+test langspec_rejects_foreign_and_unsupported_extensions ... ok
+test backend_command_display_renders_program_plus_args ... ok
+test backend_command_constructor_shapes ... ok
+test resolver_explicit_override_short_circuits ... ok
+test resolver_falls_back_to_bare_name_on_miss ... ok
+test session_for_routes_eight_extensions_before_spawn ... ok
+test resolver_honors_node_bin_dir_roots ... ok
+test resolver_prefers_workspace_node_modules ... ok
+test status_present_ts_backend_reports_session_state ... ok
+test status_missing_ts_backend_reports_unavailable_with_guidance ... ok
+test status_report_lists_three_families_in_order ... ok
+starting generic LSP server
+fake_lsp_server: --stdio argument required (typed backend args contract)
+test typescript_backend_requires_stdio_arg ... ok
+test out_of_band_disk_edit_is_synced ... ok
+test six_extensions_route_with_exact_language_ids ... ok
+test lru_close_reopen_retains_unpersisted_edit ... ok
+test ts_diagnostics_push_then_converge_after_correction ... ok
+fake_lsp_server: --stdio argument required (typed backend args contract)
+fake_lsp_server: --stdio argument required (typed backend args contract)
+test spawn_argv_equivalence_and_stdio ... ok
+test workspace_node_modules_backend_is_spawned ... ok
+2026-09-27T23:06:51.068821+08:00  WARN notify error: No path was found. about ["/Users/ctai/.codex/worktrees/5967/code-reality/rust-analyzer.toml"]
+2026-09-27T23:06:51.069405+08:00  WARN notify error: No path was found. about ["/Users/ctai/Library/Application Support/rust-analyzer/rust-analyzer.toml"]
+2026-09-27T23:06:52.562223+08:00  WARN notify error: No path was found. about ["/Users/ctai/.codex/worktrees/5967/code-reality/rust-analyzer.toml"]
+2026-09-27T23:06:52.56272+08:00  WARN notify error: No path was found. about ["/Users/ctai/Library/Application Support/rust-analyzer/rust-analyzer.toml"]
+test backend_death_isolation_both_directions ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.46s
+
+     Running tests/version_face.rs (target/debug/deps/version_face-76834fbf1ee5bee9)
+
+running 1 test
+test version_face_carries_rev ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.59s
+
+     Running unittests src/lib.rs (target/debug/deps/cr_freshness-827de66ef3132f79)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/staleness.rs (target/debug/deps/staleness-538393042e69178f)
+
+running 9 tests
+test rev_mismatch_table ... ok
+test is_dev_face_component_wise_prefix ... ok
+test staleness_unknown_rev_conservatively_lags ... ok
+test staleness_dirty_checkout ... ok
+test staleness_fresh_is_none ... ok
+test staleness_unknown_crate_dir_is_silent ... ok
+test staleness_lagged_when_crates_commit_moves ... ok
+test staleness_silent_on_docs_only_gap ... ok
+test staleness_dirty_embedded_stripped_before_crates_diff ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+     Running unittests src/lib.rs (target/debug/deps/pyrefly_producer-1e2ca861bc2c393f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/overlay-gen.rs (target/debug/deps/overlay_gen-84a7395bf4382ab1)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/pyrefly-index.rs (target/debug/deps/pyrefly_index-c679ad91a598d90f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/pyrefly-lsp.rs (target/debug/deps/pyrefly_lsp-430c2603db14a41b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/end_to_end.rs (target/debug/deps/end_to_end-a8f8fa0170a3bbeb)
+
+running 9 tests
+test emit_fails_loud_on_repo_without_python ... ok
+test pyrefly_lsp_version_face_carries_rev ... ok
+test write_is_atomic_no_tmp_residue ... ok
+test default_slot_chain_is_in_repo_and_git_clean ... ok
+test cjk_sources_emit_consistent_positions ... ok
+test emit_invalidates_stale_sidecar_artifacts ... ok
+test emit_build_cache_and_graph_db_on_fixture ... ok
+test emit_is_byte_deterministic ... ok
+test pyrefly_index_version_face_carries_rev ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.46s
+
+     Running tests/overlay_gen.rs (target/debug/deps/overlay_gen-98f3bdbd6c5550f1)
+
+running 8 tests
+test empty_plan_is_vacuously_green ... ok
+test needle_first_occurrence_in_comment_fails_gate ... ok
+test same_file_symbols_single_document ... ok
+test gate_failure_is_loud_and_writes_nothing ... ok
+test usage_and_version_faces ... ok
+test plan_schema_faces_fail_loud ... ok
+test pyrefly_index_relative_repo_resolves_cross_module_refs ... ok
+test golden_e2e_byte_deterministic ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.08s
+
+     Running tests/symbol_form.rs (target/debug/deps/symbol_form-d57d97902ba3e3b2)
+
+running 5 tests
+test class_and_variable_forms_fail_fn_tail_gate_with_parity ... ok
+test discriminator_uses_underscore_free_project_name ... ok
+test collapse_dunder_pair_keeps_init ... ok
+test function_and_method_forms_pass_fn_tail_gate ... ok
+test nested_function_chains_descriptors ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests code_reality
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests code_reality_lsp_bridge
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests cr_freshness
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests pyrefly_producer
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

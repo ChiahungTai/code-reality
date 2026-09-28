@@ -1,0 +1,50 @@
+[
+  {
+    "label": "D-serial-control",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality graph_db build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/evidence/data/run5/D-concurrent-graph --json",
+    "env_overrides": {
+      "CODE_REALITY_IDENTITY_CACHE": "off",
+      "PATH_prefix": "/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/evidence/data/run5/bin"
+    },
+    "exit": 0,
+    "stdout": "{\n \"nodes\": 5000,\n \"edges\": 0,\n \"calls_edges\": 0,\n \"item_level_refs\": 0,\n \"self_ref_skipped\": 0,\n \"non_fn_defs_skipped\": 0,\n \"external_skipped\": 0,\n \"fn_def_coverage\": {\n  \"spanned\": 5000,\n  \"total\": 5000\n },\n \"flows\": 0,\n \"communities\": 1,\n \"db\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/evidence/data/run5/D-concurrent-graph/.code-reality/graph.db\"\n}\n",
+    "stderr": ""
+  },
+  {
+    "label": "D-concurrent-0",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality graph_db build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/evidence/data/run5/D-concurrent-graph --json",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "[FAIL] graph.db schema 建立失敗：attempt to write a readonly database\n"
+  },
+  {
+    "label": "D-concurrent-1",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality graph_db build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/evidence/data/run5/D-concurrent-graph --json",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "[FAIL] graph.db schema 建立失敗：disk I/O error\n"
+  },
+  {
+    "label": "D-concurrent-2",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality graph_db build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/evidence/data/run5/D-concurrent-graph --json",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "[FAIL] graph.db schema 建立失敗：disk I/O error\n"
+  },
+  {
+    "label": "D-concurrent-3",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality graph_db build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/evidence/data/run5/D-concurrent-graph --json",
+    "exit": 0,
+    "stdout": "{\n \"nodes\": 5000,\n \"edges\": 0,\n \"calls_edges\": 0,\n \"item_level_refs\": 0,\n \"self_ref_skipped\": 0,\n \"non_fn_defs_skipped\": 0,\n \"external_skipped\": 0,\n \"fn_def_coverage\": {\n  \"spanned\": 5000,\n  \"total\": 5000\n },\n \"flows\": 0,\n \"communities\": 1,\n \"db\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/evidence/data/run5/D-concurrent-graph/.code-reality/graph.db\"\n}\n",
+    "stderr": ""
+  }
+]
+{
+  "node_count": 5000,
+  "integrity_check": [
+    [
+      "ok"
+    ]
+  ]
+}
+

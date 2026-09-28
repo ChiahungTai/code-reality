@@ -1,0 +1,218 @@
+[
+  {
+    "label": "version",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality --version",
+    "exit": 0,
+    "stdout": "0.9.3+eaa5d24\n",
+    "stderr": "",
+    "elapsed": 0.6565836670342833
+  },
+  {
+    "label": "A-stable-build",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/A-production-drift --json",
+    "exit": 0,
+    "stdout": "{\n \"repo\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/A-production-drift\",\n \"face\": \"python-face\",\n \"producers\": [\n  \"pyrefly-index round1-independent-deriving-fixture\"\n ],\n \"index\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/A-production-drift/.code-reality/scip/index.scip\",\n \"nodes\": 2,\n \"edges\": 0,\n \"graph_rebuilt\": false,\n \"indexes\": {\n  \"created\": 0,\n  \"skipped\": 4\n },\n \"source_identity\": \"b26a8298b240703e49491ad8bf18b1311788e38a085624640320a4c2e839fc33\",\n \"notes\": [\n  \"\u6392\u9664\u96c6\uff1a.venv/\uff08\u5167\u5efa\uff09\",\n  \"python \u817f\uff1a1 governed \u6587\u6a94\",\n  \"\u5168\u91cf\u91cd\u7522\uff1aproducer \u6bcf\u6b21\u91cd\u5efa\uff08\u51aa\u7b49\uff09\"\n ]\n}\n",
+    "stderr": "",
+    "elapsed": 0.7036055420758203
+  },
+  {
+    "label": "A-stable-freshness",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality freshness --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/A-production-drift --json",
+    "exit": 0,
+    "stdout": "{\n \"repo\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/A-production-drift\",\n \"slot\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/A-production-drift/.code-reality/scip/index.scip\",\n \"fresh\": true,\n \"stale_reasons\": [],\n \"head_drift\": false,\n \"faces\": [\n  \"python\"\n ],\n \"indexed_source_identity\": \"b26a8298b240703e49491ad8bf18b1311788e38a085624640320a4c2e839fc33\",\n \"current_source_identity\": \"b26a8298b240703e49491ad8bf18b1311788e38a085624640320a4c2e839fc33\",\n \"identity_algo\": \"sha256-v1\",\n \"serves\": \"current-tree\"\n}\n",
+    "stderr": "",
+    "elapsed": 0.010323832975700498
+  },
+  {
+    "label": "A-drift-rejected",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/A-production-drift --json",
+    "exit": 2,
+    "stdout": "",
+    "stderr": "[FAIL] build: source identity/policy changed during production; prior data plane preserved\n",
+    "elapsed": 0.09755579207558185
+  },
+  {
+    "label": "A-manual-stamp",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality scip_refs --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/A-production-drift --stamp-meta",
+    "exit": 0,
+    "stdout": "[OK] meta stamped\uff1a/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/A-production-drift/.code-reality/scip/index.scip.meta.json\uff08A-production-drift @ eaa5d24\uff09\n",
+    "stderr": "",
+    "elapsed": 0.012493040994741023
+  },
+  {
+    "label": "A-restamp-negative",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality freshness --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/A-production-drift --json",
+    "exit": 1,
+    "stdout": "{\n \"repo\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/A-production-drift\",\n \"slot\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/A-production-drift/.code-reality/scip/index.scip\",\n \"fresh\": false,\n \"stale_reasons\": [\n  \"content-drift\"\n ],\n \"head_drift\": false,\n \"faces\": [\n  \"python\"\n ],\n \"indexed_source_identity\": \"b26a8298b240703e49491ad8bf18b1311788e38a085624640320a4c2e839fc33\",\n \"current_source_identity\": \"fde44f1a507daa153c058b82bae4e4f2f676b4223eb7463390e20e5eea4d3e72\",\n \"identity_algo\": \"sha256-v1\",\n \"serves\": \"committed-baseline\"\n}\n",
+    "stderr": "",
+    "elapsed": 0.01153462496586144
+  },
+  {
+    "label": "B-publish-failure",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/B-graphfail --json",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "[FAIL] build: graph.db \u539f\u5b50\u66ff\u63db\u5931\u6557\uff08/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/B-graphfail/.code-reality/.graph-build-16452-0.db \u2192 /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/B-graphfail/.code-reality/graph.db\uff09\uff1aIs a directory (os error 21)\n",
+    "elapsed": 0.12205608293879777
+  },
+  {
+    "label": "B-missing-graph",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality freshness --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/B-graphfail --json",
+    "exit": 1,
+    "stdout": "{\n \"repo\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/B-graphfail\",\n \"slot\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/B-graphfail/.code-reality/scip/index.scip\",\n \"fresh\": false,\n \"stale_reasons\": [\n  \"torn-plane\"\n ],\n \"head_drift\": false,\n \"faces\": [\n  \"python\"\n ],\n \"indexed_source_identity\": \"b26a8298b240703e49491ad8bf18b1311788e38a085624640320a4c2e839fc33\",\n \"current_source_identity\": \"b26a8298b240703e49491ad8bf18b1311788e38a085624640320a4c2e839fc33\",\n \"identity_algo\": \"sha256-v1\",\n \"serves\": \"committed-baseline\"\n}\n",
+    "stderr": "",
+    "elapsed": 0.012236166978254914
+  },
+  {
+    "label": "B-refresh",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality refresh --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/B-graphfail",
+    "exit": 0,
+    "stdout": "",
+    "stderr": "[OK] refresh\uff1a\u7d22\u5f15\u5df2\u91cd\u7522\uff080.2s\uff0c2 nodes\uff09\n",
+    "elapsed": 0.17851654102560133
+  },
+  {
+    "label": "B-query",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality graph_query hub --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/B-graphfail",
+    "exit": 0,
+    "stdout": "[OK] graph_query hub\n[]",
+    "stderr": "",
+    "elapsed": 0.0051782079972326756
+  },
+  {
+    "label": "B-recovered",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality freshness --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/B-graphfail --json",
+    "exit": 0,
+    "stdout": "{\n \"repo\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/B-graphfail\",\n \"slot\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/B-graphfail/.code-reality/scip/index.scip\",\n \"fresh\": true,\n \"stale_reasons\": [],\n \"head_drift\": false,\n \"faces\": [\n  \"python\"\n ],\n \"indexed_source_identity\": \"b26a8298b240703e49491ad8bf18b1311788e38a085624640320a4c2e839fc33\",\n \"current_source_identity\": \"b26a8298b240703e49491ad8bf18b1311788e38a085624640320a4c2e839fc33\",\n \"identity_algo\": \"sha256-v1\",\n \"serves\": \"current-tree\"\n}\n",
+    "stderr": "",
+    "elapsed": 0.010734542040154338
+  },
+  {
+    "label": "D-initial",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/D-concurrent --json",
+    "exit": 0,
+    "stdout": "{\n \"repo\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/D-concurrent\",\n \"face\": \"python-face\",\n \"producers\": [\n  \"pyrefly-index round1-independent-deriving-fixture\"\n ],\n \"index\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/D-concurrent/.code-reality/scip/index.scip\",\n \"nodes\": 5000,\n \"edges\": 0,\n \"graph_rebuilt\": false,\n \"indexes\": {\n  \"created\": 0,\n  \"skipped\": 4\n },\n \"source_identity\": \"ec7c18755d3eb4ce4bd52c851ed407493aaffb99501a3c91bf0fc0115487dd0f\",\n \"notes\": [\n  \"\u6392\u9664\u96c6\uff1a.venv/\uff08\u5167\u5efa\uff09\",\n  \"python \u817f\uff1a1 governed \u6587\u6a94\",\n  \"\u5168\u91cf\u91cd\u7522\uff1aproducer \u6bcf\u6b21\u91cd\u5efa\uff08\u51aa\u7b49\uff09\"\n ]\n}\n",
+    "stderr": "",
+    "elapsed": 0.5540191669715568
+  },
+  {
+    "label": "D-graph-0",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality graph_db build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/D-concurrent --json",
+    "exit": 0,
+    "stdout": "{\n \"nodes\": 5000,\n \"edges\": 0,\n \"calls_edges\": 0,\n \"item_level_refs\": 0,\n \"self_ref_skipped\": 0,\n \"non_fn_defs_skipped\": 0,\n \"external_skipped\": 0,\n \"fn_def_coverage\": {\n  \"spanned\": 5000,\n  \"total\": 5000\n },\n \"flows\": 0,\n \"communities\": 1,\n \"db\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/D-concurrent/.code-reality/graph.db\"\n}\n",
+    "stderr": "",
+    "elapsed": null
+  },
+  {
+    "label": "D-graph-1",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality graph_db build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/D-concurrent --json",
+    "exit": 0,
+    "stdout": "{\n \"nodes\": 5000,\n \"edges\": 0,\n \"calls_edges\": 0,\n \"item_level_refs\": 0,\n \"self_ref_skipped\": 0,\n \"non_fn_defs_skipped\": 0,\n \"external_skipped\": 0,\n \"fn_def_coverage\": {\n  \"spanned\": 5000,\n  \"total\": 5000\n },\n \"flows\": 0,\n \"communities\": 1,\n \"db\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/D-concurrent/.code-reality/graph.db\"\n}\n",
+    "stderr": "",
+    "elapsed": null
+  },
+  {
+    "label": "D-graph-2",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality graph_db build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/D-concurrent --json",
+    "exit": 0,
+    "stdout": "{\n \"nodes\": 5000,\n \"edges\": 0,\n \"calls_edges\": 0,\n \"item_level_refs\": 0,\n \"self_ref_skipped\": 0,\n \"non_fn_defs_skipped\": 0,\n \"external_skipped\": 0,\n \"fn_def_coverage\": {\n  \"spanned\": 5000,\n  \"total\": 5000\n },\n \"flows\": 0,\n \"communities\": 1,\n \"db\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/D-concurrent/.code-reality/graph.db\"\n}\n",
+    "stderr": "",
+    "elapsed": null
+  },
+  {
+    "label": "D-graph-3",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality graph_db build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/D-concurrent --json",
+    "exit": 0,
+    "stdout": "{\n \"nodes\": 5000,\n \"edges\": 0,\n \"calls_edges\": 0,\n \"item_level_refs\": 0,\n \"self_ref_skipped\": 0,\n \"non_fn_defs_skipped\": 0,\n \"external_skipped\": 0,\n \"fn_def_coverage\": {\n  \"spanned\": 5000,\n  \"total\": 5000\n },\n \"flows\": 0,\n \"communities\": 1,\n \"db\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/D-concurrent/.code-reality/graph.db\"\n}\n",
+    "stderr": "",
+    "elapsed": null
+  },
+  {
+    "label": "D-mixed-0",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality graph_db build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/D-concurrent --json",
+    "exit": 0,
+    "stdout": "{\n \"nodes\": 5000,\n \"edges\": 0,\n \"calls_edges\": 0,\n \"item_level_refs\": 0,\n \"self_ref_skipped\": 0,\n \"non_fn_defs_skipped\": 0,\n \"external_skipped\": 0,\n \"fn_def_coverage\": {\n  \"spanned\": 5000,\n  \"total\": 5000\n },\n \"flows\": 0,\n \"communities\": 1,\n \"db\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/D-concurrent/.code-reality/graph.db\"\n}\n",
+    "stderr": "",
+    "elapsed": null
+  },
+  {
+    "label": "D-mixed-1",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/D-concurrent --json",
+    "exit": 0,
+    "stdout": "{\n \"repo\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/D-concurrent\",\n \"face\": \"python-face\",\n \"producers\": [\n  \"pyrefly-index round1-independent-deriving-fixture\"\n ],\n \"index\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/D-concurrent/.code-reality/scip/index.scip\",\n \"nodes\": 5000,\n \"edges\": 0,\n \"graph_rebuilt\": true,\n \"indexes\": {\n  \"created\": 0,\n  \"skipped\": 4\n },\n \"source_identity\": \"ec7c18755d3eb4ce4bd52c851ed407493aaffb99501a3c91bf0fc0115487dd0f\",\n \"notes\": [\n  \"\u6392\u9664\u96c6\uff1a.venv/\uff08\u5167\u5efa\uff09\",\n  \"python \u817f\uff1a1 governed \u6587\u6a94\",\n  \"\u8986\u84cb\u65e2\u6709 index.scip\uff08slot \u55ae\u6a94\u2014\u2014\u5148\u524d\u9762\u76ee\u5df2\u53d6\u4ee3\uff09\",\n  \"\u5168\u91cf\u91cd\u7522\uff1aproducer \u6bcf\u6b21\u91cd\u5efa\uff08\u51aa\u7b49\uff09\"\n ]\n}\n",
+    "stderr": "",
+    "elapsed": null
+  },
+  {
+    "label": "D-mixed-2",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality graph_db build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/D-concurrent --json",
+    "exit": 0,
+    "stdout": "{\n \"nodes\": 5000,\n \"edges\": 0,\n \"calls_edges\": 0,\n \"item_level_refs\": 0,\n \"self_ref_skipped\": 0,\n \"non_fn_defs_skipped\": 0,\n \"external_skipped\": 0,\n \"fn_def_coverage\": {\n  \"spanned\": 5000,\n  \"total\": 5000\n },\n \"flows\": 0,\n \"communities\": 1,\n \"db\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/D-concurrent/.code-reality/graph.db\"\n}\n",
+    "stderr": "",
+    "elapsed": null
+  },
+  {
+    "label": "D-mixed-3",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/D-concurrent --json",
+    "exit": 0,
+    "stdout": "{\n \"repo\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/D-concurrent\",\n \"face\": \"python-face\",\n \"producers\": [\n  \"pyrefly-index round1-independent-deriving-fixture\"\n ],\n \"index\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/D-concurrent/.code-reality/scip/index.scip\",\n \"nodes\": 5000,\n \"edges\": 0,\n \"graph_rebuilt\": true,\n \"indexes\": {\n  \"created\": 0,\n  \"skipped\": 4\n },\n \"source_identity\": \"ec7c18755d3eb4ce4bd52c851ed407493aaffb99501a3c91bf0fc0115487dd0f\",\n \"notes\": [\n  \"\u6392\u9664\u96c6\uff1a.venv/\uff08\u5167\u5efa\uff09\",\n  \"python \u817f\uff1a1 governed \u6587\u6a94\",\n  \"\u8986\u84cb\u65e2\u6709 index.scip\uff08slot \u55ae\u6a94\u2014\u2014\u5148\u524d\u9762\u76ee\u5df2\u53d6\u4ee3\uff09\",\n  \"\u5168\u91cf\u91cd\u7522\uff1aproducer \u6bcf\u6b21\u91cd\u5efa\uff08\u51aa\u7b49\uff09\"\n ]\n}\n",
+    "stderr": "",
+    "elapsed": null
+  },
+  {
+    "label": "D-busy",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality graph_db build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/D-concurrent --json",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "[FAIL] data-plane writer busy (5s wait budget); retry after the active writer finishes\n",
+    "elapsed": 5.029277333989739
+  },
+  {
+    "label": "D-owner-death-recovery",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality graph_db build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/D-concurrent --json",
+    "exit": 0,
+    "stdout": "{\n \"nodes\": 5000,\n \"edges\": 0,\n \"calls_edges\": 0,\n \"item_level_refs\": 0,\n \"self_ref_skipped\": 0,\n \"non_fn_defs_skipped\": 0,\n \"external_skipped\": 0,\n \"fn_def_coverage\": {\n  \"spanned\": 5000,\n  \"total\": 5000\n },\n \"flows\": 0,\n \"communities\": 1,\n \"db\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/D-concurrent/.code-reality/graph.db\"\n}\n",
+    "stderr": "",
+    "elapsed": 0.3961855419911444
+  },
+  {
+    "label": "E-initial",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/E-derived-flow --json",
+    "exit": 0,
+    "stdout": "{\n \"repo\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/E-derived-flow\",\n \"face\": \"python-face\",\n \"producers\": [\n  \"pyrefly-index round1-independent-deriving-fixture\"\n ],\n \"index\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/E-derived-flow/.code-reality/scip/index.scip\",\n \"nodes\": 8,\n \"edges\": 7,\n \"graph_rebuilt\": false,\n \"indexes\": {\n  \"created\": 0,\n  \"skipped\": 4\n },\n \"source_identity\": \"0ad1c394ae2ae4b51e251ce3667f7119bdaf29157c9cf62b0d2b310c434585d8\",\n \"notes\": [\n  \"\u6392\u9664\u96c6\uff1a.venv/\uff08\u5167\u5efa\uff09\",\n  \"python \u817f\uff1a1 governed \u6587\u6a94\",\n  \"\u5168\u91cf\u91cd\u7522\uff1aproducer \u6bcf\u6b21\u91cd\u5efa\uff08\u51aa\u7b49\uff09\"\n ]\n}\n",
+    "stderr": "",
+    "elapsed": 0.12992945790756494
+  },
+  {
+    "label": "E-concurrent-0",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality graph_db build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/E-derived-flow --json",
+    "exit": 0,
+    "stdout": "{\n \"nodes\": 8,\n \"edges\": 7,\n \"calls_edges\": 7,\n \"item_level_refs\": 0,\n \"self_ref_skipped\": 0,\n \"non_fn_defs_skipped\": 0,\n \"external_skipped\": 0,\n \"fn_def_coverage\": {\n  \"spanned\": 8,\n  \"total\": 8\n },\n \"flows\": 1,\n \"communities\": 1,\n \"db\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/E-derived-flow/.code-reality/graph.db\"\n}\n",
+    "stderr": "",
+    "elapsed": null
+  },
+  {
+    "label": "E-concurrent-1",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality graph_db build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/E-derived-flow --json",
+    "exit": 0,
+    "stdout": "{\n \"nodes\": 8,\n \"edges\": 7,\n \"calls_edges\": 7,\n \"item_level_refs\": 0,\n \"self_ref_skipped\": 0,\n \"non_fn_defs_skipped\": 0,\n \"external_skipped\": 0,\n \"fn_def_coverage\": {\n  \"spanned\": 8,\n  \"total\": 8\n },\n \"flows\": 1,\n \"communities\": 1,\n \"db\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/E-derived-flow/.code-reality/graph.db\"\n}\n",
+    "stderr": "",
+    "elapsed": null
+  },
+  {
+    "label": "E-concurrent-2",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality graph_db build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/E-derived-flow --json",
+    "exit": 0,
+    "stdout": "{\n \"nodes\": 8,\n \"edges\": 7,\n \"calls_edges\": 7,\n \"item_level_refs\": 0,\n \"self_ref_skipped\": 0,\n \"non_fn_defs_skipped\": 0,\n \"external_skipped\": 0,\n \"fn_def_coverage\": {\n  \"spanned\": 8,\n  \"total\": 8\n },\n \"flows\": 1,\n \"communities\": 1,\n \"db\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/E-derived-flow/.code-reality/graph.db\"\n}\n",
+    "stderr": "",
+    "elapsed": null
+  },
+  {
+    "label": "E-concurrent-3",
+    "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality graph_db build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/E-derived-flow --json",
+    "exit": 0,
+    "stdout": "{\n \"nodes\": 8,\n \"edges\": 7,\n \"calls_edges\": 7,\n \"item_level_refs\": 0,\n \"self_ref_skipped\": 0,\n \"non_fn_defs_skipped\": 0,\n \"external_skipped\": 0,\n \"fn_def_coverage\": {\n  \"spanned\": 8,\n  \"total\": 8\n },\n \"flows\": 1,\n \"communities\": 1,\n \"db\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/E-derived-flow/.code-reality/graph.db\"\n}\n",
+    "stderr": "",
+    "elapsed": null
+  }
+]

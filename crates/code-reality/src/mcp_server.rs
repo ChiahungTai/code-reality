@@ -211,7 +211,8 @@ pub struct CodeRealityServer {
 
 /// ToolOutput → MCP content: stdout text + a `[STDERR]` section when the
 /// management face has content (visibility rule).
-/// MCP single-frame byte cap (backstop — the payload-shape fixes
+/// MCP text byte cap plus truncation marker (not a serialized frame cap;
+/// the payload-shape fixes
 /// (detail_level/limit) are the real defense; this catches anything that
 /// still slips through, before the client tears the connection down).
 const MCP_TEXT_CAP: usize = 1 << 20;
@@ -230,6 +231,10 @@ fn apply_text_cap(mut text: String) -> String {
         ));
     }
     text
+}
+
+fn internal_error(text: String) -> McpError {
+    McpError::new(ErrorCode::INTERNAL_ERROR, apply_text_cap(text), None)
 }
 
 fn to_tool_result(out: crate::ToolOutput) -> Result<CallToolResult, McpError> {
@@ -259,11 +264,11 @@ fn map_tool_output(out: crate::ToolOutput) -> Result<CallToolResult, McpError> {
             text.push_str("[STDERR]\n");
             text.push_str(&out.stderr);
         }
-        return Err(McpError::new(
-            ErrorCode::INTERNAL_ERROR,
-            format!("工具退出碼 {}：{}", out.exit_code, text.trim()),
-            None,
-        ));
+        return Err(internal_error(format!(
+            "工具退出碼 {}：{}",
+            out.exit_code,
+            text.trim()
+        )));
     }
     to_tool_result(out)
 }
@@ -326,24 +331,14 @@ impl CodeRealityServer {
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(&refs)))
         })
         .await
-        .map_err(|e| {
-            McpError::new(
-                ErrorCode::INTERNAL_ERROR,
-                format!("任務 join 失敗：{e}"),
-                None,
-            )
-        })?
+        .map_err(|e| internal_error(format!("任務 join 失敗：{e}")))?
         .map_err(|payload| {
             let msg = payload
                 .downcast_ref::<&str>()
                 .map(|s| s.to_string())
                 .or_else(|| payload.downcast_ref::<String>().cloned())
                 .unwrap_or_else(|| "non-string panic payload".into());
-            McpError::new(
-                ErrorCode::INTERNAL_ERROR,
-                format!("lib panic：{msg}——已隔離為單請求錯誤"),
-                None,
-            )
+            internal_error(format!("lib panic：{msg}——已隔離為單請求錯誤"))
         })?;
         map_tool_output(out)
     }
@@ -694,22 +689,16 @@ impl CodeRealityServer {
             }))
         })
         .await
-        .map_err(|e| {
-            McpError::new(
-                ErrorCode::INTERNAL_ERROR,
-                format!("任務 join 失敗：{e}"),
-                None,
-            )
-        })?
+        .map_err(|e| internal_error(format!("任務 join 失敗：{e}")))?
         .map_err(|payload| {
             let msg = payload
                 .downcast_ref::<&str>()
                 .map(|s| s.to_string())
                 .or_else(|| payload.downcast_ref::<String>().cloned())
                 .unwrap_or_else(|| "non-string panic payload".into());
-            McpError::new(ErrorCode::INTERNAL_ERROR, format!("lib panic：{msg}"), None)
+            internal_error(format!("lib panic：{msg}"))
         })?;
-        let v = out.map_err(|e| McpError::new(ErrorCode::INTERNAL_ERROR, e, None))?;
+        let v = out.map_err(internal_error)?;
         Ok(CallToolResult::success(vec![ContentBlock::text(
             apply_text_cap(crate::common::to_json_indent1(&v)),
         )]))
@@ -839,7 +828,7 @@ impl CodeRealityServer {
 
     /// One-shot data-plane build. Same lib as `code-reality build`.
     #[tool(
-        description = "One-shot data-plane build: detect language faces, spawn producers (pyrefly-index / rust-analyzer scip / scip-typescript — external JS/TS prerequisite), rebuild graph.db + indexes. WRITES <repo>/.code-reality/ (index slot, graph.db). LONG-RUNNING: minutes-level on large repos, no progress reporting — the call blocks until done; set your client timeout accordingly. Same lib as `code-reality build --repo <repo>`"
+        description = "One-shot data-plane build: detect language faces, spawn producers (pyrefly-index / rust-analyzer scip / scip-typescript — external JS/TS prerequisite), rebuild graph.db + indexes. WRITES <repo>/.code-reality/ (index slot, graph.db). LONG-RUNNING: minutes-level on large repos, no progress reporting — the call blocks until done; set your client timeout accordingly. Cancellation suppresses response delivery; already-started blocking work may continue and publish files. Transport EOF may await that work. Same lib as `code-reality build --repo <repo>`"
     )]
     pub async fn build(
         &self,
@@ -871,7 +860,7 @@ impl CodeRealityServer {
 
     /// Boundary snapshot. Same lib as `code-reality snapshot`.
     #[tool(
-        description = "Boundary snapshot of the current graph.db state (files + module edges + staleness meta). WRITES a dated snapshot file under <repo>/.code-reality/snapshots/ (or out_dir). Requires an existing graph.db (run build first). Seconds-level. Same lib as `code-reality snapshot --repo <repo>`"
+        description = "Boundary snapshot of the current graph.db state (files + module edges + staleness meta). WRITES a dated snapshot file under <repo>/.code-reality/snapshots/ (or out_dir). Requires an existing graph.db (run build first). Seconds-level. Cancellation suppresses response delivery; already-started blocking work may continue and publish files. Transport EOF may await that work. Same lib as `code-reality snapshot --repo <repo>`"
     )]
     pub async fn snapshot(
         &self,
@@ -895,7 +884,7 @@ impl CodeRealityServer {
 
     /// Delta-review CodeTour. Same lib as `code-reality delta_tour`.
     #[tool(
-        description = "Diff two snapshots into a delta-review CodeTour (git hunk anchors, EP claims comparison). WRITES <repo>/.tours/delta/<date>-<task>.tour — MCP default is in-repo (unlike the CLI's cwd-relative default); pass out_dir to override. Pass ABSOLUTE snapshot paths (the snapshot tool's report carries them). Seconds-level. Same lib as `code-reality delta_tour <a> <b> --repo <repo>`"
+        description = "Diff two snapshots into a delta-review CodeTour (git hunk anchors, EP claims comparison). WRITES <repo>/.tours/delta/<date>-<task>.tour — MCP default is in-repo (unlike the CLI's cwd-relative default); pass out_dir to override. Pass ABSOLUTE snapshot paths (the snapshot tool's report carries them). Seconds-level. Cancellation suppresses response delivery; already-started blocking work may continue and publish files. Transport EOF may await that work. Same lib as `code-reality delta_tour <a> <b> --repo <repo>`"
     )]
     pub async fn delta_tour(
         &self,
@@ -934,7 +923,7 @@ impl CodeRealityServer {
 
     /// Projected-graph overlay. Same lib as `code-reality project`.
     #[tool(
-        description = "Projected-graph overlay for EP planning: compile a declarative plan.toml via overlay-gen, report graft surface + claim verdicts ([projected] = declarations, not evidence). WRITES <repo>/.code-reality/projections/<plan-stem>/; the real index slot stays untouched. Needs overlay-gen resolvable (uv tool install pyrefly-producer). Pass an ABSOLUTE plan path (the server's cwd is meaningless to you). Seconds-level. Same lib as `code-reality project --repo <repo> --plan <plan.toml>`"
+        description = "Projected-graph overlay for EP planning: compile a declarative plan.toml via overlay-gen, report graft surface + claim verdicts ([projected] = declarations, not evidence). WRITES <repo>/.code-reality/projections/<plan-stem>/; the real index slot stays untouched. Needs overlay-gen resolvable (uv tool install pyrefly-producer). Pass an ABSOLUTE plan path (the server's cwd is meaningless to you). Seconds-level. Cancellation suppresses response delivery; already-started blocking work may continue and publish files. Transport EOF may await that work. Same lib as `code-reality project --repo <repo> --plan <plan.toml>`"
     )]
     pub async fn project(
         &self,
@@ -1001,4 +990,77 @@ pub async fn serve_stdio() -> Result<(), String> {
         .await
         .map_err(|e| format!("stdio session 結束：{e}"))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod error_cap_regression {
+    use super::*;
+
+    // Oracle S: accepted round1 EP: bound final text, retain error code,
+    // UTF-8 and marker; the JSON envelope is outside the text bound.
+    #[test]
+    fn final_error_text_boundary_and_combined_streams() {
+        // Each stream alone is below the cap; only the final envelope reaches it.
+        for total in [MCP_TEXT_CAP - 1, MCP_TEXT_CAP, MCP_TEXT_CAP + 1] {
+            let overhead = "工具退出碼 2：[STDERR]\n".len();
+            let stdout = "a".repeat(MCP_TEXT_CAP / 2);
+            let stderr = "b".repeat(total - overhead - stdout.len());
+            let complete = format!("工具退出碼 2：{stdout}[STDERR]\n{stderr}");
+            let err = map_tool_output(crate::ToolOutput {
+                stdout,
+                stderr,
+                exit_code: 2,
+            })
+            .unwrap_err();
+            assert_eq!(err.code, ErrorCode::INTERNAL_ERROR);
+            if total <= MCP_TEXT_CAP {
+                assert_eq!(err.message, complete);
+            } else {
+                let (prefix, marker) = err.message.split_once("\n[TRUNCATED]").unwrap();
+                assert_eq!(prefix.len(), MCP_TEXT_CAP);
+                assert!(complete.starts_with(prefix));
+                assert!(marker.len() < 256);
+            }
+        }
+        for payload in ["x", "界"] {
+            for size in [0, MCP_TEXT_CAP - 1, MCP_TEXT_CAP, MCP_TEXT_CAP + 1] {
+                let stdout = payload.repeat(size / payload.len());
+                let stderr = "diagnostic".to_string();
+                let complete = format!("工具退出碼 2：{stdout}[STDERR]\n{stderr}");
+                let err = map_tool_output(crate::ToolOutput {
+                    stdout,
+                    stderr,
+                    exit_code: 2,
+                })
+                .unwrap_err();
+                assert_eq!(err.code, ErrorCode::INTERNAL_ERROR);
+                if complete.len() <= MCP_TEXT_CAP {
+                    assert_eq!(err.message, complete);
+                } else {
+                    let (prefix, _) = err
+                        .message
+                        .split_once("\n[TRUNCATED]")
+                        .expect("bounded error marker");
+                    assert!(prefix.len() <= MCP_TEXT_CAP);
+                    assert!(prefix.len() + payload.len() > MCP_TEXT_CAP);
+                    assert!(complete.starts_with(prefix));
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn panic_payload_obeys_same_cap() {
+        let err =
+            CodeRealityServer::run_module(|_| panic!("{}", "界".repeat(MCP_TEXT_CAP)), vec![])
+                .await
+                .unwrap_err();
+        assert_eq!(err.code, ErrorCode::INTERNAL_ERROR);
+        let (prefix, _) = err
+            .message
+            .split_once("\n[TRUNCATED]")
+            .expect("bounded panic marker");
+        assert!(prefix.starts_with("lib panic："));
+        assert!(prefix.len() <= MCP_TEXT_CAP);
+    }
 }

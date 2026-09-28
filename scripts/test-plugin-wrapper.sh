@@ -225,5 +225,41 @@ expect "B3 bridge embedded grace" "0.3.0+rev" 0 "$out" "$rc" "$(cat "$WORK/err")
 out="$(env -i PATH="$WORK/bdir:$WORK/uvnoop" CODE_REALITY_BOOTSTRAP=off HOME="$WORK/home" /bin/sh -c "$wrapb" 2>"$WORK/err")"; rc=$?
 expect "B4 bridge BOOTSTRAP=off uses PATH" "9.9.9+rev" 0 "$out" "$rc" "$(cat "$WORK/err")"
 
+# Oracle S: accepted round1 EP release identity, tested on actual wrappers.
+mkversion() {
+  printf '#!/bin/sh\necho "%s"\n' "$2" > "$WORK/uvface/$1"
+  chmod +x "$WORK/uvface/$1"
+}
+# Preserve the wait loop while accelerating its clock in the fixture.
+printf '#!/bin/sh\nexit 0\n' > "$WORK/uvnoop/sleep"
+chmod +x "$WORK/uvnoop/sleep"
+for version in "$pin" "$pin+rev" "${pin}0+rev" "$pin-rc1+rev"; do
+  for face in code-reality-mcp code-reality-lsp-bridge pyrefly-index; do
+    mkversion "$face" "$pin"
+  done
+  for face in code-reality-mcp code-reality-lsp-bridge pyrefly-index; do
+    mkversion "$face" "$version"
+    : > "$WORK/uv.log"
+    out="$(env -i PATH="$WORK/uvnoop" HOME="$WORK/home" /bin/sh -c "$wrap" 2>"$WORK/err")"; rc=$?
+    case "$version" in
+      "$pin"|"$pin+rev")
+        if [ "$rc" = 0 ] && [ ! -s "$WORK/uv.log" ]; then pass=$((pass + 1)); else fail=$((fail + 1)); fi ;;
+      *)
+        if [ "$rc" = 127 ] && [ -z "$out" ] && [ "$(wc -l < "$WORK/uv.log" | tr -d ' ')" = 3 ] && rg -q 'post-install verification failed' "$WORK/err"; then pass=$((pass + 1)); else fail=$((fail + 1)); fi ;;
+    esac
+    printf '  boundary main face=%s version=%s rc=%s\n' "$face" "$version" "$rc"
+    mkversion "$face" "$pin"
+  done
+  mkversion code-reality-lsp-bridge "$version"
+  out="$(env -i PATH="$WORK/uvnoop" HOME="$WORK/home" /bin/sh -c "$wrapb" 2>"$WORK/err")"; rc=$?
+  case "$version" in
+    "$pin"|"$pin+rev")
+      if [ "$rc" = 0 ] && [ "$out" = "$version" ]; then pass=$((pass + 1)); else fail=$((fail + 1)); fi ;;
+    *)
+      if [ "$rc" = 127 ] && [ -z "$out" ] && rg -q 'after bootstrap wait' "$WORK/err"; then pass=$((pass + 1)); else fail=$((fail + 1)); fi ;;
+  esac
+  printf '  boundary bridge version=%s rc=%s\n' "$version" "$rc"
+done
+
 printf 'wrapper regression: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" = 0 ]

@@ -1,0 +1,7 @@
+90fbf754126bfc054911ebc2305420dc6659579831e56a695398b074d5a2b39d  crates/code-reality/src/engine.rs
+4c88afd664e0d1da1bc5a447e04c62b3dff6441a65b4c99032ed9185eae7496e  crates/code-reality/src/build.rs
+9903544968ae4340b356014181997740785d4208cfedfebf334ada44dea16a1e  crates/code-reality/src/graph_db.rs
+c0f1c06d2b399415813a5fdf3bfc4627d88e3db7b0128a3115da67a090809648  crates/code-reality/src/publication_writer.rs
+8f85d73f0f45040e50680ec7dd88c8e95241a1f05310b01d5e9bf55c0d59ac4d  crates/code-reality-lsp-bridge/src/session.rs
+f454344091063108a77aacd0614855d0e34991e9c80d17f09d8549d368984ade  crates/code-reality-lsp-bridge/src/server.rs
+b1209406968d6847e7c22a87e73e0a95e2c6e91ec2835ca8a191489f55589fc2  crates/code-reality-lsp-bridge/src/transport.rs

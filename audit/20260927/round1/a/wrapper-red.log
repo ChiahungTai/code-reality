@@ -1,0 +1,35 @@
+  ok   lockstep pin==plugin==workspace==marketplaces (0.9.3)
+  ok   T1 pinned uv face beats stale PATH
+  ok   T1 (no install)
+  ok   T2 pinned PATH cannot mask stale uv face
+  ok   T2 uv --force code-reality==0.9.3
+  ok   T2 uv --force code-reality-lsp-bridge==0.9.3
+  ok   T2 uv --force pyrefly-producer==0.9.3
+  ok   T2b uv exit 0 + stale binary fails postcheck
+  ok   T2c stale side face (bridge) fails postcheck
+  ok   T2d fresh empty uv bin dir -> install converges
+  ok   T3 no-uv loud 127 + guidance
+  ok   T4 BOOTSTRAP=off -> exec as-is
+  ok   T4 (no install)
+  ok   T5 embedded grace exec + notice
+  ok   B1 bridge uv face beats PATH
+  ok   B2 bridge fast 127
+  ok   B3 bridge embedded grace
+  ok   B4 bridge BOOTSTRAP=off uses PATH
+  boundary main face=code-reality-mcp version=0.9.3 rc=0
+  boundary main face=code-reality-lsp-bridge version=0.9.3 rc=0
+  boundary main face=pyrefly-index version=0.9.3 rc=0
+  boundary bridge version=0.9.3 rc=0
+  boundary main face=code-reality-mcp version=0.9.3+rev rc=0
+  boundary main face=code-reality-lsp-bridge version=0.9.3+rev rc=0
+  boundary main face=pyrefly-index version=0.9.3+rev rc=0
+  boundary bridge version=0.9.3+rev rc=0
+  boundary main face=code-reality-mcp version=0.9.30+rev rc=0
+  boundary main face=code-reality-lsp-bridge version=0.9.30+rev rc=0
+  boundary main face=pyrefly-index version=0.9.30+rev rc=0
+  boundary bridge version=0.9.30+rev rc=0
+  boundary main face=code-reality-mcp version=0.9.3-rc1+rev rc=0
+  boundary main face=code-reality-lsp-bridge version=0.9.3-rc1+rev rc=0
+  boundary main face=pyrefly-index version=0.9.3-rc1+rev rc=0
+  boundary bridge version=0.9.3-rc1+rev rc=0
+wrapper regression: 26 passed, 8 failed

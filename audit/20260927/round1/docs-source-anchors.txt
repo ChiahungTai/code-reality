@@ -1,0 +1,41 @@
+crates/code-reality/src/publication_writer.rs:17:    pub(crate) fn acquire(repo: &Path) -> Result<Self, String> {
+crates/code-reality-lsp-bridge/src/server.rs:113:    pub fn shutdown_all(&self) {
+crates/code-reality-lsp-bridge/src/server.rs:390:    let call_start = std::time::Instant::now();
+crates/code-reality-lsp-bridge/src/server.rs:391:    let deadline = call_start + std::time::Duration::from_millis(s.lang.slow_timeout_ms);
+crates/code-reality-lsp-bridge/src/server.rs:392:    s.check_alive()?;
+crates/code-reality-lsp-bridge/src/server.rs:405:        s.check_alive()?;
+crates/code-reality-lsp-bridge/src/server.rs:411:            s.check_alive()?;
+crates/code-reality-lsp-bridge/src/server.rs:457:                s.check_alive()?;
+crates/code-reality-lsp-bridge/src/server.rs:483:                    !fresh && std::time::Instant::now() >= basis.unwrap_or(call_start) + half
+crates/code-reality/src/graph_db.rs:909:    let derived = materialize_derived_at(tmp_db)?;
+crates/code-reality/src/graph_db.rs:910:    std::fs::rename(&tmp_db, &db).map_err(|e| {
+crates/code-reality/src/build.rs:554:        crate::engine::ProductionIdentity::capture(&resolved, producer).map_err(BuildError::Env)?;
+crates/code-reality/src/build.rs:659:    let publication = (|| {
+crates/code-reality/src/build.rs:660:        let after = crate::engine::ProductionIdentity::capture(&resolved, producer)?;
+crates/code-reality/src/build.rs:668:        let locked = crate::engine::ProductionIdentity::capture(&resolved, producer)?;
+crates/code-reality/src/engine.rs:894:    let graph_lags = is_main
+crates/code-reality/src/engine.rs:937:                .and_then(|m| m["index_sha256"].as_str())
+crates/code-reality/src/engine.rs:954:                .and_then(|m| m["index_sha256"].as_str())
+crates/code-reality/src/engine.rs:1035:pub(crate) struct ProductionIdentity {
+crates/code-reality/src/engine.rs:1044:impl ProductionIdentity {
+crates/code-reality/src/engine.rs:1119:    validated: Option<&ProductionIdentity>,
+crates/code-reality/src/engine.rs:1164:            if m["index_sha256"].as_str() != Some(index_hash.as_str())
+crates/code-reality/src/engine.rs:1176:                "index_sha256",
+crates/code-reality/src/engine.rs:1205:            payload["index_sha256"] = serde_json::json!(index_hash);
+crates/code-reality-lsp-bridge/src/session.rs:28:const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+crates/code-reality-lsp-bridge/src/session.rs:29:const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
+crates/code-reality-lsp-bridge/src/session.rs:322:    pub(crate) fn check_alive(&self) -> Result<(), String> {
+crates/code-reality-lsp-bridge/src/session.rs:349:            self.check_alive()?;
+crates/code-reality-lsp-bridge/src/session.rs:365:        self.check_alive()?;
+crates/code-reality-lsp-bridge/src/session.rs:378:        self.check_alive()
+crates/code-reality-lsp-bridge/src/session.rs:384:        self.check_alive()?;
+crates/code-reality-lsp-bridge/src/session.rs:423:                deadline.min(Instant::now() + HANDSHAKE_TIMEOUT),
+crates/code-reality-lsp-bridge/src/session.rs:445:        self.check_alive()
+crates/code-reality-lsp-bridge/src/session.rs:451:        self.request_until(method, params, Instant::now() + REQUEST_TIMEOUT)
+crates/code-reality-lsp-bridge/src/session.rs:495:        self.check_alive()?;
+crates/code-reality-lsp-bridge/src/session.rs:503:        self.notify_until(method, params, Instant::now() + REQUEST_TIMEOUT)
+crates/code-reality-lsp-bridge/src/session.rs:518:    pub fn shutdown(&self) -> Result<(), String> {
+crates/code-reality-lsp-bridge/src/session.rs:562:        self.sync_open_until(path, Instant::now() + REQUEST_TIMEOUT)
+crates/code-reality-lsp-bridge/src/session.rs:570:        self.check_alive()?;
+crates/code-reality-lsp-bridge/src/session.rs:683:        let deadline = Instant::now() + REQUEST_TIMEOUT;
+crates/code-reality-lsp-bridge/src/session.rs:715:        self.force_reopen_until(path, Instant::now() + REQUEST_TIMEOUT)

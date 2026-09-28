@@ -1,0 +1,8 @@
+{
+  "label": "A-manual-stamp",
+  "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality scip_refs --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run2/A-production-drift --stamp-meta",
+  "exit": 0,
+  "stdout": "[OK] meta stamped\uff1a/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run2/A-production-drift/.code-reality/scip/index.scip.meta.json\uff08A-production-drift @ eaa5d24\uff09\n",
+  "stderr": "",
+  "elapsed": 0.010380291962064803
+}

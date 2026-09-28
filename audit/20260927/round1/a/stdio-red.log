@@ -1,0 +1,38 @@
+   Compiling code-reality v0.9.3 (/Users/ctai/.codex/worktrees/5967/code-reality/crates/code-reality)
+warning: function `artifact_hash` is never used
+   --> crates/code-reality/src/identity.rs:351:15
+    |
+351 | pub(crate) fn artifact_hash(path: &Path) -> Result<String, String> {
+    |               ^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `code-reality` (lib) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.54s
+     Running tests/mcp_error_delivery_regression.rs (target/debug/deps/mcp_error_delivery_regression-711517b3bb1bc6a9)
+
+running 2 tests
+test oversized_error_is_bounded_and_stdio_survives ... FAILED
+test cancellation_and_eof_retain_started_work ... FAILED
+
+failures:
+
+---- oversized_error_is_bounded_and_stdio_survives stdout ----
+
+thread 'oversized_error_is_bounded_and_stdio_survives' (74940767) panicked at crates/code-reality/tests/mcp_error_delivery_regression.rs:97:61:
+error cap marker
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- cancellation_and_eof_retain_started_work stdout ----
+
+thread 'cancellation_and_eof_retain_started_work' (74940766) panicked at crates/code-reality/tests/mcp_error_delivery_regression.rs:140:9:
+assertion failed: peer.output.try_iter().all(|v| v["id"] != 2)
+
+
+failures:
+    cancellation_and_eof_retain_started_work
+    oversized_error_is_bounded_and_stdio_survives
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.20s
+
+error: test failed, to rerun pass `-p code-reality --test mcp_error_delivery_regression`

@@ -1,0 +1,8 @@
+{
+  "label": "E-concurrent-3",
+  "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality graph_db build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/E-derived-flow --json",
+  "exit": 0,
+  "stdout": "{\n \"nodes\": 8,\n \"edges\": 7,\n \"calls_edges\": 7,\n \"item_level_refs\": 0,\n \"self_ref_skipped\": 0,\n \"non_fn_defs_skipped\": 0,\n \"external_skipped\": 0,\n \"fn_def_coverage\": {\n  \"spanned\": 8,\n  \"total\": 8\n },\n \"flows\": 1,\n \"communities\": 1,\n \"db\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/E-derived-flow/.code-reality/graph.db\"\n}\n",
+  "stderr": "",
+  "elapsed": null
+}

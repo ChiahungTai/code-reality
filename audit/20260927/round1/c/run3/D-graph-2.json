@@ -1,0 +1,8 @@
+{
+  "label": "D-graph-2",
+  "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality graph_db build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run3/D-concurrent --json",
+  "exit": 0,
+  "stdout": "{\n \"nodes\": 5000,\n \"edges\": 0,\n \"calls_edges\": 0,\n \"item_level_refs\": 0,\n \"self_ref_skipped\": 0,\n \"non_fn_defs_skipped\": 0,\n \"external_skipped\": 0,\n \"fn_def_coverage\": {\n  \"spanned\": 5000,\n  \"total\": 5000\n },\n \"flows\": 0,\n \"communities\": 1,\n \"db\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run3/D-concurrent/.code-reality/graph.db\"\n}\n",
+  "stderr": "",
+  "elapsed": null
+}

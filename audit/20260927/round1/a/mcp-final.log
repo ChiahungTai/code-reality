@@ -1,0 +1,10 @@
+   Compiling code-reality v0.9.3 (/Users/ctai/.codex/worktrees/5967/code-reality/crates/code-reality)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.94s
+     Running unittests src/lib.rs (target/debug/deps/code_reality-a65133763f34ffb5)
+
+running 2 tests
+test mcp_server::error_cap_regression::panic_payload_obeys_same_cap ... ok
+test mcp_server::error_cap_regression::final_error_text_boundary_and_combined_streams ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 63 filtered out; finished in 0.01s
+

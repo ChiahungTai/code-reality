@@ -1,0 +1,43 @@
+   Compiling code-reality v0.9.3 (/Users/ctai/.codex/worktrees/5967/code-reality/crates/code-reality)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 10.48s
+     Running tests/publication.rs (target/debug/deps/publication-7ce257cea3d36424)
+
+running 5 tests
+
+thread 'four_same_process_writers_publish_complete_graphs' (74930443) panicked at crates/code-reality/tests/publication.rs:84:46:
+serialized writer: "graph.db schema 建立失敗：table metadata already exists in \nCREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT);\nCREATE TABLE nodes (\n    id INTEGER PRIMARY KEY AUTOINCREMENT,\n    symbol TEXT NOT NULL UNIQUE,\n    kind TEXT NOT NULL,\n    name TEXT NOT NULL,\n    qname TEXT NOT NULL,\n    file_path TEXT NOT NULL,\n    line_start INTEGER,\n    line_end INTEGER,\n    language TEXT,\n    parent_name TEXT,\n    is_test INTEGER DEFAULT 0,\n    extra TEXT DEFAULT '{}',\n    updated_at REAL NOT NULL,\n    community_id INTEGER,\n    provenance TEXT NOT NULL);\nCREATE TABLE edges (\n    id INTEGER PRIMARY KEY AUTOINCREMENT,\n    kind TEXT NOT NULL,\n    caller_symbol TEXT NOT NULL,\n    callee_symbol TEXT NOT NULL,\n    provenance TEXT NOT NULL,\n    file_path TEXT NOT NULL,\n    line INTEGER DEFAULT 0,\n    confidence REAL DEFAULT 1.0,\n    confidence_tier TEXT DEFAULT 'EXTRACTED',\n    updated_at REAL NOT NULL);\nCREATE TABLE communities (\n    id INTEGER PRIMARY KEY,\n    name TEXT NOT NULL,\n    level INTEGER NOT NULL DEFAULT 0,\n    parent_id INTEGER,\n    cohesion REAL DEFAULT 0.0,\n    size INTEGER DEFAULT 0,\n    dominant_language TEXT,\n    description TEXT,\n    created_at TEXT NOT NULL DEFAULT 'graph_db build');\nCREATE TABLE flows (\n    id INTEGER PRIMARY KEY AUTOINCREMENT,\n    name TEXT NOT NULL,\n    entry_point_id INTEGER NOT NULL,\n    depth INTEGER NOT NULL,\n    node_count INTEGER NOT NULL,\n    file_count INTEGER NOT NULL,\n    criticality REAL NOT NULL DEFAULT 0.0,\n    path_json TEXT NOT NULL,\n    created_at TEXT NOT NULL DEFAULT 'graph_db build',\n    updated_at TEXT NOT NULL DEFAULT 'graph_db build');\nCREATE TABLE flow_memberships (\n    flow_id INTEGER NOT NULL,\n    node_id INTEGER NOT NULL,\n    position INTEGER NOT NULL DEFAULT 0,\n    PRIMARY KEY (flow_id, node_id));\nCREATE VIRTUAL TABLE nodes_fts USING fts5(name, content='nodes', content_rowid='id');\nPRAGMA user_version = 1; at offset 14"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test four_same_process_writers_publish_complete_graphs ... FAILED
+
+thread 'production_edit_preserves_published_artifacts' (74930446) panicked at crates/code-reality/tests/publication.rs:67:5:
+production drift must reject publication
+test production_edit_preserves_published_artifacts ... FAILED
+
+thread 'missing_main_graph_is_torn_alternate_is_optional' (74930445) panicked at crates/code-reality/tests/publication.rs:48:5:
+StalenessSnapshot { source_newer: false, graph_lags: false, doc_set_drift: Some(false), corpus_policy_drift: None, identity_drift: Some(false), head_drift: Some(false), eval_faces: {Python}, stamped_identity: Some("3bc1468c51c301527c6c745e680fb510f259eccbca5635a911b15b9470663e11"), current_identity: Some("3bc1468c51c301527c6c745e680fb510f259eccbca5635a911b15b9470663e11") }
+test missing_main_graph_is_torn_alternate_is_optional ... FAILED
+
+thread 'manual_restamp_cannot_certify_content_edit' (74930444) panicked at crates/code-reality/tests/publication.rs:29:5:
+assertion `left == right` failed
+  left: String("8babc4cbc695f73943205e13a217dc7f49d1fced87cc0a844cf82f70f73f4686")
+ right: String("3bc1468c51c301527c6c745e680fb510f259eccbca5635a911b15b9470663e11")
+test manual_restamp_cannot_certify_content_edit ... FAILED
+[WARN] stamp-meta：索引文檔集與磁碟語料不一致——保留既有 source-set fingerprint／source identity（drift 保持可見；重跑 build 產出一致配對）
+
+
+thread 'replaced_index_cannot_inherit_identity' (74930447) panicked at crates/code-reality/tests/publication.rs:39:5:
+assertion failed: meta(repo)["source_identity"].is_null()
+test replaced_index_cannot_inherit_identity ... FAILED
+
+failures:
+
+failures:
+    four_same_process_writers_publish_complete_graphs
+    manual_restamp_cannot_certify_content_edit
+    missing_main_graph_is_torn_alternate_is_optional
+    production_edit_preserves_published_artifacts
+    replaced_index_cannot_inherit_identity
+
+test result: FAILED. 0 passed; 5 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.98s
+
+error: test failed, to rerun pass `-p code-reality --test publication`

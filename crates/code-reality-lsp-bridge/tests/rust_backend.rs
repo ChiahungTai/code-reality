@@ -6,10 +6,9 @@
 //! was the tracked starvation flake (ep-rust-backend-test-retier, then
 //! the same-day re-adjudication: serialize-in-gate over ignore-on-
 //! demand, +~90s accepted). The hover face lives in
-//! ra_equivalence_battery.rs (frozen baseline + version pin) — during a
-//! rust-analyzer version drift the default gate has no ra-hover smoke
-//! (battery skips; acceptable: drift needs a human baseline
-//! regeneration anyway).
+//! ra_equivalence_battery.rs (frozen baseline + complete version pin).
+//! Version drift hard-fails that battery; oracle updates require
+//! independent review rather than silently skipping hover coverage.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};

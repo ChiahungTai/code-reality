@@ -1,0 +1,22 @@
+{
+  "finding_count": 10,
+  "severity_counts": {
+    "P1": 3,
+    "P2": 7,
+    "P3": 0
+  },
+  "broken_links": [],
+  "invalid_source_anchors": [],
+  "ids": [
+    "R0-01",
+    "R0-02",
+    "R0-03",
+    "R0-04",
+    "R0-05",
+    "R0-06",
+    "R0-07",
+    "R0-08",
+    "R0-09",
+    "R0-10"
+  ]
+}

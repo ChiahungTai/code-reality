@@ -181,10 +181,12 @@ fn build_is_idempotent_and_leaves_no_temp() {
         .unwrap();
     let mut files: Vec<_> = dir.filter_map(|e| e.ok()).map(|e| e.file_name()).collect();
     files.sort();
-    // graph.db + the self-contained single-`*` .gitignore (S1)
-    assert_eq!(files.len(), 2, "no temp leftover: {files:?}");
+    // The persistent lock inode is ownership infrastructure, not a temp.
+    // Unlinking it would let waiters and newcomers lock different inodes.
+    assert_eq!(files.len(), 3, "no temp leftover: {files:?}");
     assert_eq!(files[0], ".gitignore");
-    assert_eq!(files[1], "graph.db");
+    assert_eq!(files[1], ".writer.lock");
+    assert_eq!(files[2], "graph.db");
 }
 
 #[test]

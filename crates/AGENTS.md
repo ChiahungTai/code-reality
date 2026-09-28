@@ -19,6 +19,9 @@ tests are the sole gate face.
   crate, which is the P2 clause.
 - **layering**: `framing` (LSP base-protocol Content-Length framing over
   child stdio — headers must end `\r\n`, Content-Length only) /
+  `transport` (bounded serialized stdin writer with acknowledgements,
+  nonblocking pipe adapters and independent child kill/reap ownership;
+  requests, notifications and server-request replies share the writer) /
   `session` (lifecycle + protocol client: `LangSpec` per-language
   family profile [extension-set gate, per-extension languageId table,
   hover-retry window, check deadline, install hint, `diag_versions` —
@@ -50,6 +53,17 @@ tests are the sole gate face.
   without a mutation would be a guaranteed fake timeout], `edit_file`
   [range-form full-content didChange — see session]; all tools
   spawn_blocking, SM-14 pattern).
+- **lifecycle**: current checks reject known backend death at entry and
+  before accepting cached diagnostics. Failed initialization is terminal
+  for that session; restart the bridge to recover. Absolute deadlines include
+  writer acknowledgement and interaction wait (`REQUEST_TIMEOUT` and
+  `HANDSHAKE_TIMEOUT` in `session`). The `LangSpec.slow_timeout_ms` check budget
+  starts at `check_file_impl` entry and includes lazy initialization and synchronization;
+  `LspSession::shutdown` has a total budget from entry, with forced child cleanup independent
+  of the interaction/stdin locks. Transport failure terminates the session;
+  partial frames are not retried. These application deadlines do not bound
+  arbitrary OS/filesystem hangs. Existing version/time/quiescence and overlay
+  replay policies remain in force.
 - **backend invariants**: rust-analyzer spawns with NO flags (default
   stdio is LSP; it rejects the `--stdio` flag); the initialize request
   advertises ONLY `textDocument.hover` + `publishDiagnostics` — never
@@ -67,7 +81,10 @@ tests are the sole gate face.
   mixed-language independence, backend-death) take `RA_SERIAL` — one
   workspace cold load at a time. 4-6 concurrent cold loads racing the
   fixed 30s convergence deadline was the tracked starvation flake;
-  the hover face lives in `ra_equivalence_battery.rs`.
+  the hover face lives in `ra_equivalence_battery.rs`: it initializes by
+  opening a document, requires the complete frozen backend version identity,
+  and resolves hover positions from declaration anchors. Version drift fails
+  rather than silently skipping the frozen hover comparisons.
 
 ## cr-freshness (leaf lib crate)
 
@@ -145,24 +162,25 @@ tests are the sole gate face.
   the FNV source-set fingerprint; `evaluate_staleness`/`StalenessSnapshot
   ::needs_rebuild` [identity-authoritative since the source identity EP:
   a comparable slot (meta carries source_faces + source_identity +
-  identity_algo) rebuilds on `identity_drift` with mtime demoted to
+  identity_algo and index_sha256 binding) rebuilds on `identity_drift` with mtime demoted to
   non-fatal (touch idempotent), `graph_lags` split OUT of source_newer
-  as an UNCONDITIONAL torn-plane trigger (muse P1-3), and the legacy
+  as an UNCONDITIONAL torn-plane trigger when the canonical main graph is
+  missing or older than its slot; alternate/projection indexes are graph-optional,
+  and the legacy
   trio (mtime OR doc-set drift OR corpus-policy drift) preserved for
   keyless slots — zero identity/hash cost on the legacy face; the
   current-side identity is computed over eval_faces = stamped∪detected
   on auto, pinned on explicit — the exact mirror of the mtime scope];
   `doc_set_delta` compares
-  BOTH missing and extra; `stamp_meta_core` shared by the cli
-  stamp mode and the refresh head-sync — face-accurate producer string,
-  preserve-prior-identity-keys on corpus mismatch [the keys describe
-  the INDEX; preserving them keeps drift visible — dropping them would
-  launder a delete into mtime-only freshness; the preserve set is five
-  keys (three fingerprint + source_identity + identity_algo) and a
-  failed identity recompute takes the preserve branch too — never a
-  partial fresh stamp; the stamp path recomputes identity from actual
-  bytes via `IdentityCachePolicy::Full`, immune to query-side cache
-  pollution]) / `language` (domain —
+  BOTH missing and extra; `ProductionIdentity::capture` hashes uncached source
+  bytes and corpus policy before production and at publication fences;
+  `stamp_meta_locked` accepts captured A only after validation and matching
+  produced documents, binding it to index bytes via `index_sha256`.
+  `stamp_meta_core` serves manual/head-sync callers: it preserves prior
+  provenance only for matching index bytes, repo and selection, never
+  certifies current disk content as consumed by an old index. Metadata
+  without the binding falls back to legacy signals. Endpoint fences do not
+  provide immutable snapshots or exclude ABA/after-fence edits) / `language` (domain —
   `LanguageFace` [document language, extension single source] vs
   `ProducerFamily` [executable leg; JS+TS share the typescript family]
   with the frozen ORDERED merge order) / `js_ts_corpus` (domain — the
@@ -178,8 +196,8 @@ tests are the sole gate face.
   `CODE_REALITY_IDENTITY_CACHE=off` → ReadOnly = never read AND never
   write); hashing is LAZY (D17 — `SourceRecord` carries no hash, so
   `walk_sources` stays pure path+stat, path-face consumers pay nothing,
-  legacy slots never hash); policies are caller-declared — Full on the
-  stamp face (D13: the indexed identity never trusts a cache),
+  legacy slots never hash); policies are caller-declared — production
+  observations use a disabled cache, manual stamps retain matching provenance,
   WriteBack on query faces; a per-file read failure is fail-loud Err
   (D15)) / `freshness` (adapter — the consumer-facing verdict face
   `code-reality freshness --repo <repo> [--json]`: zero heal (the only
@@ -222,11 +240,17 @@ tests are the sole gate face.
   edges with the CALLS-vs-REFERENCES split derived build-side by
   `py_calls` (ruff parse of referenced files — SCIP carries no call
   role; dunder-collapsed constructor edges match via the symbol's own
-  class segment), derived flows/communities materialized, FTS5,
-  temp+rename atomicity], and
+  class segment), derived flows/communities and FTS5 built in an
+  attempt-owned temporary database before atomic rename], and
   `ensure_indexes` [idempotent IF NOT EXISTS: engine read-chain indexes
   (edges caller/callee+kind, flow_memberships node_id, nodes anchor
-  name/file/line) for dbs built before that DDL revision]) /
+  name/file/line) for dbs built before that DDL revision]);
+  `publication_writer` owns the shared OS-released writer guard and
+  attempt-local temporary cleanup. Lock order is heal then publication;
+  explicit graph builds acquire ownership before input/cache acquisition,
+  while umbrella build uses lock-aware graph/stamp helpers through
+  publication. Contention returns a bounded controlled busy error.
+  Readers and non-cooperating writers do not acquire this guard /
   `graph_engine` (v1+ engine parity — the ten live ops read-only over
   the self-owned db: symbol-keyed loaders with rowid ordering parity,
   hub/bridge (sampled Brandes, own LCG — statistical parity above 5k
@@ -239,7 +263,11 @@ tests are the sole gate face.
   thin-wrap `cli::run` / `graph_engine::run` / the data-plane module
   `run`s (build/snapshot/delta_tour/project — write side effects,
   ep-mcp-data-plane-tools) through one shared spawn_blocking +
-  catch_unwind runner per-request isolation [SM-14]; bin
+  catch_unwind runner per-request isolation [SM-14]; tool output and
+  internal-error text are UTF-8-capped plus marker (not a strict JSON frame
+  bound). Parameter-validation errors (`INVALID_PARAMS`) are outside this bound.
+  Cancellation suppresses delivery; started blocking work may publish,
+  and transport EOF may await it. No rollback contract; bin
   `code-reality-mcp`) / `cli` (assembly —
   argv surface, mode routing incl. `--callers`/`--closure`/`--depth`
   1-10000, and the in-process `--audit` two-pass; scip_refs queries
@@ -251,7 +279,9 @@ tests are the sole gate face.
   (orchestration leaf — one-shot data-plane bootstrap: detect language
   face → spawn pyrefly-index / `rust-analyzer scip` (sibling bins,
   separate dists) → in-process graph_db build + ensure_indexes; mixed
-  repos cat-merge both SCIP indexes into one dual-language graph;
+  repos merge producer indexes into one graph; uncached source/policy A
+  is captured before producers, compared after production and again under
+  publication ownership before live mutation, then passed into stamping;
   `BuildError::{Env,Core}` maps fail(2)/crash(1));
   `ensure_fresh` (ep-index-query-time-self-heal): pre-query single-flight
   heal behind `.code-reality/scip/.heal.lock` — exit semantics is

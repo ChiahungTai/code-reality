@@ -1,0 +1,614 @@
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.47
+   Compiling libc v0.2.189
+   Compiling cfg-if v1.0.4
+   Compiling serde_core v1.0.229
+   Compiling serde v1.0.229
+   Compiling equivalent v1.0.2
+   Compiling itoa v1.0.18
+   Compiling memchr v2.8.3
+   Compiling allocator-api2 v0.2.21
+   Compiling foldhash v0.2.0
+   Compiling smallvec v1.15.2
+   Compiling find-msvc-tools v0.1.11
+   Compiling zmij v1.0.23
+   Compiling shlex v2.0.1
+   Compiling hashbrown v0.17.1
+   Compiling log v0.4.34
+   Compiling once_cell v1.21.4
+   Compiling bitflags v2.13.1
+   Compiling autocfg v1.5.1
+   Compiling pin-project-lite v0.2.17
+   Compiling futures-core v0.3.34
+   Compiling parking_lot_core v0.9.12
+   Compiling scopeguard v1.2.0
+   Compiling lock_api v0.4.14
+   Compiling stable_deref_trait v1.2.1
+   Compiling futures-sink v0.3.34
+   Compiling futures-io v0.3.34
+   Compiling slab v0.4.12
+   Compiling futures-channel v0.3.34
+   Compiling serde_json v1.0.151
+   Compiling tracing-core v0.1.36
+   Compiling getrandom v0.4.3
+   Compiling rand_core v0.10.1
+   Compiling futures v0.1.31
+   Compiling writeable v0.6.4
+   Compiling futures-task v0.3.34
+   Compiling litemap v0.8.3
+   Compiling num-traits v0.2.19
+   Compiling icu_normalizer_data v2.3.0
+   Compiling utf8_iter v1.0.4
+   Compiling strsim v0.11.1
+   Compiling icu_properties_data v2.3.0
+   Compiling percent-encoding v2.3.2
+   Compiling form_urlencoded v1.2.2
+   Compiling ref-cast v1.0.27
+   Compiling jobserver v0.1.35
+   Compiling cc v1.4.4
+   Compiling syn v3.0.4
+   Compiling syn v2.0.119
+   Compiling indexmap v2.14.0
+   Compiling errno v0.3.14
+   Compiling parking_lot v0.12.5
+   Compiling signal-hook-registry v1.4.8
+   Compiling mio v1.2.2
+   Compiling socket2 v0.6.5
+   Compiling thiserror v2.0.20
+   Compiling rustix v1.1.4
+   Compiling ident_case v1.0.1
+   Compiling chacha20 v0.10.1
+   Compiling proc-macro-utils v0.10.0
+   Compiling regex-syntax v0.8.11
+   Compiling rand v0.10.2
+   Compiling uuid v1.25.0
+   Compiling rustversion v1.0.23
+   Compiling manyhow-macros v0.11.4
+   Compiling synstructure v0.13.2
+   Compiling crossbeam-utils v0.8.22
+   Compiling manyhow v0.11.4
+   Compiling aho-corasick v1.1.5
+   Compiling zerofrom-derive v0.1.7
+   Compiling yoke-derive v0.8.2
+   Compiling tracing-attributes v0.1.31
+   Compiling serde_derive v1.0.229
+   Compiling zerovec-derive v0.11.6
+   Compiling tokio-macros v2.7.2
+   Compiling displaydoc v0.2.7
+   Compiling futures-macro v0.3.34
+   Compiling ref-cast-impl v1.0.27
+   Compiling thiserror-impl v2.0.20
+   Compiling quote-use-macros v0.8.4
+   Compiling zerofrom v0.1.8
+   Compiling httparse v1.10.1
+   Compiling interpolator v0.5.0
+   Compiling tracing v0.1.44
+   Compiling quote-use v0.8.4
+   Compiling yoke v0.8.3
+   Compiling tower-service v0.3.3
+   Compiling collection_literals v1.0.3
+   Compiling pkg-config v0.3.34
+   Compiling zerocopy v0.8.56
+   Compiling futures-util v0.3.34
+   Compiling attribute-derive-macro v0.10.5
+   Compiling regex-automata v0.4.18
+   Compiling derive-where v1.6.1
+   Compiling zerovec v0.11.8
+   Compiling zerotrie v0.2.5
+   Compiling sync_wrapper v1.0.2
+   Compiling fnv v1.0.7
+   Compiling atomic-waker v1.1.2
+   Compiling tower-layer v0.3.3
+   Compiling try-lock v0.2.5
+   Compiling want v0.3.1
+   Compiling castaway v0.2.4
+   Compiling attribute-derive v0.10.5
+   Compiling httpdate v1.0.3
+   Compiling static_assertions v1.1.0
+   Compiling darling_core v0.24.1
+   Compiling ordermap v1.2.0
+   Compiling base64 v0.22.1
+   Compiling tinystr v0.8.4
+   Compiling potential_utf v0.1.6
+   Compiling icu_locale_core v2.3.0
+   Compiling icu_collections v2.3.0
+   Compiling crossbeam-epoch v0.9.20
+   Compiling unicode-width v0.2.2
+   Compiling ipnet v2.12.1
+   Compiling serde_derive_internals v0.30.0
+   Compiling crossbeam-deque v0.8.7
+   Compiling futures-executor v0.3.34
+   Compiling either v1.18.0
+   Compiling icu_provider v2.3.1
+   Compiling futures v0.3.34
+   Compiling version_check v0.9.5
+   Compiling schemars_derive v1.2.2
+   Compiling get-size-derive2 v0.10.3
+   Compiling icu_properties v2.3.0
+   Compiling icu_normalizer v2.3.0
+   Compiling generic-array v0.14.7
+   Compiling filetime v0.2.29
+   Compiling getrandom v0.2.17
+   Compiling darling_macro v0.24.1
+   Compiling bytes v1.12.1
+   Compiling thin-vec v0.2.19
+   Compiling compact_str v0.10.0
+   Compiling chrono v0.4.45
+   Compiling darling v0.24.1
+   Compiling fastrand v2.5.0
+   Compiling rmcp v3.1.4
+   Compiling cr-freshness v0.9.3 (/Users/ctai/.codex/worktrees/5967/code-reality/crates/cr-freshness)
+   Compiling siphasher v1.0.3
+   Compiling rayon-core v1.13.0
+   Compiling anyhow v1.0.104
+   Compiling dyn-clone v1.0.20
+   Compiling tokio v1.53.1
+   Compiling http v1.5.0
+   Compiling get-size2 v0.10.3
+   Compiling rmcp-macros v3.1.4
+   Compiling idna_adapter v1.2.2
+   Compiling ppv-lite86 v0.2.21
+   Compiling idna v1.1.0
+   Compiling schemars v1.2.2
+   Compiling http-body v1.1.0
+   Compiling tempfile v3.27.0
+   Compiling url v2.5.8
+   Compiling http-body-util v0.1.5
+   Compiling rand_core v0.6.4
+   Compiling sse-stream v0.2.5
+   Compiling async-trait v0.1.92
+   Compiling typenum v1.20.1
+   Compiling thiserror v1.0.69
+   Compiling heck v0.5.0
+   Compiling base64 v0.23.1
+   Compiling pastey v0.2.3
+   Compiling rand_chacha v0.3.1
+   Compiling ruff_text_size v0.0.10
+   Compiling thiserror-impl v1.0.69
+   Compiling object v0.39.1
+   Compiling ryu v1.0.23
+   Compiling rand v0.8.8
+   Compiling phf_shared v0.11.3
+   Compiling bstr v1.13.1
+   Compiling regex v1.13.1
+   Compiling phf_generator v0.11.3
+   Compiling globset v0.4.20
+   Compiling ruff_source_file v0.0.10
+   Compiling is-macro v0.3.8
+   Compiling itertools v0.15.0
+   Compiling phf_codegen v0.11.3
+   Compiling rayon v1.12.0
+   Compiling char_str v0.0.2
+   Compiling getopts v0.2.24
+   Compiling seahash v4.1.0
+   Compiling glob v0.3.4
+   Compiling arrayvec v0.7.8
+   Compiling rustc-hash v2.1.3
+   Compiling unicode_names2_generator v1.3.0
+   Compiling tree-sitter-language v0.1.8
+   Compiling stacker v0.1.25
+   Compiling tinyvec_macros v0.1.1
+   Compiling tinyvec v1.12.0
+   Compiling phf v0.11.3
+   Compiling num-integer v0.1.47
+   Compiling ruff_cache v0.0.10
+   Compiling ruff_python_trivia v0.0.10
+   Compiling unicode_names2 v1.3.0
+   Compiling paste v1.0.15
+   Compiling unicode-normalization v0.1.25
+   Compiling cpufeatures v0.2.17
+   Compiling ruff_python_ast v0.0.10
+   Compiling drop_bomb v0.1.5
+   Compiling winnow v1.0.4
+   Compiling getrandom v0.3.4
+   Compiling bytemuck v1.25.2
+   Compiling safe_arch v0.7.4
+   Compiling serde_spanned v1.1.1
+   Compiling matrixmultiply v0.3.11
+   Compiling toml_writer v1.1.2+spec-1.1.0
+   Compiling wide v0.7.33
+   Compiling toml_parser v1.1.3+spec-1.1.0
+   Compiling approx v0.5.1
+   Compiling num-complex v0.4.6
+   Compiling tokio-util v0.7.19
+   Compiling tower v0.5.3
+   Compiling tokio-stream v0.1.19
+   Compiling h2 v0.4.18
+   Compiling tower-http v0.6.11
+   Compiling ar_archive_writer v0.5.3
+   Compiling vcpkg v0.2.15
+   Compiling rawpointer v0.2.1
+   Compiling simba v0.9.1
+   Compiling num-rational v0.4.2
+   Compiling rand_core v0.9.5
+   Compiling libsqlite3-sys v0.38.2
+   Compiling tree-sitter v0.25.10
+   Compiling psm v0.1.32
+   Compiling nalgebra-macros v0.2.2
+   Compiling protobuf v3.7.2
+   Compiling rand_chacha v0.9.0
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling protobuf-support v3.7.2
+   Compiling tree-sitter-typescript v0.23.2
+   Compiling tree-sitter-javascript v0.25.0
+   Compiling bit-vec v0.8.0
+   Compiling mime v0.3.17
+   Compiling axum-core v0.5.6
+   Compiling bit-set v0.8.0
+   Compiling digest v0.10.7
+   Compiling ruff_python_parser v0.0.10
+   Compiling rand v0.9.5
+   Compiling serde_urlencoded v0.7.1
+   Compiling hyper v1.11.0
+   Compiling single-utilities v0.8.7
+   Compiling serde_path_to_error v0.1.20
+   Compiling toml_datetime v0.7.5+spec-1.1.0
+   Compiling nalgebra v0.33.3
+   Compiling hashlink v0.12.1
+   Compiling code-reality v0.9.3 (/Users/ctai/.codex/worktrees/5967/code-reality/crates/code-reality)
+   Compiling streaming-iterator v0.1.9
+   Compiling matchit v0.8.4
+   Compiling winnow v0.7.15
+   Compiling fallible-iterator v0.3.0
+   Compiling fallible-streaming-iterator v0.1.9
+   Compiling sha2 v0.10.9
+   Compiling fancy-regex v0.14.0
+   Compiling hyper-util v0.1.20
+   Compiling utf8parse v0.2.2
+   Compiling byteorder v1.5.0
+   Compiling anstyle v1.0.14
+   Compiling dupe_derive v0.9.1
+   Compiling linktime-proc-macro v0.2.3
+   Compiling anstyle-query v1.1.5
+   Compiling link-section v0.19.3
+   Compiling allocative v0.3.6
+   Compiling colorchoice v1.0.5
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling dupe v0.9.1
+   Compiling serde_repr v0.1.21
+   Compiling toml v0.9.12+spec-1.1.0
+   Compiling scip v0.9.0
+   Compiling ctor v1.0.13
+   Compiling structmeta-derive v0.2.0
+   Compiling rusqlite v0.40.2
+   Compiling reqwest v0.13.4
+   Compiling axum v0.8.9
+   Compiling allocative_derive v0.3.6
+   Compiling strong_hash_derive v0.1.0
+   Compiling fs-err v3.3.1
+   Compiling hashbrown v0.16.1
+   Compiling same-file v1.0.6
+   Compiling starlark_map v0.14.2
+   Compiling walkdir v2.5.0
+   Compiling strong_hash v0.1.0
+   Compiling structmeta v0.2.0
+   Compiling fxhash v0.2.1
+   Compiling zstd-sys v2.0.16+zstd.1.5.7
+   Compiling serde_bytes v0.11.19
+   Compiling thread_local v1.1.10
+   Compiling regex-syntax v0.7.5
+   Compiling nalgebra-sparse v0.10.0
+   Compiling atomic v0.5.3
+   Compiling lazy_static v1.5.0
+   Compiling sharded-slab v0.1.7
+   Compiling lock_free_hashtable v0.1.4
+   Compiling serde_bser v0.4.0
+   Compiling anstyle-parse v1.0.0
+   Compiling single-clustering v0.7.0
+   Compiling anstyle-parse v0.2.7
+   Compiling tokio-util v0.6.10
+   Compiling ruff_diagnostics v0.0.10
+   Compiling matchers v0.2.0
+   Compiling fsevent-sys v4.1.0
+   Compiling notify-types v2.1.0
+   Compiling path-dedot v3.1.1
+   Compiling os_str_bytes v7.2.1
+   Compiling maplit v1.0.2
+   Compiling bitflags v1.3.2
+   Compiling path-absolutize v3.1.1
+   Compiling lsp-types v0.95.2 (https://github.com/yangdanny97/lsp-types?rev=395d6bfcd6c3696a64cfe9cd93b86f981fb85112#395d6bfc)
+   Compiling notify v8.2.0
+   Compiling argfile v1.0.0
+   Compiling tracing-subscriber v0.3.23
+   Compiling ruff_notebook v0.0.10
+   Compiling watchman_client v0.9.0
+   Compiling anstream v0.6.21
+   Compiling anstream v1.0.0
+   Compiling static_interner v0.1.3
+   Compiling ignore v0.4.33
+   Compiling vec1 v1.12.1
+   Compiling parse-display-derive v0.8.2
+   Compiling terminal_size v0.4.4
+   Compiling memory-stats v1.2.0
+   Compiling yansi v1.0.1
+   Compiling index_vec v0.1.4
+   Compiling clap_lex v1.1.0
+   Compiling unicase v2.9.0
+   Compiling web-time v1.1.0
+   Compiling zstd-safe v7.2.4
+   Compiling pathdiff v0.2.3
+   Compiling human_bytes v0.4.3
+   Compiling append-only-vec v0.1.8
+   Compiling clap_builder v4.6.6
+   Compiling clap_derive v4.6.4
+   Compiling enum-iterator-derive v1.5.0
+   Compiling parse-display v0.8.2
+   Compiling darling_core v0.23.0
+   Compiling enum-iterator v2.3.0
+   Compiling xattr v1.6.1
+   Compiling hybrid-array v0.4.14
+   Compiling syn v1.0.109
+   Compiling clap v4.6.6
+   Compiling ryu v0.2.8
+   Compiling tar v0.4.46
+   Compiling tikv-jemalloc-sys v0.7.1+5.3.1-0-g81034ce1f1373e37dc865038e1bc8eeecf559ce8
+   Compiling toml_datetime v1.1.1+spec-1.1.0
+   Compiling portable-atomic v1.15.0
+   Compiling unicode-segmentation v1.13.3
+   Compiling darling_macro v0.23.0
+   Compiling cmov v0.5.4
+   Compiling ctutils v0.4.2
+   Compiling darling v0.23.0
+   Compiling block-buffer v0.12.1
+   Compiling crypto-common v0.2.2
+   Compiling crossbeam-channel v0.5.16
+   Compiling blake3 v1.8.6
+   Compiling which v8.0.6
+   Compiling hex v0.4.3
+   Compiling itoa v0.4.8
+   Compiling unscanny v0.1.0
+   Compiling serde_jsonrc v0.1.0
+   Compiling pep440_rs v0.7.3
+   Compiling serde_with_macros v3.22.0
+   Compiling digest v0.11.3
+   Compiling lsp-server v0.10.0
+   Compiling serde_with v3.22.0
+   Compiling derivative v2.2.0
+   Compiling convert_case v0.11.0
+   Compiling toml_edit v0.25.13+spec-1.1.0
+   Compiling pyrefly_util v1.3.0-dev.2 (https://github.com/facebook/pyrefly.git?rev=1d64c4b605445f43d66162e56592837223b3dabf#1d64c4b6)
+   Compiling toml v1.1.4+spec-1.1.0
+   Compiling num-bigint v0.5.1
+   Compiling console v0.16.4
+   Compiling pyrefly_derive v1.3.0-dev.2 (https://github.com/facebook/pyrefly.git?rev=1d64c4b605445f43d66162e56592837223b3dabf#1d64c4b6)
+   Compiling configparser v3.2.0
+   Compiling memmap2 v0.9.11
+   Compiling arrayref v0.3.9
+   Compiling unit-prefix v0.5.2
+   Compiling pyrefly_python v1.3.0-dev.2 (https://github.com/facebook/pyrefly.git?rev=1d64c4b605445f43d66162e56592837223b3dabf#1d64c4b6)
+   Compiling pyrefly v1.3.0-dev.2 (https://github.com/facebook/pyrefly.git?rev=1d64c4b605445f43d66162e56592837223b3dabf#1d64c4b6)
+   Compiling constant_time_eq v0.4.2
+   Compiling code-reality-lsp-bridge v0.9.3 (/Users/ctai/.codex/worktrees/5967/code-reality/crates/code-reality-lsp-bridge)
+   Compiling hashbrown v0.14.5
+   Compiling dashmap v6.2.1
+   Compiling pyrefly_graph v1.3.0-dev.2 (https://github.com/facebook/pyrefly.git?rev=1d64c4b605445f43d66162e56592837223b3dabf#1d64c4b6)
+   Compiling indicatif v0.18.6
+   Compiling pyrefly_build v1.3.0-dev.2 (https://github.com/facebook/pyrefly.git?rev=1d64c4b605445f43d66162e56592837223b3dabf#1d64c4b6)
+   Compiling pyrefly_types v1.3.0-dev.2 (https://github.com/facebook/pyrefly.git?rev=1d64c4b605445f43d66162e56592837223b3dabf#1d64c4b6)
+   Compiling tsp_types v1.3.0-dev.2 (https://github.com/facebook/pyrefly.git?rev=1d64c4b605445f43d66162e56592837223b3dabf#1d64c4b6)
+   Compiling fuzzy-matcher v0.3.7
+   Compiling pyrefly_glean_schema v1.3.0-dev.2 (https://github.com/facebook/pyrefly.git?rev=1d64c4b605445f43d66162e56592837223b3dabf#1d64c4b6)
+   Compiling ruff_annotate_snippets v0.0.10
+   Compiling arc-swap v1.9.2
+   Compiling pyrefly_config v1.3.0-dev.2 (https://github.com/facebook/pyrefly.git?rev=1d64c4b605445f43d66162e56592837223b3dabf#1d64c4b6)
+   Compiling xxhash-rust v0.8.18
+   Compiling capnp v0.25.6
+   Compiling faster-hex v0.6.1
+   Compiling pyrefly-producer v0.9.3 (/Users/ctai/.codex/worktrees/5967/code-reality/crates/pyrefly-producer)
+   Compiling zstd v0.13.3
+   Compiling pyrefly_bundled v1.3.0-dev.2 (https://github.com/facebook/pyrefly.git?rev=1d64c4b605445f43d66162e56592837223b3dabf#1d64c4b6)
+   Compiling tikv-jemallocator v0.7.0
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 55s
+     Running unittests src/lib.rs (target/debug/deps/code_reality-9aed9a78378e5ced)
+
+running 63 tests
+test common::tests::edge_kinds_pinned ... ok
+test common::tests::days_from_civil_roundtrips_engine_civil ... ok
+test common::tests::epoch_to_utc_iso_zero_micros_omits_frac ... ok
+test argparse::tests::ddash_separator_and_negative_positional ... ok
+test argparse::tests::help_faces ... ok
+test argparse::tests::error_family ... ok
+test common::anchor_pattern_tests::space_escaping_matches_python_re_escape_bytes ... ok
+test common::tests::repo_relative_outside_is_none ... ok
+test argparse::tests::basics_flags_and_positionals ... ok
+test argparse::tests::abbrev_and_inline_and_last_wins ... ok
+test argparse::tests::short_inline_forms ... ok
+test common::tests::utc_now_micros_shape ... ok
+test graph_db::tests::js_ts_documents_drive_labels_and_unknown_falls_back ... ok
+test graph_db::tests::python_prefixes_cover_all_python_producers ... ok
+test common::tests::json_indent1_matches_python_shapes ... ok
+test common::tests::local_epoch_iso_renders_offset_and_auto_frac ... ok
+test common::tests::iso_parse_offset_forms ... ok
+test identity::tests::identity_entry_format_pin ... ok
+test identity::tests::face_scoping_excludes_other_faces ... ok
+test common::tests::anchor_pattern_shape ... ok
+test identity::tests::identity_is_touch_idempotent ... ok
+test identity::tests::identity_is_content_sensitive ... ok
+test identity::tests::cache_store_prunes_out_of_set_entries ... ok
+test identity::tests::read_failure_fails_loud ... ok
+test identity::tests::symlinked_source_is_invisible_to_identity ... ok
+test js_ts_calls::tests::computed_dynamic_and_dynamic_import_no_guess ... ok
+test js_ts_calls::tests::direct_method_optional_and_new ... ok
+test js_ts_calls::tests::missing_file_degrades_loud ... ok
+test js_ts_calls::tests::decorator_tagged_template_and_jsx_element_forms ... ok
+test identity::tests::identity_equal_across_equivalent_trees ... ok
+test identity::tests::cache_path_equals_full_recompute ... ok
+test js_ts_calls::tests::generic_and_await_calls ... ok
+test js_ts_calls::tests::broken_parse_degrades_loud_no_marks ... ok
+test identity::tests::same_second_same_size_rewrite_is_detected ... ok
+test js_ts_calls::tests::non_ascii_prefix_columns_are_utf16 ... ok
+test js_ts_corpus::tests::normalize_rel_shapes ... ok
+test js_ts_calls::tests::type_only_and_import_references_are_not_calls ... ok
+test language::tests::extension_table_for_all_eight_faces ... ok
+test identity::tests::corrupt_cache_discards_and_recomputes ... ok
+test language::tests::graph_labels_and_meta_names ... ok
+test language::tests::producer_mapping_and_order ... ok
+test js_ts_corpus::tests::malformed_profile_fails_loud ... ok
+test profile::tests::effective_excludes_provenance_and_dedupe ... ok
+test profile::tests::exclusion_default_and_profile ... ok
+test js_ts_corpus::tests::all_excluded_is_empty_not_error ... ok
+test profile::tests::module_of_f6_and_depth_and_generic ... ok
+test profile::tests::missing_profile_is_none ... ok
+test profile::tests::depth_float_and_bool_crash_with_py_repr ... ok
+test profile::tests::claims_regex_never_matches_without_rules ... ok
+test profile::tests::missing_scan_root_key_is_schema_crash ... ok
+test profile::tests::hazard_registry_parsed_and_prefix_checked ... ok
+test py_calls::tests::missing_file_degrades_loud ... ok
+test profile::tests::unknown_key_message_lists_sorted_keys ... ok
+test profile::tests::prefix_without_slash_crashes ... ok
+test js_ts_calls::tests::six_extension_routing ... ok
+test js_ts_corpus::tests::profile_exclusion_removes_generated_tree_only ... ok
+test py_calls::tests::collects_line_and_callee_name ... ok
+test ts_producer::tests::in_process_unrelated_existing_error_does_not_fallback ... ok
+test ts_producer::tests::in_process_zero_file_existing_config_retries_derived_once ... ok
+test ts_producer::tests::in_process_partial_existing_config_falls_back_to_exact_derived ... ok
+test js_ts_corpus::tests::six_extensions_and_skips ... ok
+test ts_producer::tests::in_process_filter_drops_non_governed_documents ... ok
+test graph_audit::tests::coverage_decision_matrix ... ok
+
+test result: ok. 63 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running unittests src/bin/code-reality/main.rs (target/debug/deps/code_reality-5bac56523408910e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/code-reality-mcp/main.rs (target/debug/deps/code_reality_mcp-47a5c17513a9aede)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/build.rs (target/debug/deps/build-36d7685b3b4ff667)
+
+running 33 tests
+test t10_run_non_dir_fails_loud ... ok
+test t11_empty_repo_env_fail ... ok
+test t15_python_all_excluded_converges_to_empty ... ok
+test t12_edge_dedupe_doubled_index_converges ... ok
+test t17_half_success_probe ... ok
+test t16_producer_fail_serve_stale_lock_released ... ok
+test t15_head_drift_only_no_rebuild ... ok
+test t13_fresh_noop_is_zero_spawn ... ok
+test t1_count_sources_detection_matrix ... ok
+test t16_python_partial_producer_warns_missing_governed ... ok
+test t17_build_report_prints_effective_excludes ... ok
+test t13_python_leg_drops_profile_excluded_docs ... ok
+test t14_stale_heals_and_releases_lock ... ok
+test t14_python_leg_without_profile_keeps_dist ... ok
+test t18_churn_cooldown_skips_reheal_within_window ... ok
+test t18_false_stale_warns_once_no_loop ... ok
+test t2_resolve_bin_injection ... ok
+test t3_run_usage_and_producer_validation ... ok
+test t20_readonly_slot_dir_serves_stale ... ok
+test t23_sm15_staleness_check_err_face ... ok
+test t4_python_leg_e2e_and_idempotent_rerun ... ok
+test t21_cli_heal_across_query_modes ... ok
+test t8_missing_bin_is_env_fail_with_hint ... ok
+test t5_rust_empty_index_guard ... ok
+test t19_head_drift_overrides_cooldown_and_convergence_clears ... ok
+test t6_rust_leg_e2e ... ok
+test t9_child_failure_maps_env_with_stderr_and_rust_hint ... ok
+test t22_cli_off_switch_and_non_heal_faces ... ok
+test t19_lock_escape_and_single_flight ... ok
+test t20_cooldown_env_zero_disables ... ok
+test t7_mixed_repo_unified_graph_concat ... ok
+test t21_wait_peer_respects_armed_marker ... ok
+test t22_expired_marker_lets_heal_resume ... ok
+
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.70s
+
+     Running tests/callers.rs (target/debug/deps/callers-155c6f737df5f7a8)
+
+running 11 tests
+test closure_zero_frontier_stable_shape ... ok
+test fn_spans_absent_enc_skips_silently ... ok
+test attribute_same_width_tie_first_seen_wins ... ok
+test fn_spans_skips_and_warns_on_unexpected_enc_len ... ok
+test closure_seed_reentry_counts_as_cycle ... ok
+test fn_spans_parses_four_and_three_element_enc ... ok
+test closure_cycle_detection_no_infinite_loop ... ok
+test closure_depth_truncation_and_aggregation ... ok
+test attribute_item_level_and_grouping_order ... ok
+test attribute_innermost_nested_and_boundaries_inclusive ... ok
+test refs_rows_flat_scan_order_and_non_def_only ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/callers_cli.rs (target/debug/deps/callers_cli-85e6b3cb21f9c4b2)
+
+running 13 tests
+test callers_closure_mutex ... ok
+test depth_requires_closure ... ok
+test build_cache_with_callers_and_no_query_fails_loudly ... ok
+test callers_no_def_exit_1 ... ok
+test no_query_with_callers_hits_frozen_final_guard ... ok
+test stamp_meta_with_closure_fails_loudly ... ok
+test callers_zero_refs_stable_shape ... ok
+test callers_output_exact_shape ... ok
+test callers_mode_answers_python_class_query ... ok
+test closure_depth1_is_callers_set ... ok
+test closure_depth2_and_depth3_cycle ... ok
+test abbreviations_resolve_and_c_is_ambiguous ... ok
+test depth_value_family ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/fndefs.rs (target/debug/deps/fndefs-52ec395864152530)
+
+running 7 tests
+test fndefs_path_is_full_filename_plus_suffix ... ok
+test absent_sidecar_uses_protobuf_and_never_builds ... ok
+test sidecar_roundtrip_matches_protobuf_spans ... ok
+test build_cache_stdout_frozen_and_three_table_bytes_untouched ... ok
+test rebuild_failure_falls_back_to_protobuf_spans ... ok
+test stale_sidecar_warns_and_rebuilds ... ok
+test stale_guards_index_mtime_schema_and_head ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/freshness.rs (target/debug/deps/freshness-7b8cbe09548e2a21)
+
+running 5 tests
+test umbrella_version_face_carries_rev ... ok
+test mcp_rejects_unknown_arg_loudly ... ok
+test mcp_help_face_answers_on_stdout ... ok
+test mcp_version_face_carries_rev ... ok
+test mcp_arg_priority_is_ordered ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.96s
+
+     Running tests/graph_db.rs (target/debug/deps/graph_db-a00c3ce3bfc16881)
+
+running 10 tests
+test is_test_rel_covers_rust_and_python_conventions ... ok
+test missing_cache_is_loud ... ok
+test build_fails_loud_on_stale_lsp_sidecar_superseded_by_newer_index ... ok
+test edge_sites_match_scip_edges_derivation ... ok
+test lsp_cache_builds_with_nearest_preceding_attribution ... ok
+test build_stamps_snapshot_metadata ... FAILED
+test build_materializes_engine_read_chain_indexes ... ok
+test build_creates_producer_keyed_schema ... ok
+test ensure_indexes_is_idempotent_on_built_db ... ok
+test build_is_idempotent_and_leaves_no_temp ... ok
+
+failures:
+
+---- build_stamps_snapshot_metadata stdout ----
+
+thread 'build_stamps_snapshot_metadata' (70904148) panicked at crates/code-reality/tests/graph_db.rs:389:5:
+assertion `left == right` failed
+  left: 1
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    build_stamps_snapshot_metadata
+
+test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+error: test failed, to rerun pass `-p code-reality --test graph_db`

@@ -1,0 +1,12 @@
+{
+  "producer_input": "def old_name(): return 1\ndef stable_name(): return 2\n",
+  "current_source": "def new_name(): return 1\ndef stable_name(): return 2\n",
+  "graph_nodes": [
+    [
+      "old_name"
+    ],
+    [
+      "stable_name"
+    ]
+  ]
+}

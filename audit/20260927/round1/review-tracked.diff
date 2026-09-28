@@ -1,0 +1,2349 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index c9ba140..2718222 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -91,25 +91,25 @@ install|remove --repo <repo>` the opt-in `.githooks/post-commit` wiring
+ | Completeness governance (audit + `[SRC]` provenance) | `code-reality scip_refs --audit --repo` + `code-reality graph_audit --json` | ✅ |
+ | Deletability safety net (hub_refs/hazard) | `code-reality hub_refs <symbol> --repo <repo> --hazard` | ✅ |
+ | Boundary / export / narrative tool family | `code-reality <snapshot\|boundary\|boundary_build\|chain_tour\|delta_tour\|tour\|tour_manifest\|tour_validate\|tour_upgrade\|runtime_edges> ...` — snapshot's files face is all-kind (`_meta.files_face` marker; module_edges stay structural-kind, the empty-set WARN attributes kind-distribution vs root vs empty-db); transition is the snapshot-diff DOMAIN (load/summarize/claims/json render — the CLI/report face retired 2026-08-29 S4, delta_tour is the sole diff interface and carries the degenerate/cross-face/cross-generation guards via summarize/render + tour description); `tour register\|materialize` is the intent-level two-phase materialization face (AIR-80 — manifest `[[delta_arc]]` provenance rows keyed on arcId: pending row on register, commit-ish rev-parse + snapshot-pair + stale gate + EP claims gate on materialize, row upserts `tourPath`/quality) | ✅ |
+-| Unified MCP interface | stdio `code-reality-mcp --stdio` (default face: ZCode/Claude Code plugin in `plugin/` — CC-compatible manifest `plugin/.claude-plugin/plugin.json` single-sources both harnesses; root `marketplace.json` ZCode market + `.claude-plugin/marketplace.json` CC market) + streamable-http `127.0.0.1:8200/mcp` (launchd plist in `launchd/`, multi-harness sharing) + stdio `code-reality-lsp-bridge --stdio` (type face; separate process — resident LSP state stays out of the stateless main server) + the data-plane four (`build`/`snapshot`/`delta_tour`/`project`, since 0.6.0 — write side effects re-adjudicated 2026-08-29: descriptions carry write targets, build's minutes-level no-progress note, delta_tour's in-repo out_dir default); plugin spawn wrapper resolves the canonical uv executable directory with `uv tool dir --bin`, version-checks the pinned `code-reality-mcp` / `code-reality-lsp-bridge` / `pyrefly-index` faces, bootstraps all three distributions via `uv tool install --force` when any face is missing/stale, and rechecks the postcondition before exec; `CODE_REALITY_BOOTSTRAP=off` escapes dev cargo-HEAD setups; the lsp-bridge wrapper resolves the pinned bridge only from that same uv directory with a bounded first-session wait for the twin bootstrap | ✅ |
+-| Self-owned graph db build (producer-keyed schema) | `code-reality graph_db build --repo <repo> [--json]` — any producer cache (rust-analyzer SCIP or LSP harvest, read from the in-repo slot) → `.code-reality/graph.db`: symbol-keyed nodes, single edge ontology (one row per call site), derived flows/communities materialized | ✅ |
++| Unified MCP interface | stdio `code-reality-mcp --stdio` (default face: ZCode/Claude Code plugin in `plugin/` — CC-compatible manifest `plugin/.claude-plugin/plugin.json` single-sources both harnesses; root `marketplace.json` ZCode market + `.claude-plugin/marketplace.json` CC market) + streamable-http `127.0.0.1:8200/mcp` (launchd plist in `launchd/`, multi-harness sharing) + stdio `code-reality-lsp-bridge --stdio` (type face; separate process — resident LSP state stays out of the stateless main server) + the data-plane four (`build`/`snapshot`/`delta_tour`/`project`, since 0.6.0 — write side effects re-adjudicated 2026-08-29: descriptions carry write targets, build's minutes-level no-progress note, delta_tour's in-repo out_dir default); plugin spawn wrapper resolves the canonical uv executable directory with `uv tool dir --bin`, version-checks the pinned `code-reality-mcp` / `code-reality-lsp-bridge` / `pyrefly-index` faces, bootstraps all three distributions via `uv tool install --force` when any face is missing/stale, and rechecks the postcondition before exec; `CODE_REALITY_BOOTSTRAP=off` escapes dev cargo-HEAD setups; the lsp-bridge wrapper resolves the pinned bridge only from that same uv directory with a bounded first-session wait for the twin bootstrap. Final success/error text is UTF-8-capped plus marker, preserving error type; cancellation suppresses delivery while started work may publish, and transport EOF may await it | ✅ |
++| Self-owned graph db build (producer-keyed schema) | `code-reality graph_db build --repo <repo> [--json]` — any producer cache (rust-analyzer SCIP or LSP harvest, read from the in-repo slot) → `.code-reality/graph.db`: symbol-keyed nodes, single edge ontology (one row per call site), derived flows/communities materialized in an attempt-owned temporary database before rename; shared writer ownership spans input acquisition through publication, with bounded controlled busy on contention | ✅ |
+ | Read-chain index maintenance (idempotent) | `code-reality graph_db ensure_indexes --repo <repo> [--json]` — engine indexes (edges endpoints+kind, flow node, nodes anchor); index-only, no row data touched | ✅ |
+ | Graph-engine family (10 ops + document_symbols, read-only `.code-reality/graph.db`) | `code-reality graph_query <impact_radius\|detect_changes\|hub\|bridge\|communities\|arch_overview\|flows\|affected_flows\|review_context\|minimal_context\|search\|symbols> --repo <repo> [--leiden] [--seed N]` + 12 MCP tools; queries are always full-graph (union materialized at build; `--union` retired) | ✅ (embeddings face deferred by S3 adjudication) |
+ | Leiden communities tier (seeded deterministic) | `graph_query communities --leiden [--seed N]` — single-clustering 0.7; v1+ S4 new baseline (full-graph edges): NT 1,151 communities, largest 35.0% | ✅ |
+ | CRG retirement readiness | engine layer READY — `ai-analysis/reports/s4-crg-retirement-readiness.md`; consumer cutover DONE 2026-08-26; format ownership flip DONE 2026-08-27 (`ep-v1plus-own-graph-db.md`); legacy read-path retirement DONE 2026-08-27 (`ep-legacy-db-consumer-cutover.md`: audit/chain_tour/hub_refs+hazard/snapshot all read `.code-reality/graph.db`; graph_csv retired zero-consumer); W3: the legacy importer retired from the refresh chain (2026-08-28, gate 95.42% full-attribution accepted); **W5: the importer fully removed + every consumer repo's `.code-review-graph/` db deleted (2026-08-28; the retired CRG museum repo keeps its own copy by user adjudication)** — pure-producer graph is the served face; data-plane self-management axis W1-W5 complete | ✅ |
+ | Python symbol truth via LSP harvest | `scripts/lsp_harvest.py` (pyright-langserver → cache three-table db; POC pass-bar 20/20 data-level exact vs LSP) — **golden-oracle generator only** since the pyrefly producer took the production face (row below) | 🟢 (superseded as production face) |
+ | Rust-native Python occurrence producer (Pyrefly link, SCIP face) | `cargo run --release -p pyrefly-producer --bin pyrefly-index -- --repo <repo> [--out <index.scip>]` — linked Pyrefly engine (git-dep rev `1d64c4b`) emits a SCIP index into the in-repo slot (`<repo>/.code-reality/scip/`); dunder-pair collapse, rel-path module identity, byte-deterministic output; S2 dogfood: defs coverage 99.6% name-normalized vs lsp golden, mosaic full 73s. scip-python fork demoted to fallback (retained, not default). Same crate also ships `pyrefly-lsp` (thin stdio host calling upstream `LspArgs::run` — the type-face backend below; engine-version parity with the producer is a lockfile guarantee). On write the producer invalidates superseded sidecar artifacts beside the slot (stale cache db / stamped meta) — they would otherwise be silently trusted (silent bad-db relay 2026-08-28); `graph_db build`'s lsp fast-path fails loud on the same mtime contradiction as defense-in-depth. B7b (W2 EP): constructor calls resolving to a corpus class (dataclass / object-inherit) mint a pseudo-constructor `Cls().` call ref + one-shot DEF backfill (fn-shaped → passes the fn-tail gate, pairs with legacy class nodes); per-site B7a guard keeps corpus-`__init__` sites in method grain; alias Class-kind display mismatch exempted from the local-binding guard | ✅ |
+-| Type face via LSP bridge (hover / diagnostics / edit-recheck — Python .py via pyrefly, Rust .rs via rust-analyzer, JS/TS via typescript-language-server) | `code-reality-lsp-bridge --stdio [--lsp-command <py-cmd>] [--rust-backend <rs-cmd>] [--typescript-backend <ts-cmd>]` — MCP server routing by file extension; tools `lsp_status` / `hover(file,line,character)` / `check_file(file)` / `edit_file(file,content)`; one lazy backend session per family (independent lifecycles; rust-analyzer spawns with no flags; the JS/TS family spawns `typescript-language-server --stdio` via the typed `BackendCommand` — argv, never a shell string; the override flag changes only the program). The six JS/TS extensions route with per-extension languageIds (js/mjs/cjs→javascript, jsx→javascriptreact, ts→typescript, tsx→typescriptreact); backend resolution is override → repo-local `node_modules/.bin` → `CODE_REALITY_NODE_BIN_DIR` → PATH (one resolver for status and spawn; npm tools are external prerequisites like rust-analyzer — no wheel shipping, no npx/network at runtime). Diagnostic convergence is policy-per-family (`LangSpec.diag_versions`, measured): pyrefly/ra pushes carry `version` (version gate + time basis + quiesce); typescript-language-server 6.0.0 never stamps `version` and ignores the LSP `versionSupport` capability, so that family converges on time basis + quiesce. Consumer scenarios: hover a type signature; check a file's type errors (out-of-band disk edits auto-synced); edit in-memory then recheck (un-persisted edits survive LRU eviction; Rust flycheck/cargo-check runs on disk content). Convergence gates harden since the poisoned-cache fix (2026-08-29): the freshness basis is the newer of this call's mutation and the overlay's `last_mutation` (stamped at every mutation origin), and the stall test is time-based — a poisoned eviction push (version+1, empty) can no longer pass as the converged answer. The crate has no language-specific dependencies (the P2 clause is fulfilled: the Rust face reuses the same crate). Equivalence batteries: `tests/equivalence_battery.rs` vs pyright baseline + `tests/ra_equivalence_battery.rs` vs frozen rust-analyzer baseline + `tests/lsp_status_availability.rs` (missing-backend availability pin) + `tests/ts_backend.rs` (hermetic fake-TLS family: routing/languageIds, argv isolation, diagnostics, death isolation both directions). `tests/rust_backend.rs` runs all four tests always-on; the three real-ra tests serialize on a test-file mutex (one workspace cold load at a time — concurrent cold loads flaked the 30s convergence deadline). Plugin entry live since plugin `0.1.2` | ✅ |
++| Type face via LSP bridge (hover / diagnostics / edit-recheck — Python .py via pyrefly, Rust .rs via rust-analyzer, JS/TS via typescript-language-server) | `code-reality-lsp-bridge --stdio [--lsp-command <py-cmd>] [--rust-backend <rs-cmd>] [--typescript-backend <ts-cmd>]` — MCP server routing by file extension; tools `lsp_status` / `hover(file,line,character)` / `check_file(file)` / `edit_file(file,content)`; one lazy backend session per family (independent lifecycles; rust-analyzer spawns with no flags; the JS/TS family spawns `typescript-language-server --stdio` via the typed `BackendCommand` — argv, never a shell string; the override flag changes only the program). The six JS/TS extensions route with per-extension languageIds (js/mjs/cjs→javascript, jsx→javascriptreact, ts→typescript, tsx→typescriptreact); backend resolution is override → repo-local `node_modules/.bin` → `CODE_REALITY_NODE_BIN_DIR` → PATH (one resolver for status and spawn; npm tools are external prerequisites like rust-analyzer — no wheel shipping, no npx/network at runtime). Diagnostic convergence is policy-per-family (`LangSpec.diag_versions`, measured): pyrefly/ra pushes carry `version` (version gate + time basis + quiesce); typescript-language-server 6.0.0 never stamps `version` and ignores the LSP `versionSupport` capability, so that family converges on time basis + quiesce. Consumer scenarios: hover a type signature; check a file's type errors (out-of-band disk edits auto-synced); edit in-memory then recheck (un-persisted edits survive LRU eviction; Rust flycheck/cargo-check runs on disk content). Convergence gates harden since the poisoned-cache fix (2026-08-29): the freshness basis is the newer of this call's mutation and the overlay's `last_mutation` (stamped at every mutation origin), and the stall test is time-based — a poisoned eviction push (version+1, empty) can no longer pass as the converged answer. Current checks reject known backend death at entry and before cached-diagnostic acceptance; failed initialization is terminal. Transport writes await bounded acknowledgements, and check/shutdown budgets start at entry with independent child cleanup. The crate has no language-specific dependencies (the P2 clause is fulfilled: the Rust face reuses the same crate). Equivalence batteries: `tests/equivalence_battery.rs` vs pyright baseline + `tests/ra_equivalence_battery.rs` vs frozen rust-analyzer baseline (full version identity required; drift fails instead of skipping, hover positions follow declaration anchors) + `tests/lsp_status_availability.rs` (missing-backend availability pin) + `tests/ts_backend.rs` (hermetic fake-TLS family: routing/languageIds, argv isolation, diagnostics, death isolation both directions). `tests/rust_backend.rs` runs all four tests always-on; the three real-ra tests serialize on a test-file mutex (one workspace cold load at a time — concurrent cold loads flaked the 30s convergence deadline). Plugin entry live since plugin `0.1.2` | ✅ |
+ | Binary freshness face | `--version` on any bin (`<pkg>+<git rev>`, embedded via per-crate build.rs) + one-per-process stderr WARN via the zero-dep `cr-freshness` leaf crate (single source for all four WARN-wired bins, dev-face gated): active only when the running exe is under `$CARGO_HOME/bin` (pin installs stay silent — the plugin pin is their authority) and crates-relevant — warns when the checkout's HEAD carries `crates/` changes past the embedded rev (docs-only gaps silent; git-unresolvable revs warn conservatively) or uncommitted `crates/` edits (`CR_REPO` env or `~/Github/code-reality` fallback; silent on machines without a checkout) + `.githooks/post-commit` background reinstall of changed crates (maintainer layout, opt-in `core.hooksPath=.githooks`) | ✅ |
+ | PyPI platform-wheel distribution (cargo-free consumer install) | `uv tool install code-reality` / `uv tool install pyrefly-producer` / `uv tool install code-reality-lsp-bridge` — wheels on PyPI (macOS arm64; v0.2.0 first release 2026-08-28); release path: `.github/workflows/release-wheels.yml` on `v*` tags via trusted publishing (three per-dist GitHub environments). One-shot use: `uvx code-reality <tool> ...` where dist name = bin name; the producer dist needs `uvx --from pyrefly-producer <bin>`. rust-analyzer stays a system dependency (`rustup component add rust-analyzer`); `lsp_status` reports missing backends as `state=unavailable` with install guidance. **Single binary layer** — the npm platform-package face is retired (2026-08-29; registry entry frozen at 0.3.1, deprecation pending) and the plugin wrapper bootstraps the exact plugin-pinned version from PyPI (row below); the wrapper test enforces both wrapper pins == plugin == workspace == both marketplace listings | ✅ |
+-| First-session uv bootstrap (both harnesses; npm embedded face retired) | `plugin/.mcp.json` spawn wrapper: `uv tool dir --bin` defines the consumer executable face; `code-reality-mcp`, `code-reality-lsp-bridge`, and `pyrefly-index` must all prefix-match the plugin pin before the MCP server starts. A missing/stale face triggers exact-pin `uv tool install --force` for all three distributions, followed by the same direct-path verification; an exit-0 install that leaves any face stale fails loud. `CODE_REALITY_BOOTSTRAP=off` restores developer PATH/cargo resolution; no uv → loud 127 + guidance, with the retired embedded `node_modules` as a deprecation-grace rescue; the lsp-bridge wrapper waits for the pinned bridge in the same uv bin dir. Supersedes the npm face & the a1bce6b wait-for-parity stance (2026-08-29: npm face was CC-only + darwin-arm64-only + a second-registry lockstep burden, agent-verified; npm package frozen at 0.3.1, `npm deprecate` pending) | ✅ |
++| First-session uv bootstrap (both harnesses; npm embedded face retired) | `plugin/.mcp.json` spawn wrapper: `uv tool dir --bin` defines the consumer executable face; `code-reality-mcp`, `code-reality-lsp-bridge`, and `pyrefly-index` must all match the exact plugin-pinned release, optionally followed by a `+rev` suffix, before the MCP server starts. A missing/stale face triggers exact-pin `uv tool install --force` for all three distributions, followed by the same direct-path verification; an exit-0 install that leaves any face stale fails loud. `CODE_REALITY_BOOTSTRAP=off` restores developer PATH/cargo resolution; no uv → loud 127 + guidance, with the retired embedded `node_modules` as a deprecation-grace rescue; the lsp-bridge wrapper waits for the pinned bridge in the same uv bin dir. Supersedes the npm face & the a1bce6b wait-for-parity stance (2026-08-29: npm face was CC-only + darwin-arm64-only + a second-registry lockstep burden, agent-verified; npm package frozen at 0.3.1, `npm deprecate` pending) | ✅ |
+ | Unified in-repo data plane (sidecar home retired) | default slots `<repo>/.code-reality/{scip,boundary,snapshots}/` resolved by `engine::default_index_path` / the `default_out_dir` family; the data dir self-writes a single-`*` `.gitignore` (zero consumer gitignore setup); legacy `~/.mosaic/code-reality/` slots migrate one-shot via `code-reality sidecar_migrate --repo <repo>` (retired 2026-08-29; five repos migrated byte-identical) | ✅ |
+-| 新 repo 數據面一鍵準備（build 傘形；language-set 編排＋JS/TS 第一類面） | `code-reality build --repo <repo> [--producer rust\|python\|typescript] [--json]`（MCP face：`build` tool）— 偵測語言面集（`LanguageFace` 副檔名單一源：.py/.rs/六 JS-TS 副檔名）→ 有序 producer 腿（python→rust→typescript；`pyrefly-index --out`／`rust-analyzer scip <repo-dir>`＋`current_dir` toolchain pin／`scip-typescript` 外部 npm 前置——repo-local `node_modules/.bin` → `CODE_REALITY_NODE_BIN_DIR` → PATH 解析，無 npx/網路）→ **每腿 staged、全部驗證後一次原子發佈**（後腿失敗＝pre-build slot byte-identical；attempt 唯一名，同 process 併發 build 不互踩）→ N-way protobuf 串接 → in-process `graph_db build`＋`ensure_indexes`；**JS/TS 語料**：existing tsconfig/jsconfig 僅在完整覆蓋 governed corpus 時採用，否則 CR-owned 暫態 sidecar config（顯式絕對 `files`、絕不改 target repo 設定）且 derived 模式強制精確收斂；governed corpus＝repo profile 排除後的六副檔名集（`js_ts_corpus` 單一源，producer 與 freshness 同政策）；全語料被 profile 排除＝合法空終態（index/graph 移除、收斂 Fresh）；env 類錯 `fail(2)`／graph 核心 `crash(1)`；index provenance in-process stamp（[SRC] 全行）；L4 dogfood：delegate-bridge 拋棄式副本 36 governed docs 精確、derived config 路徑（repo tsconfig 不存在）、256 nodes 全 JavaScript、coverage 100%、CALLS 340 真語法標記、mutation matrix（edit/add/delete/rename/excluded/profile 變更）全收斂；NT 混合 66,820 nodes 雙語言合一（歷史 L4）；**計數語義（L4 實證）**：edge 物化自然鍵去重（kind＋caller＋callee＋file＋line）——任何 producer 側重複均無害 | ✅ |
++| One-shot data-plane preparation (language-set orchestration and first-class JS/TS) | `code-reality build --repo <repo>` (MCP: `build`; `--producer` selects one family) detects Python, Rust and six JS/TS extensions, then runs staged producer legs in deterministic Python → Rust → TypeScript order. External npm prerequisites resolve repo-local → `CODE_REALITY_NODE_BIN_DIR` → PATH, with no runtime npx/network. JS/TS uses an existing config only when it covers the governed corpus; otherwise a temporary CR-owned explicit-files config enforces exact coverage without editing target configuration. Profile-excluded empty corpora converge to no index/graph. Uncached source identity and policy A are captured before production, checked after production and again under the shared publication writer guard; detected drift rejects before live mutation. Validated A is bound to published index bytes. Graph input acquisition, derived-table construction and publication share writer ownership; contention returns controlled busy and derived tables precede temporary DB rename. Producer staging and endpoint fences do not provide an immutable snapshot, ABA protection or a transaction across every data-plane file. Environment errors exit 2; graph-core errors exit 1. Edge materialization deduplicates by kind + caller + callee + file + line. | ✅ |
+ | JS/TS 圖語義（第一類結構查詢） | `scip_refs`／`--callers`／`--closure`／`graph_query` 家族對 `.js/.jsx/.mjs/.cjs/.ts/.tsx` 第一類：節點語言從**定義文件副檔名**推導（JS vs TS 分標，非 symbol 前綴）；class/interface `#` 符號可查（`Type` 節點，bare-name 查詢；Rust `Type#` 維持不可查）；**CALLS 語法派生**＝Tree-sitter 再剖析（direct/method/optional-chain/constructor 為 CALLS，import/property read 留 REFERENCES；identity＝line+column+name——同列同名 plain load 不污染）；test-path 分類單一源（`__tests__`/`.spec.`/`.test.`）；`enclosing_range` 覆蓋率分母進 build 報告（dogfood 100%，驗收門檻 ≥99%） | ✅ |
+ | 語言能力邊界（truthful boundaries，防 false-clean） | `graph_audit`/`scip_refs --audit`：完整度 oracle 僅 Rust——純 JS/TS graph＝exit 2 capability-unsupported；Rust+JS/TS 混合＝結果照印但 exit 2 partial＋`[PARTIAL]` 覆蓋聲明（JSON additive `audited_languages`/`unsupported_languages`；wrapper 與直呼同守衛）。`hub_refs --hazard`：hazard 動態層僅 Python 語義——JS/TS 目標＝`hazard_level=unsupported-js-ts`＋`hazard_supported=false`（靜態聚合照常；ambiguous 同名保守處理）。`project` overlay：Python/pyrefly 符號鑄造 only——planned sources 含 JS/TS 即拒（明示訊息）。`boundary*`：維持 NT Python↔Rust 領域 | ✅ |
+ | Projected-graph overlay for EP planning | `code-reality project --repo <repo> --plan <plan.toml>` — compiles a declarative projection plan (planned symbols/edges/claims, TOML) via the spawned `overlay-gen` (single-source symbol minting + declared-edge-vs-source consistency gate), cat-merges the overlay onto the real index into `.code-reality/projections/<plan-stem>/`, and reports graft surface (real vs projected caller sites), new-symbol reverse chains, and claim verdicts (`[projected][HOLE]` claimed-but-unwired / `[projected][MISSING]` absent symbol). Every output carries the `[projected]` label + hypothetical-edge count — declarations, not evidence. The real slot stays byte-identical (protobuf-face queries only, zero sidecar writes) | ✅ |
+-| Main-index query-time self-heal + commit-granularity refresh | scip_refs-family queries auto-heal a stale slot before answering (single-flight via `.code-reality/scip/.heal.lock`; a rebuild that still lags warns once and serves — corpus mismatch never loops; `CODE_REALITY_AUTOHEAL=off` reverts to warn-only). The rebuild decision is `needs_rebuild()` — **identity-authoritative since the source identity EP**: a comparable slot (meta carries `source_faces`+`source_identity`+`identity_algo`) rebuilds on `identity_drift` (content-addressed — mtime-newness is no longer fatal, touch is idempotent), the torn-plane guard (graph.db older than the slot, muse P1-3) stays UNCONDITIONAL in both modes, and a legacy keyless slot keeps the baseline trio (mtime-newer OR source-set fingerprint drift OR JS/TS corpus-policy drift — reported but non-fatal in identity mode); faces are scoped from the stamped `source_faces` unioned with detected faces on auto (pinned on explicit — a newly arrived language drifts the current-side identity, the scope mirror that keeps the heal honest), and the fingerprint/identity keys are stamped only on a build whose doc set equals the disk corpus (on mismatch — or a failed identity recompute — a restamp PRESERVES the prior keys, they describe the index, keeping drift visible instead of laundering it into mtime-only freshness; the stamp path always recomputes identity from actual bytes, never a cache) + `code-reality refresh --repo <repo>` (post-commit background face: full idempotent re-produce when sources moved, head-sync re-stamp on docs-only commits — never restamping over corpus drift, identity values unchanged) + `code-reality hook install\|remove --repo <repo>` (opt-in `.githooks/post-commit`; script pins the resolved absolute bin path — GUI-no-PATH safe, release face preferred over the cargo-home dev face so consumer hooks stay silent when the CR checkout churns; logs to `.code-reality/refresh.log`; trailing burst debounce — rebase replays and rapid commits coalesce into one tail refresh via `refresh.pending`/`refresh.scheduled` heartbeat markers, `CODE_REALITY_REFRESH_QUIET_SECS` window default 5s, dead-runner respawn, source-changing lost tails self-heal on the next query, docs-only tails re-stamp on the next refresh; rerunning `hook install` upgrades managed scripts in place on content diff and `refresh` nudges old-format hooks) | ✅ |
+-| Source identity freshness face (dirty-WT/content-aware verdict for cross-repo consumers) | `code-reality freshness --repo <repo> [--json]` — verdict face, zero heal (only write = the identity cache, `CODE_REALITY_IDENTITY_CACHE=off` reverts fully read-only); exits fresh=0 / stale=1 / no-slot·usage·check-failure=2 (never claims fresh without a slot; the guidance names the empty-terminal state for all-excluded corpora); JSON `{repo, slot, fresh, stale_reasons[torn-plane\|content-drift\|doc-set-drift\|policy-drift\|legacy-signals], head_drift, faces, indexed_source_identity, current_source_identity, identity_algo, serves}` with `serves` ∈ `current-tree` (fresh, consumer may claim fresh) / `committed-baseline` (stale/torn — graph answers are the committed baseline, WT delta lives in live LSP) / `legacy-signals` (keyless meta — read by the baseline criteria, identities null, current NOT computed); head drift is disclosed (`head_drift`) and never fatal (AIR-135.2's freshness has no HEAD on its left-hand side). Identity = `sha256("cr-identity-v1\0" + Σ sorted-by-rel "{face}\0{rel}\0{size}\0{content_hash}\0")` — same content ⇒ same identity (touch / stash round-trip / rebase replay idempotent; mtime only gates the per-file hash cache). Consumer scenarios: preflight a "claimed fresh" index before review (SM-1) · a dirty WT answers stale with `content-drift` (SM-2) · a same-size content swap under a preserved mtime is still caught — the mtime-only blind spot is closed at the identity layer (SM-3) · a missing slot fails loud with build guidance (SM-7) · NT-scale steady-state gate ≈ 40 ms, cold full-hash < 1 s (SM-11; the documented residual: an exact-nanos same-size forged swap can slip the query-side stat gate — bounded by the always-full stamp recompute, disclosed in the consumer SKILL). MCP carries no freshness tool (CLI is the authoritative full face) | ✅ |
++| Main-index query-time self-heal + commit-granularity refresh | scip_refs-family queries auto-heal a stale slot before answering (single-flight via `.code-reality/scip/.heal.lock`; a rebuild that still lags warns once and serves — corpus mismatch never loops; `CODE_REALITY_AUTOHEAL=off` reverts to warn-only). The rebuild decision is `needs_rebuild()` — **identity-authoritative since the source identity EP**: a comparable slot (meta carries `source_faces`+`source_identity`+`identity_algo`+`index_sha256`) rebuilds on `identity_drift` (content-addressed — mtime-newness is no longer fatal, touch is idempotent), the torn-plane guard (canonical main graph.db missing or older than the slot; alternate/projection indexes are graph-optional) stays UNCONDITIONAL in both modes, and a legacy keyless slot keeps the baseline trio (mtime-newer OR source-set fingerprint drift OR JS/TS corpus-policy drift — reported but non-fatal in identity mode); faces are scoped from the stamped `source_faces` unioned with detected faces on auto (pinned on explicit — a newly arrived language drifts the current-side identity, the scope mirror that keeps the heal honest), and new provenance is stamped only from the orchestrated build's validated uncached source/policy observation A whose document set equals the produced index (A is bound to index bytes via `index_sha256`; manual/head-only restamps preserve prior provenance only for matching index bytes, repo and selection, never recomputing current source into trusted old-index provenance; endpoint fences do not exclude ABA or post-check edits) + `code-reality refresh --repo <repo>` (post-commit background face: full idempotent re-produce when sources moved, head-sync re-stamp on docs-only commits — never restamping over corpus drift, identity values unchanged) + `code-reality hook install\|remove --repo <repo>` (opt-in `.githooks/post-commit`; script pins the resolved absolute bin path — GUI-no-PATH safe, release face preferred over the cargo-home dev face so consumer hooks stay silent when the CR checkout churns; logs to `.code-reality/refresh.log`; trailing burst debounce — rebase replays and rapid commits coalesce into one tail refresh via `refresh.pending`/`refresh.scheduled` heartbeat markers, `CODE_REALITY_REFRESH_QUIET_SECS` window default 5s, dead-runner respawn, source-changing lost tails self-heal on the next query, docs-only tails re-stamp on the next refresh; rerunning `hook install` upgrades managed scripts in place on content diff and `refresh` nudges old-format hooks) | ✅ |
++| Source identity freshness face (dirty-WT/content-aware verdict for cross-repo consumers) | `code-reality freshness --repo <repo> [--json]` — verdict face, zero heal (only write = the identity cache, `CODE_REALITY_IDENTITY_CACHE=off` reverts fully read-only); exits fresh=0 / stale=1 / no-slot·usage·check-failure=2 (never claims fresh without a slot; the guidance names the empty-terminal state for all-excluded corpora); JSON `{repo, slot, fresh, stale_reasons[torn-plane\|content-drift\|doc-set-drift\|policy-drift\|legacy-signals], head_drift, faces, indexed_source_identity, current_source_identity, identity_algo, serves}` with `serves` ∈ `current-tree` (fresh, consumer may claim fresh) / `committed-baseline` (stale/torn — graph answers are the committed baseline, WT delta lives in live LSP) / `legacy-signals` (keyless meta — read by the baseline criteria, identities null, current NOT computed); head drift is disclosed (`head_drift`) and never fatal (AIR-135.2's freshness has no HEAD on its left-hand side). Identity = `sha256("cr-identity-v1\0" + Σ sorted-by-rel "{face}\0{rel}\0{size}\0{content_hash}\0")` — same content ⇒ same identity (touch / stash round-trip / rebase replay idempotent; mtime only gates the per-file hash cache). Consumer scenarios: preflight a "claimed fresh" index before review (SM-1) · a dirty WT answers stale with `content-drift` (SM-2) · a same-size content swap under a preserved mtime is still caught — the mtime-only blind spot is closed at the identity layer (SM-3) · a missing slot fails loud with build guidance (SM-7) · NT-scale steady-state gate ≈ 40 ms, cold full-hash < 1 s (SM-11; the documented residual: an exact-nanos same-size forged swap can slip the query-side stat gate — bounded by uncached orchestrated production fences, not manual restamping, disclosed in the consumer SKILL). MCP carries no freshness tool (CLI is the authoritative full face) | ✅ |
+ 
+ ## Tests
+ 
+diff --git a/Cargo.lock b/Cargo.lock
+index 8768179..1ba9df8 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -573,6 +573,7 @@ name = "code-reality-lsp-bridge"
+ version = "0.9.3"
+ dependencies = [
+  "cr-freshness",
++ "libc",
+  "rmcp",
+  "schemars",
+  "serde",
+diff --git a/README.md b/README.md
+index e4bc248..896f6cc 100644
+--- a/README.md
++++ b/README.md
+@@ -110,6 +110,12 @@ An HTTP resident mode also exists (`code-reality-mcp`, port 8200,
+ launchd plist in `launchd/`) for multi-harness sharing on one machine —
+ not needed for the plugin path.
+ 
++MCP cancellation stops response delivery, not already-started blocking
++work. A cancelled build can continue and publish its outputs; cancellation
++does not imply rollback. Closing the stdio transport can wait for active
++work to finish. Tool text is bounded with an explicit truncation marker,
++including error messages; JSON framing adds its own overhead.
++
+ Per-repo prerequisites for the query tools: run
+ `code-reality build --repo <repo>` — it detects the language face
+ (.py/.rs), spawns the matching producer (pyrefly-index /
+@@ -122,11 +128,12 @@ scip_refs-family queries also self-heal a stale index before answering
+ install --repo <repo>` opts a repo into a post-commit background
+ `code-reality refresh` (docs-only commits re-stamp provenance instead
+ of re-producing).
+-Manual chain (equivalent, for debugging): `rust-analyzer scip <repo>`
++Manual chain (for data availability and debugging, not equivalent source
++identity provenance): `rust-analyzer scip <repo>`
+ or `pyrefly-index --repo <repo>` →
+ (`code-reality scip_refs --stamp-meta`/`--build-cache` optional
+-accelerators — going straight to `graph_db build` after pyrefly-index
+-alone is safe: the write invalidates superseded sidecar artifacts and
++maintenance steps — going straight to `graph_db build` after pyrefly-index
++alone can populate the graph: the write invalidates superseded sidecar artifacts and
+ the build fails loud on a cache db older than `index.scip`); all
+ graph-reading tools (engine, audit, chain_tour, hub_refs/hazard,
+ snapshot) read a self-owned db at `<repo>/.code-reality/graph.db` —
+@@ -134,6 +141,18 @@ produce it with `code-reality graph_db build --repo <repo>` (any
+ producer cache); the refresh chain is purely producer-side (the
+ CRG-era `.code-review-graph/` import face was fully removed with the
+ W5 legacy-db cleanup).
++
++Orchestrated `build` captures uncached source identity and corpus policy
++before production, compares them after production and again under shared
++publication ownership, then binds that captured identity to the published
++index bytes. Manual or docs-only restamping preserves prior provenance only
++when the index bytes, repository and selection still match; it cannot certify
++current source as consumed by an older index. These endpoint checks are not
++an immutable snapshot and do not exclude ABA edits or edits after the final
++check. A missing or older graph for the canonical main slot is torn; alternate
++and projection indexes remain graph-optional. Cooperating graph writers share
++bounded publication ownership and return a controlled busy error on contention;
++derived tables are built before the temporary database is renamed into place.
+ `graph_db ensure_indexes --repo <repo>` is an idempotent follow-up that
+ adds the engine read-chain indexes to dbs built before that schema
+ revision. The `.code-reality/` directory is repo-local derived data
+diff --git a/crates/AGENTS.md b/crates/AGENTS.md
+index defd0e0..95a7139 100644
+--- a/crates/AGENTS.md
++++ b/crates/AGENTS.md
+@@ -19,6 +19,9 @@ tests are the sole gate face.
+   crate, which is the P2 clause.
+ - **layering**: `framing` (LSP base-protocol Content-Length framing over
+   child stdio — headers must end `\r\n`, Content-Length only) /
++  `transport` (bounded serialized stdin writer with acknowledgements,
++  nonblocking pipe adapters and independent child kill/reap ownership;
++  requests, notifications and server-request replies share the writer) /
+   `session` (lifecycle + protocol client: `LangSpec` per-language
+   family profile [extension-set gate, per-extension languageId table,
+   hover-retry window, check deadline, install hint, `diag_versions` —
+@@ -50,6 +53,17 @@ tests are the sole gate face.
+   without a mutation would be a guaranteed fake timeout], `edit_file`
+   [range-form full-content didChange — see session]; all tools
+   spawn_blocking, SM-14 pattern).
++- **lifecycle**: current checks reject known backend death at entry and
++  before accepting cached diagnostics. Failed initialization is terminal
++  for that session; restart the bridge to recover. Absolute deadlines include
++  writer acknowledgement and interaction wait (`REQUEST_TIMEOUT` and
++  `HANDSHAKE_TIMEOUT` in `session`). The `LangSpec.slow_timeout_ms` check budget
++  starts at `check_file_impl` entry and includes lazy initialization and synchronization;
++  `LspSession::shutdown` has a total budget from entry, with forced child cleanup independent
++  of the interaction/stdin locks. Transport failure terminates the session;
++  partial frames are not retried. These application deadlines do not bound
++  arbitrary OS/filesystem hangs. Existing version/time/quiescence and overlay
++  replay policies remain in force.
+ - **backend invariants**: rust-analyzer spawns with NO flags (default
+   stdio is LSP; it rejects the `--stdio` flag); the initialize request
+   advertises ONLY `textDocument.hover` + `publishDiagnostics` — never
+@@ -67,7 +81,10 @@ tests are the sole gate face.
+   mixed-language independence, backend-death) take `RA_SERIAL` — one
+   workspace cold load at a time. 4-6 concurrent cold loads racing the
+   fixed 30s convergence deadline was the tracked starvation flake;
+-  the hover face lives in `ra_equivalence_battery.rs`.
++  the hover face lives in `ra_equivalence_battery.rs`: it initializes by
++  opening a document, requires the complete frozen backend version identity,
++  and resolves hover positions from declaration anchors. Version drift fails
++  rather than silently skipping the frozen hover comparisons.
+ 
+ ## cr-freshness (leaf lib crate)
+ 
+@@ -145,24 +162,25 @@ tests are the sole gate face.
+   the FNV source-set fingerprint; `evaluate_staleness`/`StalenessSnapshot
+   ::needs_rebuild` [identity-authoritative since the source identity EP:
+   a comparable slot (meta carries source_faces + source_identity +
+-  identity_algo) rebuilds on `identity_drift` with mtime demoted to
++  identity_algo and index_sha256 binding) rebuilds on `identity_drift` with mtime demoted to
+   non-fatal (touch idempotent), `graph_lags` split OUT of source_newer
+-  as an UNCONDITIONAL torn-plane trigger (muse P1-3), and the legacy
++  as an UNCONDITIONAL torn-plane trigger when the canonical main graph is
++  missing or older than its slot; alternate/projection indexes are graph-optional,
++  and the legacy
+   trio (mtime OR doc-set drift OR corpus-policy drift) preserved for
+   keyless slots — zero identity/hash cost on the legacy face; the
+   current-side identity is computed over eval_faces = stamped∪detected
+   on auto, pinned on explicit — the exact mirror of the mtime scope];
+   `doc_set_delta` compares
+-  BOTH missing and extra; `stamp_meta_core` shared by the cli
+-  stamp mode and the refresh head-sync — face-accurate producer string,
+-  preserve-prior-identity-keys on corpus mismatch [the keys describe
+-  the INDEX; preserving them keeps drift visible — dropping them would
+-  launder a delete into mtime-only freshness; the preserve set is five
+-  keys (three fingerprint + source_identity + identity_algo) and a
+-  failed identity recompute takes the preserve branch too — never a
+-  partial fresh stamp; the stamp path recomputes identity from actual
+-  bytes via `IdentityCachePolicy::Full`, immune to query-side cache
+-  pollution]) / `language` (domain —
++  BOTH missing and extra; `ProductionIdentity::capture` hashes uncached source
++  bytes and corpus policy before production and at publication fences;
++  `stamp_meta_locked` accepts captured A only after validation and matching
++  produced documents, binding it to index bytes via `index_sha256`.
++  `stamp_meta_core` serves manual/head-sync callers: it preserves prior
++  provenance only for matching index bytes, repo and selection, never
++  certifies current disk content as consumed by an old index. Metadata
++  without the binding falls back to legacy signals. Endpoint fences do not
++  provide immutable snapshots or exclude ABA/after-fence edits) / `language` (domain —
+   `LanguageFace` [document language, extension single source] vs
+   `ProducerFamily` [executable leg; JS+TS share the typescript family]
+   with the frozen ORDERED merge order) / `js_ts_corpus` (domain — the
+@@ -178,8 +196,8 @@ tests are the sole gate face.
+   `CODE_REALITY_IDENTITY_CACHE=off` → ReadOnly = never read AND never
+   write); hashing is LAZY (D17 — `SourceRecord` carries no hash, so
+   `walk_sources` stays pure path+stat, path-face consumers pay nothing,
+-  legacy slots never hash); policies are caller-declared — Full on the
+-  stamp face (D13: the indexed identity never trusts a cache),
++  legacy slots never hash); policies are caller-declared — production
++  observations use a disabled cache, manual stamps retain matching provenance,
+   WriteBack on query faces; a per-file read failure is fail-loud Err
+   (D15)) / `freshness` (adapter — the consumer-facing verdict face
+   `code-reality freshness --repo <repo> [--json]`: zero heal (the only
+@@ -222,11 +240,17 @@ tests are the sole gate face.
+   edges with the CALLS-vs-REFERENCES split derived build-side by
+   `py_calls` (ruff parse of referenced files — SCIP carries no call
+   role; dunder-collapsed constructor edges match via the symbol's own
+-  class segment), derived flows/communities materialized, FTS5,
+-  temp+rename atomicity], and
++  class segment), derived flows/communities and FTS5 built in an
++  attempt-owned temporary database before atomic rename], and
+   `ensure_indexes` [idempotent IF NOT EXISTS: engine read-chain indexes
+   (edges caller/callee+kind, flow_memberships node_id, nodes anchor
+-  name/file/line) for dbs built before that DDL revision]) /
++  name/file/line) for dbs built before that DDL revision]);
++  `publication_writer` owns the shared OS-released writer guard and
++  attempt-local temporary cleanup. Lock order is heal then publication;
++  explicit graph builds acquire ownership before input/cache acquisition,
++  while umbrella build uses lock-aware graph/stamp helpers through
++  publication. Contention returns a bounded controlled busy error.
++  Readers and non-cooperating writers do not acquire this guard /
+   `graph_engine` (v1+ engine parity — the ten live ops read-only over
+   the self-owned db: symbol-keyed loaders with rowid ordering parity,
+   hub/bridge (sampled Brandes, own LCG — statistical parity above 5k
+@@ -239,7 +263,10 @@ tests are the sole gate face.
+   thin-wrap `cli::run` / `graph_engine::run` / the data-plane module
+   `run`s (build/snapshot/delta_tour/project — write side effects,
+   ep-mcp-data-plane-tools) through one shared spawn_blocking +
+-  catch_unwind runner per-request isolation [SM-14]; bin
++  catch_unwind runner per-request isolation [SM-14]; final success/error
++  text is UTF-8-capped plus marker (not a strict JSON frame bound).
++  Cancellation suppresses delivery; started blocking work may publish,
++  and transport EOF may await it. No rollback contract; bin
+   `code-reality-mcp`) / `cli` (assembly —
+   argv surface, mode routing incl. `--callers`/`--closure`/`--depth`
+   1-10000, and the in-process `--audit` two-pass; scip_refs queries
+@@ -251,7 +278,9 @@ tests are the sole gate face.
+   (orchestration leaf — one-shot data-plane bootstrap: detect language
+   face → spawn pyrefly-index / `rust-analyzer scip` (sibling bins,
+   separate dists) → in-process graph_db build + ensure_indexes; mixed
+-  repos cat-merge both SCIP indexes into one dual-language graph;
++  repos merge producer indexes into one graph; uncached source/policy A
++  is captured before producers, compared after production and again under
++  publication ownership before live mutation, then passed into stamping;
+   `BuildError::{Env,Core}` maps fail(2)/crash(1));
+   `ensure_fresh` (ep-index-query-time-self-heal): pre-query single-flight
+   heal behind `.code-reality/scip/.heal.lock` — exit semantics is
+diff --git a/crates/code-reality-lsp-bridge/Cargo.toml b/crates/code-reality-lsp-bridge/Cargo.toml
+index 66d4806..967ec0f 100644
+--- a/crates/code-reality-lsp-bridge/Cargo.toml
++++ b/crates/code-reality-lsp-bridge/Cargo.toml
+@@ -11,6 +11,7 @@ serde = { workspace = true }
+ serde_json = { workspace = true }
+ schemars = { workspace = true }
+ cr-freshness = { path = "../cr-freshness" }
++libc = { workspace = true }
+ 
+ [dev-dependencies]
+ tempfile = { workspace = true }
+diff --git a/crates/code-reality-lsp-bridge/README.md b/crates/code-reality-lsp-bridge/README.md
+index 16ef6eb..2d5924c 100644
+--- a/crates/code-reality-lsp-bridge/README.md
++++ b/crates/code-reality-lsp-bridge/README.md
+@@ -32,3 +32,28 @@ the program — the bridge always supplies the fixed `--stdio` argument
+ itself (typed argv, no shell).
+ 
+ See the [repository README](../../README.md) for the tool semantics.
++
++Each session uses one bounded serialized writer queue for requests,
++notifications, initialization and replies to server requests. A dedicated
++thread owns nonblocking stdin; acknowledgement and response waits use the
++same absolute deadline as interaction acquisition. Child ownership is
++independent of the writer, so shutdown can kill and reap without waiting
++for a blocked write. Cleanup joins both transport threads. This transport
++uses Unix file descriptors (the distributed platform is macOS).
++
++`check_file` starts its per-language deadline at entry, including lazy
++initialization and document synchronization. A transport timeout or partial
++frame invalidates the session and reaps its child; failed initialization is
++also terminal before returning. Restart the bridge (or construct a new
++session) to retry. Known backend death is checked on entry and before
++accepting diagnostics, including a warm cached result. A responsive backend
++that misses diagnostic convergence still yields the explicit not-converged
++warning; overlay, version, mutation-time and quiescence gates are retained.
++
++Shutdown has a total ten-second budget from entry, reserving its last two
++seconds for forced cleanup. Application deadlines do not guarantee bounds
++on arbitrary kernel or filesystem hangs. The Rust equivalence battery
++requires the complete frozen rust-analyzer version and executes both frozen
++hover comparisons; a different version is a failure in every mode, never
++a passing skip. Declaration anchors follow source movement without changing
++the frozen expected hovers.
+diff --git a/crates/code-reality-lsp-bridge/src/lib.rs b/crates/code-reality-lsp-bridge/src/lib.rs
+index 8e29bbf..b09a829 100644
+--- a/crates/code-reality-lsp-bridge/src/lib.rs
++++ b/crates/code-reality-lsp-bridge/src/lib.rs
+@@ -10,5 +10,6 @@
+ pub mod framing;
+ pub mod server;
+ pub mod session;
++mod transport;
+ 
+ pub use session::LspSession;
+diff --git a/crates/code-reality-lsp-bridge/src/server.rs b/crates/code-reality-lsp-bridge/src/server.rs
+index 8f2bff1..e550a59 100644
+--- a/crates/code-reality-lsp-bridge/src/server.rs
++++ b/crates/code-reality-lsp-bridge/src/server.rs
+@@ -387,21 +387,32 @@ pub fn hover_impl(s: &LspSession, file: &str, line: u32, character: u32) -> Resu
+ }
+ 
+ pub fn check_file_impl(s: &LspSession, file: &str) -> Result<String, String> {
++    let call_start = std::time::Instant::now();
++    let deadline = call_start + std::time::Duration::from_millis(s.lang.slow_timeout_ms);
++    s.check_alive()?;
+     let path = PathBuf::from(file);
+     let uri = LspSession::file_uri(&path);
+-    let mut mutation_at = s.sync_open(&path)?;
++    let mut mutation_at = s.sync_open_until(&path, deadline)?;
+     let mut overlay_version = s
+-        .overlay
+-        .lock()
+-        .unwrap()
++        .lock_until(&s.overlay, deadline)?
+         .get(&path)
+         .map(|e| e.version)
+         .unwrap_or(1);
+-    let call_start = std::time::Instant::now();
+-    let deadline = call_start + std::time::Duration::from_millis(s.lang.slow_timeout_ms);
+     let half = std::time::Duration::from_millis(s.lang.slow_timeout_ms / 2);
+     let mut reissued = false;
++    let mut last_diags = None;
+     loop {
++        s.check_alive()?;
++        if std::time::Instant::now() >= deadline {
++            let partial = last_diags
++                .as_deref()
++                .map(format_diags)
++                .unwrap_or_else(|| "no diagnostics received yet".to_string());
++            s.check_alive()?;
++            return Ok(format!(
++                "{partial}\n[WARN] not converged within the deadline"
++            ));
++        }
+         // F1: the freshness basis is the NEWER of this call's own
+         // mutation and the overlay entry's last_mutation (stamped at
+         // every mutation origin on the session side) — a nudge-path
+@@ -410,9 +421,7 @@ pub fn check_file_impl(s: &LspSession, file: &str) -> Result<String, String> {
+         // of whichever origins exist. None → fresh below is a defensive
+         // default (post-F1 the overlay entry always carries a stamp).
+         let overlay_mut = s
+-            .overlay
+-            .lock()
+-            .unwrap()
++            .lock_until(&s.overlay, deadline)?
+             .get(&path)
+             .and_then(|e| e.last_mutation);
+         let basis = mutation_at.max(overlay_mut);
+@@ -422,7 +431,8 @@ pub fn check_file_impl(s: &LspSession, file: &str) -> Result<String, String> {
+         // mutation basis, and (c) be per-URI quiesced. A pure
+         // push model means no new push arrives without a mutation, so
+         // waiting without these guards serves stale answers.
+-        let entry = s.diag_cache.lock().unwrap().get(&uri).cloned();
++        let entry = s.lock_until(&s.diag_cache, deadline)?.get(&uri).cloned();
++        last_diags = entry.as_ref().map(|e| e.diagnostics.clone());
+         let fresh = match &entry {
+             Some(e) => basis.map(|b| e.last_push > b).unwrap_or(true),
+             None => false,
+@@ -444,6 +454,7 @@ pub fn check_file_impl(s: &LspSession, file: &str) -> Result<String, String> {
+             };
+             let quiesced = std::time::Instant::now().duration_since(e.last_push) >= s.quiesce;
+             if version_ok && fresh && quiesced {
++                s.check_alive()?;
+                 return Ok(format_diags(&e.diagnostics));
+             }
+         }
+@@ -473,24 +484,12 @@ pub fn check_file_impl(s: &LspSession, file: &str) -> Result<String, String> {
+                 }
+             };
+             if stalled {
+-                mutation_at = Some(s.force_reopen(&path)?);
++                mutation_at = Some(s.force_reopen_until(&path, deadline)?);
+                 overlay_version = 1;
+                 reissued = true;
+                 continue;
+             }
+         }
+-        if std::time::Instant::now() >= deadline {
+-            let partial = s
+-                .diag_cache
+-                .lock()
+-                .unwrap()
+-                .get(&uri)
+-                .map(|e| format_diags(&e.diagnostics))
+-                .unwrap_or_else(|| "no diagnostics received yet".to_string());
+-            return Ok(format!(
+-                "{partial}\n[WARN] not converged within the deadline"
+-            ));
+-        }
+         std::thread::sleep(std::time::Duration::from_millis(50));
+     }
+ }
+diff --git a/crates/code-reality-lsp-bridge/src/session.rs b/crates/code-reality-lsp-bridge/src/session.rs
+index fcb61e6..0dae11a 100644
+--- a/crates/code-reality-lsp-bridge/src/session.rs
++++ b/crates/code-reality-lsp-bridge/src/session.rs
+@@ -15,16 +15,15 @@
+ //! background indexing — never skip them).
+ 
+ use std::collections::HashMap;
+-use std::io::BufReader;
+ use std::path::{Path, PathBuf};
+-use std::process::{Child, ChildStdin, Command, Stdio};
++use std::process::{Command, Stdio};
+ use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+-use std::sync::{mpsc, Arc, Mutex};
++use std::sync::{mpsc, Arc, Mutex, MutexGuard};
+ use std::time::{Duration, Instant};
+ 
+ use serde_json::{json, Value};
+ 
+-use crate::framing::{read_message, write_message};
++use crate::transport::{remaining, Transport};
+ 
+ const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
+@@ -125,7 +124,8 @@ pub struct LangSpec {
+     /// backend warms up (rust-analyzer cold-loads a whole workspace:
+     /// observed 749ms–9.5s, so Rust uses 30s).
+     pub hover_retry_ms: u64,
+-    /// Convergence deadline for check_file (rust-analyzer pushes in
++    /// Entry-to-result deadline for check_file, including synchronization
++    /// and initialization (rust-analyzer pushes in
+     /// waves — syntax/semantic/flycheck — and under load the semantic
+     /// wave can exceed the Python-scale 10s).
+     pub slow_timeout_ms: u64,
+@@ -207,12 +207,7 @@ impl LangSpec {
+     }
+ }
+ 
+-struct Backend {
+-    child: Child,
+-    stdin: ChildStdin,
+-}
+-
+-type PendingSlot = Arc<Mutex<Option<(i64, mpsc::SyncSender<Value>)>>>;
++pub(crate) type PendingSlot = Arc<Mutex<Option<(i64, mpsc::SyncSender<Value>)>>>;
+ 
+ pub struct LspSession {
+     cmd: BackendCommand,
+@@ -220,9 +215,8 @@ pub struct LspSession {
+     pub quiesce: Duration,
+     pub lang: LangSpec,
+     interaction: Mutex<()>,
+-    /// Shared with the reader thread (it delivers responses and answers
+-    /// server→client requests through the same backend slot).
+-    backend: Arc<Mutex<Option<Backend>>>,
++    /// Lifecycle owner only; neither transport thread takes this lock.
++    backend: Mutex<Option<Transport>>,
+     next_id: AtomicI64,
+     pending: PendingSlot,
+     pub diag_cache: Arc<Mutex<HashMap<String, DiagEntry>>>,
+@@ -269,10 +263,6 @@ fn file_uri(path: &Path) -> String {
+     out
+ }
+ 
+-fn err_str(e: impl std::fmt::Display) -> String {
+-    e.to_string()
+-}
+-
+ impl LspSession {
+     pub fn new(cmd: BackendCommand, root: PathBuf, quiesce_ms: u64, lang: LangSpec) -> Self {
+         Self {
+@@ -281,7 +271,7 @@ impl LspSession {
+             quiesce: Duration::from_millis(quiesce_ms),
+             lang,
+             interaction: Mutex::new(()),
+-            backend: Arc::new(Mutex::new(None)),
++            backend: Mutex::new(None),
+             next_id: AtomicI64::new(1),
+             pending: Arc::new(Mutex::new(None)),
+             diag_cache: Arc::new(Mutex::new(HashMap::new())),
+@@ -318,7 +308,7 @@ impl LspSession {
+     /// Test hook: the backend child's pid (None before spawn).
+     #[doc(hidden)]
+     pub fn backend_pid(&self) -> Option<u32> {
+-        self.backend.lock().unwrap().as_ref().map(|b| b.child.id())
++        self.backend.lock().unwrap().as_ref().map(Transport::pid)
+     }
+ 
+     pub fn server_info(&self) -> String {
+@@ -329,8 +319,9 @@ impl LspSession {
+             .unwrap_or_else(|| "not-spawned-yet".to_string())
+     }
+ 
+-    fn check_alive(&self) -> Result<(), String> {
++    pub(crate) fn check_alive(&self) -> Result<(), String> {
+         if self.is_dead() {
++            self.terminate();
+             return Err(format!(
+                 "language server backend died (command: {}) — restart the bridge to recover",
+                 self.cmd
+@@ -339,198 +330,169 @@ impl LspSession {
+         Ok(())
+     }
+ 
+-    /// Lazy spawn + handshake (first tool call pulls the backend up, so
+-    /// plugin consumers without the backend don't fail at startup).
+-    fn ensure_spawned(&self) -> Result<(), String> {
+-        if self.backend.lock().unwrap().is_some() {
+-            return Ok(());
++    // No transport thread takes the backend slot lock. Keep it through
++    // cleanup so concurrent shutdown callers observe completed joins/reaping.
++    fn terminate(&self) {
++        self.dead.store(true, Ordering::SeqCst);
++        if let Some(mut backend) = self.backend.lock().unwrap().take() {
++            backend.stop();
+         }
+-        let _i = self.interaction.lock().unwrap();
+-        self.ensure_spawned_locked()
++        self.pending.lock().unwrap().take();
+     }
+ 
+-    fn ensure_spawned_locked(&self) -> Result<(), String> {
+-        // Re-check under the interaction lock (double-checked spawn).
+-        if self.backend.lock().unwrap().is_some() {
+-            return Ok(());
++    pub(crate) fn lock_until<'a, T>(
++        &self,
++        lock: &'a Mutex<T>,
++        deadline: Instant,
++    ) -> Result<MutexGuard<'a, T>, String> {
++        loop {
++            self.check_alive()?;
++            if let Err(e) = remaining(&self.dead, deadline, "interaction/state lock") {
++                self.terminate();
++                return Err(e);
++            }
++            match lock.try_lock() {
++                Ok(guard) => return Ok(guard),
++                Err(std::sync::TryLockError::WouldBlock) => {
++                    std::thread::sleep(Duration::from_millis(2))
++                }
++                Err(e) => return Err(e.to_string()),
++            }
+         }
++    }
++
++    fn send_until(&self, message: Value, deadline: Instant) -> Result<(), String> {
+         self.check_alive()?;
++        let writer = self
++            .backend
++            .lock()
++            .unwrap()
++            .as_ref()
++            .ok_or_else(|| "backend not spawned".to_string())?
++            .writer
++            .clone();
++        if let Err(e) = writer.send(message, deadline) {
++            self.terminate();
++            return Err(e);
++        }
++        self.check_alive()
++    }
+ 
+-        let mut child = Command::new(&self.cmd.program)
++    /// Lazy spawn and handshake, under the interaction lock. A failed
++    /// initialization is terminal; only a new session may retry.
++    fn ensure_spawned_locked(&self, deadline: Instant) -> Result<(), String> {
++        self.check_alive()?;
++        if self.backend.lock().unwrap().is_some() {
++            return Ok(());
++        }
++        let child = Command::new(&self.cmd.program)
+             .args(&self.cmd.args)
+-            .stdin(Stdio::piped())
+-            .stdout(Stdio::piped())
+-            .stderr(Stdio::inherit())
+-            .spawn()
+-            .map_err(|e| {
+-                format!(
+-                    "failed to spawn language server backend `{}`: {e}\n\
+-                     install it ({}) or override the backend command",
+-                    self.cmd, self.lang.install_hint
+-                )
+-            })?;
+-        let stdin = child.stdin.take().unwrap();
+-        let stdout = child.stdout.take().unwrap();
+-
+-        // Reader thread: three-way split — responses go to the pending
+-        // slot, diagnostics land in the per-URI cache, server→client
+-        // requests are always answered with an empty result (never
+-        // skipped: an unanswered `workspace/configuration` freezes
+-        // pyrefly's background indexing).
+-        let pending = Arc::clone(&self.pending);
+-        let diag_cache = Arc::clone(&self.diag_cache);
+-        let dead = Arc::clone(&self.dead);
+-        let backend_for_reader = Arc::clone(&self.backend);
+-        std::thread::spawn(move || {
+-            let mut reader = BufReader::new(stdout);
+-            loop {
+-                let msg = match read_message(&mut reader) {
+-                    Ok(Some(m)) => m,
+-                    Ok(None) | Err(_) => {
+-                        dead.store(true, Ordering::SeqCst);
+-                        if let Some((_, tx)) = pending.lock().unwrap().take() {
+-                            let _ = tx.send(json!({
+-                                "jsonrpc": "2.0", "id": -1,
+-                                "error": {"code": -32603, "message": "backend exited"}
+-                            }));
+-                        }
+-                        return;
+-                    }
+-                };
+-                let id = msg.get("id").and_then(Value::as_i64);
+-                let has_method = msg.get("method").is_some();
+-                if let (Some(id), false) = (id, has_method) {
+-                    // Response to our in-flight request.
+-                    let mut slot = pending.lock().unwrap();
+-                    if let Some((want_id, _)) = slot.as_ref() {
+-                        if *want_id == id {
+-                            let (_, tx) = slot.take().unwrap();
+-                            let _ = tx.send(msg);
+-                        }
+-                    }
+-                } else if let Some(id) = id {
+-                    // Server→client request: empty result, always.
+-                    let reply = json!({"jsonrpc": "2.0", "id": id, "result": []});
+-                    if let Some(b) = backend_for_reader.lock().unwrap().as_mut() {
+-                        let _ = write_message(&mut b.stdin, &reply);
+-                    }
+-                } else if msg.get("method").and_then(Value::as_str)
+-                    == Some("textDocument/publishDiagnostics")
+-                {
+-                    if let Some(params) = msg.get("params") {
+-                        let uri = params
+-                            .get("uri")
+-                            .and_then(Value::as_str)
+-                            .unwrap_or_default()
+-                            .to_string();
+-                        let entry = DiagEntry {
+-                            version: params.get("version").and_then(Value::as_i64),
+-                            diagnostics: params
+-                                .get("diagnostics")
+-                                .and_then(Value::as_array)
+-                                .cloned()
+-                                .unwrap_or_default(),
+-                            last_push: Instant::now(),
+-                        };
+-                        diag_cache.lock().unwrap().insert(uri, entry);
+-                    }
+-                }
+-                // Other notifications are irrelevant to the bridge.
+-            }
+-        });
+-
+-        // Install the backend (child + stdin) in the slot shared with
+-        // the reader thread.
+-        *self.backend.lock().unwrap() = Some(Backend { child, stdin });
+-
+-        // Handshake: initialize → response → `initialized` notification
+-        // (any didOpen sent before `initialized` is dropped by the
+-        // server). Caller holds the interaction lock.
+-        //
+-        // `versionSupport: true` (LSP 3.15+ client capability): asks the
+-        // server to stamp `version` on every publishDiagnostics push.
+-        // Without it typescript-language-server sends UNVERSIONED pushes
+-        // (real-TLS acceptance finding), which the convergence gate
+-        // treats as stalled (no version ⇒ cannot prove freshness) —
+-        // every check_file would ride the reopen-recovery path and end
+-        // in the deadline WARN despite correct content. pyrefly and
+-        // rust-analyzer stamp versions unconditionally, so declaring
+-        // this is a no-op for them.
+-        let params = json!({
+-            "processId": std::process::id(),
+-            "rootUri": file_uri(&self.root),
+-            "capabilities": {
+-                "textDocument": {
+-                    "hover": {"contentFormat": ["markdown", "plaintext"]},
+-                    "publishDiagnostics": {"relatedInformation": true, "versionSupport": true}
+-                }
+-            }
+-        });
+-        let resp = match self.request_locked("initialize", params, HANDSHAKE_TIMEOUT) {
+-            Ok(r) => r,
+-            Err(e) => {
+-                // Roll back the half-installed backend: a server that
+-                // never completed initialize silently drops every
+-                // didOpen, turning all later tool calls into empty
+-                // answers. Killing here lets the next call retry fresh.
+-                if let Some(mut b) = self.backend.lock().unwrap().take() {
+-                    let _ = b.child.kill();
+-                }
+-                return Err(format!("initialize handshake failed: {e}"));
+-            }
+-        };
+-        let result = resp.get("result").cloned().unwrap_or(Value::Null);
+-        let name = result
+-            .pointer("/serverInfo/name")
+-            .and_then(Value::as_str)
+-            .unwrap_or("unknown");
+-        let version = result
+-            .pointer("/serverInfo/version")
+-            .and_then(Value::as_str)
+-            .unwrap_or("?");
+-        *self.server_info.lock().unwrap() = Some(format!("{name} {version}"));
++            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit())
++            .spawn().map_err(|e| format!(
++                "failed to spawn language server backend `{}`: {e}\ninstall it ({}) or override the backend command",
++                self.cmd, self.lang.install_hint
++            ))?;
++        let mut transport = Transport::start(
++            child,
++            self.dead.clone(),
++            self.pending.clone(),
++            self.diag_cache.clone(),
++        )?;
+         {
+-            let mut g = self.backend.lock().unwrap();
+-            if let Some(b) = g.as_mut() {
+-                let _ = write_message(
+-                    &mut b.stdin,
+-                    &json!({"jsonrpc": "2.0", "method": "initialized", "params": {}}),
++            let mut slot = self.backend.lock().unwrap();
++            if self.is_dead() {
++                transport.stop();
++                return Err(
++                    "language server backend died during spawn — restart the bridge to recover"
++                        .into(),
+                 );
+             }
++            *slot = Some(transport);
+         }
+-        Ok(())
++        let initialized = (|| {
++            let params = json!({
++                "processId": std::process::id(), "rootUri": file_uri(&self.root),
++                "capabilities": {"textDocument": {
++                    "hover": {"contentFormat": ["markdown", "plaintext"]},
++                    "publishDiagnostics": {"relatedInformation": true, "versionSupport": true}
++                }}
++            });
++            let resp = self.request_locked(
++                "initialize",
++                params,
++                deadline.min(Instant::now() + HANDSHAKE_TIMEOUT),
++            )?;
++            let result = resp.get("result").cloned().unwrap_or(Value::Null);
++            let name = result
++                .pointer("/serverInfo/name")
++                .and_then(Value::as_str)
++                .unwrap_or("unknown");
++            let version = result
++                .pointer("/serverInfo/version")
++                .and_then(Value::as_str)
++                .unwrap_or("?");
++            self.send_until(
++                json!({"jsonrpc":"2.0", "method":"initialized", "params":{}}),
++                deadline,
++            )?;
++            *self.server_info.lock().unwrap() = Some(format!("{name} {version}"));
++            Ok::<(), String>(())
++        })();
++        if let Err(e) = initialized {
++            self.terminate();
++            return Err(format!("initialize handshake failed: {e}"));
++        }
++        self.check_alive()
+     }
+ 
+-    /// Send a request and wait for its response (id-matched). The
+-    /// interaction lock serializes request/response pairing; the backend
+-    /// write lock is only held for the write itself.
++    /// One absolute deadline includes interaction wait, lazy initialization,
++    /// frame delivery and the id-matched response.
+     pub fn request(&self, method: &str, params: Value) -> Result<Value, String> {
+-        self.ensure_spawned()?;
+-        let _i = self.interaction.lock().unwrap();
+-        self.check_alive()?;
+-        self.request_locked(method, params, REQUEST_TIMEOUT)
++        self.request_until(method, params, Instant::now() + REQUEST_TIMEOUT)
++    }
++
++    pub(crate) fn request_until(
++        &self,
++        method: &str,
++        params: Value,
++        deadline: Instant,
++    ) -> Result<Value, String> {
++        let _i = self.lock_until(&self.interaction, deadline)?;
++        self.ensure_spawned_locked(deadline)?;
++        self.request_locked(method, params, deadline)
+     }
+ 
+     fn request_locked(
+         &self,
+         method: &str,
+         params: Value,
+-        timeout: Duration,
++        deadline: Instant,
+     ) -> Result<Value, String> {
+         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+         let (tx, rx) = mpsc::sync_channel(1);
+         *self.pending.lock().unwrap() = Some((id, tx));
+-        let msg = json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
+-        {
+-            let mut g = self.backend.lock().unwrap();
+-            let b = g
+-                .as_mut()
+-                .ok_or_else(|| "backend not spawned".to_string())?;
+-            write_message(&mut b.stdin, &msg).map_err(err_str)?;
+-        }
+-        let resp = rx
+-            .recv_timeout(timeout)
+-            .map_err(|_| format!("timeout waiting for response to `{method}`"))?;
++        self.send_until(
++            json!({"jsonrpc":"2.0", "id":id, "method":method, "params":params}),
++            deadline,
++        )?;
++        let resp = loop {
++            let wait = match remaining(&self.dead, deadline, &format!("response to `{method}`")) {
++                Ok(wait) => wait,
++                Err(e) => {
++                    self.terminate();
++                    return Err(e);
++                }
++            };
++            match rx.recv_timeout(wait.min(Duration::from_millis(5))) {
++                Ok(resp) => break resp,
++                Err(mpsc::RecvTimeoutError::Timeout) => {}
++                Err(e) => {
++                    self.terminate();
++                    return Err(e.to_string());
++                }
++            }
++        };
++        self.check_alive()?;
+         if let Some(e) = resp.get("error") {
+             return Err(format!("server error on `{method}`: {e}"));
+         }
+@@ -538,53 +500,44 @@ impl LspSession {
+     }
+ 
+     pub fn notify(&self, method: &str, params: Value) -> Result<(), String> {
+-        self.ensure_spawned()?;
+-        let _i = self.interaction.lock().unwrap();
+-        self.check_alive()?;
+-        let mut g = self.backend.lock().unwrap();
+-        let b = g
+-            .as_mut()
+-            .ok_or_else(|| "backend not spawned".to_string())?;
+-        let msg = json!({"jsonrpc": "2.0", "method": method, "params": params});
+-        write_message(&mut b.stdin, &msg).map_err(err_str)?;
+-        Ok(())
++        self.notify_until(method, params, Instant::now() + REQUEST_TIMEOUT)
+     }
+ 
+-    /// Graceful shutdown: `shutdown` is a REQUEST (a bare notification
+-    /// takes the unhandled path), then `exit`, then reap the child.
++    fn notify_until(&self, method: &str, params: Value, deadline: Instant) -> Result<(), String> {
++        let _i = self.lock_until(&self.interaction, deadline)?;
++        self.ensure_spawned_locked(deadline)?;
++        self.send_until(
++            json!({"jsonrpc":"2.0", "method":method, "params":params}),
++            deadline,
++        )
++    }
++
++    /// Total ten-second shutdown budget, measured from entry. Reserve two
++    /// seconds for forced cleanup; child kill/reap never needs interaction.
++    /// OS-level hangs are outside this application deadline contract.
+     pub fn shutdown(&self) -> Result<(), String> {
+-        if self.backend.lock().unwrap().is_none() {
+-            return Ok(());
+-        }
+-        let _ = self.request("shutdown", Value::Null);
+-        {
+-            let mut g = self.backend.lock().unwrap();
+-            if let Some(b) = g.as_mut() {
+-                let _ = write_message(&mut b.stdin, &json!({"jsonrpc": "2.0", "method": "exit"}));
+-            }
+-        }
+         let deadline = Instant::now() + Duration::from_secs(10);
+-        loop {
+-            let exited = {
+-                let mut g = self.backend.lock().unwrap();
+-                match g.as_mut() {
+-                    None => true,
+-                    Some(b) => b.child.try_wait().map_err(err_str)?.is_some(),
+-                }
+-            };
+-            if exited {
+-                self.backend.lock().unwrap().take();
+-                return Ok(());
++        let graceful = deadline - Duration::from_secs(2);
++        if self.backend.lock().unwrap().is_some() && !self.is_dead() {
++            if let Ok(_i) = self.lock_until(&self.interaction, graceful) {
++                let _ = self.request_locked("shutdown", Value::Null, graceful);
++                let _ = self.send_until(json!({"jsonrpc":"2.0", "method":"exit"}), graceful);
+             }
+-            if Instant::now() >= deadline {
+-                let mut g = self.backend.lock().unwrap();
+-                if let Some(mut b) = g.take() {
+-                    let _ = b.child.kill();
++            while !self.is_dead() && Instant::now() < graceful {
++                if self
++                    .backend
++                    .lock()
++                    .unwrap()
++                    .as_ref()
++                    .is_none_or(Transport::exited)
++                {
++                    break;
+                 }
+-                return Ok(());
++                std::thread::sleep(Duration::from_millis(5));
+             }
+-            std::thread::sleep(Duration::from_millis(50));
+         }
++        self.terminate();
++        Ok(())
+     }
+ 
+     pub fn file_uri(path: &Path) -> String {
+@@ -606,18 +559,27 @@ impl LspSession {
+     /// (drives check_file's convergence window), `None` for no-op.
+     /// LRU cap: the oldest open file is didClose'd (overlay retained).
+     pub fn sync_open(&self, path: &Path) -> Result<Option<Instant>, String> {
++        self.sync_open_until(path, Instant::now() + REQUEST_TIMEOUT)
++    }
++
++    pub(crate) fn sync_open_until(
++        &self,
++        path: &Path,
++        deadline: Instant,
++    ) -> Result<Option<Instant>, String> {
++        self.check_alive()?;
+         let uri = file_uri(path);
+         let lang_id = self.language_id_for(path);
+         let mut mutation: Option<Instant> = None;
+ 
+         // LRU touch: already-open files move to the back.
+-        let mut open = self.open_files.lock().unwrap();
++        let mut open = self.lock_until(&self.open_files, deadline)?;
+         if let Some(pos) = open.iter().position(|p| p == path) {
+             open.remove(pos);
+             open.push(path.to_path_buf());
+         }
+ 
+-        let mut overlay = self.overlay.lock().unwrap();
++        let mut overlay = self.lock_until(&self.overlay, deadline)?;
+         match overlay.get(path).cloned() {
+             None => {
+                 let text = std::fs::read_to_string(path).map_err(|e| {
+@@ -628,11 +590,12 @@ impl LspSession {
+                 })?;
+                 let stamp = Self::disk_stamp(path);
+                 let t = Instant::now();
+-                self.notify(
++                self.notify_until(
+                     "textDocument/didOpen",
+                     json!({
+                         "textDocument": {"uri": uri, "languageId": lang_id, "version": 1, "text": text}
+                     }),
++                    deadline,
+                 )?;
+                 overlay.insert(
+                     path.to_path_buf(),
+@@ -655,9 +618,10 @@ impl LspSession {
+                             .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+                         let v = entry.version + 1;
+                         let t = Instant::now();
+-                        self.notify(
++                        self.notify_until(
+                             "textDocument/didChange",
+                             full_change(&uri, v, &entry.content, &text),
++                            deadline,
+                         )?;
+                         overlay.insert(
+                             path.to_path_buf(),
+@@ -674,11 +638,12 @@ impl LspSession {
+                     // Evicted earlier: re-open from the overlay so
+                     // un-persisted edits are not rolled back to disk.
+                     let t = Instant::now();
+-                    self.notify(
++                    self.notify_until(
+                         "textDocument/didOpen",
+                         json!({
+                             "textDocument": {"uri": uri, "languageId": lang_id, "version": 1, "text": entry.content}
+                         }),
++                        deadline,
+                     )?;
+                     overlay.insert(
+                         path.to_path_buf(),
+@@ -701,9 +666,10 @@ impl LspSession {
+         while open.len() > 8 {
+             let victim = open.remove(0);
+             let vuri = file_uri(&victim);
+-            self.notify(
++            self.notify_until(
+                 "textDocument/didClose",
+                 json!({"textDocument": {"uri": vuri.clone()}}),
++                deadline,
+             )?;
+             self.diag_cache.lock().unwrap().remove(&vuri);
+         }
+@@ -714,17 +680,19 @@ impl LspSession {
+     /// didChange — the spec's full-sync form; no UTF-16 endpoint math).
+     /// The overlay records the new content and version.
+     pub fn apply_edit(&self, path: &Path, content: &str) -> Result<Instant, String> {
++        let deadline = Instant::now() + REQUEST_TIMEOUT;
+         let uri = file_uri(path);
+-        let mut overlay = self.overlay.lock().unwrap();
++        let mut overlay = self.lock_until(&self.overlay, deadline)?;
+         let entry = overlay
+             .get(path)
+             .cloned()
+             .ok_or_else(|| format!("file not opened: {}", path.display()))?;
+         let v = entry.version + 1;
+         let t = Instant::now();
+-        self.notify(
++        self.notify_until(
+             "textDocument/didChange",
+             full_change(&uri, v, &entry.content, content),
++            deadline,
+         )?;
+         overlay.insert(
+             path.to_path_buf(),
+@@ -744,28 +712,36 @@ impl LspSession {
+     /// 2026-08-28). didClose clears the server copy AND the diag-cache
+     /// entry; the re-didOpen replays the overlay content at version 1.
+     pub fn force_reopen(&self, path: &Path) -> Result<Instant, String> {
++        self.force_reopen_until(path, Instant::now() + REQUEST_TIMEOUT)
++    }
++
++    pub(crate) fn force_reopen_until(
++        &self,
++        path: &Path,
++        deadline: Instant,
++    ) -> Result<Instant, String> {
+         let uri = file_uri(path);
+         let t = Instant::now();
+-        self.notify(
++        self.notify_until(
+             "textDocument/didClose",
+             json!({"textDocument": {"uri": uri.clone()}}),
++            deadline,
+         )?;
+         self.diag_cache.lock().unwrap().remove(&uri);
+         let entry = self
+-            .overlay
+-            .lock()
+-            .unwrap()
++            .lock_until(&self.overlay, deadline)?
+             .get(path)
+             .cloned()
+             .ok_or_else(|| format!("file not opened: {}", path.display()))?;
+         let lang_id = self.language_id_for(path);
+-        self.notify(
++        self.notify_until(
+             "textDocument/didOpen",
+             json!({
+                 "textDocument": {"uri": uri, "languageId": lang_id, "version": 1, "text": entry.content}
+             }),
++            deadline,
+         )?;
+-        self.overlay.lock().unwrap().insert(
++        self.lock_until(&self.overlay, deadline)?.insert(
+             path.to_path_buf(),
+             OverlayEntry {
+                 content: entry.content,
+@@ -778,6 +754,12 @@ impl LspSession {
+     }
+ }
+ 
++impl Drop for LspSession {
++    fn drop(&mut self) {
++        self.terminate();
++    }
++}
++
+ /// Full-content replacement as a RANGE-form change event. The end
+ /// position spans the OLD content (the text being replaced), in line
+ /// units — start {0,0} → end {old_lines,0}. The range-elided form is a
+diff --git a/crates/code-reality-lsp-bridge/tests/ra_equivalence_battery.rs b/crates/code-reality-lsp-bridge/tests/ra_equivalence_battery.rs
+index f19b49f..2137e4a 100644
+--- a/crates/code-reality-lsp-bridge/tests/ra_equivalence_battery.rs
++++ b/crates/code-reality-lsp-bridge/tests/ra_equivalence_battery.rs
+@@ -3,7 +3,7 @@
+ //! (same-engine oracle — the P2 gate). Normalization joins ALL
+ //! ```rust fences in order (module path + signature); the battery
+ //! first asserts the PATH rust-analyzer version matches the frozen
+-//! one (drift → loud skip, not a false fail) and warms up with a
++//! one (drift is a hard failure in every mode) and warms up with a
+ //! discarded hover (during workspace load the module-path fence may
+ //! be absent).
+ 
+@@ -45,47 +45,31 @@ fn rust_hover_roundtrip_vs_frozen_baseline() {
+         LangSpec::rust(),
+     ));
+ 
+-    // Version pin: rust-analyzer on PATH must match the frozen one;
+-    // drift skips LOUDLY rather than failing on text drift.
+-    if let Err(e) = session.request("shutdown", serde_json::Value::Null) {
+-        panic!("ra failed to start: {e}");
+-    }
+-    let live_version = session.server_info();
+-    let frozen = baseline["_version"].as_str().unwrap_or("?");
+-    // server_info is "<name> <version>"; compare the version token.
+-    let live = live_version.rsplit(' ').next().unwrap_or("");
+-    let frozen_v = frozen.split(' ').next().unwrap_or("");
+-    if live != frozen_v {
+-        // BRIDGE_STRICT_BATTERY=1 turns the loud skip into a fail
+-        // (local acceptance runs); plain CI keeps it as a skip.
+-        if std::env::var("BRIDGE_STRICT_BATTERY").ok().as_deref() == Some("1") {
+-            panic!(
+-                "rust-analyzer version drift under strict battery: live {live} vs frozen {frozen_v} — regenerate the baseline"
+-            );
+-        }
+-        eprintln!(
+-            "[SKIP] rust-analyzer version drift: live {live} vs frozen {frozen_v} — regenerate the baseline"
+-        );
+-        return;
+-    }
+-
+     let file = Path::new(env!("CARGO_MANIFEST_DIR"))
+         .join("src/framing.rs")
+         .to_string_lossy()
+         .to_string();
+ 
+-    // Warm-up hover (discarded): module-path fence appears only after
+-    // the workspace finishes loading.
+-    let warmed = hover_impl(&session, &file, 11, 10).unwrap();
+-    if !warmed.contains("framing") {
+-        eprintln!("[WARN] warm-up hover lacks module path: {warmed}");
+-    }
+-
+-    let cases: &[(&str, u32, u32)] = &[("write_message", 11, 10), ("read_message", 19, 10)];
++    // Opening a document initializes the session without shutting it down.
++    session.sync_open(Path::new(&file)).unwrap();
++    require_version(
++        &session.server_info(),
++        baseline["_version"].as_str().unwrap(),
++    );
++    let source = std::fs::read_to_string(&file).unwrap();
++    let cases = ["write_message", "read_message"].map(|label| {
++        let anchor = format!("pub fn {label}<");
++        let (line, text) = source
++            .lines()
++            .enumerate()
++            .find(|(_, text)| text.starts_with(&anchor))
++            .unwrap_or_else(|| panic!("missing declaration anchor {label}"));
++        (label, line as u32, (text.find(label).unwrap() + 2) as u32)
++    });
+     for (label, line, ch) in cases {
+         let deadline = std::time::Instant::now() + Duration::from_secs(30);
+         loop {
+-            let hover = hover_impl(&session, &file, *line, *ch).unwrap();
++            let hover = hover_impl(&session, &file, line, ch).unwrap();
+             let got = normalize(&hover);
+             // During load the module-path fence may be missing — the
+             // got text then differs; retry until stable or deadline.
+@@ -98,6 +82,7 @@ fn rust_hover_roundtrip_vs_frozen_baseline() {
+                     got, want,
+                     "{label} ({line}:{ch}) round-trip mismatch\nraw: {hover}"
+                 );
++                eprintln!("[OK] frozen hover {label} executed at {line}:{ch}");
+                 break;
+             }
+             assert!(
+@@ -108,5 +93,30 @@ fn rust_hover_roundtrip_vs_frozen_baseline() {
+         }
+     }
+ 
+-    session.shutdown().ok();
++    session.shutdown().unwrap();
++}
++
++// S: frozen version identity includes release, revision AND build date.
++fn require_version(live: &str, frozen: &str) {
++    let live = live
++        .strip_prefix("rust-analyzer ")
++        .expect("unexpected server name");
++    assert_eq!(live, frozen, "rust-analyzer version drift: equivalence was NOT verified; review the oracle independently");
++}
++
++#[test]
++fn full_version_identity_never_silently_skips() {
++    let frozen = "1.96.0 (ac68faa2 2026-05-25)";
++    require_version(&format!("rust-analyzer {frozen}"), frozen);
++    for different in [
++        "1.96.1 (ac68faa2 2026-05-25)",
++        "1.96.0 (deadbeef 2026-05-25)",
++        "1.96.0 (ac68faa2 2026-05-26)",
++    ] {
++        assert!(std::panic::catch_unwind(|| require_version(
++            &format!("rust-analyzer {different}"),
++            frozen
++        ))
++        .is_err());
++    }
+ }
+diff --git a/crates/code-reality-lsp-bridge/tests/rust_backend.rs b/crates/code-reality-lsp-bridge/tests/rust_backend.rs
+index 988abe9..745e4ea 100644
+--- a/crates/code-reality-lsp-bridge/tests/rust_backend.rs
++++ b/crates/code-reality-lsp-bridge/tests/rust_backend.rs
+@@ -6,10 +6,9 @@
+ //! was the tracked starvation flake (ep-rust-backend-test-retier, then
+ //! the same-day re-adjudication: serialize-in-gate over ignore-on-
+ //! demand, +~90s accepted). The hover face lives in
+-//! ra_equivalence_battery.rs (frozen baseline + version pin) — during a
+-//! rust-analyzer version drift the default gate has no ra-hover smoke
+-//! (battery skips; acceptable: drift needs a human baseline
+-//! regeneration anyway).
++//! ra_equivalence_battery.rs (frozen baseline + complete version pin).
++//! Version drift hard-fails that battery; oracle updates require
++//! independent review rather than silently skipping hover coverage.
+ 
+ use std::path::{Path, PathBuf};
+ use std::sync::{Arc, Mutex};
+diff --git a/crates/code-reality/src/build.rs b/crates/code-reality/src/build.rs
+index e3916cd..40f48eb 100644
+--- a/crates/code-reality/src/build.rs
++++ b/crates/code-reality/src/build.rs
+@@ -510,9 +510,8 @@ pub fn build_repo(
+     // spawn_blocking runs two builds in one daemon — a shared
+     // `.part-<pid>` namespace lets them overwrite/rename/clean each
+     // other's partials, S1 EP "unique to one build attempt"). With
+-    // unique names, racing builds only race the final rename — last
+-    // writer publishes its own COMPLETE merged index, never a torn or
+-    // foreign-partial slot.
++    // unique names, producers can stage concurrently. Publication is
++    // serialized by WriterGuard after interval revalidation.
+     static ATTEMPT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+     let attempt = format!(
+         "{pid}-{}",
+@@ -549,6 +548,11 @@ pub fn build_repo(
+         ));
+     }
+ 
++    // Capture A before any producer. Endpoint validation is not an immutable
++    // snapshot: ABA and edits after the final observation remain possible.
++    let production_a =
++        crate::engine::ProductionIdentity::capture(&resolved, producer).map_err(BuildError::Env)?;
++
+     // ---- stage every requested leg (ORDERED); a later-leg failure must
+     // leave the pre-build live slot byte-identical ----
+     let mut staged: Vec<StagedLeg> = Vec::new();
+@@ -650,6 +654,33 @@ pub fn build_repo(
+             path: part,
+         });
+     }
++    // Compare after production, then again under publication ownership. No
++    // live index/meta/graph mutation is allowed before both checks succeed.
++    let publication = (|| {
++        let after = crate::engine::ProductionIdentity::capture(&resolved, producer)?;
++        if after != production_a {
++            return Err(
++                "source identity/policy changed during production; prior data plane preserved"
++                    .to_string(),
++            );
++        }
++        let writer = crate::publication_writer::WriterGuard::acquire(&resolved)?;
++        let locked = crate::engine::ProductionIdentity::capture(&resolved, producer)?;
++        if locked != production_a {
++            return Err(
++                "source identity/policy changed before publication; prior data plane preserved"
++                    .to_string(),
++            );
++        }
++        Ok(writer)
++    })();
++    let writer = match publication {
++        Ok(w) => w,
++        Err(e) => {
++            cleanup_staged(&slot_dir, &attempt);
++            return Err(BuildError::Env(e));
++        }
++    };
+     if staged.is_empty() {
+         if producer.is_none() && all_policy_empty {
+             // Empty convergence: auto-detection selected only faces whose
+@@ -717,7 +748,7 @@ pub fn build_repo(
+     // override pins the face scope; auto lets freshness union with
+     // newly detected faces (muse P0-1).
+     let producer_str = rep.producers.join("; ");
+-    if let Err(e) = crate::engine::stamp_meta_core(
++    if let Err(e) = crate::engine::stamp_meta_locked(
+         &resolved,
+         &slot,
+         roots,
+@@ -731,9 +762,11 @@ pub fn build_repo(
+         } else {
+             "auto"
+         }),
++        Some(&production_a),
++        &writer,
+     ) {
+         rep.notes.push(format!(
+-            "stamp-meta 失敗（{e}）——手動補：code-reality scip_refs --repo {} --stamp-meta",
++            "stamp-meta failed ({e}); rebuild to establish production provenance: code-reality build --repo {}",
+             resolved.display()
+         ));
+     }
+@@ -757,12 +790,32 @@ pub fn build_repo(
+     rep.notes
+         .push("全量重產：producer 每次重建（冪等）".to_string());
+ 
+-    let g = graph_db::build_from_cache_at(&resolved, &slot).map_err(BuildError::Core)?;
++    // Drop query-side cached hashes from the superseded generation. This is
++    // not provenance: only production_a can authorize the stamp above.
++    let _ = std::fs::remove_file(crate::identity::cache_path_for_slot(&slot));
++    let g =
++        graph_db::build_from_cache_locked(&resolved, &slot, &writer).map_err(BuildError::Core)?;
+     rep.nodes = g.nodes;
+     rep.edges = g.edges;
+-    let ir = graph_db::ensure_indexes(&resolved).map_err(BuildError::Core)?;
++    let ir = graph_db::ensure_indexes_locked(&resolved, &writer).map_err(BuildError::Core)?;
+     rep.indexes_created = ir.created;
+     rep.indexes_skipped = ir.skipped;
++    // Repopulate the disposable query cache with full reads, independently of
++    // the authoritative A stamp. A later source edit can only change this
++    // query optimization, never the identity that the producer consumed.
++    let walk = crate::engine::walk_sources(&resolved).map_err(BuildError::Core)?;
++    let mut cache = crate::identity::IdentityCache::load(
++        crate::identity::cache_path_for_slot(&slot),
++        &resolved,
++    );
++    crate::identity::compute_identity(
++        &resolved,
++        &walk.records(),
++        &production_a.faces,
++        crate::identity::resolve_policy(crate::identity::IdentityCachePolicy::Full),
++        &mut cache,
++    )
++    .map_err(BuildError::Core)?;
+     // A converged explicit build ends any churn window — later queries
+     // heal normally (run_heal_locked clears this too; idempotent).
+     let _ = std::fs::remove_file(churn_marker(&slot));
+@@ -968,7 +1021,11 @@ pub fn heal_outcome_after_rebuild_err(
+     slot: &Path,
+     err: String,
+ ) -> Result<HealOutcome, String> {
+-    let snap = crate::engine::evaluate_staleness(repo, slot, crate::identity::IdentityCachePolicy::WriteBack)?;
++    let snap = crate::engine::evaluate_staleness(
++        repo,
++        slot,
++        crate::identity::IdentityCachePolicy::WriteBack,
++    )?;
+     if !snap.needs_rebuild() {
+         Ok(HealOutcome::Healed {
+             secs: 0.0,
+@@ -1010,7 +1067,11 @@ fn run_heal_locked(
+             }
+             // Loop guard (SM-9): a rebuild that still leaves the slot
+             // behind warns once and serves — never loops.
+-            let snap = crate::engine::evaluate_staleness(repo, slot, crate::identity::IdentityCachePolicy::WriteBack)?;
++            let snap = crate::engine::evaluate_staleness(
++                repo,
++                slot,
++                crate::identity::IdentityCachePolicy::WriteBack,
++            )?;
+             let doc_delta = match crate::engine::load_index(slot) {
+                 Ok(loaded) => {
+                     let docs: BTreeSet<String> = loaded
+@@ -1097,7 +1158,11 @@ fn wait_peer_and_reevaluate(
+         .join(".heal.lock");
+     loop {
+         if !lock_path.exists() {
+-            let snap = crate::engine::evaluate_staleness(repo, slot, crate::identity::IdentityCachePolicy::WriteBack)?;
++            let snap = crate::engine::evaluate_staleness(
++                repo,
++                slot,
++                crate::identity::IdentityCachePolicy::WriteBack,
++            )?;
+             // churn guard BEFORE the HealedByPeer return — a peer whose
+             // heal failed to converge (armed marker) must not be reported
+             // as having fixed it (codex P0-4)
+@@ -1144,8 +1209,11 @@ pub fn ensure_fresh(repo: &Path, roots: &[PathBuf]) -> Result<HealOutcome, Strin
+     if !slot.exists() {
+         return Ok(HealOutcome::Fresh);
+     }
+-    let snap =
+-        crate::engine::evaluate_staleness(&repo, &slot, crate::identity::IdentityCachePolicy::WriteBack)?;
++    let snap = crate::engine::evaluate_staleness(
++        &repo,
++        &slot,
++        crate::identity::IdentityCachePolicy::WriteBack,
++    )?;
+     // Churn guard (AIR-33 ③ + codex P0-4): an armed marker means the
+     // last heal FAILED TO CONVERGE — checked BEFORE any Fresh
+     // short-circuit, because a non-converged heal can leave the slot
+diff --git a/crates/code-reality/src/engine.rs b/crates/code-reality/src/engine.rs
+index 2c44fd1..f452b01 100644
+--- a/crates/code-reality/src/engine.rs
++++ b/crates/code-reality/src/engine.rs
+@@ -720,7 +720,7 @@ pub fn walk_sources(repo: &Path) -> Result<SourceWalk, String> {
+ pub struct StalenessSnapshot {
+     /// Raw mtime-newness of the scoped corpus (no graph_lags folding).
+     pub source_newer: bool,
+-    /// graph.db older than the slot — torn data plane (muse P1-3).
++    /// Required main graph absent or older than the slot: torn data plane.
+     pub graph_lags: bool,
+     pub doc_set_drift: Option<bool>,
+     pub corpus_policy_drift: Option<bool>,
+@@ -887,13 +887,15 @@ pub fn evaluate_staleness(
+     // SPLIT out of source_newer (source identity EP): needs_rebuild
+     // consumes it unconditionally — identity equality must never
+     // short-circuit the torn-plane guard (judge R1).
+-    let graph_lags = slot
+-        .parent()
+-        .map(|d| d.parent().map(|p| p.join("graph.db")))
+-        .flatten()
+-        .and_then(|g| g.metadata().ok())
+-        .and_then(|m| m.modified().ok())
+-        .is_some_and(|gm| gm < slot_m);
++    // Only the canonical main slot requires a graph. Projection/alternate
++    // indexes are legitimate index-only inputs.
++    let canonical_slot = default_index_path(&root)?;
++    let is_main = resolve_repo(slot) == resolve_repo(&canonical_slot);
++    let graph_lags = is_main
++        && crate::graph_db::db_path(&root)
++            .metadata()
++            .and_then(|m| m.modified())
++            .map_or(true, |gm| gm < slot_m);
+     let stamped = meta
+         .as_ref()
+         .and_then(|m| m["head"].as_str().map(str::to_string))
+@@ -929,7 +931,12 @@ pub fn evaluate_staleness(
+     if let (Some(_stamped), Some(eval), Some(stamped_val)) =
+         (stamped_faces.as_ref(), &eval_faces, &stamped_identity_val)
+     {
+-        if stamped_algo.as_deref() == Some(crate::identity::IDENTITY_ALGO) {
++        if stamped_algo.as_deref() == Some(crate::identity::IDENTITY_ALGO)
++            && meta
++                .as_ref()
++                .and_then(|m| m["index_sha256"].as_str())
++                .is_some()
++        {
+             let policy = crate::identity::resolve_policy(policy);
+             let mut cache = crate::identity::IdentityCache::load(
+                 crate::identity::cache_path_for_slot(slot),
+@@ -942,7 +949,14 @@ pub fn evaluate_staleness(
+                 policy,
+                 &mut cache,
+             )?;
+-            identity_drift = Some(current.value != *stamped_val);
++            let bound_index = meta
++                .as_ref()
++                .and_then(|m| m["index_sha256"].as_str())
++                .unwrap();
++            identity_drift = Some(
++                current.value != *stamped_val
++                    || crate::identity::artifact_hash(slot)? != bound_index,
++            );
+             current_identity = Some(current.value);
+         }
+     }
+@@ -1015,6 +1029,54 @@ pub fn doc_set_delta(docs: &BTreeSet<String>, walk: &SourceWalk) -> DocDelta {
+ 
+ // ---------- stamp core (S4) ----------
+ 
++/// Production interval observation. Full uncached hashes plus corpus policy;
++/// endpoint equality does not rule out ABA or edits after the final check.
++#[derive(Debug, PartialEq, Eq)]
++pub(crate) struct ProductionIdentity {
++    pub(crate) faces: BTreeSet<crate::language::LanguageFace>,
++    pub(crate) docs: BTreeSet<String>,
++    pub(crate) identity: crate::identity::Identity,
++    fingerprint: String,
++    profile: Option<String>,
++    js_ts_profile: String,
++}
++
++impl ProductionIdentity {
++    pub(crate) fn capture(
++        repo: &Path,
++        producer: Option<crate::language::ProducerFamily>,
++    ) -> Result<Self, String> {
++        let walk = walk_sources(repo)?;
++        let records = walk.records();
++        let faces: BTreeSet<_> = records
++            .values()
++            .map(|r| r.face)
++            .filter(|f| producer.is_none_or(|p| f.producer() == p))
++            .collect();
++        let identity = crate::identity::compute_identity(
++            repo,
++            &records,
++            &faces,
++            crate::identity::IdentityCachePolicy::ReadOnly,
++            &mut crate::identity::IdentityCache::disabled(),
++        )?;
++        let profile_path = repo.join(".code-reality.toml");
++        let profile = match std::fs::metadata(&profile_path) {
++            Ok(_) => Some(crate::identity::artifact_hash(&profile_path)?),
++            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
++            Err(e) => return Err(format!("profile identity: {e}")),
++        };
++        Ok(Self {
++            docs: walk.paths_for_faces(&faces),
++            fingerprint: walk.fingerprint_for_faces(&faces),
++            faces,
++            identity,
++            profile,
++            js_ts_profile: js_ts_profile_fingerprint(repo),
++        })
++    }
++}
++
+ /// Stamp-write failure split so the cli `--stamp-meta` mode keeps its two
+ /// frozen faces (git-warn + HEAD fail; write fail) while the refresh
+ /// head-sync renders both to stderr.
+@@ -1032,18 +1094,30 @@ impl std::fmt::Display for StampError {
+     }
+ }
+ 
+-/// Stamp-write core shared by the umbrella build (face-accurate producer
+-/// string from the legs it ran), the refresh head-sync (preserves the
+-/// existing producer value), and the cli `--stamp-meta` mode (frozen
+-/// stdout face; resolve-on-fresh). Returns the stamped head; the payload
+-/// key order (repo/head/stamped_at/tool/producer) is the frozen Python
+-/// dict order.
++/// Manual/head-sync stamp: preserve byte-bound provenance, never certify
++/// current sources as consumed. The umbrella build uses the private locked
++/// entry with a validated production observation. Returns the stamped head;
++/// repo/head/stamped_at/tool/producer retain the frozen payload key order.
+ pub fn stamp_meta_core(
+     repo: &Path,
+     index_path: &Path,
+     roots: &[PathBuf],
+     producer: Option<&str>,
+     selection: Option<&str>,
++) -> Result<String, StampError> {
++    let writer =
++        crate::publication_writer::WriterGuard::acquire(repo).map_err(StampError::Write)?;
++    stamp_meta_locked(repo, index_path, roots, producer, selection, None, &writer)
++}
++
++pub(crate) fn stamp_meta_locked(
++    repo: &Path,
++    index_path: &Path,
++    roots: &[PathBuf],
++    producer: Option<&str>,
++    selection: Option<&str>,
++    validated: Option<&ProductionIdentity>,
++    _writer: &crate::publication_writer::WriterGuard,
+ ) -> Result<String, StampError> {
+     let head = git_head(repo).map_err(StampError::Git)?;
+     // Face-accurate provenance: explicit wins; otherwise preserve an
+@@ -1081,27 +1155,25 @@ pub fn stamp_meta_core(
+         "producer": producer,
+         "selection": selection,
+     });
+-    // S4 identity keys (the source-set fingerprint family) describe the
+-    // INDEX's corpus contract, not the disk. Fresh pairs are stamped
+-    // ONLY when the index document set equals the current disk corpus
+-    // for the index's faces (one walk — stamping a fingerprint of
+-    // drifted disk state over an old index would launder a delete into
+-    // freshness). On a mismatch (or failed recompute) the PRIOR keys are
+-    // PRESERVED verbatim: they still truthfully describe this unchanged
+-    // index, so the next staleness evaluation compares them against
+-    // drifted disk and the delete/rename stays visible (codex blocker —
+-    // the earlier drop-the-keys design degraded to mtime-only). Never
+-    // fabricate keys: a legacy keyless meta stays keyless until a real
+-    // rebuild stamps a consistent pair.
++    // Manual/head-sync stamps cannot establish consumption evidence. Preserve
++    // prior identity only for identical index bytes and the same repo/scope.
+     let prior = load_meta(index_path).0;
++    let index_hash = crate::identity::artifact_hash(index_path).map_err(StampError::Write)?;
+     let preserve_prior_keys = |payload: &mut serde_json::Value| {
+         if let Some(m) = &prior {
++            if m["index_sha256"].as_str() != Some(index_hash.as_str())
++                || m["repo"] != payload["repo"]
++                || m["selection"] != payload["selection"]
++            {
++                return;
++            }
+             for key in [
+                 "source_faces",
+                 "source_set_fingerprint",
+                 "js_ts_profile_fingerprint",
+                 "source_identity",
+                 "identity_algo",
++                "index_sha256",
+             ] {
+                 if let Some(v) = m.get(key) {
+                     if !v.is_null() {
+@@ -1111,78 +1183,29 @@ pub fn stamp_meta_core(
+             }
+         }
+     };
+-    let mut stamped_fresh_keys = false;
+-    if let Ok(loaded) = load_index(index_path) {
+-        let faces: BTreeSet<crate::language::LanguageFace> = loaded
++    if let Some(a) = validated {
++        let loaded = load_index(index_path).map_err(StampError::Write)?;
++        let docs: BTreeSet<_> = loaded
+             .index
+             .documents
+             .iter()
+-            .filter_map(|d| crate::language::LanguageFace::from_path(Path::new(&d.relative_path)))
++            .map(|d| d.relative_path.clone())
+             .collect();
+-        if !faces.is_empty() {
+-            if let Ok(walk) = walk_sources(repo) {
+-                let disk = walk.paths_for_faces(&faces);
+-                let docs: BTreeSet<String> = loaded
+-                    .index
+-                    .documents
+-                    .iter()
+-                    .map(|d| d.relative_path.clone())
+-                    .collect();
+-                if disk == docs {
+-                    // Identity first (source identity EP): its recompute
+-                    // must succeed before ANY fresh key lands — a
+-                    // failure here keeps stamped_fresh_keys false and
+-                    // the preserve branch below stays truthful (failed
+-                    // recompute ≡ mismatch; a partial fresh stamp would
+-                    // pair a new fingerprint with a stale identity).
+-                    // D13: Full policy — the indexed identity always
+-                    // comes from actual bytes, never a query-side cache.
+-                    let policy =
+-                        crate::identity::resolve_policy(crate::identity::IdentityCachePolicy::Full);
+-                    let mut cache = crate::identity::IdentityCache::load(
+-                        crate::identity::cache_path_for_slot(index_path),
+-                        repo,
+-                    );
+-                    match crate::identity::compute_identity(
+-                        &resolve_repo(repo),
+-                        &walk.records(),
+-                        &faces,
+-                        policy,
+-                        &mut cache,
+-                    ) {
+-                        Ok(identity) => {
+-                            let names: Vec<&str> = faces.iter().map(|f| f.meta_name()).collect();
+-                            payload["source_faces"] = serde_json::json!(names);
+-                            payload["source_set_fingerprint"] =
+-                                serde_json::json!(walk.fingerprint_for_faces(&faces));
+-                            if faces.contains(&crate::language::LanguageFace::JavaScript)
+-                                || faces.contains(&crate::language::LanguageFace::TypeScript)
+-                            {
+-                                payload["js_ts_profile_fingerprint"] =
+-                                    serde_json::json!(js_ts_profile_fingerprint(repo));
+-                            }
+-                            payload["source_identity"] = serde_json::json!(identity.value);
+-                            payload["identity_algo"] = serde_json::json!(identity.algo);
+-                            stamped_fresh_keys = true;
+-                        }
+-                        Err(_) => {} // → preserve branch
+-                    }
+-                }
++        if docs == a.docs && !a.faces.is_empty() {
++            payload["source_faces"] =
++                serde_json::json!(a.faces.iter().map(|f| f.meta_name()).collect::<Vec<_>>());
++            payload["source_set_fingerprint"] = serde_json::json!(a.fingerprint);
++            if a.faces.contains(&crate::language::LanguageFace::JavaScript)
++                || a.faces.contains(&crate::language::LanguageFace::TypeScript)
++            {
++                payload["js_ts_profile_fingerprint"] = serde_json::json!(a.js_ts_profile);
+             }
++            payload["source_identity"] = serde_json::json!(a.identity.value);
++            payload["identity_algo"] = serde_json::json!(a.identity.algo);
++            payload["index_sha256"] = serde_json::json!(index_hash);
+         }
+-    }
+-    let prior_had_keys = prior.as_ref().is_some_and(|m| {
+-        m.get("source_set_fingerprint")
+-            .is_some_and(|v| !v.is_null())
+-            || m.get("source_identity").is_some_and(|v| !v.is_null())
+-    });
+-    if !stamped_fresh_keys {
++    } else {
+         preserve_prior_keys(&mut payload);
+-        if prior_had_keys {
+-            eprintln!(
+-                "[WARN] stamp-meta：索引文檔集與磁碟語料不一致——保留既有 source-set fingerprint／source identity（drift 保持可見；重跑 build 產出一致配對）\n"
+-            );
+-        }
+     }
+     let text = format!("{}\n", serde_json::to_string_pretty(&payload).unwrap());
+     std::fs::write(&sidecar, &text)
+diff --git a/crates/code-reality/src/graph_db.rs b/crates/code-reality/src/graph_db.rs
+index 12d3edf..391ab0e 100644
+--- a/crates/code-reality/src/graph_db.rs
++++ b/crates/code-reality/src/graph_db.rs
+@@ -72,7 +72,12 @@ pub struct DerivedReport {
+ /// over the fresh db and writes flows/communities back, plus the
+ /// nodes.community_id column.
+ pub fn materialize_derived(repo: &Path) -> Result<DerivedReport, String> {
++    let _writer = crate::publication_writer::WriterGuard::acquire(repo)?;
+     let db = db_path(repo);
++    materialize_derived_at(&db)
++}
++
++fn materialize_derived_at(db: &Path) -> Result<DerivedReport, String> {
+     if !db.exists() {
+         return Err(format!(
+             "graph.db 不在：{}（先 graph_db build）",
+@@ -575,6 +580,15 @@ fn attribute_nearest(
+ /// edge ontology). Core over an explicit index path; the CLI face
+ /// resolves the in-repo slot.
+ pub fn build_from_cache_at(repo: &Path, index_path: &Path) -> Result<BuildReport, String> {
++    let writer = crate::publication_writer::WriterGuard::acquire(repo)?;
++    build_from_cache_locked(repo, index_path, &writer)
++}
++
++pub(crate) fn build_from_cache_locked(
++    repo: &Path,
++    index_path: &Path,
++    _writer: &crate::publication_writer::WriterGuard,
++) -> Result<BuildReport, String> {
+     let cache_db = cache::sqlite_path(index_path);
+     if !cache_db.exists() && !index_path.exists() {
+         return Err(format!(
+@@ -746,15 +760,8 @@ pub fn build_from_cache_at(repo: &Path, index_path: &Path) -> Result<BuildReport
+     std::fs::create_dir_all(dir).map_err(|e| format!("目錄建立失敗（{}）：{e}", dir.display()))?;
+     crate::engine::write_data_dir_gitignore(dir)
+         .map_err(|e| format!("graph_db 資料目錄自帶 ignore 失敗：{e}"))?;
+-    let tmp_db = dir.join("graph.db.tmp-build");
+-    if let Err(e) = std::fs::remove_file(&tmp_db) {
+-        if e.kind() != std::io::ErrorKind::NotFound {
+-            eprintln!(
+-                "[WARN] 舊 build 暫存檔清除失敗（{}）：{e}",
+-                tmp_db.display()
+-            );
+-        }
+-    }
++    let temp = crate::publication_writer::TempDb::new(dir)?;
++    let tmp_db = &temp.0;
+     let mut g = Connection::open(&tmp_db).map_err(|e| format!("graph.db 建立失敗：{e}"))?;
+     g.execute_batch("PRAGMA busy_timeout = 5000;")
+         .map_err(|e| format!("graph.db busy_timeout 設定失敗：{e}"))?;
+@@ -897,6 +904,9 @@ pub fn build_from_cache_at(repo: &Path, index_path: &Path) -> Result<BuildReport
+         .map_err(|e| format!("nodes_fts 重建失敗：{e}"))?;
+     tx.commit().map_err(|e| format!("graph.db 提交失敗：{e}"))?;
+     drop(g);
++    // Derived tables belong to this same unpublished generation. A failure
++    // leaves the previous complete graph intact.
++    let derived = materialize_derived_at(tmp_db)?;
+     std::fs::rename(&tmp_db, &db).map_err(|e| {
+         format!(
+             "graph.db 原子替換失敗（{} → {}）：{e}",
+@@ -906,7 +916,6 @@ pub fn build_from_cache_at(repo: &Path, index_path: &Path) -> Result<BuildReport
+     })?;
+     // derived tables (detect_changes hard-joins them — the build face is
+     // the writer under the ops-untouched constraint)
+-    let derived = materialize_derived(repo)?;
+     Ok(BuildReport {
+         nodes,
+         edges,
+@@ -951,6 +960,14 @@ pub struct EnsureIndexesReport {
+ /// with the legacy consumer cutover (chain_tour reads the self-owned db;
+ /// the same covering index lives in ENGINE_INDEX_DDL now).
+ pub fn ensure_indexes(repo: &Path) -> Result<EnsureIndexesReport, String> {
++    let writer = crate::publication_writer::WriterGuard::acquire(repo)?;
++    ensure_indexes_locked(repo, &writer)
++}
++
++pub(crate) fn ensure_indexes_locked(
++    repo: &Path,
++    _writer: &crate::publication_writer::WriterGuard,
++) -> Result<EnsureIndexesReport, String> {
+     let mut created = 0usize;
+     let mut skipped = 0usize;
+     let db = db_path(repo);
+diff --git a/crates/code-reality/src/identity.rs b/crates/code-reality/src/identity.rs
+index bc20770..3547303 100644
+--- a/crates/code-reality/src/identity.rs
++++ b/crates/code-reality/src/identity.rs
+@@ -146,7 +146,9 @@ impl IdentityCache {
+     /// [`IdentityCache::load`] minus the stderr face; the discard reason
+     /// (if any) is returned for callers that surface it themselves.
+     pub fn load_checked(path: PathBuf, repo: &Path) -> (IdentityCache, Option<String>) {
+-        let repo_s = crate::engine::resolve_repo(repo).to_string_lossy().into_owned();
++        let repo_s = crate::engine::resolve_repo(repo)
++            .to_string_lossy()
++            .into_owned();
+         let empty = |path: PathBuf| IdentityCache {
+             path,
+             repo: repo_s.clone(),
+@@ -156,9 +158,7 @@ impl IdentityCache {
+         };
+         let text = match std::fs::read_to_string(&path) {
+             Ok(t) => t,
+-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+-                return (empty(path), None)
+-            }
++            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (empty(path), None),
+             Err(e) => {
+                 let reason = format!("讀取失敗：{e}");
+                 return (empty(path), Some(reason));
+@@ -217,14 +217,7 @@ impl IdentityCache {
+         if self.disabled {
+             return;
+         }
+-        self.entries.insert(
+-            key,
+-            CacheEntry {
+-                size,
+-                mtime,
+-                hash,
+-            },
+-        );
++        self.entries.insert(key, CacheEntry { size, mtime, hash });
+         self.dirty = true;
+     }
+ 
+@@ -260,8 +253,7 @@ impl IdentityCache {
+             IDENTITY_CACHE_NAME,
+             std::process::id()
+         ));
+-        let written = std::fs::write(&tmp, &text)
+-            .and_then(|_| std::fs::rename(&tmp, &self.path));
++        let written = std::fs::write(&tmp, &text).and_then(|_| std::fs::rename(&tmp, &self.path));
+         if let Err(e) = written {
+             let _ = std::fs::remove_file(&tmp);
+             eprint!("[WARN] identity cache 寫入失敗（{e}）——略過（不影響身分計算）\n");
+@@ -297,7 +289,14 @@ pub fn compute_identity(
+         // fingerprint equality — D17 normalization boundary).
+         let key = normalize_rel(rel);
+         keep.insert(key.clone());
+-        let chash = content_hash_of(&root.join(&rec.rel), &key, rec.size, rec.mtime, policy, cache)?;
++        let chash = content_hash_of(
++            &root.join(&rec.rel),
++            &key,
++            rec.size,
++            rec.mtime,
++            policy,
++            cache,
++        )?;
+         h.update(format!(
+             "{}\0{}\0{}\0{}\0",
+             rec.face.meta_name(),
+@@ -346,6 +345,15 @@ fn hex(bytes: &[u8]) -> String {
+     bytes.iter().map(|b| format!("{b:02x}")).collect()
+ }
+ 
++/// Actual artifact bytes, never a stat/cache approximation. Used to bind
++/// retained provenance to the exact index that production published.
++pub(crate) fn artifact_hash(path: &Path) -> Result<String, String> {
++    let mut f = std::fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
++    let mut h = Sha256::new();
++    std::io::copy(&mut f, &mut h).map_err(|e| format!("{}: {e}", path.display()))?;
++    Ok(hex(&h.finalize()))
++}
++
+ #[cfg(test)]
+ mod tests {
+     use super::*;
+@@ -512,7 +520,11 @@ mod tests {
+         let t = tempfile::tempdir().unwrap();
+         write_tree(
+             t.path(),
+-            &[("a.py", "x = 1\n"), ("src/b.py", "y = 2\n"), ("c.py", "z\n")],
++            &[
++                ("a.py", "x = 1\n"),
++                ("src/b.py", "y = 2\n"),
++                ("c.py", "z\n"),
++            ],
+         );
+         let f = faces(&[LanguageFace::Python]);
+         let full = |root: &Path| {
+@@ -681,9 +693,8 @@ mod tests {
+             .duration_since(std::time::UNIX_EPOCH)
+             .unwrap()
+             .as_secs();
+-        let mt = |nanos: u32| {
+-            std::time::SystemTime::UNIX_EPOCH + std::time::Duration::new(base, nanos)
+-        };
++        let mt =
++            |nanos: u32| std::time::SystemTime::UNIX_EPOCH + std::time::Duration::new(base, nanos);
+         std::fs::File::options()
+             .write(true)
+             .open(t.path().join("a.py"))
+@@ -693,14 +704,7 @@ mod tests {
+         let cache_path = t.path().join("identity-cache.json");
+         let id = |policy| {
+             let mut cache = IdentityCache::load(cache_path.clone(), t.path());
+-            compute_identity(
+-                t.path(),
+-                &walk_records(t.path()),
+-                &f,
+-                policy,
+-                &mut cache,
+-            )
+-            .unwrap()
++            compute_identity(t.path(), &walk_records(t.path()), &f, policy, &mut cache).unwrap()
+         };
+         let before = id(IdentityCachePolicy::WriteBack);
+ 
+diff --git a/crates/code-reality/src/lib.rs b/crates/code-reality/src/lib.rs
+index 6c8c9b7..97482ac 100644
+--- a/crates/code-reality/src/lib.rs
++++ b/crates/code-reality/src/lib.rs
+@@ -76,6 +76,7 @@ pub mod language;
+ pub mod mcp_server;
+ pub mod profile;
+ pub mod project;
++mod publication_writer;
+ pub mod py_calls;
+ pub mod refresh;
+ pub mod runtime_edges;
+diff --git a/crates/code-reality/src/mcp_server.rs b/crates/code-reality/src/mcp_server.rs
+index d39bdc2..656c085 100644
+--- a/crates/code-reality/src/mcp_server.rs
++++ b/crates/code-reality/src/mcp_server.rs
+@@ -211,7 +211,8 @@ pub struct CodeRealityServer {
+ 
+ /// ToolOutput → MCP content: stdout text + a `[STDERR]` section when the
+ /// management face has content (visibility rule).
+-/// MCP single-frame byte cap (backstop — the payload-shape fixes
++/// MCP text byte cap plus truncation marker (not a serialized frame cap;
++/// the payload-shape fixes
+ /// (detail_level/limit) are the real defense; this catches anything that
+ /// still slips through, before the client tears the connection down).
+ const MCP_TEXT_CAP: usize = 1 << 20;
+@@ -232,6 +233,10 @@ fn apply_text_cap(mut text: String) -> String {
+     text
+ }
+ 
++fn internal_error(text: String) -> McpError {
++    McpError::new(ErrorCode::INTERNAL_ERROR, apply_text_cap(text), None)
++}
++
+ fn to_tool_result(out: crate::ToolOutput) -> Result<CallToolResult, McpError> {
+     let mut text = out.stdout;
+     if !out.stderr.is_empty() {
+@@ -259,11 +264,11 @@ fn map_tool_output(out: crate::ToolOutput) -> Result<CallToolResult, McpError> {
+             text.push_str("[STDERR]\n");
+             text.push_str(&out.stderr);
+         }
+-        return Err(McpError::new(
+-            ErrorCode::INTERNAL_ERROR,
+-            format!("工具退出碼 {}：{}", out.exit_code, text.trim()),
+-            None,
+-        ));
++        return Err(internal_error(format!(
++            "工具退出碼 {}：{}",
++            out.exit_code,
++            text.trim()
++        )));
+     }
+     to_tool_result(out)
+ }
+@@ -326,24 +331,14 @@ impl CodeRealityServer {
+             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(&refs)))
+         })
+         .await
+-        .map_err(|e| {
+-            McpError::new(
+-                ErrorCode::INTERNAL_ERROR,
+-                format!("任務 join 失敗：{e}"),
+-                None,
+-            )
+-        })?
++        .map_err(|e| internal_error(format!("任務 join 失敗：{e}")))?
+         .map_err(|payload| {
+             let msg = payload
+                 .downcast_ref::<&str>()
+                 .map(|s| s.to_string())
+                 .or_else(|| payload.downcast_ref::<String>().cloned())
+                 .unwrap_or_else(|| "non-string panic payload".into());
+-            McpError::new(
+-                ErrorCode::INTERNAL_ERROR,
+-                format!("lib panic：{msg}——已隔離為單請求錯誤"),
+-                None,
+-            )
++            internal_error(format!("lib panic：{msg}——已隔離為單請求錯誤"))
+         })?;
+         map_tool_output(out)
+     }
+@@ -694,22 +689,16 @@ impl CodeRealityServer {
+             }))
+         })
+         .await
+-        .map_err(|e| {
+-            McpError::new(
+-                ErrorCode::INTERNAL_ERROR,
+-                format!("任務 join 失敗：{e}"),
+-                None,
+-            )
+-        })?
++        .map_err(|e| internal_error(format!("任務 join 失敗：{e}")))?
+         .map_err(|payload| {
+             let msg = payload
+                 .downcast_ref::<&str>()
+                 .map(|s| s.to_string())
+                 .or_else(|| payload.downcast_ref::<String>().cloned())
+                 .unwrap_or_else(|| "non-string panic payload".into());
+-            McpError::new(ErrorCode::INTERNAL_ERROR, format!("lib panic：{msg}"), None)
++            internal_error(format!("lib panic：{msg}"))
+         })?;
+-        let v = out.map_err(|e| McpError::new(ErrorCode::INTERNAL_ERROR, e, None))?;
++        let v = out.map_err(internal_error)?;
+         Ok(CallToolResult::success(vec![ContentBlock::text(
+             apply_text_cap(crate::common::to_json_indent1(&v)),
+         )]))
+@@ -839,7 +828,7 @@ impl CodeRealityServer {
+ 
+     /// One-shot data-plane build. Same lib as `code-reality build`.
+     #[tool(
+-        description = "One-shot data-plane build: detect language faces, spawn producers (pyrefly-index / rust-analyzer scip / scip-typescript — external JS/TS prerequisite), rebuild graph.db + indexes. WRITES <repo>/.code-reality/ (index slot, graph.db). LONG-RUNNING: minutes-level on large repos, no progress reporting — the call blocks until done; set your client timeout accordingly. Same lib as `code-reality build --repo <repo>`"
++        description = "One-shot data-plane build: detect language faces, spawn producers (pyrefly-index / rust-analyzer scip / scip-typescript — external JS/TS prerequisite), rebuild graph.db + indexes. WRITES <repo>/.code-reality/ (index slot, graph.db). LONG-RUNNING: minutes-level on large repos, no progress reporting — the call blocks until done; set your client timeout accordingly. Cancellation suppresses response delivery; already-started blocking work may continue and publish files. Transport EOF may await that work. Same lib as `code-reality build --repo <repo>`"
+     )]
+     pub async fn build(
+         &self,
+@@ -871,7 +860,7 @@ impl CodeRealityServer {
+ 
+     /// Boundary snapshot. Same lib as `code-reality snapshot`.
+     #[tool(
+-        description = "Boundary snapshot of the current graph.db state (files + module edges + staleness meta). WRITES a dated snapshot file under <repo>/.code-reality/snapshots/ (or out_dir). Requires an existing graph.db (run build first). Seconds-level. Same lib as `code-reality snapshot --repo <repo>`"
++        description = "Boundary snapshot of the current graph.db state (files + module edges + staleness meta). WRITES a dated snapshot file under <repo>/.code-reality/snapshots/ (or out_dir). Requires an existing graph.db (run build first). Seconds-level. Cancellation suppresses response delivery; already-started blocking work may continue and publish files. Transport EOF may await that work. Same lib as `code-reality snapshot --repo <repo>`"
+     )]
+     pub async fn snapshot(
+         &self,
+@@ -895,7 +884,7 @@ impl CodeRealityServer {
+ 
+     /// Delta-review CodeTour. Same lib as `code-reality delta_tour`.
+     #[tool(
+-        description = "Diff two snapshots into a delta-review CodeTour (git hunk anchors, EP claims comparison). WRITES <repo>/.tours/delta/<date>-<task>.tour — MCP default is in-repo (unlike the CLI's cwd-relative default); pass out_dir to override. Pass ABSOLUTE snapshot paths (the snapshot tool's report carries them). Seconds-level. Same lib as `code-reality delta_tour <a> <b> --repo <repo>`"
++        description = "Diff two snapshots into a delta-review CodeTour (git hunk anchors, EP claims comparison). WRITES <repo>/.tours/delta/<date>-<task>.tour — MCP default is in-repo (unlike the CLI's cwd-relative default); pass out_dir to override. Pass ABSOLUTE snapshot paths (the snapshot tool's report carries them). Seconds-level. Cancellation suppresses response delivery; already-started blocking work may continue and publish files. Transport EOF may await that work. Same lib as `code-reality delta_tour <a> <b> --repo <repo>`"
+     )]
+     pub async fn delta_tour(
+         &self,
+@@ -934,7 +923,7 @@ impl CodeRealityServer {
+ 
+     /// Projected-graph overlay. Same lib as `code-reality project`.
+     #[tool(
+-        description = "Projected-graph overlay for EP planning: compile a declarative plan.toml via overlay-gen, report graft surface + claim verdicts ([projected] = declarations, not evidence). WRITES <repo>/.code-reality/projections/<plan-stem>/; the real index slot stays untouched. Needs overlay-gen resolvable (uv tool install pyrefly-producer). Pass an ABSOLUTE plan path (the server's cwd is meaningless to you). Seconds-level. Same lib as `code-reality project --repo <repo> --plan <plan.toml>`"
++        description = "Projected-graph overlay for EP planning: compile a declarative plan.toml via overlay-gen, report graft surface + claim verdicts ([projected] = declarations, not evidence). WRITES <repo>/.code-reality/projections/<plan-stem>/; the real index slot stays untouched. Needs overlay-gen resolvable (uv tool install pyrefly-producer). Pass an ABSOLUTE plan path (the server's cwd is meaningless to you). Seconds-level. Cancellation suppresses response delivery; already-started blocking work may continue and publish files. Transport EOF may await that work. Same lib as `code-reality project --repo <repo> --plan <plan.toml>`"
+     )]
+     pub async fn project(
+         &self,
+@@ -1002,3 +991,76 @@ pub async fn serve_stdio() -> Result<(), String> {
+         .map_err(|e| format!("stdio session 結束：{e}"))?;
+     Ok(())
+ }
++
++#[cfg(test)]
++mod error_cap_regression {
++    use super::*;
++
++    // Oracle S: accepted round1 EP: bound final text, retain error code,
++    // UTF-8 and marker; the JSON envelope is outside the text bound.
++    #[test]
++    fn final_error_text_boundary_and_combined_streams() {
++        // Each stream alone is below the cap; only the final envelope reaches it.
++        for total in [MCP_TEXT_CAP - 1, MCP_TEXT_CAP, MCP_TEXT_CAP + 1] {
++            let overhead = "工具退出碼 2：[STDERR]\n".len();
++            let stdout = "a".repeat(MCP_TEXT_CAP / 2);
++            let stderr = "b".repeat(total - overhead - stdout.len());
++            let complete = format!("工具退出碼 2：{stdout}[STDERR]\n{stderr}");
++            let err = map_tool_output(crate::ToolOutput {
++                stdout,
++                stderr,
++                exit_code: 2,
++            })
++            .unwrap_err();
++            assert_eq!(err.code, ErrorCode::INTERNAL_ERROR);
++            if total <= MCP_TEXT_CAP {
++                assert_eq!(err.message, complete);
++            } else {
++                let (prefix, marker) = err.message.split_once("\n[TRUNCATED]").unwrap();
++                assert_eq!(prefix.len(), MCP_TEXT_CAP);
++                assert!(complete.starts_with(prefix));
++                assert!(marker.len() < 256);
++            }
++        }
++        for payload in ["x", "界"] {
++            for size in [0, MCP_TEXT_CAP - 1, MCP_TEXT_CAP, MCP_TEXT_CAP + 1] {
++                let stdout = payload.repeat(size / payload.len());
++                let stderr = "diagnostic".to_string();
++                let complete = format!("工具退出碼 2：{stdout}[STDERR]\n{stderr}");
++                let err = map_tool_output(crate::ToolOutput {
++                    stdout,
++                    stderr,
++                    exit_code: 2,
++                })
++                .unwrap_err();
++                assert_eq!(err.code, ErrorCode::INTERNAL_ERROR);
++                if complete.len() <= MCP_TEXT_CAP {
++                    assert_eq!(err.message, complete);
++                } else {
++                    let (prefix, _) = err
++                        .message
++                        .split_once("\n[TRUNCATED]")
++                        .expect("bounded error marker");
++                    assert!(prefix.len() <= MCP_TEXT_CAP);
++                    assert!(prefix.len() + payload.len() > MCP_TEXT_CAP);
++                    assert!(complete.starts_with(prefix));
++                }
++            }
++        }
++    }
++
++    #[tokio::test]
++    async fn panic_payload_obeys_same_cap() {
++        let err =
++            CodeRealityServer::run_module(|_| panic!("{}", "界".repeat(MCP_TEXT_CAP)), vec![])
++                .await
++                .unwrap_err();
++        assert_eq!(err.code, ErrorCode::INTERNAL_ERROR);
++        let (prefix, _) = err
++            .message
++            .split_once("\n[TRUNCATED]")
++            .expect("bounded panic marker");
++        assert!(prefix.starts_with("lib panic："));
++        assert!(prefix.len() <= MCP_TEXT_CAP);
++    }
++}
+diff --git a/crates/code-reality/src/refresh.rs b/crates/code-reality/src/refresh.rs
+index 1221c90..b3bf665 100644
+--- a/crates/code-reality/src/refresh.rs
++++ b/crates/code-reality/src/refresh.rs
+@@ -98,8 +98,11 @@ fn refresh_run(toks: &[&str]) -> ToolOutput {
+     };
+     // Snapshot first (Fresh is a unit variant — the head-sync decision
+     // needs the drift bit the outcome does not carry).
+-    let snap = match evaluate_staleness(&repo, &slot, crate::identity::IdentityCachePolicy::WriteBack)
+-    {
++    let snap = match evaluate_staleness(
++        &repo,
++        &slot,
++        crate::identity::IdentityCachePolicy::WriteBack,
++    ) {
+         Ok(s) => s,
+         Err(e) => {
+             stderr.push_str(&format!(
+@@ -118,7 +121,7 @@ fn refresh_run(toks: &[&str]) -> ToolOutput {
+                 // head-sync only: sources are current, provenance lags —
+                 // re-stamp instead of paying a full re-produce
+                 match stamp_meta_core(&repo, &slot, &producer_roots(), None, None) {
+-                    Ok(_) => stderr.push_str("[OK] refresh：索引新鮮，meta head 已同步\n"),
++                    Ok(_) => stderr.push_str("[OK] refresh：meta head 已同步（source provenance retained, not recertified）\n"),
+                     Err(e) => {
+                         stderr.push_str(&format!("[WARN] refresh：head-sync stamp 失敗（{e}）\n"))
+                     }
+diff --git a/crates/code-reality/tests/graph_db.rs b/crates/code-reality/tests/graph_db.rs
+index 3e707c7..11c6550 100644
+--- a/crates/code-reality/tests/graph_db.rs
++++ b/crates/code-reality/tests/graph_db.rs
+@@ -181,10 +181,12 @@ fn build_is_idempotent_and_leaves_no_temp() {
+         .unwrap();
+     let mut files: Vec<_> = dir.filter_map(|e| e.ok()).map(|e| e.file_name()).collect();
+     files.sort();
+-    // graph.db + the self-contained single-`*` .gitignore (S1)
+-    assert_eq!(files.len(), 2, "no temp leftover: {files:?}");
++    // The persistent lock inode is ownership infrastructure, not a temp.
++    // Unlinking it would let waiters and newcomers lock different inodes.
++    assert_eq!(files.len(), 3, "no temp leftover: {files:?}");
+     assert_eq!(files[0], ".gitignore");
+-    assert_eq!(files[1], "graph.db");
++    assert_eq!(files[1], ".writer.lock");
++    assert_eq!(files[2], "graph.db");
+ }
+ 
+ #[test]
+diff --git a/plugin/.mcp.json b/plugin/.mcp.json
+index aa56314..4c3e3d4 100644
+--- a/plugin/.mcp.json
++++ b/plugin/.mcp.json
+@@ -3,13 +3,13 @@
+     "code-reality": {
+       "type": "stdio",
+       "command": "/bin/sh",
+-      "args": ["-c", "b=code-reality-mcp; want=0.9.3; nb=\"${CLAUDE_PLUGIN_ROOT}/node_modules/.bin\"; if [ \"$CODE_REALITY_BOOTSTRAP\" != off ]; then if command -v uv >/dev/null 2>&1; then ub=\"$(uv tool dir --bin 2>/dev/null)\" || { echo \"[BOOTSTRAP] cannot resolve uv tool bin dir - upgrade uv (uv tool dir --bin unsupported)\" >&2; exit 127; }; [ -n \"$ub\" ] || { echo \"[BOOTSTRAP] uv tool bin dir is empty\" >&2; exit 127; }; pinned(){ x=\"$1\"; [ -x \"$ub/$x\" ] || return 1; case \"$(\"$ub/$x\" --version 2>/dev/null)\" in \"$want\"*) return 0;; *) return 1;; esac; }; all_pinned(){ pinned code-reality-mcp && pinned code-reality-lsp-bridge && pinned pyrefly-index; }; if all_pinned; then exec \"$ub/$b\" --stdio; fi; echo \"[BOOTSTRAP] installing code-reality $want via uv (consumer face stale or missing)\" >&2; uv tool install --force \"code-reality==$want\" >&2 && uv tool install --force \"code-reality-lsp-bridge==$want\" >&2 && uv tool install --force \"pyrefly-producer==$want\" >&2 || { echo \"[BOOTSTRAP] install $want failed - check network and retry next session\" >&2; exit 127; }; if all_pinned; then exec \"$ub/$b\" --stdio; fi; bad=\"\"; for x in code-reality-mcp code-reality-lsp-bridge pyrefly-index; do pinned \"$x\" || bad=\"$bad $x\"; done; echo \"[BOOTSTRAP] post-install verification failed - still stale or missing:$bad (want $want in $ub)\" >&2; exit 127; fi; if [ -x \"$nb/$b\" ]; then echo \"[BOOTSTRAP] uv missing - serving the retired npm-embedded face (deprecation grace; install uv: curl -LsSf https://astral.sh/uv/install.sh | sh)\" >&2; exec \"$nb/$b\" --stdio; fi; echo \"[BOOTSTRAP] uv not found - install it first: curl -LsSf https://astral.sh/uv/install.sh | sh (dev override: CODE_REALITY_BOOTSTRAP=off)\" >&2; exit 127; fi; command -v \"$b\" >/dev/null 2>&1 && exec \"$b\" --stdio; [ -x \"$nb/$b\" ] && exec \"$nb/$b\" --stdio; for d in \"$HOME/.local/bin\" \"$HOME/.cargo/bin\"; do [ -x \"$d/$b\" ] && exec \"$d/$b\" --stdio; done; echo \"[BOOTSTRAP] $b not found (bootstrap off, nothing resolves)\" >&2; exit 127"],
++      "args": ["-c", "b=code-reality-mcp; want=0.9.3; nb=\"${CLAUDE_PLUGIN_ROOT}/node_modules/.bin\"; if [ \"$CODE_REALITY_BOOTSTRAP\" != off ]; then if command -v uv >/dev/null 2>&1; then ub=\"$(uv tool dir --bin 2>/dev/null)\" || { echo \"[BOOTSTRAP] cannot resolve uv tool bin dir - upgrade uv (uv tool dir --bin unsupported)\" >&2; exit 127; }; [ -n \"$ub\" ] || { echo \"[BOOTSTRAP] uv tool bin dir is empty\" >&2; exit 127; }; pinned(){ x=\"$1\"; [ -x \"$ub/$x\" ] || return 1; case \"$(\"$ub/$x\" --version 2>/dev/null)\" in \"$want\"|\"$want+\"*) return 0;; *) return 1;; esac; }; all_pinned(){ pinned code-reality-mcp && pinned code-reality-lsp-bridge && pinned pyrefly-index; }; if all_pinned; then exec \"$ub/$b\" --stdio; fi; echo \"[BOOTSTRAP] installing code-reality $want via uv (consumer face stale or missing)\" >&2; uv tool install --force \"code-reality==$want\" >&2 && uv tool install --force \"code-reality-lsp-bridge==$want\" >&2 && uv tool install --force \"pyrefly-producer==$want\" >&2 || { echo \"[BOOTSTRAP] install $want failed - check network and retry next session\" >&2; exit 127; }; if all_pinned; then exec \"$ub/$b\" --stdio; fi; bad=\"\"; for x in code-reality-mcp code-reality-lsp-bridge pyrefly-index; do pinned \"$x\" || bad=\"$bad $x\"; done; echo \"[BOOTSTRAP] post-install verification failed - still stale or missing:$bad (want $want in $ub)\" >&2; exit 127; fi; if [ -x \"$nb/$b\" ]; then echo \"[BOOTSTRAP] uv missing - serving the retired npm-embedded face (deprecation grace; install uv: curl -LsSf https://astral.sh/uv/install.sh | sh)\" >&2; exec \"$nb/$b\" --stdio; fi; echo \"[BOOTSTRAP] uv not found - install it first: curl -LsSf https://astral.sh/uv/install.sh | sh (dev override: CODE_REALITY_BOOTSTRAP=off)\" >&2; exit 127; fi; command -v \"$b\" >/dev/null 2>&1 && exec \"$b\" --stdio; [ -x \"$nb/$b\" ] && exec \"$nb/$b\" --stdio; for d in \"$HOME/.local/bin\" \"$HOME/.cargo/bin\"; do [ -x \"$d/$b\" ] && exec \"$d/$b\" --stdio; done; echo \"[BOOTSTRAP] $b not found (bootstrap off, nothing resolves)\" >&2; exit 127"],
+       "timeoutMs": 120000
+     },
+     "code-reality-lsp-bridge": {
+       "type": "stdio",
+       "command": "/bin/sh",
+-      "args": ["-c", "b=code-reality-lsp-bridge; want=0.9.3; nb=\"${CLAUDE_PLUGIN_ROOT}/node_modules/.bin\"; if [ \"$CODE_REALITY_BOOTSTRAP\" != off ]; then if command -v uv >/dev/null 2>&1; then ub=\"$(uv tool dir --bin 2>/dev/null)\" || { echo \"[BOOTSTRAP] cannot resolve uv tool bin dir for $b - upgrade uv (uv tool dir --bin unsupported)\" >&2; exit 127; }; [ -n \"$ub\" ] || { echo \"[BOOTSTRAP] uv tool bin dir is empty for $b\" >&2; exit 127; }; pinned(){ [ -x \"$ub/$b\" ] || return 1; case \"$(\"$ub/$b\" --version 2>/dev/null)\" in \"$want\"*) return 0;; *) return 1;; esac; }; i=0; while [ \"$i\" -lt 45 ]; do pinned && exec \"$ub/$b\" --stdio; i=$((i+1)); sleep 1; done; echo \"[BOOTSTRAP] $b still stale or missing after bootstrap wait (want $want in $ub)\" >&2; exit 127; fi; if [ -x \"$nb/$b\" ]; then exec \"$nb/$b\" --stdio; fi; echo \"[BOOTSTRAP] $b not found and uv is missing so nothing bootstraps it - install uv first (curl -LsSf https://astral.sh/uv/install.sh | sh) or manual: uv tool install code-reality-lsp-bridge\" >&2; exit 127; fi; command -v \"$b\" >/dev/null 2>&1 && exec \"$b\" --stdio; [ -x \"$nb/$b\" ] && exec \"$nb/$b\" --stdio; for d in \"$HOME/.local/bin\" \"$HOME/.cargo/bin\"; do [ -x \"$d/$b\" ] && exec \"$d/$b\" --stdio; done; echo \"[BOOTSTRAP] $b not found (bootstrap off, nothing resolves)\" >&2; exit 127"],
++      "args": ["-c", "b=code-reality-lsp-bridge; want=0.9.3; nb=\"${CLAUDE_PLUGIN_ROOT}/node_modules/.bin\"; if [ \"$CODE_REALITY_BOOTSTRAP\" != off ]; then if command -v uv >/dev/null 2>&1; then ub=\"$(uv tool dir --bin 2>/dev/null)\" || { echo \"[BOOTSTRAP] cannot resolve uv tool bin dir for $b - upgrade uv (uv tool dir --bin unsupported)\" >&2; exit 127; }; [ -n \"$ub\" ] || { echo \"[BOOTSTRAP] uv tool bin dir is empty for $b\" >&2; exit 127; }; pinned(){ [ -x \"$ub/$b\" ] || return 1; case \"$(\"$ub/$b\" --version 2>/dev/null)\" in \"$want\"|\"$want+\"*) return 0;; *) return 1;; esac; }; i=0; while [ \"$i\" -lt 45 ]; do pinned && exec \"$ub/$b\" --stdio; i=$((i+1)); sleep 1; done; echo \"[BOOTSTRAP] $b still stale or missing after bootstrap wait (want $want in $ub)\" >&2; exit 127; fi; if [ -x \"$nb/$b\" ]; then exec \"$nb/$b\" --stdio; fi; echo \"[BOOTSTRAP] $b not found and uv is missing so nothing bootstraps it - install uv first (curl -LsSf https://astral.sh/uv/install.sh | sh) or manual: uv tool install code-reality-lsp-bridge\" >&2; exit 127; fi; command -v \"$b\" >/dev/null 2>&1 && exec \"$b\" --stdio; [ -x \"$nb/$b\" ] && exec \"$nb/$b\" --stdio; for d in \"$HOME/.local/bin\" \"$HOME/.cargo/bin\"; do [ -x \"$d/$b\" ] && exec \"$d/$b\" --stdio; done; echo \"[BOOTSTRAP] $b not found (bootstrap off, nothing resolves)\" >&2; exit 127"],
+       "timeoutMs": 60000
+     }
+   }
+diff --git a/plugin/README.md b/plugin/README.md
+index e11f1aa..2906abe 100644
+--- a/plugin/README.md
++++ b/plugin/README.md
+@@ -16,7 +16,16 @@ daemon) and the usage skill:
+   `.py` → pyrefly (`hover` / `check_file` / `edit_file` / `lsp_status`),
+   `.rs` → rust-analyzer (same tools), and the six JS/TS extensions →
+   typescript-language-server (same tools). Each backend spawns lazily
+-  and independently.
++  and independently. Current checks reject known backend death, including
++  before accepting cached diagnostics. Failed initialization is terminal for
++  that session; restart the bridge to recover. Transport writes await bounded
++  acknowledgements; check and shutdown budgets start at their respective entry
++  points, and child cleanup does not depend on the stdin writer lock.
++
++MCP cancellation suppresses response delivery; already-started blocking work
++can continue and publish files. Closing the stdio transport may await that
++work and does not imply rollback. Tool text, including errors, is bounded
++with a UTF-8-safe truncation marker; JSON framing adds overhead.
+ 
+ ## Prerequisites (the binaries)
+ 
+@@ -30,6 +39,8 @@ It rechecks those binaries after install and fails loud unless the uv face
+ actually converged. The bridge wrapper resolves that same uv directory and
+ waits for its pinned bridge during the twin bootstrap. `PATH`/cargo resolution
+ is the developer face and is used only with `CODE_REALITY_BOOTSTRAP=off`.
++The pin accepts the exact release, optionally followed by `+build-revision`;
++neighboring releases and prerelease suffixes do not satisfy it.
+ First-session bootstrap needs network once; an offline first session fails
+ loud and retries the next one.
+ 
+diff --git a/plugin/skills/code-reality-tools/SKILL.md b/plugin/skills/code-reality-tools/SKILL.md
+index e73c113..c3541b3 100644
+--- a/plugin/skills/code-reality-tools/SKILL.md
++++ b/plugin/skills/code-reality-tools/SKILL.md
+@@ -32,7 +32,18 @@ communities, flows, search, …) is also MCP-exposed under the same
+ server — 21 tools total.
+ 
+ Responses embed `[SRC]` provenance lines (index version/commit) and a
+-`[STDERR]` section for management output.
++`[STDERR]` section for management output. Tool text, including errors, has a
++UTF-8-safe byte cap plus an explicit truncation marker; this is not a strict
++serialized JSON frame limit. Cancellation suppresses response delivery,
++but already-started blocking work may continue and publish files. Transport
++EOF may await that work; neither cancellation nor EOF implies rollback.
++
++The separate LSP bridge rejects current checks after known backend death,
++including before accepting cached diagnostics. Failed initialization is
++terminal for that session; restart the bridge to recover. Writes await
++bounded acknowledgements; check and shutdown budgets start at their entry
++points, with child cleanup independent of the stdin writer lock. Existing
++overlay, diagnostic version/time and quiescence checks still apply.
+ 
+ ## Prerequisites (per repo)
+ 
+@@ -64,10 +75,11 @@ Responses embed `[SRC]` provenance lines (index version/commit) and a
+   scip_refs --repo <repo> --stamp-meta` and `--build-cache`; the Node
+   scip-python fork is the retained fallback, not the default face
+ - Running pyrefly-index alone and going straight to `graph_db build`
+-  is also safe: writing `index.scip` auto-invalidates superseded
++  can populate the graph: writing `index.scip` auto-invalidates superseded
+   sidecar artifacts beside the slot, and the build side fails loud on
+   an lsp cache db older than `index.scip` (mtime gate) — a stale cache
+-  would otherwise be silently trusted
++  would otherwise be silently trusted. This manual chain establishes data
++  availability, not the source identity provenance of orchestrated `build`.
+ - Refs density expectation: pyrefly refs counts sit far below the
+   LSP-golden baseline (measured ~12.7× at absorption time, 2026-08) —
+   expected, not a bug. pyright LSP counts every attribute member
+@@ -131,7 +143,8 @@ Responses embed `[SRC]` provenance lines (index version/commit) and a
+   the identity keys rebuilds on `identity_drift` (content-addressed —
+   the mtime-only blind spot, e.g. a same-size content swap under a
+   preserved mtime, is closed at this layer), while the torn-plane guard
+-  (graph.db older than the slot) stays unconditional and legacy keyless
++  (canonical main graph.db missing or older than the slot) stays unconditional;
++  alternate and projection indexes are graph-optional. Legacy keyless
+   slots keep the baseline mtime/fingerprint criteria. Under an ACTIVE
+   writer (a heal that finishes and still finds sources newer than the
+   slot) a churn cooldown marker (`.heal-churn`, 10min) is armed — later
+@@ -181,7 +194,8 @@ Responses embed `[SRC]` provenance lines (index version/commit) and a
+ - JSON contract: `{repo, slot, fresh, stale_reasons, head_drift, faces,
+   indexed_source_identity, current_source_identity, identity_algo,
+   serves}`. `stale_reasons` vocabulary: `torn-plane` (graph.db older
+-  than the slot), `content-drift` (identity mismatch — includes the
++  than the canonical main slot, or missing), `content-drift` (identity or
++  index-byte binding mismatch — includes the
+   mtime-preserved swap shape and a newly arrived language face),
+   `doc-set-drift`, `policy-drift` (both reported but non-fatal in
+   identity mode), `legacy-signals` (keyless meta judged by the baseline
+@@ -195,14 +209,32 @@ Responses embed `[SRC]` provenance lines (index version/commit) and a
+   — same content ⇒ same identity, so touch / stash round-trips /
+   rebase replays are idempotent; mtime gates the per-file hash cache
+   only, never the identity body.
++- **Source provenance**: orchestrated `build` captures uncached source
++  identity and corpus policy A before producers, compares after production
++  and again under publication ownership, then stamps A bound to the index
++  bytes (`index_sha256`) when the produced document set matches. Manual and
++  head-only restamps preserve prior provenance only for matching index bytes,
++  repository and selection. They never recompute current source into trusted
++  provenance for an old index. Unbound metadata uses legacy signals, not a
++  verified source-identity comparison. Endpoint equality is not an immutable
++  snapshot: ABA edits and edits after the final check remain outside the
++  guarantee.
++- **Writer ownership**: umbrella publication and explicit graph builds share
++  a bounded writer guard. Contention returns a controlled busy error; retry
++  after the active writer finishes. Explicit graph ownership covers input
++  acquisition through derived tables and publication; derived tables are
++  completed before temporary database rename. Heal single-flight remains a
++  separate outer lock. Non-cooperating writers and live source edits are
++  outside this ownership contract.
+ - **Cache-validity residual risk (disclosed)**: the query-side per-file
+   cache reuses a content hash when `(size, mtime[secs+nanos])` match
+   exactly — a same-size swap whose mtime is restored to the exact
+   nanosecond (a precise forgery; ordinary rsync -a/tar restores and
+   same-second formatter rewrites do NOT match to the nanosecond) can
+   slip the query-side gate. This is accepted and bounded: the
+-  stamp/build path ALWAYS recomputes the indexed identity from actual
+-  bytes (never the cache), the worst query-side outcome is a false
++  orchestrated production fences hash actual source bytes with the cache
++  disabled; manual restamps only preserve matching prior provenance. The
++  worst query-side outcome is a false
+   stale (safe direction — a rebuild purges the cache) or this
+   documented residual, and any suspicious cache (corrupt, downgraded
+   version, foreign repo binding) is discarded wholesale and recomputed.
+@@ -218,7 +250,8 @@ Responses embed `[SRC]` provenance lines (index version/commit) and a
+   `<repo>/.code-reality/scip/` slot: when an lsp-harvest cache sits
+   beside a SCIP index, the SCIP index is preferred and the cache is
+   silently ignored
+-- Artifact sequence: generate → `--stamp-meta` → `--build-cache`
++- Manual artifact sequence: generate → `--stamp-meta` → `--build-cache`;
++  use orchestrated `build` to establish bound source-identity provenance.
+ - Legacy `~/.mosaic/code-reality/` slots migrate one-shot via
+   `code-reality sidecar_migrate --repo <repo>` (missing-index errors
+   auto-suggest this bridge)
+diff --git a/scripts/test-plugin-wrapper.sh b/scripts/test-plugin-wrapper.sh
+index b7ab047..03ca319 100755
+--- a/scripts/test-plugin-wrapper.sh
++++ b/scripts/test-plugin-wrapper.sh
+@@ -225,5 +225,41 @@ expect "B3 bridge embedded grace" "0.3.0+rev" 0 "$out" "$rc" "$(cat "$WORK/err")
+ out="$(env -i PATH="$WORK/bdir:$WORK/uvnoop" CODE_REALITY_BOOTSTRAP=off HOME="$WORK/home" /bin/sh -c "$wrapb" 2>"$WORK/err")"; rc=$?
+ expect "B4 bridge BOOTSTRAP=off uses PATH" "9.9.9+rev" 0 "$out" "$rc" "$(cat "$WORK/err")"
+ 
++# Oracle S: accepted round1 EP release identity, tested on actual wrappers.
++mkversion() {
++  printf '#!/bin/sh\necho "%s"\n' "$2" > "$WORK/uvface/$1"
++  chmod +x "$WORK/uvface/$1"
++}
++# Preserve the wait loop while accelerating its clock in the fixture.
++printf '#!/bin/sh\nexit 0\n' > "$WORK/uvnoop/sleep"
++chmod +x "$WORK/uvnoop/sleep"
++for version in "$pin" "$pin+rev" "${pin}0+rev" "$pin-rc1+rev"; do
++  for face in code-reality-mcp code-reality-lsp-bridge pyrefly-index; do
++    mkversion "$face" "$pin"
++  done
++  for face in code-reality-mcp code-reality-lsp-bridge pyrefly-index; do
++    mkversion "$face" "$version"
++    : > "$WORK/uv.log"
++    out="$(env -i PATH="$WORK/uvnoop" HOME="$WORK/home" /bin/sh -c "$wrap" 2>"$WORK/err")"; rc=$?
++    case "$version" in
++      "$pin"|"$pin+rev")
++        if [ "$rc" = 0 ] && [ ! -s "$WORK/uv.log" ]; then pass=$((pass + 1)); else fail=$((fail + 1)); fi ;;
++      *)
++        if [ "$rc" = 127 ] && [ -z "$out" ] && [ "$(wc -l < "$WORK/uv.log" | tr -d ' ')" = 3 ] && rg -q 'post-install verification failed' "$WORK/err"; then pass=$((pass + 1)); else fail=$((fail + 1)); fi ;;
++    esac
++    printf '  boundary main face=%s version=%s rc=%s\n' "$face" "$version" "$rc"
++    mkversion "$face" "$pin"
++  done
++  mkversion code-reality-lsp-bridge "$version"
++  out="$(env -i PATH="$WORK/uvnoop" HOME="$WORK/home" /bin/sh -c "$wrapb" 2>"$WORK/err")"; rc=$?
++  case "$version" in
++    "$pin"|"$pin+rev")
++      if [ "$rc" = 0 ] && [ "$out" = "$version" ]; then pass=$((pass + 1)); else fail=$((fail + 1)); fi ;;
++    *)
++      if [ "$rc" = 127 ] && [ -z "$out" ] && rg -q 'after bootstrap wait' "$WORK/err"; then pass=$((pass + 1)); else fail=$((fail + 1)); fi ;;
++  esac
++  printf '  boundary bridge version=%s rc=%s\n' "$version" "$rc"
++done
++
+ printf 'wrapper regression: %d passed, %d failed\n' "$pass" "$fail"
+ [ "$fail" = 0 ]

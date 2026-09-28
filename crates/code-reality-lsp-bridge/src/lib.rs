@@ -10,5 +10,6 @@
 pub mod framing;
 pub mod server;
 pub mod session;
+mod transport;
 
 pub use session::LspSession;

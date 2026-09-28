@@ -15,16 +15,15 @@
 //! background indexing — never skip them).
 
 use std::collections::HashMap;
-use std::io::BufReader;
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
-use crate::framing::{read_message, write_message};
+use crate::transport::{remaining, Transport};
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -125,7 +124,8 @@ pub struct LangSpec {
     /// backend warms up (rust-analyzer cold-loads a whole workspace:
     /// observed 749ms–9.5s, so Rust uses 30s).
     pub hover_retry_ms: u64,
-    /// Convergence deadline for check_file (rust-analyzer pushes in
+    /// Entry-to-result deadline for check_file, including synchronization
+    /// and initialization (rust-analyzer pushes in
     /// waves — syntax/semantic/flycheck — and under load the semantic
     /// wave can exceed the Python-scale 10s).
     pub slow_timeout_ms: u64,
@@ -207,12 +207,7 @@ impl LangSpec {
     }
 }
 
-struct Backend {
-    child: Child,
-    stdin: ChildStdin,
-}
-
-type PendingSlot = Arc<Mutex<Option<(i64, mpsc::SyncSender<Value>)>>>;
+pub(crate) type PendingSlot = Arc<Mutex<Option<(i64, mpsc::SyncSender<Value>)>>>;
 
 pub struct LspSession {
     cmd: BackendCommand,
@@ -220,9 +215,8 @@ pub struct LspSession {
     pub quiesce: Duration,
     pub lang: LangSpec,
     interaction: Mutex<()>,
-    /// Shared with the reader thread (it delivers responses and answers
-    /// server→client requests through the same backend slot).
-    backend: Arc<Mutex<Option<Backend>>>,
+    /// Lifecycle owner only; neither transport thread takes this lock.
+    backend: Mutex<Option<Transport>>,
     next_id: AtomicI64,
     pending: PendingSlot,
     pub diag_cache: Arc<Mutex<HashMap<String, DiagEntry>>>,
@@ -269,10 +263,6 @@ fn file_uri(path: &Path) -> String {
     out
 }
 
-fn err_str(e: impl std::fmt::Display) -> String {
-    e.to_string()
-}
-
 impl LspSession {
     pub fn new(cmd: BackendCommand, root: PathBuf, quiesce_ms: u64, lang: LangSpec) -> Self {
         Self {
@@ -281,7 +271,7 @@ impl LspSession {
             quiesce: Duration::from_millis(quiesce_ms),
             lang,
             interaction: Mutex::new(()),
-            backend: Arc::new(Mutex::new(None)),
+            backend: Mutex::new(None),
             next_id: AtomicI64::new(1),
             pending: Arc::new(Mutex::new(None)),
             diag_cache: Arc::new(Mutex::new(HashMap::new())),
@@ -318,7 +308,7 @@ impl LspSession {
     /// Test hook: the backend child's pid (None before spawn).
     #[doc(hidden)]
     pub fn backend_pid(&self) -> Option<u32> {
-        self.backend.lock().unwrap().as_ref().map(|b| b.child.id())
+        self.backend.lock().unwrap().as_ref().map(Transport::pid)
     }
 
     pub fn server_info(&self) -> String {
@@ -329,8 +319,9 @@ impl LspSession {
             .unwrap_or_else(|| "not-spawned-yet".to_string())
     }
 
-    fn check_alive(&self) -> Result<(), String> {
+    pub(crate) fn check_alive(&self) -> Result<(), String> {
         if self.is_dead() {
+            self.terminate();
             return Err(format!(
                 "language server backend died (command: {}) — restart the bridge to recover",
                 self.cmd
@@ -339,198 +330,169 @@ impl LspSession {
         Ok(())
     }
 
-    /// Lazy spawn + handshake (first tool call pulls the backend up, so
-    /// plugin consumers without the backend don't fail at startup).
-    fn ensure_spawned(&self) -> Result<(), String> {
-        if self.backend.lock().unwrap().is_some() {
-            return Ok(());
+    // No transport thread takes the backend slot lock. Keep it through
+    // cleanup so concurrent shutdown callers observe completed joins/reaping.
+    fn terminate(&self) {
+        self.dead.store(true, Ordering::SeqCst);
+        if let Some(mut backend) = self.backend.lock().unwrap().take() {
+            backend.stop();
         }
-        let _i = self.interaction.lock().unwrap();
-        self.ensure_spawned_locked()
+        self.pending.lock().unwrap().take();
     }
 
-    fn ensure_spawned_locked(&self) -> Result<(), String> {
-        // Re-check under the interaction lock (double-checked spawn).
+    pub(crate) fn lock_until<'a, T>(
+        &self,
+        lock: &'a Mutex<T>,
+        deadline: Instant,
+    ) -> Result<MutexGuard<'a, T>, String> {
+        loop {
+            self.check_alive()?;
+            if let Err(e) = remaining(&self.dead, deadline, "interaction/state lock") {
+                self.terminate();
+                return Err(e);
+            }
+            match lock.try_lock() {
+                Ok(guard) => return Ok(guard),
+                Err(std::sync::TryLockError::WouldBlock) => {
+                    std::thread::sleep(Duration::from_millis(2))
+                }
+                Err(e) => return Err(e.to_string()),
+            }
+        }
+    }
+
+    fn send_until(&self, message: Value, deadline: Instant) -> Result<(), String> {
+        self.check_alive()?;
+        let writer = self
+            .backend
+            .lock()
+            .unwrap()
+            .as_ref()
+            .ok_or_else(|| "backend not spawned".to_string())?
+            .writer
+            .clone();
+        if let Err(e) = writer.send(message, deadline) {
+            self.terminate();
+            return Err(e);
+        }
+        self.check_alive()
+    }
+
+    /// Lazy spawn and handshake, under the interaction lock. A failed
+    /// initialization is terminal; only a new session may retry.
+    fn ensure_spawned_locked(&self, deadline: Instant) -> Result<(), String> {
+        self.check_alive()?;
         if self.backend.lock().unwrap().is_some() {
             return Ok(());
         }
-        self.check_alive()?;
-
-        let mut child = Command::new(&self.cmd.program)
+        let child = Command::new(&self.cmd.program)
             .args(&self.cmd.args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .map_err(|e| {
-                format!(
-                    "failed to spawn language server backend `{}`: {e}\n\
-                     install it ({}) or override the backend command",
-                    self.cmd, self.lang.install_hint
-                )
-            })?;
-        let stdin = child.stdin.take().unwrap();
-        let stdout = child.stdout.take().unwrap();
-
-        // Reader thread: three-way split — responses go to the pending
-        // slot, diagnostics land in the per-URI cache, server→client
-        // requests are always answered with an empty result (never
-        // skipped: an unanswered `workspace/configuration` freezes
-        // pyrefly's background indexing).
-        let pending = Arc::clone(&self.pending);
-        let diag_cache = Arc::clone(&self.diag_cache);
-        let dead = Arc::clone(&self.dead);
-        let backend_for_reader = Arc::clone(&self.backend);
-        std::thread::spawn(move || {
-            let mut reader = BufReader::new(stdout);
-            loop {
-                let msg = match read_message(&mut reader) {
-                    Ok(Some(m)) => m,
-                    Ok(None) | Err(_) => {
-                        dead.store(true, Ordering::SeqCst);
-                        if let Some((_, tx)) = pending.lock().unwrap().take() {
-                            let _ = tx.send(json!({
-                                "jsonrpc": "2.0", "id": -1,
-                                "error": {"code": -32603, "message": "backend exited"}
-                            }));
-                        }
-                        return;
-                    }
-                };
-                let id = msg.get("id").and_then(Value::as_i64);
-                let has_method = msg.get("method").is_some();
-                if let (Some(id), false) = (id, has_method) {
-                    // Response to our in-flight request.
-                    let mut slot = pending.lock().unwrap();
-                    if let Some((want_id, _)) = slot.as_ref() {
-                        if *want_id == id {
-                            let (_, tx) = slot.take().unwrap();
-                            let _ = tx.send(msg);
-                        }
-                    }
-                } else if let Some(id) = id {
-                    // Server→client request: empty result, always.
-                    let reply = json!({"jsonrpc": "2.0", "id": id, "result": []});
-                    if let Some(b) = backend_for_reader.lock().unwrap().as_mut() {
-                        let _ = write_message(&mut b.stdin, &reply);
-                    }
-                } else if msg.get("method").and_then(Value::as_str)
-                    == Some("textDocument/publishDiagnostics")
-                {
-                    if let Some(params) = msg.get("params") {
-                        let uri = params
-                            .get("uri")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                            .to_string();
-                        let entry = DiagEntry {
-                            version: params.get("version").and_then(Value::as_i64),
-                            diagnostics: params
-                                .get("diagnostics")
-                                .and_then(Value::as_array)
-                                .cloned()
-                                .unwrap_or_default(),
-                            last_push: Instant::now(),
-                        };
-                        diag_cache.lock().unwrap().insert(uri, entry);
-                    }
-                }
-                // Other notifications are irrelevant to the bridge.
-            }
-        });
-
-        // Install the backend (child + stdin) in the slot shared with
-        // the reader thread.
-        *self.backend.lock().unwrap() = Some(Backend { child, stdin });
-
-        // Handshake: initialize → response → `initialized` notification
-        // (any didOpen sent before `initialized` is dropped by the
-        // server). Caller holds the interaction lock.
-        //
-        // `versionSupport: true` (LSP 3.15+ client capability): asks the
-        // server to stamp `version` on every publishDiagnostics push.
-        // Without it typescript-language-server sends UNVERSIONED pushes
-        // (real-TLS acceptance finding), which the convergence gate
-        // treats as stalled (no version ⇒ cannot prove freshness) —
-        // every check_file would ride the reopen-recovery path and end
-        // in the deadline WARN despite correct content. pyrefly and
-        // rust-analyzer stamp versions unconditionally, so declaring
-        // this is a no-op for them.
-        let params = json!({
-            "processId": std::process::id(),
-            "rootUri": file_uri(&self.root),
-            "capabilities": {
-                "textDocument": {
-                    "hover": {"contentFormat": ["markdown", "plaintext"]},
-                    "publishDiagnostics": {"relatedInformation": true, "versionSupport": true}
-                }
-            }
-        });
-        let resp = match self.request_locked("initialize", params, HANDSHAKE_TIMEOUT) {
-            Ok(r) => r,
-            Err(e) => {
-                // Roll back the half-installed backend: a server that
-                // never completed initialize silently drops every
-                // didOpen, turning all later tool calls into empty
-                // answers. Killing here lets the next call retry fresh.
-                if let Some(mut b) = self.backend.lock().unwrap().take() {
-                    let _ = b.child.kill();
-                }
-                return Err(format!("initialize handshake failed: {e}"));
-            }
-        };
-        let result = resp.get("result").cloned().unwrap_or(Value::Null);
-        let name = result
-            .pointer("/serverInfo/name")
-            .and_then(Value::as_str)
-            .unwrap_or("unknown");
-        let version = result
-            .pointer("/serverInfo/version")
-            .and_then(Value::as_str)
-            .unwrap_or("?");
-        *self.server_info.lock().unwrap() = Some(format!("{name} {version}"));
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit())
+            .spawn().map_err(|e| format!(
+                "failed to spawn language server backend `{}`: {e}\ninstall it ({}) or override the backend command",
+                self.cmd, self.lang.install_hint
+            ))?;
+        let mut transport = Transport::start(
+            child,
+            self.dead.clone(),
+            self.pending.clone(),
+            self.diag_cache.clone(),
+        )?;
         {
-            let mut g = self.backend.lock().unwrap();
-            if let Some(b) = g.as_mut() {
-                let _ = write_message(
-                    &mut b.stdin,
-                    &json!({"jsonrpc": "2.0", "method": "initialized", "params": {}}),
+            let mut slot = self.backend.lock().unwrap();
+            if self.is_dead() {
+                transport.stop();
+                return Err(
+                    "language server backend died during spawn — restart the bridge to recover"
+                        .into(),
                 );
             }
+            *slot = Some(transport);
         }
-        Ok(())
+        let initialized = (|| {
+            let params = json!({
+                "processId": std::process::id(), "rootUri": file_uri(&self.root),
+                "capabilities": {"textDocument": {
+                    "hover": {"contentFormat": ["markdown", "plaintext"]},
+                    "publishDiagnostics": {"relatedInformation": true, "versionSupport": true}
+                }}
+            });
+            let resp = self.request_locked(
+                "initialize",
+                params,
+                deadline.min(Instant::now() + HANDSHAKE_TIMEOUT),
+            )?;
+            let result = resp.get("result").cloned().unwrap_or(Value::Null);
+            let name = result
+                .pointer("/serverInfo/name")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown");
+            let version = result
+                .pointer("/serverInfo/version")
+                .and_then(Value::as_str)
+                .unwrap_or("?");
+            self.send_until(
+                json!({"jsonrpc":"2.0", "method":"initialized", "params":{}}),
+                deadline,
+            )?;
+            *self.server_info.lock().unwrap() = Some(format!("{name} {version}"));
+            Ok::<(), String>(())
+        })();
+        if let Err(e) = initialized {
+            self.terminate();
+            return Err(format!("initialize handshake failed: {e}"));
+        }
+        self.check_alive()
     }
 
-    /// Send a request and wait for its response (id-matched). The
-    /// interaction lock serializes request/response pairing; the backend
-    /// write lock is only held for the write itself.
+    /// One absolute deadline includes interaction wait, lazy initialization,
+    /// frame delivery and the id-matched response.
     pub fn request(&self, method: &str, params: Value) -> Result<Value, String> {
-        self.ensure_spawned()?;
-        let _i = self.interaction.lock().unwrap();
-        self.check_alive()?;
-        self.request_locked(method, params, REQUEST_TIMEOUT)
+        self.request_until(method, params, Instant::now() + REQUEST_TIMEOUT)
+    }
+
+    pub(crate) fn request_until(
+        &self,
+        method: &str,
+        params: Value,
+        deadline: Instant,
+    ) -> Result<Value, String> {
+        let _i = self.lock_until(&self.interaction, deadline)?;
+        self.ensure_spawned_locked(deadline)?;
+        self.request_locked(method, params, deadline)
     }
 
     fn request_locked(
         &self,
         method: &str,
         params: Value,
-        timeout: Duration,
+        deadline: Instant,
     ) -> Result<Value, String> {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let (tx, rx) = mpsc::sync_channel(1);
         *self.pending.lock().unwrap() = Some((id, tx));
-        let msg = json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
-        {
-            let mut g = self.backend.lock().unwrap();
-            let b = g
-                .as_mut()
-                .ok_or_else(|| "backend not spawned".to_string())?;
-            write_message(&mut b.stdin, &msg).map_err(err_str)?;
-        }
-        let resp = rx
-            .recv_timeout(timeout)
-            .map_err(|_| format!("timeout waiting for response to `{method}`"))?;
+        self.send_until(
+            json!({"jsonrpc":"2.0", "id":id, "method":method, "params":params}),
+            deadline,
+        )?;
+        let resp = loop {
+            let wait = match remaining(&self.dead, deadline, &format!("response to `{method}`")) {
+                Ok(wait) => wait,
+                Err(e) => {
+                    self.terminate();
+                    return Err(e);
+                }
+            };
+            match rx.recv_timeout(wait.min(Duration::from_millis(5))) {
+                Ok(resp) => break resp,
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(e) => {
+                    self.terminate();
+                    return Err(e.to_string());
+                }
+            }
+        };
+        self.check_alive()?;
         if let Some(e) = resp.get("error") {
             return Err(format!("server error on `{method}`: {e}"));
         }
@@ -538,53 +500,44 @@ impl LspSession {
     }
 
     pub fn notify(&self, method: &str, params: Value) -> Result<(), String> {
-        self.ensure_spawned()?;
-        let _i = self.interaction.lock().unwrap();
-        self.check_alive()?;
-        let mut g = self.backend.lock().unwrap();
-        let b = g
-            .as_mut()
-            .ok_or_else(|| "backend not spawned".to_string())?;
-        let msg = json!({"jsonrpc": "2.0", "method": method, "params": params});
-        write_message(&mut b.stdin, &msg).map_err(err_str)?;
-        Ok(())
+        self.notify_until(method, params, Instant::now() + REQUEST_TIMEOUT)
     }
 
-    /// Graceful shutdown: `shutdown` is a REQUEST (a bare notification
-    /// takes the unhandled path), then `exit`, then reap the child.
+    fn notify_until(&self, method: &str, params: Value, deadline: Instant) -> Result<(), String> {
+        let _i = self.lock_until(&self.interaction, deadline)?;
+        self.ensure_spawned_locked(deadline)?;
+        self.send_until(
+            json!({"jsonrpc":"2.0", "method":method, "params":params}),
+            deadline,
+        )
+    }
+
+    /// Total ten-second shutdown budget, measured from entry. Reserve two
+    /// seconds for forced cleanup; child kill/reap never needs interaction.
+    /// OS-level hangs are outside this application deadline contract.
     pub fn shutdown(&self) -> Result<(), String> {
-        if self.backend.lock().unwrap().is_none() {
-            return Ok(());
-        }
-        let _ = self.request("shutdown", Value::Null);
-        {
-            let mut g = self.backend.lock().unwrap();
-            if let Some(b) = g.as_mut() {
-                let _ = write_message(&mut b.stdin, &json!({"jsonrpc": "2.0", "method": "exit"}));
-            }
-        }
         let deadline = Instant::now() + Duration::from_secs(10);
-        loop {
-            let exited = {
-                let mut g = self.backend.lock().unwrap();
-                match g.as_mut() {
-                    None => true,
-                    Some(b) => b.child.try_wait().map_err(err_str)?.is_some(),
-                }
-            };
-            if exited {
-                self.backend.lock().unwrap().take();
-                return Ok(());
+        let graceful = deadline - Duration::from_secs(2);
+        if self.backend.lock().unwrap().is_some() && !self.is_dead() {
+            if let Ok(_i) = self.lock_until(&self.interaction, graceful) {
+                let _ = self.request_locked("shutdown", Value::Null, graceful);
+                let _ = self.send_until(json!({"jsonrpc":"2.0", "method":"exit"}), graceful);
             }
-            if Instant::now() >= deadline {
-                let mut g = self.backend.lock().unwrap();
-                if let Some(mut b) = g.take() {
-                    let _ = b.child.kill();
+            while !self.is_dead() && Instant::now() < graceful {
+                if self
+                    .backend
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .is_none_or(Transport::exited)
+                {
+                    break;
                 }
-                return Ok(());
+                std::thread::sleep(Duration::from_millis(5));
             }
-            std::thread::sleep(Duration::from_millis(50));
         }
+        self.terminate();
+        Ok(())
     }
 
     pub fn file_uri(path: &Path) -> String {
@@ -606,18 +559,27 @@ impl LspSession {
     /// (drives check_file's convergence window), `None` for no-op.
     /// LRU cap: the oldest open file is didClose'd (overlay retained).
     pub fn sync_open(&self, path: &Path) -> Result<Option<Instant>, String> {
+        self.sync_open_until(path, Instant::now() + REQUEST_TIMEOUT)
+    }
+
+    pub(crate) fn sync_open_until(
+        &self,
+        path: &Path,
+        deadline: Instant,
+    ) -> Result<Option<Instant>, String> {
+        self.check_alive()?;
         let uri = file_uri(path);
         let lang_id = self.language_id_for(path);
         let mut mutation: Option<Instant> = None;
 
         // LRU touch: already-open files move to the back.
-        let mut open = self.open_files.lock().unwrap();
+        let mut open = self.lock_until(&self.open_files, deadline)?;
         if let Some(pos) = open.iter().position(|p| p == path) {
             open.remove(pos);
             open.push(path.to_path_buf());
         }
 
-        let mut overlay = self.overlay.lock().unwrap();
+        let mut overlay = self.lock_until(&self.overlay, deadline)?;
         match overlay.get(path).cloned() {
             None => {
                 let text = std::fs::read_to_string(path).map_err(|e| {
@@ -628,11 +590,12 @@ impl LspSession {
                 })?;
                 let stamp = Self::disk_stamp(path);
                 let t = Instant::now();
-                self.notify(
+                self.notify_until(
                     "textDocument/didOpen",
                     json!({
                         "textDocument": {"uri": uri, "languageId": lang_id, "version": 1, "text": text}
                     }),
+                    deadline,
                 )?;
                 overlay.insert(
                     path.to_path_buf(),
@@ -655,9 +618,10 @@ impl LspSession {
                             .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
                         let v = entry.version + 1;
                         let t = Instant::now();
-                        self.notify(
+                        self.notify_until(
                             "textDocument/didChange",
                             full_change(&uri, v, &entry.content, &text),
+                            deadline,
                         )?;
                         overlay.insert(
                             path.to_path_buf(),
@@ -674,11 +638,12 @@ impl LspSession {
                     // Evicted earlier: re-open from the overlay so
                     // un-persisted edits are not rolled back to disk.
                     let t = Instant::now();
-                    self.notify(
+                    self.notify_until(
                         "textDocument/didOpen",
                         json!({
                             "textDocument": {"uri": uri, "languageId": lang_id, "version": 1, "text": entry.content}
                         }),
+                        deadline,
                     )?;
                     overlay.insert(
                         path.to_path_buf(),
@@ -701,9 +666,10 @@ impl LspSession {
         while open.len() > 8 {
             let victim = open.remove(0);
             let vuri = file_uri(&victim);
-            self.notify(
+            self.notify_until(
                 "textDocument/didClose",
                 json!({"textDocument": {"uri": vuri.clone()}}),
+                deadline,
             )?;
             self.diag_cache.lock().unwrap().remove(&vuri);
         }
@@ -714,17 +680,19 @@ impl LspSession {
     /// didChange — the spec's full-sync form; no UTF-16 endpoint math).
     /// The overlay records the new content and version.
     pub fn apply_edit(&self, path: &Path, content: &str) -> Result<Instant, String> {
+        let deadline = Instant::now() + REQUEST_TIMEOUT;
         let uri = file_uri(path);
-        let mut overlay = self.overlay.lock().unwrap();
+        let mut overlay = self.lock_until(&self.overlay, deadline)?;
         let entry = overlay
             .get(path)
             .cloned()
             .ok_or_else(|| format!("file not opened: {}", path.display()))?;
         let v = entry.version + 1;
         let t = Instant::now();
-        self.notify(
+        self.notify_until(
             "textDocument/didChange",
             full_change(&uri, v, &entry.content, content),
+            deadline,
         )?;
         overlay.insert(
             path.to_path_buf(),
@@ -744,28 +712,36 @@ impl LspSession {
     /// 2026-08-28). didClose clears the server copy AND the diag-cache
     /// entry; the re-didOpen replays the overlay content at version 1.
     pub fn force_reopen(&self, path: &Path) -> Result<Instant, String> {
+        self.force_reopen_until(path, Instant::now() + REQUEST_TIMEOUT)
+    }
+
+    pub(crate) fn force_reopen_until(
+        &self,
+        path: &Path,
+        deadline: Instant,
+    ) -> Result<Instant, String> {
         let uri = file_uri(path);
         let t = Instant::now();
-        self.notify(
+        self.notify_until(
             "textDocument/didClose",
             json!({"textDocument": {"uri": uri.clone()}}),
+            deadline,
         )?;
         self.diag_cache.lock().unwrap().remove(&uri);
         let entry = self
-            .overlay
-            .lock()
-            .unwrap()
+            .lock_until(&self.overlay, deadline)?
             .get(path)
             .cloned()
             .ok_or_else(|| format!("file not opened: {}", path.display()))?;
         let lang_id = self.language_id_for(path);
-        self.notify(
+        self.notify_until(
             "textDocument/didOpen",
             json!({
                 "textDocument": {"uri": uri, "languageId": lang_id, "version": 1, "text": entry.content}
             }),
+            deadline,
         )?;
-        self.overlay.lock().unwrap().insert(
+        self.lock_until(&self.overlay, deadline)?.insert(
             path.to_path_buf(),
             OverlayEntry {
                 content: entry.content,
@@ -775,6 +751,12 @@ impl LspSession {
             },
         );
         Ok(t)
+    }
+}
+
+impl Drop for LspSession {
+    fn drop(&mut self) {
+        self.terminate();
     }
 }
 

@@ -1,0 +1,11 @@
+    Blocking waiting for file lock on build directory
+   Compiling code-reality v0.9.3 (/Users/ctai/.codex/worktrees/5967/code-reality/crates/code-reality)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.97s
+     Running tests/mcp_error_delivery_regression.rs (target/debug/deps/mcp_error_delivery_regression-711517b3bb1bc6a9)
+
+running 2 tests
+test oversized_error_is_bounded_and_stdio_survives ... ok
+test cancellation_and_eof_retain_started_work ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.42s
+

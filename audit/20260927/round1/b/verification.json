@@ -1,0 +1,17 @@
+{
+  "passed": 56,
+  "failed": 0,
+  "ignored": 0,
+  "result_blocks": 11,
+  "summed_test_seconds": 76.5,
+  "exit": 0,
+  "recorded_fixture_pids": [
+    9047,
+    9048,
+    11490,
+    11491
+  ],
+  "cleanup_ps_exit": 1,
+  "cleanup_ps_stdout": "",
+  "cleanup_ps_stderr": ""
+}

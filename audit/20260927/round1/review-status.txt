@@ -1,0 +1,30 @@
+ M AGENTS.md
+ M Cargo.lock
+ M README.md
+ M crates/AGENTS.md
+ M crates/code-reality-lsp-bridge/Cargo.toml
+ M crates/code-reality-lsp-bridge/README.md
+ M crates/code-reality-lsp-bridge/src/lib.rs
+ M crates/code-reality-lsp-bridge/src/server.rs
+ M crates/code-reality-lsp-bridge/src/session.rs
+ M crates/code-reality-lsp-bridge/tests/ra_equivalence_battery.rs
+ M crates/code-reality-lsp-bridge/tests/rust_backend.rs
+ M crates/code-reality/src/build.rs
+ M crates/code-reality/src/engine.rs
+ M crates/code-reality/src/graph_db.rs
+ M crates/code-reality/src/identity.rs
+ M crates/code-reality/src/lib.rs
+ M crates/code-reality/src/mcp_server.rs
+ M crates/code-reality/src/refresh.rs
+ M crates/code-reality/tests/graph_db.rs
+ M plugin/.mcp.json
+ M plugin/README.md
+ M plugin/skills/code-reality-tools/SKILL.md
+ M scripts/test-plugin-wrapper.sh
+?? audit/
+?? crates/code-reality-lsp-bridge/src/transport.rs
+?? crates/code-reality-lsp-bridge/tests/fixtures/lifecycle_backend.rs
+?? crates/code-reality-lsp-bridge/tests/lifecycle.rs
+?? crates/code-reality/src/publication_writer.rs
+?? crates/code-reality/tests/mcp_error_delivery_regression.rs
+?? crates/code-reality/tests/publication.rs

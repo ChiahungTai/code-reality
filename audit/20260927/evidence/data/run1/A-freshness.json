@@ -1,0 +1,11 @@
+{
+  "label": "A-freshness",
+  "command": "/Users/ctai/.cargo/bin/code-reality freshness --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/evidence/data/run1/A-in-build-mutation --json",
+  "env_overrides": {
+    "CODE_REALITY_IDENTITY_CACHE": "off",
+    "PATH_prefix": "/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/evidence/data/run1/bin"
+  },
+  "exit": 2,
+  "stdout": "",
+  "stderr": "[FAIL] 找不到 index slot（/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/evidence/data/run1/A-in-build-mutation/.code-reality/scip/index.scip）——先跑 code-reality build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/evidence/data/run1/A-in-build-mutation 建立索引；若語料全數被 profile 排除，slot 缺席即合法收斂（空終態），無需重建、亦不得視為 fresh\n"
+}

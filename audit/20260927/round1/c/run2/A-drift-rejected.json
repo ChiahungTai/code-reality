@@ -1,0 +1,8 @@
+{
+  "label": "A-drift-rejected",
+  "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run2/A-production-drift --json",
+  "exit": 2,
+  "stdout": "",
+  "stderr": "[FAIL] build: source identity/policy changed during production; prior data plane preserved\n",
+  "elapsed": 0.0904019579757005
+}

@@ -146,7 +146,9 @@ impl IdentityCache {
     /// [`IdentityCache::load`] minus the stderr face; the discard reason
     /// (if any) is returned for callers that surface it themselves.
     pub fn load_checked(path: PathBuf, repo: &Path) -> (IdentityCache, Option<String>) {
-        let repo_s = crate::engine::resolve_repo(repo).to_string_lossy().into_owned();
+        let repo_s = crate::engine::resolve_repo(repo)
+            .to_string_lossy()
+            .into_owned();
         let empty = |path: PathBuf| IdentityCache {
             path,
             repo: repo_s.clone(),
@@ -156,9 +158,7 @@ impl IdentityCache {
         };
         let text = match std::fs::read_to_string(&path) {
             Ok(t) => t,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                return (empty(path), None)
-            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (empty(path), None),
             Err(e) => {
                 let reason = format!("讀取失敗：{e}");
                 return (empty(path), Some(reason));
@@ -217,14 +217,7 @@ impl IdentityCache {
         if self.disabled {
             return;
         }
-        self.entries.insert(
-            key,
-            CacheEntry {
-                size,
-                mtime,
-                hash,
-            },
-        );
+        self.entries.insert(key, CacheEntry { size, mtime, hash });
         self.dirty = true;
     }
 
@@ -260,8 +253,7 @@ impl IdentityCache {
             IDENTITY_CACHE_NAME,
             std::process::id()
         ));
-        let written = std::fs::write(&tmp, &text)
-            .and_then(|_| std::fs::rename(&tmp, &self.path));
+        let written = std::fs::write(&tmp, &text).and_then(|_| std::fs::rename(&tmp, &self.path));
         if let Err(e) = written {
             let _ = std::fs::remove_file(&tmp);
             eprint!("[WARN] identity cache 寫入失敗（{e}）——略過（不影響身分計算）\n");
@@ -297,7 +289,14 @@ pub fn compute_identity(
         // fingerprint equality — D17 normalization boundary).
         let key = normalize_rel(rel);
         keep.insert(key.clone());
-        let chash = content_hash_of(&root.join(&rec.rel), &key, rec.size, rec.mtime, policy, cache)?;
+        let chash = content_hash_of(
+            &root.join(&rec.rel),
+            &key,
+            rec.size,
+            rec.mtime,
+            policy,
+            cache,
+        )?;
         h.update(format!(
             "{}\0{}\0{}\0{}\0",
             rec.face.meta_name(),
@@ -344,6 +343,15 @@ fn content_hash_of(
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Actual artifact bytes, never a stat/cache approximation. Used to bind
+/// retained provenance to the exact index that production published.
+pub(crate) fn artifact_hash(path: &Path) -> Result<String, String> {
+    let mut f = std::fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut h = Sha256::new();
+    std::io::copy(&mut f, &mut h).map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(hex(&h.finalize()))
 }
 
 #[cfg(test)]
@@ -512,7 +520,11 @@ mod tests {
         let t = tempfile::tempdir().unwrap();
         write_tree(
             t.path(),
-            &[("a.py", "x = 1\n"), ("src/b.py", "y = 2\n"), ("c.py", "z\n")],
+            &[
+                ("a.py", "x = 1\n"),
+                ("src/b.py", "y = 2\n"),
+                ("c.py", "z\n"),
+            ],
         );
         let f = faces(&[LanguageFace::Python]);
         let full = |root: &Path| {
@@ -681,9 +693,8 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        let mt = |nanos: u32| {
-            std::time::SystemTime::UNIX_EPOCH + std::time::Duration::new(base, nanos)
-        };
+        let mt =
+            |nanos: u32| std::time::SystemTime::UNIX_EPOCH + std::time::Duration::new(base, nanos);
         std::fs::File::options()
             .write(true)
             .open(t.path().join("a.py"))
@@ -693,14 +704,7 @@ mod tests {
         let cache_path = t.path().join("identity-cache.json");
         let id = |policy| {
             let mut cache = IdentityCache::load(cache_path.clone(), t.path());
-            compute_identity(
-                t.path(),
-                &walk_records(t.path()),
-                &f,
-                policy,
-                &mut cache,
-            )
-            .unwrap()
+            compute_identity(t.path(), &walk_records(t.path()), &f, policy, &mut cache).unwrap()
         };
         let before = id(IdentityCachePolicy::WriteBack);
 

@@ -1,0 +1,11 @@
+{
+  "label": "B-refresh",
+  "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality refresh --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/evidence/data/run2/B-first-build-failure",
+  "env_overrides": {
+    "CODE_REALITY_IDENTITY_CACHE": "off",
+    "PATH_prefix": "/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/evidence/data/run2/bin"
+  },
+  "exit": 0,
+  "stdout": "",
+  "stderr": ""
+}

@@ -1,0 +1,8 @@
+{
+  "label": "D-mixed-3",
+  "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run3/D-concurrent --json",
+  "exit": 0,
+  "stdout": "{\n \"repo\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run3/D-concurrent\",\n \"face\": \"python-face\",\n \"producers\": [\n  \"pyrefly-index round1-independent-deriving-fixture\"\n ],\n \"index\": \"/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run3/D-concurrent/.code-reality/scip/index.scip\",\n \"nodes\": 5000,\n \"edges\": 0,\n \"graph_rebuilt\": true,\n \"indexes\": {\n  \"created\": 0,\n  \"skipped\": 4\n },\n \"source_identity\": \"ec7c18755d3eb4ce4bd52c851ed407493aaffb99501a3c91bf0fc0115487dd0f\",\n \"notes\": [\n  \"\u6392\u9664\u96c6\uff1a.venv/\uff08\u5167\u5efa\uff09\",\n  \"python \u817f\uff1a1 governed \u6587\u6a94\",\n  \"\u8986\u84cb\u65e2\u6709 index.scip\uff08slot \u55ae\u6a94\u2014\u2014\u5148\u524d\u9762\u76ee\u5df2\u53d6\u4ee3\uff09\",\n  \"\u5168\u91cf\u91cd\u7522\uff1aproducer \u6bcf\u6b21\u91cd\u5efa\uff08\u51aa\u7b49\uff09\"\n ]\n}\n",
+  "stderr": "",
+  "elapsed": null
+}

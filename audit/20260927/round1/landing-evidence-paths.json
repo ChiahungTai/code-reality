@@ -1,0 +1,3375 @@
+{
+  "schema": "landing-evidence-paths/1",
+  "root": "audit/20260927",
+  "paths_relative_to": "repository root",
+  "purpose": "Recommended exact file allowlist; does not authorize staging directories or executing archived probes",
+  "summary": {
+    "inventoried_files_excluding_tmp_and_manifest": 514,
+    "inventoried_bytes": 39769283,
+    "recommended_count": 290,
+    "recommended_bytes": 5210357,
+    "excluded_count": 224,
+    "excluded_bytes": 34558926,
+    "category_counts": {
+      "structured-evidence": 148,
+      "text-or-diff-evidence": 6,
+      "exit": 36,
+      "log": 62,
+      "probe-source": 7,
+      "report-or-receipt": 23,
+      "command-record": 8
+    }
+  },
+  "recommended_paths": [
+    "audit/20260927/evidence/baseline-counts.json",
+    "audit/20260927/evidence/baseline.txt",
+    "audit/20260927/evidence/cargo-build-workspace.exit",
+    "audit/20260927/evidence/cargo-build-workspace.log",
+    "audit/20260927/evidence/cargo-test-isolated.exit",
+    "audit/20260927/evidence/cargo-test-isolated.log",
+    "audit/20260927/evidence/cargo-test-workspace.exit",
+    "audit/20260927/evidence/cargo-test-workspace.log",
+    "audit/20260927/evidence/data/concurrency-summary.log",
+    "audit/20260927/evidence/data/demo_data_boundaries.py",
+    "audit/20260927/evidence/data/findings.md",
+    "audit/20260927/evidence/data/run1/A-build.json",
+    "audit/20260927/evidence/data/run1/A-freshness.json",
+    "audit/20260927/evidence/data/run1/A-refresh.json",
+    "audit/20260927/evidence/data/run1/version.json",
+    "audit/20260927/evidence/data/run2/A-build.json",
+    "audit/20260927/evidence/data/run2/A-freshness.json",
+    "audit/20260927/evidence/data/run2/A-observation.json",
+    "audit/20260927/evidence/data/run2/A-refresh.json",
+    "audit/20260927/evidence/data/run2/B-build-failure.json",
+    "audit/20260927/evidence/data/run2/B-explicit-recovery.json",
+    "audit/20260927/evidence/data/run2/B-freshness.json",
+    "audit/20260927/evidence/data/run2/B-observation.json",
+    "audit/20260927/evidence/data/run2/B-recovery-freshness.json",
+    "audit/20260927/evidence/data/run2/B-refresh.json",
+    "audit/20260927/evidence/data/run2/D-observation.json",
+    "audit/20260927/evidence/data/run2/D-serial-control.json",
+    "audit/20260927/evidence/data/run2/commands.json",
+    "audit/20260927/evidence/data/run2/version.json",
+    "audit/20260927/evidence/data/run3.exit",
+    "audit/20260927/evidence/data/run3.log",
+    "audit/20260927/evidence/data/run3/A-build.json",
+    "audit/20260927/evidence/data/run3/A-freshness.json",
+    "audit/20260927/evidence/data/run3/A-observation.json",
+    "audit/20260927/evidence/data/run3/A-refresh.json",
+    "audit/20260927/evidence/data/run3/B-build-failure.json",
+    "audit/20260927/evidence/data/run3/B-explicit-recovery.json",
+    "audit/20260927/evidence/data/run3/B-freshness.json",
+    "audit/20260927/evidence/data/run3/B-observation.json",
+    "audit/20260927/evidence/data/run3/B-recovery-freshness.json",
+    "audit/20260927/evidence/data/run3/B-refresh.json",
+    "audit/20260927/evidence/data/run3/D-observation.json",
+    "audit/20260927/evidence/data/run3/D-serial-control.json",
+    "audit/20260927/evidence/data/run3/commands.json",
+    "audit/20260927/evidence/data/run3/version.json",
+    "audit/20260927/evidence/data/run4.exit",
+    "audit/20260927/evidence/data/run4.log",
+    "audit/20260927/evidence/data/run4/A-build.json",
+    "audit/20260927/evidence/data/run4/A-freshness.json",
+    "audit/20260927/evidence/data/run4/A-observation.json",
+    "audit/20260927/evidence/data/run4/A-refresh.json",
+    "audit/20260927/evidence/data/run4/B-build-failure.json",
+    "audit/20260927/evidence/data/run4/B-explicit-recovery.json",
+    "audit/20260927/evidence/data/run4/B-freshness.json",
+    "audit/20260927/evidence/data/run4/B-observation.json",
+    "audit/20260927/evidence/data/run4/B-recovery-freshness.json",
+    "audit/20260927/evidence/data/run4/B-refresh.json",
+    "audit/20260927/evidence/data/run4/D-observation.json",
+    "audit/20260927/evidence/data/run4/D-serial-control.json",
+    "audit/20260927/evidence/data/run4/commands.json",
+    "audit/20260927/evidence/data/run4/version.json",
+    "audit/20260927/evidence/data/run5.exit",
+    "audit/20260927/evidence/data/run5.log",
+    "audit/20260927/evidence/data/run5/A-build.json",
+    "audit/20260927/evidence/data/run5/A-freshness.json",
+    "audit/20260927/evidence/data/run5/A-observation.json",
+    "audit/20260927/evidence/data/run5/A-refresh.json",
+    "audit/20260927/evidence/data/run5/B-build-failure.json",
+    "audit/20260927/evidence/data/run5/B-explicit-recovery.json",
+    "audit/20260927/evidence/data/run5/B-freshness.json",
+    "audit/20260927/evidence/data/run5/B-observation.json",
+    "audit/20260927/evidence/data/run5/B-query.json",
+    "audit/20260927/evidence/data/run5/B-recovery-freshness.json",
+    "audit/20260927/evidence/data/run5/B-refresh.json",
+    "audit/20260927/evidence/data/run5/D-observation.json",
+    "audit/20260927/evidence/data/run5/D-serial-control.json",
+    "audit/20260927/evidence/data/run5/commands.json",
+    "audit/20260927/evidence/data/run5/version.json",
+    "audit/20260927/evidence/demo_mcp_lifecycle.py",
+    "audit/20260927/evidence/demo_wrapper_pin.py",
+    "audit/20260927/evidence/graph-db-ceiling-control.exit",
+    "audit/20260927/evidence/graph-db-ceiling-control.log",
+    "audit/20260927/evidence/lsp/README.md",
+    "audit/20260927/evidence/lsp/backend.sh",
+    "audit/20260927/evidence/lsp/blocked-write-confirm.exit",
+    "audit/20260927/evidence/lsp/blocked-write-confirm.log",
+    "audit/20260927/evidence/lsp/blocked-write.log",
+    "audit/20260927/evidence/lsp/dead-cache-confirm.exit",
+    "audit/20260927/evidence/lsp/dead-cache-confirm.log",
+    "audit/20260927/evidence/lsp/dead-cache.log",
+    "audit/20260927/evidence/lsp/demo_mcp.py",
+    "audit/20260927/evidence/lsp/findings.md",
+    "audit/20260927/evidence/lsp/mcp-confirm.exit",
+    "audit/20260927/evidence/lsp/mcp-confirm.log",
+    "audit/20260927/evidence/lsp/mcp.log",
+    "audit/20260927/evidence/lsp/mcp.stderr.log",
+    "audit/20260927/evidence/lsp/probe-build.exit",
+    "audit/20260927/evidence/lsp/probe-build.log",
+    "audit/20260927/evidence/lsp/probe.rs",
+    "audit/20260927/evidence/lsp/retry-confirm.exit",
+    "audit/20260927/evidence/lsp/retry-confirm.log",
+    "audit/20260927/evidence/lsp/retry.log",
+    "audit/20260927/evidence/mcp-lifecycle.exit",
+    "audit/20260927/evidence/mcp-lifecycle.log",
+    "audit/20260927/evidence/mcp-lifecycle/cancel/stderr.log",
+    "audit/20260927/evidence/mcp-lifecycle/eof/stderr.log",
+    "audit/20260927/evidence/mcp-lifecycle/large-error/response.json",
+    "audit/20260927/evidence/mcp-lifecycle/large-error/stderr.log",
+    "audit/20260927/evidence/mcp-lifecycle/results.json",
+    "audit/20260927/evidence/ra-default-battery.exit",
+    "audit/20260927/evidence/ra-default-battery.log",
+    "audit/20260927/evidence/ra-strict-battery.exit",
+    "audit/20260927/evidence/ra-strict-battery.log",
+    "audit/20260927/evidence/report-check.json",
+    "audit/20260927/evidence/version-confirmation.txt",
+    "audit/20260927/evidence/wrapper-pin.log",
+    "audit/20260927/evidence/wrapper-pin/results.json",
+    "audit/20260927/findings.md",
+    "audit/20260927/progress.md",
+    "audit/20260927/round1/a/mcp-final.exit",
+    "audit/20260927/round1/a/mcp-final.log",
+    "audit/20260927/round1/a/mcp-green.exit",
+    "audit/20260927/round1/a/mcp-green.log",
+    "audit/20260927/round1/a/mcp-red.exit",
+    "audit/20260927/round1/a/mcp-red.log",
+    "audit/20260927/round1/a/progress.md",
+    "audit/20260927/round1/a/stdio-cleanup-green.exit",
+    "audit/20260927/round1/a/stdio-cleanup-green.log",
+    "audit/20260927/round1/a/stdio-final.exit",
+    "audit/20260927/round1/a/stdio-final.log",
+    "audit/20260927/round1/a/stdio-red.exit",
+    "audit/20260927/round1/a/stdio-red.log",
+    "audit/20260927/round1/a/targeted-green.exit",
+    "audit/20260927/round1/a/targeted-green.log",
+    "audit/20260927/round1/a/wrapper-green.exit",
+    "audit/20260927/round1/a/wrapper-green.log",
+    "audit/20260927/round1/a/wrapper-red.exit",
+    "audit/20260927/round1/a/wrapper-red.log",
+    "audit/20260927/round1/b/extended.exit",
+    "audit/20260927/round1/b/extended.log",
+    "audit/20260927/round1/b/extended2.exit",
+    "audit/20260927/round1/b/extended2.log",
+    "audit/20260927/round1/b/format.exit",
+    "audit/20260927/round1/b/format.log",
+    "audit/20260927/round1/b/green1.exit",
+    "audit/20260927/round1/b/green1.log",
+    "audit/20260927/round1/b/lifecycle-final.exit",
+    "audit/20260927/round1/b/lifecycle-final.log",
+    "audit/20260927/round1/b/progress.md",
+    "audit/20260927/round1/b/ra-final.exit",
+    "audit/20260927/round1/b/ra-final.log",
+    "audit/20260927/round1/b/ra-green.exit",
+    "audit/20260927/round1/b/ra-green.log",
+    "audit/20260927/round1/b/ra-red.exit",
+    "audit/20260927/round1/b/ra-red.log",
+    "audit/20260927/round1/b/receipt.md",
+    "audit/20260927/round1/b/red.exit",
+    "audit/20260927/round1/b/red.log",
+    "audit/20260927/round1/b/suite.exit",
+    "audit/20260927/round1/b/suite.log",
+    "audit/20260927/round1/b/verification.json",
+    "audit/20260927/round1/c/affected1.log",
+    "audit/20260927/round1/c/affected2.log",
+    "audit/20260927/round1/c/demo_publication.py",
+    "audit/20260927/round1/c/final-targeted.log",
+    "audit/20260927/round1/c/green1.log",
+    "audit/20260927/round1/c/green2.log",
+    "audit/20260927/round1/c/green3.log",
+    "audit/20260927/round1/c/probe1.log",
+    "audit/20260927/round1/c/probe2.log",
+    "audit/20260927/round1/c/probe3.log",
+    "audit/20260927/round1/c/probe4.log",
+    "audit/20260927/round1/c/progress.md",
+    "audit/20260927/round1/c/red-binding.log",
+    "audit/20260927/round1/c/red.log",
+    "audit/20260927/round1/c/run1/A-stable-build.json",
+    "audit/20260927/round1/c/run1/A-stable-freshness.json",
+    "audit/20260927/round1/c/run1/checks.json",
+    "audit/20260927/round1/c/run1/commands.json",
+    "audit/20260927/round1/c/run1/version.json",
+    "audit/20260927/round1/c/run2/A-drift-rejected.json",
+    "audit/20260927/round1/c/run2/A-manual-stamp.json",
+    "audit/20260927/round1/c/run2/A-restamp-negative.json",
+    "audit/20260927/round1/c/run2/A-stable-build.json",
+    "audit/20260927/round1/c/run2/A-stable-freshness.json",
+    "audit/20260927/round1/c/run2/B-missing-graph.json",
+    "audit/20260927/round1/c/run2/B-publish-failure.json",
+    "audit/20260927/round1/c/run2/B-query.json",
+    "audit/20260927/round1/c/run2/B-recovered.json",
+    "audit/20260927/round1/c/run2/B-refresh.json",
+    "audit/20260927/round1/c/run2/D-busy.json",
+    "audit/20260927/round1/c/run2/D-graph-0.json",
+    "audit/20260927/round1/c/run2/D-graph-1.json",
+    "audit/20260927/round1/c/run2/D-graph-2.json",
+    "audit/20260927/round1/c/run2/D-graph-3.json",
+    "audit/20260927/round1/c/run2/D-initial.json",
+    "audit/20260927/round1/c/run2/D-mixed-0.json",
+    "audit/20260927/round1/c/run2/D-mixed-1.json",
+    "audit/20260927/round1/c/run2/D-mixed-2.json",
+    "audit/20260927/round1/c/run2/D-mixed-3.json",
+    "audit/20260927/round1/c/run2/D-owner-death-recovery.json",
+    "audit/20260927/round1/c/run2/checks.json",
+    "audit/20260927/round1/c/run2/commands.json",
+    "audit/20260927/round1/c/run2/version.json",
+    "audit/20260927/round1/c/run3/A-drift-rejected.json",
+    "audit/20260927/round1/c/run3/A-manual-stamp.json",
+    "audit/20260927/round1/c/run3/A-restamp-negative.json",
+    "audit/20260927/round1/c/run3/A-stable-build.json",
+    "audit/20260927/round1/c/run3/A-stable-freshness.json",
+    "audit/20260927/round1/c/run3/B-missing-graph.json",
+    "audit/20260927/round1/c/run3/B-publish-failure.json",
+    "audit/20260927/round1/c/run3/B-query.json",
+    "audit/20260927/round1/c/run3/B-recovered.json",
+    "audit/20260927/round1/c/run3/B-refresh.json",
+    "audit/20260927/round1/c/run3/D-busy.json",
+    "audit/20260927/round1/c/run3/D-graph-0.json",
+    "audit/20260927/round1/c/run3/D-graph-1.json",
+    "audit/20260927/round1/c/run3/D-graph-2.json",
+    "audit/20260927/round1/c/run3/D-graph-3.json",
+    "audit/20260927/round1/c/run3/D-initial.json",
+    "audit/20260927/round1/c/run3/D-mixed-0.json",
+    "audit/20260927/round1/c/run3/D-mixed-1.json",
+    "audit/20260927/round1/c/run3/D-mixed-2.json",
+    "audit/20260927/round1/c/run3/D-mixed-3.json",
+    "audit/20260927/round1/c/run3/D-owner-death-recovery.json",
+    "audit/20260927/round1/c/run3/checks.json",
+    "audit/20260927/round1/c/run3/commands.json",
+    "audit/20260927/round1/c/run3/version.json",
+    "audit/20260927/round1/c/run4/A-drift-rejected.json",
+    "audit/20260927/round1/c/run4/A-manual-stamp.json",
+    "audit/20260927/round1/c/run4/A-restamp-negative.json",
+    "audit/20260927/round1/c/run4/A-stable-build.json",
+    "audit/20260927/round1/c/run4/A-stable-freshness.json",
+    "audit/20260927/round1/c/run4/B-missing-graph.json",
+    "audit/20260927/round1/c/run4/B-publish-failure.json",
+    "audit/20260927/round1/c/run4/B-query.json",
+    "audit/20260927/round1/c/run4/B-recovered.json",
+    "audit/20260927/round1/c/run4/B-refresh.json",
+    "audit/20260927/round1/c/run4/D-busy.json",
+    "audit/20260927/round1/c/run4/D-graph-0.json",
+    "audit/20260927/round1/c/run4/D-graph-1.json",
+    "audit/20260927/round1/c/run4/D-graph-2.json",
+    "audit/20260927/round1/c/run4/D-graph-3.json",
+    "audit/20260927/round1/c/run4/D-initial.json",
+    "audit/20260927/round1/c/run4/D-mixed-0.json",
+    "audit/20260927/round1/c/run4/D-mixed-1.json",
+    "audit/20260927/round1/c/run4/D-mixed-2.json",
+    "audit/20260927/round1/c/run4/D-mixed-3.json",
+    "audit/20260927/round1/c/run4/D-owner-death-recovery.json",
+    "audit/20260927/round1/c/run4/E-concurrent-0.json",
+    "audit/20260927/round1/c/run4/E-concurrent-1.json",
+    "audit/20260927/round1/c/run4/E-concurrent-2.json",
+    "audit/20260927/round1/c/run4/E-concurrent-3.json",
+    "audit/20260927/round1/c/run4/E-initial.json",
+    "audit/20260927/round1/c/run4/checks.json",
+    "audit/20260927/round1/c/run4/commands.json",
+    "audit/20260927/round1/c/run4/version.json",
+    "audit/20260927/round1/codex-discussion.md",
+    "audit/20260927/round1/collection-retry.log",
+    "audit/20260927/round1/collection.log",
+    "audit/20260927/round1/design-notes.md",
+    "audit/20260927/round1/discussion.md",
+    "audit/20260927/round1/docs-progress.md",
+    "audit/20260927/round1/docs-source-anchors.txt",
+    "audit/20260927/round1/docs-source-hashes.txt",
+    "audit/20260927/round1/ep.md",
+    "audit/20260927/round1/final-verification.json",
+    "audit/20260927/round1/findings.md",
+    "audit/20260927/round1/glm-discussion.md",
+    "audit/20260927/round1/landing-rustfmt.log",
+    "audit/20260927/round1/liveness-retry.jsonl",
+    "audit/20260927/round1/liveness.jsonl",
+    "audit/20260927/round1/muse-discussion.md",
+    "audit/20260927/round1/progress.md",
+    "audit/20260927/round1/review-adjudication.md",
+    "audit/20260927/round1/review-collection.log",
+    "audit/20260927/round1/review-fresh-prompt.md",
+    "audit/20260927/round1/review-glm-receipt.json",
+    "audit/20260927/round1/review-glm.md",
+    "audit/20260927/round1/review-identity.json",
+    "audit/20260927/round1/review-intent-prompt.md",
+    "audit/20260927/round1/review-liveness.jsonl",
+    "audit/20260927/round1/review-muse-receipt.json",
+    "audit/20260927/round1/review-muse.md",
+    "audit/20260927/round1/review-status.txt",
+    "audit/20260927/round1/review-tracked.diff",
+    "audit/20260927/round1/workspace-build.exit",
+    "audit/20260927/round1/workspace-build.log",
+    "audit/20260927/round1/workspace-test.exit",
+    "audit/20260927/round1/workspace-test.log"
+  ],
+  "recommended_files": [
+    {
+      "path": "audit/20260927/evidence/baseline-counts.json",
+      "bytes": 403,
+      "sha256": "be6654a947fed185f2cd89120a669fd776720d68c436284f32ad7afd42862bf8",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/baseline.txt",
+      "bytes": 234,
+      "sha256": "ab6c042e4f8b62b4bab2837f335059d009e39ccd93c0c6123a850b1a17041bcc",
+      "category": "text-or-diff-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/cargo-build-workspace.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/evidence/cargo-build-workspace.log",
+      "bytes": 72,
+      "sha256": "1f5852af1ed7025b5728e842e3c3c2f5d2f720d25557d84c38f1ffda99719c59",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/evidence/cargo-test-isolated.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/evidence/cargo-test-isolated.log",
+      "bytes": 45111,
+      "sha256": "f0f9c50cd69f7bb166b56a8a88f211f46df672f307fb46de00585d802db483d0",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/evidence/cargo-test-workspace.exit",
+      "bytes": 4,
+      "sha256": "39b8dc3fc8b44765c8e6f1adee04c5b465e555ab791cc42d0d9e810d5b64297c",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/evidence/cargo-test-workspace.log",
+      "bytes": 24633,
+      "sha256": "db7447ff5182a95e3947cb40dc70da6fece97e59dbd3304114fa9d75ef5858ba",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/evidence/data/concurrency-summary.log",
+      "bytes": 2836,
+      "sha256": "9027271d6ca473c2a2a84ed6c8e1866be020441dbd6f9cec0b4131a7d849f783",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/evidence/data/demo_data_boundaries.py",
+      "bytes": 5812,
+      "sha256": "05cd7d746e5b70b019bafee6d48ba7224967da5794da5c0e58e9235a582ba1e9",
+      "category": "probe-source"
+    },
+    {
+      "path": "audit/20260927/evidence/data/findings.md",
+      "bytes": 8628,
+      "sha256": "dcb24920fc4976e1b3bff133f4a97df2c4b70827591efaee9e2fc4ec8b803d91",
+      "category": "report-or-receipt"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run1/A-build.json",
+      "bytes": 567,
+      "sha256": "651526c1f940139549c6718c16664a078492bd6c6543629b9ede3896f3d8f406",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run1/A-freshness.json",
+      "bytes": 861,
+      "sha256": "302b01f015c5107f6fa1b6502e4fbf3a4153927eb8b7e863b3f3a7fadb0f7694",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run1/A-refresh.json",
+      "bytes": 663,
+      "sha256": "0b72ce31a43f7dba11605630071744e9079192e1182e615ab9223c32b2232a50",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run1/version.json",
+      "bytes": 321,
+      "sha256": "ba69375f9c5ed36d61ab7265662901305abae26bbe5fac808196f7c0d83b015a",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/A-build.json",
+      "bytes": 1190,
+      "sha256": "be1b930f0a0912b9091d4b1b96ca305395f5866fe70f7e4374b773cba9f1f4be",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/A-freshness.json",
+      "bytes": 1106,
+      "sha256": "38f156f5761f00ede045b98f4aa517b8154d1c635bb3697e3ddd88e5b65cdba8",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/A-observation.json",
+      "bytes": 247,
+      "sha256": "703911891cabd39ebb6760e532f5d3e8ca0c575b3c6fdbd31e03665268214820",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/A-refresh.json",
+      "bytes": 451,
+      "sha256": "c9e847e021dccee2ae14af92955bc7c7c8f6cb876b8858f9d72410f4bad15317",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/B-build-failure.json",
+      "bytes": 889,
+      "sha256": "8e3720eb6cac3d9da02a5a6ef210d4222ec69d2d568e780e1f57bb813d0388f1",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/B-explicit-recovery.json",
+      "bytes": 1284,
+      "sha256": "3519b71938287b6882c72b6687984626eb6aae64c479905d1bd543dfe66da191",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/B-freshness.json",
+      "bytes": 1112,
+      "sha256": "d1576d410128a10bd8774c9de378b0662f5654c51f581d1083758b55c6198cb0",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/B-observation.json",
+      "bytes": 59,
+      "sha256": "20a63ebcc55752f88873bc0cc92004441d969e9e0267c0cb427ac9066e398be4",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/B-recovery-freshness.json",
+      "bytes": 1121,
+      "sha256": "22dd381f35813b882bcd8920491c3b081425f4ada3659fd9b68711e2b94e48c5",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/B-refresh.json",
+      "bytes": 453,
+      "sha256": "0f38e5cd7ba7c945a3dda69e5ae618efed59299f9763a1d7c81b65916ca8b75a",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/D-observation.json",
+      "bytes": 76,
+      "sha256": "28796cbf33b330719ba72bec121e74799374d11dd7f9f2f6a943d2ee78764865",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/D-serial-control.json",
+      "bytes": 890,
+      "sha256": "f5a911dc993fcb7790b1fce61344e5d990cfbb95cbecd03fdc3389bde8d723e7",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/commands.json",
+      "bytes": 10930,
+      "sha256": "ed8c244ab95e8ecddcff041e4078517e67596b1d12422a4d9243de9f01dbfd55",
+      "category": "command-record"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/version.json",
+      "bytes": 358,
+      "sha256": "3189b4f917988ba3331142df4a20fd09c46a52264b6164091520b46b03e368a0",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3.log",
+      "bytes": 59,
+      "sha256": "dd7241fb9634d51d4b90a8782d9a26dd3fe2ada28ad873374b2d9b28b76827ef",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/A-build.json",
+      "bytes": 1445,
+      "sha256": "03d8c0ce2b41df3b805f8a550108294e86d3097bb340b7cf5c1e0869487c39a8",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/A-freshness.json",
+      "bytes": 1006,
+      "sha256": "8c8cfc73b83ce3911538bffd4dcb7f64fca47d8c566472d4793b7433e174de1b",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/A-observation.json",
+      "bytes": 247,
+      "sha256": "5fe5ae4cb7d794c95d3c58550093c2c974b2ce2c4ee145d8d7328c133360784f",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/A-refresh.json",
+      "bytes": 610,
+      "sha256": "be858c218fab7911467edb63d9fd823a2d6ad79a4f34ee205f01035b3d35d41b",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/B-build-failure.json",
+      "bytes": 889,
+      "sha256": "41aa6cbbb16bf8d08f7ab3e657e3b345c53e7bb5bbc5192220dd18c910e57fb1",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/B-explicit-recovery.json",
+      "bytes": 1541,
+      "sha256": "4d0f895a33a1a6efb126268ee17da66e85899470e526669ab57ed3bd3eb0b80a",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/B-freshness.json",
+      "bytes": 986,
+      "sha256": "8086a326c06e97c8c57eda2698de97c12e4ccf964674ded211b3f2831cb1f12e",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/B-observation.json",
+      "bytes": 59,
+      "sha256": "20a63ebcc55752f88873bc0cc92004441d969e9e0267c0cb427ac9066e398be4",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/B-recovery-freshness.json",
+      "bytes": 995,
+      "sha256": "6f9fc4a8d33b4b6c482a136c5d1a3d2905cf7fd42bf029a2d2766cfb637e5b20",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/B-refresh.json",
+      "bytes": 453,
+      "sha256": "7e8666ccfd4694839975b96fad93b2213c405ab9510a0780108f0490ac809384",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/D-observation.json",
+      "bytes": 76,
+      "sha256": "28796cbf33b330719ba72bec121e74799374d11dd7f9f2f6a943d2ee78764865",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/D-serial-control.json",
+      "bytes": 890,
+      "sha256": "111884d62449bb8a3a02c8c2736c8b76db130470d47075a804df60f977d90d2c",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/commands.json",
+      "bytes": 11293,
+      "sha256": "b5a9ed5f70eac6f9e16b4d6e60871892388becc01d227846088f3e00e2229711",
+      "category": "command-record"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/version.json",
+      "bytes": 358,
+      "sha256": "3f4143de7a02bdaf24e973fb049cefac54a85f4fadfb2bce229590f365066101",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4.log",
+      "bytes": 59,
+      "sha256": "dd7241fb9634d51d4b90a8782d9a26dd3fe2ada28ad873374b2d9b28b76827ef",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/A-build.json",
+      "bytes": 1190,
+      "sha256": "5dad54729b857fa4105bf8d46febe46db338628d1d88f5faa36ab8c561e6efa8",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/A-freshness.json",
+      "bytes": 1106,
+      "sha256": "e0d6951a737eb4d8d1df5db3b58b9f7b59eecba1f1f6ff4a0bd5ababac13cfff",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/A-observation.json",
+      "bytes": 247,
+      "sha256": "703911891cabd39ebb6760e532f5d3e8ca0c575b3c6fdbd31e03665268214820",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/A-refresh.json",
+      "bytes": 451,
+      "sha256": "583d7e1f4c0fbe8978ca73848a01a64489ea13651bf4353e08d34b1cbbce4b42",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/B-build-failure.json",
+      "bytes": 889,
+      "sha256": "424ef0f6c1e945ed7892f4b23b2d173a7809df41d2bf0e9ff63f734d94d80a02",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/B-explicit-recovery.json",
+      "bytes": 1284,
+      "sha256": "9992f2ae844b83b986d233edb09f7112d89f172bd3aeaa2ecb8fa1227cf01245",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/B-freshness.json",
+      "bytes": 1112,
+      "sha256": "df32c1e56bb17f402719edbdcb65386ca144f94ab678a8c608e06407839d1612",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/B-observation.json",
+      "bytes": 59,
+      "sha256": "20a63ebcc55752f88873bc0cc92004441d969e9e0267c0cb427ac9066e398be4",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/B-recovery-freshness.json",
+      "bytes": 1121,
+      "sha256": "5399f50a2bee0fc6b521618ea2fbf642b8e3326e5662b674881c80a61092b3dc",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/B-refresh.json",
+      "bytes": 453,
+      "sha256": "1f0ff653793bbfb55858c8f8f29cae973e44749194c429685e15a065b136064f",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/D-observation.json",
+      "bytes": 76,
+      "sha256": "28796cbf33b330719ba72bec121e74799374d11dd7f9f2f6a943d2ee78764865",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/D-serial-control.json",
+      "bytes": 890,
+      "sha256": "e34dcff3d75958e7fd9d1fd8b128e57b72271004ce8fa446e747f97cc846d239",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/commands.json",
+      "bytes": 10609,
+      "sha256": "ff9646715d7370202151f7bac341b9b8e3e0a4636c2d0c4034ed92ed2e8997b1",
+      "category": "command-record"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/version.json",
+      "bytes": 358,
+      "sha256": "6f88655d4f1fdc8afe1191cb2470c3fd5cd1ae2fa00d7a07e52663e2a719f32b",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5.log",
+      "bytes": 59,
+      "sha256": "dd7241fb9634d51d4b90a8782d9a26dd3fe2ada28ad873374b2d9b28b76827ef",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/A-build.json",
+      "bytes": 1190,
+      "sha256": "963880e7d16d90029b55382b4fd59bdd1fcfb8a81c68d535aba91a8227fc2d65",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/A-freshness.json",
+      "bytes": 1106,
+      "sha256": "3f36b295733d85cb1b6a5050e38b8e6253ccd1e4acd5e993518bd132d6461605",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/A-observation.json",
+      "bytes": 247,
+      "sha256": "703911891cabd39ebb6760e532f5d3e8ca0c575b3c6fdbd31e03665268214820",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/A-refresh.json",
+      "bytes": 451,
+      "sha256": "767a387ddac2d65e0de1cad846ec48e19afab36803b60d6e0a0522e16020a64b",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/B-build-failure.json",
+      "bytes": 889,
+      "sha256": "9dc0f9421bf68ac9c908c9bbe74c2f22eb56275b84b2ccf66c08cb99a32fbd77",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/B-explicit-recovery.json",
+      "bytes": 1284,
+      "sha256": "b547f9f7ffa434f05101dabeccb4a08ba988f0b3b31b49c24105b2dbc7c1dd44",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/B-freshness.json",
+      "bytes": 1112,
+      "sha256": "76ca98c71872bd82f2f645d3272b3fa18d313b4b4e2a0ff031725b92ea7ed782",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/B-observation.json",
+      "bytes": 59,
+      "sha256": "20a63ebcc55752f88873bc0cc92004441d969e9e0267c0cb427ac9066e398be4",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/B-query.json",
+      "bytes": 667,
+      "sha256": "fa184a91494051df554ff2eaf2852fa52701d9da4dc98f8c6ef92d045d0a459e",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/B-recovery-freshness.json",
+      "bytes": 1121,
+      "sha256": "bd18c2679823e2a647471d9704bd00671901bf60370e4cfacef3e257e0c407ee",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/B-refresh.json",
+      "bytes": 453,
+      "sha256": "32f20519f43d73f84cbc2687ae51a298f57901d6cccc60cdd476eed306bc6d39",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/D-observation.json",
+      "bytes": 76,
+      "sha256": "28796cbf33b330719ba72bec121e74799374d11dd7f9f2f6a943d2ee78764865",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/D-serial-control.json",
+      "bytes": 890,
+      "sha256": "c7a631d56d0300035973f8f95fa68916f6d880561c08cc8907daad6e52ffe4f2",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/commands.json",
+      "bytes": 11620,
+      "sha256": "386f369cb511360ca284ec4715c789abcff0e0468efadfa1b1d57749517e627e",
+      "category": "command-record"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/version.json",
+      "bytes": 358,
+      "sha256": "0eda5b993f8f32bc8f5e064220bc35df08b707b25772cfb91cce369eff28e4b8",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/demo_mcp_lifecycle.py",
+      "bytes": 4829,
+      "sha256": "49cb7a04feed0b7df6043732a1bf48fe5d1b68f90eb0a3879b644a7929c7667c",
+      "category": "probe-source"
+    },
+    {
+      "path": "audit/20260927/evidence/demo_wrapper_pin.py",
+      "bytes": 1868,
+      "sha256": "f596a30eefabc228110cfb734a2df400ea6e64046aed8b4803206513873a016c",
+      "category": "probe-source"
+    },
+    {
+      "path": "audit/20260927/evidence/graph-db-ceiling-control.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/evidence/graph-db-ceiling-control.log",
+      "bytes": 4661,
+      "sha256": "5bc5b4d3d6e02d96182356b6b260f68b6c8706c3cbd6ffa364a1c4004859a541",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/evidence/lsp/README.md",
+      "bytes": 2241,
+      "sha256": "cdca723775cbbeb0db6a7b8933b79077820fcdb06441555887a8d20660ebb1a2",
+      "category": "report-or-receipt"
+    },
+    {
+      "path": "audit/20260927/evidence/lsp/backend.sh",
+      "bytes": 223,
+      "sha256": "e5a78c699ba11d8401f420dc6f2087e5b057e14bbda10392c260f5fa3b8c8a3b",
+      "category": "probe-source"
+    },
+    {
+      "path": "audit/20260927/evidence/lsp/blocked-write-confirm.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/evidence/lsp/blocked-write-confirm.log",
+      "bytes": 222,
+      "sha256": "ee636004981c52f2870bb74d4601f4c04fcfe8252d0a720234192d5222b7a214",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/evidence/lsp/blocked-write.log",
+      "bytes": 222,
+      "sha256": "b2f4067da3ad02149a4d05711578db958df5f7874534b17ed0d52c7a2dedd4ea",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/evidence/lsp/dead-cache-confirm.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/evidence/lsp/dead-cache-confirm.log",
+      "bytes": 221,
+      "sha256": "6bf21d4747617ec49cf5914283f0e569a61d71616c770c0005047baf59fa3e91",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/evidence/lsp/dead-cache.log",
+      "bytes": 221,
+      "sha256": "6bf21d4747617ec49cf5914283f0e569a61d71616c770c0005047baf59fa3e91",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/evidence/lsp/demo_mcp.py",
+      "bytes": 2643,
+      "sha256": "7c63e363bb526d72fc2a8b06496ccf80c008f82aa1b300551d986c26fc067b4e",
+      "category": "probe-source"
+    },
+    {
+      "path": "audit/20260927/evidence/lsp/findings.md",
+      "bytes": 8806,
+      "sha256": "7f5349105026ac3dec84aac9c3f55adca249b2f4b2a807191e8e603f29159cec",
+      "category": "report-or-receipt"
+    },
+    {
+      "path": "audit/20260927/evidence/lsp/mcp-confirm.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/evidence/lsp/mcp-confirm.log",
+      "bytes": 1805,
+      "sha256": "f8462d8b9637c11a2a2443c5fe339eacbd743afacbfa4d7cdcbbc81a862b6f14",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/evidence/lsp/mcp.log",
+      "bytes": 1805,
+      "sha256": "f8462d8b9637c11a2a2443c5fe339eacbd743afacbfa4d7cdcbbc81a862b6f14",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/evidence/lsp/mcp.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/evidence/lsp/probe-build.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/evidence/lsp/probe-build.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/evidence/lsp/probe.rs",
+      "bytes": 4817,
+      "sha256": "0dde597432e2f2ed3ea4bdc66e6b84e912799972e44577822139cc313b2cfd7f",
+      "category": "probe-source"
+    },
+    {
+      "path": "audit/20260927/evidence/lsp/retry-confirm.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/evidence/lsp/retry-confirm.log",
+      "bytes": 442,
+      "sha256": "03a1cb10d026c6907b67dc630cd3cb6adc51c441dc8d6b4f8eecc86caa4e5da3",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/evidence/lsp/retry.log",
+      "bytes": 442,
+      "sha256": "03a1cb10d026c6907b67dc630cd3cb6adc51c441dc8d6b4f8eecc86caa4e5da3",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/evidence/mcp-lifecycle.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/evidence/mcp-lifecycle.log",
+      "bytes": 87,
+      "sha256": "81ea1015da0526f5fd31d266830b96b1963c1962e5bbb9d6371dee9a0f1b9692",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/evidence/mcp-lifecycle/cancel/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/evidence/mcp-lifecycle/eof/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/evidence/mcp-lifecycle/large-error/response.json",
+      "bytes": 1200151,
+      "sha256": "5159101c947ced395742658581b78ee1004cae3e9bc457375c690e481d9c24d0",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/mcp-lifecycle/large-error/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/evidence/mcp-lifecycle/results.json",
+      "bytes": 618,
+      "sha256": "d51095950ceea8620058b55261e5a1377ee9ee5a19f641dfa0e8b7f9fd5601dd",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/ra-default-battery.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/evidence/ra-default-battery.log",
+      "bytes": 493,
+      "sha256": "af26e5e78a07686f95a3e305e161e3f2e1a10717db15096c77d6bde43a4a555f",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/evidence/ra-strict-battery.exit",
+      "bytes": 4,
+      "sha256": "39b8dc3fc8b44765c8e6f1adee04c5b465e555ab791cc42d0d9e810d5b64297c",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/evidence/ra-strict-battery.log",
+      "bytes": 3010,
+      "sha256": "63d0b2d624c268ed6b62b58529a6ed282bbc6d35383cfd561dccf18b422be3d1",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/evidence/report-check.json",
+      "bytes": 291,
+      "sha256": "60ac3f14b68cda37b9e15bd9e222e00862bdfc7242fec279caec1b2a77f746b6",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/version-confirmation.txt",
+      "bytes": 133,
+      "sha256": "958243c4de7f9a855a62acd174d3988cd1e4609bf5ba4dfdb36db73ead348936",
+      "category": "text-or-diff-evidence"
+    },
+    {
+      "path": "audit/20260927/evidence/wrapper-pin.log",
+      "bytes": 120,
+      "sha256": "54940be31e89e53a4b3f43a90c50f90853b1bac1b2a43a6683123e4a1b054b74",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/evidence/wrapper-pin/results.json",
+      "bytes": 1337,
+      "sha256": "0e7c0abecc750a936a28eadcb5cbb199f648485caebc541ef6df4ba28ffbc399",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/findings.md",
+      "bytes": 28034,
+      "sha256": "61ffc7f405449d4c0b91024d750dcc4cf644e5b07daafc82c4a1c29d7da7de75",
+      "category": "report-or-receipt"
+    },
+    {
+      "path": "audit/20260927/progress.md",
+      "bytes": 8479,
+      "sha256": "ae18719b38315e9d9cb9854774795588389eec41d42d43499b12640287c55473",
+      "category": "report-or-receipt"
+    },
+    {
+      "path": "audit/20260927/round1/a/mcp-final.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/round1/a/mcp-final.log",
+      "bytes": 541,
+      "sha256": "d748e42c21cf0dd865dcdc339e74e894cbca3dad5af6f931fcba6077e39cc245",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/a/mcp-green.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/round1/a/mcp-green.log",
+      "bytes": 891,
+      "sha256": "e423d9ae8bd5e9bf73cb5e5b38b4d32013d96b30da8ce85130959a005710d0e4",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/a/mcp-red.exit",
+      "bytes": 4,
+      "sha256": "39b8dc3fc8b44765c8e6f1adee04c5b465e555ab791cc42d0d9e810d5b64297c",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/round1/a/mcp-red.log",
+      "bytes": 3147270,
+      "sha256": "6b4186b4b2e86a87dfcf8eea52776fec5d3c54c93398653a31ab809d3778b4c0",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/a/progress.md",
+      "bytes": 8818,
+      "sha256": "0e9623f96827291c2cc158d802a3dc8b7c4ab61a970d234e2fb9057cf69cfe43",
+      "category": "report-or-receipt"
+    },
+    {
+      "path": "audit/20260927/round1/a/stdio-cleanup-green.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/round1/a/stdio-cleanup-green.log",
+      "bytes": 572,
+      "sha256": "c8498a52bc7e701e70bc66e45ce124f2dd80c3fa9a80727ea2f44e90465356d1",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/a/stdio-final.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/round1/a/stdio-final.log",
+      "bytes": 641,
+      "sha256": "5aa681f51292dd9329a602d5b0c93d0ce90ebe4ce187c3db0bf106bb7db69ef3",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/a/stdio-red.exit",
+      "bytes": 4,
+      "sha256": "39b8dc3fc8b44765c8e6f1adee04c5b465e555ab791cc42d0d9e810d5b64297c",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/round1/a/stdio-red.log",
+      "bytes": 1648,
+      "sha256": "f48a087e9714ac2233a7b50c8443ddba0cda25cc8139f60e76abfb267b334930",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/a/targeted-green.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/round1/a/targeted-green.log",
+      "bytes": 1916,
+      "sha256": "135238746efbae51da5d0effb2785b0d22ab94bd9fe127c4db1973830a0a0152",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/a/wrapper-green.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/round1/a/wrapper-green.log",
+      "bytes": 1714,
+      "sha256": "7e3c110c187b74ffe1b4daacdfd3890fd9813ec40663669b6a0cd090e3bc6c07",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/a/wrapper-red.exit",
+      "bytes": 2,
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/round1/a/wrapper-red.log",
+      "bytes": 1698,
+      "sha256": "fb65f557ddfdb0d8d321010154313e65135a4d7532443572a299d359991e8498",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/b/extended.exit",
+      "bytes": 4,
+      "sha256": "39b8dc3fc8b44765c8e6f1adee04c5b465e555ab791cc42d0d9e810d5b64297c",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/round1/b/extended.log",
+      "bytes": 2204,
+      "sha256": "75e1ee1933fa3901594fdf577122141e069e92921e6677461b8cdbe80cd1679a",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/b/extended2.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/round1/b/extended2.log",
+      "bytes": 1477,
+      "sha256": "fcdd95d9fe014c4b76dfa675f77bcebe0b8e92285250062de218c27baea56281",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/b/format.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/round1/b/format.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/b/green1.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/round1/b/green1.log",
+      "bytes": 1035,
+      "sha256": "d02d832372dcc65870f827370d771fcc67150e56a856ffcdf3d4557eafa42a48",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/b/lifecycle-final.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/round1/b/lifecycle-final.log",
+      "bytes": 1477,
+      "sha256": "dd5000311e62de7805facd5d51baff844cb60d73a6e269ed7238e2c5e3c3b0e3",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/b/progress.md",
+      "bytes": 3420,
+      "sha256": "6fa5c9c3bb1b2f7d6c5bd7b2e84ccf157a86338f771ea3392bc1134f5aa4b830",
+      "category": "report-or-receipt"
+    },
+    {
+      "path": "audit/20260927/round1/b/ra-final.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/round1/b/ra-final.log",
+      "bytes": 2350,
+      "sha256": "a00eb61bc03d933f55ca7108bc1345fa1e649133fda083a017f742d98ef9eb17",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/b/ra-green.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/round1/b/ra-green.log",
+      "bytes": 2346,
+      "sha256": "4eec6752aede0290f8f328e4e284093a7f9cf5ee297475ec908544c78b6c49e1",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/b/ra-red.exit",
+      "bytes": 4,
+      "sha256": "39b8dc3fc8b44765c8e6f1adee04c5b465e555ab791cc42d0d9e810d5b64297c",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/round1/b/ra-red.log",
+      "bytes": 966,
+      "sha256": "bed6367333d6f51d392577fa37d5a8da9734091a240834e3c6ab7807640a4652",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/b/receipt.md",
+      "bytes": 6838,
+      "sha256": "d7e74be90b5faf8eacfb5fd4653ad654fde53f57b90071aecd5425942873404a",
+      "category": "report-or-receipt"
+    },
+    {
+      "path": "audit/20260927/round1/b/red.exit",
+      "bytes": 4,
+      "sha256": "39b8dc3fc8b44765c8e6f1adee04c5b465e555ab791cc42d0d9e810d5b64297c",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/round1/b/red.log",
+      "bytes": 2097,
+      "sha256": "f13604094ec314debbbdf46f445c58b2d9e1b555374e50139780f3baf4977e1b",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/b/suite.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/round1/b/suite.log",
+      "bytes": 11129,
+      "sha256": "7633c56d3a0b6b1da86fd6336d5e9cf24314aed1634e52e85d02b6a662250a19",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/b/verification.json",
+      "bytes": 270,
+      "sha256": "0d4ef9e10092d80b85b8a75a9e987e46052eb88887f6f42f7b9599fcf7960b90",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/affected1.log",
+      "bytes": 3182,
+      "sha256": "9af86b8e2b694e1111d81005b3c4b042f521610004334ef1299918e5f49880e1",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/c/affected2.log",
+      "bytes": 7679,
+      "sha256": "1546c69b91ad9af90c0f5170c6eae8cb6c2a23d9d3b37a534288fa319c585767",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/c/demo_publication.py",
+      "bytes": 10542,
+      "sha256": "0d48ca1b52f7b1eda868845a9f31f5de4c602d9058d9c91cc3faa096b2fac443",
+      "category": "probe-source"
+    },
+    {
+      "path": "audit/20260927/round1/c/final-targeted.log",
+      "bytes": 2719,
+      "sha256": "2bc9ec7f913ca622ac85171794b52bca0d689fb7591d5dc8e2c73d9cf3e26851",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/c/green1.log",
+      "bytes": 1063,
+      "sha256": "420d6fbebb01215e826b9a207fc5bb33c2c5ca853daba3048677d89d6c4d03a3",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/c/green2.log",
+      "bytes": 684,
+      "sha256": "e95c5ba618293013a50baf7cd37292d6bc57066a3851c27a1ce83bd3e82ae014",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/c/green3.log",
+      "bytes": 922,
+      "sha256": "d92f9136962ddd33443ead0c29b6325c791f77153457139a019676d656d74f5f",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/c/probe1.log",
+      "bytes": 1283,
+      "sha256": "4c4e11c3d16b0a0b2c5228f9392c231be9e004d62c00f3d12d36d5cf0e05aa09",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/c/probe2.log",
+      "bytes": 967,
+      "sha256": "92f14c806c039c860a0c71797cbc5bec188bba28a11336763bf6f42a0fdfb4fb",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/c/probe3.log",
+      "bytes": 167,
+      "sha256": "f987450e20eb2b2f07f5cb4eab9c686fe2e1109e535b4e56fd8f83394cd2a2b1",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/c/probe4.log",
+      "bytes": 167,
+      "sha256": "f35734110307d4a74efa6b8613213b2d5d29fd696d466f533ba79a01c35fd3da",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/c/progress.md",
+      "bytes": 12533,
+      "sha256": "427a87dddf655d1a89b34e9d5234238a8e0394fceb16762d4d163b10fc320381",
+      "category": "report-or-receipt"
+    },
+    {
+      "path": "audit/20260927/round1/c/red-binding.log",
+      "bytes": 904,
+      "sha256": "ab4333570bb7122c64f13b94610bc9f9b9dfeace70a06dd47ad0ac2c1d196b91",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/c/red.log",
+      "bytes": 4563,
+      "sha256": "1a4e4f4c3b640eaa605ebb4750c96275962e3c417a245b311d280c8c3ae0359a",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/c/run1/A-stable-build.json",
+      "bytes": 1124,
+      "sha256": "0a96e89023af63bc8d606d3d84e398dacdee64659251ec29500b79709fd22016",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run1/A-stable-freshness.json",
+      "bytes": 956,
+      "sha256": "3a23435b883612f19cfeef576971947791e3076b1c737cc45971290b20252f5a",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run1/checks.json",
+      "bytes": 3,
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run1/commands.json",
+      "bytes": 2351,
+      "sha256": "8253d8cf6c7d2aac3a0a16ae444ac5a47f71909c05851b66bb2e9b79536e96dd",
+      "category": "command-record"
+    },
+    {
+      "path": "audit/20260927/round1/c/run1/version.json",
+      "bytes": 217,
+      "sha256": "d65b963a3407adc66b8698343d8ad1d10df4705d4b8409e0773919cd4faf6923",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/A-drift-rejected.json",
+      "bytes": 408,
+      "sha256": "d335c334b4838b446b3a0d1783e08b6463c18c51f3d13888dd665f61567790ee",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/A-manual-stamp.json",
+      "bytes": 525,
+      "sha256": "ffd37d160a3e7b2de7e3dfa3a5a123f18110dfbf17c9b84f6ab3a48ebaeaff05",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/A-restamp-negative.json",
+      "bytes": 987,
+      "sha256": "d674269a053c31f417fb22177b61e5c48d4f568eff2e3dfdca84a1a132c585ee",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/A-stable-build.json",
+      "bytes": 1125,
+      "sha256": "e7ad3112bdf73be213994aacf24f152e97283b624d905d1c944f92672b668897",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/A-stable-freshness.json",
+      "bytes": 956,
+      "sha256": "3f952f09e634600109794df998a1dea311db3c732085ebab292f76e5420cf9ef",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/B-missing-graph.json",
+      "bytes": 960,
+      "sha256": "222d1f481e9703cca5b0cb7608215a4ac44a471bd39a92ed164805f2f2b6a96c",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/B-publish-failure.json",
+      "bytes": 659,
+      "sha256": "bfa729d6523392ac9a88caefddb9a26c3ba08faa6e11dc49cbcff2234a3f5d41",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/B-query.json",
+      "bytes": 329,
+      "sha256": "785f74df5bacd279f8b0b1b45d418d0c0ff91c53cf7a1248846fac95f573bebe",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/B-recovered.json",
+      "bytes": 928,
+      "sha256": "3a7298969bb81cf95d7f394bd731b159310e819a8bfbe7a25fa76c64852610c2",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/B-refresh.json",
+      "bytes": 376,
+      "sha256": "55518eaeeb5d8d6b4e56504cdbe35cadd05ca35c47a88ea578fd975612c0fa01",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/D-busy.json",
+      "bytes": 396,
+      "sha256": "42267e3386297b2ca4c82087a8fa122097136fd697bb2910a2de5ad8eb2bc45e",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/D-graph-0.json",
+      "bytes": 706,
+      "sha256": "321b4d2c2f927b9fb027315bec8e99b6f3dd9234a3ca59dc37898dd892eda0b2",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/D-graph-1.json",
+      "bytes": 706,
+      "sha256": "30ce41d2726dddbfe3a28349d07fc19a4f09a6ad12942b682545a667de2568a0",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/D-graph-2.json",
+      "bytes": 706,
+      "sha256": "e31b3347f7faacfbe3f6c738f18c7a541a7fbf28630d9229f4ae71fc55f7d001",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/D-graph-3.json",
+      "bytes": 706,
+      "sha256": "b05df749676382fec04ee39def43ae14ffff0f1fb51c42e0715c61062d56aeb4",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/D-initial.json",
+      "bytes": 1105,
+      "sha256": "38eb506b881f60699289117404f23d3ec7a64842eea030ef4ae2c0ed67ccac2e",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/D-mixed-0.json",
+      "bytes": 706,
+      "sha256": "3ca6b6b7bcf404e0fdd2148d12f8dd7309206541c0a5aed5d98b4bee75c7396d",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/D-mixed-1.json",
+      "bytes": 1217,
+      "sha256": "14aa4f24940a6aff19a86e21ed1e5f5c2e7610f7868fc125e17fbf2156bc11a7",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/D-mixed-2.json",
+      "bytes": 706,
+      "sha256": "45ac3f31e51c7b844c76c417e82e34cc26466827069d92b1a6806dff24443181",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/D-mixed-3.json",
+      "bytes": 1217,
+      "sha256": "ac6198e8e43819ed1134bb102b9f0da38d559f38b04540f6de302b4ead7eedd3",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/D-owner-death-recovery.json",
+      "bytes": 412,
+      "sha256": "e44295d6757504564023a16ab3d23ebb6de5778757f4d15839b99501fad4f9bd",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/checks.json",
+      "bytes": 584,
+      "sha256": "594b05f2cc1073d2d23181f62bdc6a6c125b1ccef168066e78759dcff15c8499",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/commands.json",
+      "bytes": 16432,
+      "sha256": "77113029cc5738726dd119641e7036796dd6b7881e421c193513ec4e95b58dd0",
+      "category": "command-record"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/version.json",
+      "bytes": 219,
+      "sha256": "6decadc456b2a817fea78c5a8b17a4aaf4e84681d01ca770b13435d4915fb41e",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/A-drift-rejected.json",
+      "bytes": 409,
+      "sha256": "5d811075ef616cd24fb856c35593e88b7b19dbd7b4e6647639031cd8b94441c8",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/A-manual-stamp.json",
+      "bytes": 524,
+      "sha256": "5ed777fc5248dbd18ae26f5e1f98c36b23521773c0ed8a435154a3b09581731f",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/A-restamp-negative.json",
+      "bytes": 987,
+      "sha256": "1dcbad474a696f0a2a6d1bbf3022a550d89ef01adf3976e87cc30e72e37375fb",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/A-stable-build.json",
+      "bytes": 1125,
+      "sha256": "94699744fa0b9ac15e6e902ddec580575b436d41a47e3dad389d6baee6638a66",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/A-stable-freshness.json",
+      "bytes": 956,
+      "sha256": "3b1568909637a9ac92a73150fd8aed1e549b6af47a36e5e1ff7f8e9aa1f35396",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/B-missing-graph.json",
+      "bytes": 960,
+      "sha256": "656268d6cb924e179ea002aa920a4f58ad636cbfef156e20316b40096f58fe03",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/B-publish-failure.json",
+      "bytes": 660,
+      "sha256": "517057150a57d913524f4cb0c7e7c0e81e2d5d9a1063054abf5b3c0b1a77d53b",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/B-query.json",
+      "bytes": 330,
+      "sha256": "64865d6a65b3d9258d0c49c4a73b8e25596b4b139a5e45976830ae6621778345",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/B-recovered.json",
+      "bytes": 928,
+      "sha256": "f4f2b381f2ccc58ba2352786999ecf06a04be482e64a85065491fca6e6f0ccf8",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/B-refresh.json",
+      "bytes": 377,
+      "sha256": "617277e361eb136a17584caa628481c186340fb567f1d95f27128cccff55abd7",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/D-busy.json",
+      "bytes": 396,
+      "sha256": "b1aea7030e1b11ff7edcfa4bffabe81be8df68a2fdc220eb7e3277898579f851",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/D-graph-0.json",
+      "bytes": 706,
+      "sha256": "ea7488e593a7dc356a68054a0f719a112e2ee8cc0343d971563c99fbac8d02b2",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/D-graph-1.json",
+      "bytes": 706,
+      "sha256": "8fb09494bb5fece1226ee995991be96231d25356b218854355bcd208d9555eed",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/D-graph-2.json",
+      "bytes": 706,
+      "sha256": "2d96d8fb2e7d54f60d4f90c6890e3bce520baa964c697f10e6240135883844a0",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/D-graph-3.json",
+      "bytes": 706,
+      "sha256": "51446ba0fa34d21baf5cd56832896c0ab92bc5b7d19c5837387760fc727615a1",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/D-initial.json",
+      "bytes": 1105,
+      "sha256": "1c0f986bec102aa51dcde1cda88dd3958b5e6f237115f867471251916967aa86",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/D-mixed-0.json",
+      "bytes": 706,
+      "sha256": "7f03bdcb20009c03572901dc2c4eb2a48709a01e0bf38d50244dddc759771c59",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/D-mixed-1.json",
+      "bytes": 1217,
+      "sha256": "79b137af0ad0f716c1f4205efe9506cb15b22a5d825ffb637286f6f35cbd0345",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/D-mixed-2.json",
+      "bytes": 706,
+      "sha256": "9cb2f69d92993bde7a6ce4e240192d4c1b85d12d6e35a8ab065b169318fbea20",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/D-mixed-3.json",
+      "bytes": 1217,
+      "sha256": "276ba1d241e8296f94baebdc804f3e2ebb1f858db229ccb83f67458f7d5d6d2e",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/D-owner-death-recovery.json",
+      "bytes": 733,
+      "sha256": "797713c929467e50a0ece1dc21cc61b850eb34a8b6f6c7535f24e115b8ab669f",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/checks.json",
+      "bytes": 641,
+      "sha256": "3c614bcf53707771968969a3ea5ec6dde84d408002f2107ee94d25c7d218f97f",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/commands.json",
+      "bytes": 16756,
+      "sha256": "22b4eed07469966db7a6ba2e94224bd2b7938281b852196b9f4bc6b351a0ba4d",
+      "category": "command-record"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/version.json",
+      "bytes": 219,
+      "sha256": "9ebd04e70a764ce5687330f80a580791fb9b6dc5dac0ea8547fe559ee43e36e5",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/A-drift-rejected.json",
+      "bytes": 409,
+      "sha256": "5247e6d3faebf961c5cc9cbdcb2fd9e61f768d9a8cb2cadb786909320d0bdbf6",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/A-manual-stamp.json",
+      "bytes": 525,
+      "sha256": "75aba13381a11a517439a20ed633ce3de08efe92497c4ace963e005e13ed2c29",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/A-restamp-negative.json",
+      "bytes": 986,
+      "sha256": "98c7e1cbebe74438ecaa6ad77258771b354f8b3597531dba01a40c2fe0fd125d",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/A-stable-build.json",
+      "bytes": 1125,
+      "sha256": "89721dec158c41eb034a955b53de3e00085c8e92ce482083108283ece0ea009b",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/A-stable-freshness.json",
+      "bytes": 956,
+      "sha256": "c7bbde0ab4e6591de0fb3e963e55eb3d48e566d4135e4573d8e651e54cc47221",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/B-missing-graph.json",
+      "bytes": 960,
+      "sha256": "9e7890ee8386501e055f102d3fc1e41ecc54f35c3a15172ac85d08680e144802",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/B-publish-failure.json",
+      "bytes": 661,
+      "sha256": "3de737c0d75f7f373e2e31b2d6b41670a684e3c9c3e3c8ec4bd3d84244d42ff2",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/B-query.json",
+      "bytes": 330,
+      "sha256": "7e29d0d2a87f8b621c09c969750585e04d8b24012a88f2bed36a731e6ded3745",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/B-recovered.json",
+      "bytes": 928,
+      "sha256": "61d33f1d8685c134b6b02c4ac35fc71df28c307d39c733cb6f0de707e806e7b6",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/B-refresh.json",
+      "bytes": 377,
+      "sha256": "20ef4a0a4e3a915da64af9acc563f402bec1a218a763465140b5431daae41883",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/D-busy.json",
+      "bytes": 396,
+      "sha256": "fb389c3395292bf60226d5bc19990eadbe39700920db018b20ada6a228bca96f",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/D-graph-0.json",
+      "bytes": 706,
+      "sha256": "c6ec3bcaa767ec2b9f0d84a7272a6793e83082b02e6714712255474bdcb0f5b6",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/D-graph-1.json",
+      "bytes": 706,
+      "sha256": "57fea3514063a2b66c23bd7e240f02d1d7635352b3915ec35a3b4e6d44f4194c",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/D-graph-2.json",
+      "bytes": 706,
+      "sha256": "70862f682cb85f48b55c6f52804fe93a9b67c92cc00c056955edb405cab8d973",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/D-graph-3.json",
+      "bytes": 706,
+      "sha256": "b5e04c2b463c8ce32993a3e7c2d55e39085b0186c465d35377e843eea4931b1f",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/D-initial.json",
+      "bytes": 1105,
+      "sha256": "99a11913512caea1fb76eecc4d67258712b63369625736c91b525b09aba44ffa",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/D-mixed-0.json",
+      "bytes": 706,
+      "sha256": "284ba90fc806003688b4ab25be48676a7be2fdf7c93ea439b2e32b0c7985a113",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/D-mixed-1.json",
+      "bytes": 1217,
+      "sha256": "bebf6afe9de5c8d8b5ac2dc2f41a1f26667f4ea75edc672c768831245d856c3b",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/D-mixed-2.json",
+      "bytes": 706,
+      "sha256": "c360d4cfe51649af8e44028e7171746f53d43a15c6b75497e96a46acab19b157",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/D-mixed-3.json",
+      "bytes": 1217,
+      "sha256": "4ee71612561ca02b13b3e5bc5e6f8bcd476aef7ea0b9b48cfad4c754b4fe9190",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/D-owner-death-recovery.json",
+      "bytes": 733,
+      "sha256": "a638bae435a25e835b45a8eb277d34f861db2c4f27c092a108848ac44370582d",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/E-concurrent-0.json",
+      "bytes": 706,
+      "sha256": "0c2e3080a35678b995eb7f8e7062b1609664521c75bd163d8166bd265b48dcc1",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/E-concurrent-1.json",
+      "bytes": 706,
+      "sha256": "6443fcd0ad7a3d0f4b19149ca812009c30a1f915ee406884b403dfb7f8675a68",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/E-concurrent-2.json",
+      "bytes": 706,
+      "sha256": "67fe430bdd39f299e7d9f66908fd3a5f129cc715542993722aa911fcb7478132",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/E-concurrent-3.json",
+      "bytes": 706,
+      "sha256": "beadd28db4e5eb73b32bb9f7d90aed6379ecf5ee8163a554e7848c65080d285d",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/E-initial.json",
+      "bytes": 1109,
+      "sha256": "0ad397ffcb2052a8c0adfb0ce196052f8db19d1db4da67b9a97f8b86d9522144",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/checks.json",
+      "bytes": 781,
+      "sha256": "cecd2cd2e9a4ce8608db687c6a29a0734c3a0239cb5a6f5c554b979cb1aef94a",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/commands.json",
+      "bytes": 20773,
+      "sha256": "b10a34b822e966b29c7842ec6dd3bf2be014cf0e58818bf3a90ae2175edd1675",
+      "category": "command-record"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/version.json",
+      "bytes": 217,
+      "sha256": "2ca97908f51c51e46fe915c89b16614d3041c5243a1f0e7999c57fa649f66707",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/codex-discussion.md",
+      "bytes": 10094,
+      "sha256": "34b7f9bebb73275bbde8a811e45c6323423cf2d390a533846cc0c37230a81248",
+      "category": "report-or-receipt"
+    },
+    {
+      "path": "audit/20260927/round1/collection-retry.log",
+      "bytes": 1737,
+      "sha256": "22281bc94d03d9a96f58faf673d09cb9b8a2c71cfffd66c7f02ed88320d2c3ac",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/collection.log",
+      "bytes": 1874,
+      "sha256": "f5b544228df760746ed2e28f30e20fd95218b903beed09956b390b3e928a073e",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/design-notes.md",
+      "bytes": 3088,
+      "sha256": "d982a5f24a08495c43bec9d6f7159d525887ae1b7595b2c83e5895bb42e5b866",
+      "category": "report-or-receipt"
+    },
+    {
+      "path": "audit/20260927/round1/discussion.md",
+      "bytes": 7651,
+      "sha256": "566520b342dc4814c36df352b6065b47c1895c57f1ba171e6b8315aa96e2a2bb",
+      "category": "report-or-receipt"
+    },
+    {
+      "path": "audit/20260927/round1/docs-progress.md",
+      "bytes": 6598,
+      "sha256": "1a8b19347f532ea75c7df71dbca38baf70a5afaab86e0f585cf06a19288e47f6",
+      "category": "report-or-receipt"
+    },
+    {
+      "path": "audit/20260927/round1/docs-source-anchors.txt",
+      "bytes": 3984,
+      "sha256": "89dffb4ff464b429d372186ca659e68f51f233c643efe8a024937396f0621029",
+      "category": "text-or-diff-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/docs-source-hashes.txt",
+      "bytes": 750,
+      "sha256": "6dfe751da4d682561a42f19f94e275f20f5c9cc46defb11e88eb9cc24a91b9e8",
+      "category": "text-or-diff-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/ep.md",
+      "bytes": 12413,
+      "sha256": "ed05d07032075a54ef0e844ba18301186d3b206d32f0a1a424a2ef5031cd476a",
+      "category": "report-or-receipt"
+    },
+    {
+      "path": "audit/20260927/round1/final-verification.json",
+      "bytes": 3944,
+      "sha256": "b2a0b921606f1d10c91e7f4d731adf40a65a73cf987309d0ee3e868eadf14b2a",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/findings.md",
+      "bytes": 6184,
+      "sha256": "9f0269f0139bede7c02326fb5d818412791a24f7de795bac7ebfdea84e2ba4ff",
+      "category": "report-or-receipt"
+    },
+    {
+      "path": "audit/20260927/round1/glm-discussion.md",
+      "bytes": 22212,
+      "sha256": "36b4b5e4395aa76730864c93cc6f3b3856e6a9117a49bf1b47dfc964e671e741",
+      "category": "report-or-receipt"
+    },
+    {
+      "path": "audit/20260927/round1/landing-rustfmt.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/liveness-retry.jsonl",
+      "bytes": 1200,
+      "sha256": "9f98e2bb3194bf3d19d2e1c78769e84b3451477001b35859fd6a801bff9bdc96",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/liveness.jsonl",
+      "bytes": 1239,
+      "sha256": "67daa3060c9dee9a2e2d31c81c8e464b866255d174f2e6319fcfa2bc5b203928",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/muse-discussion.md",
+      "bytes": 8569,
+      "sha256": "36c0c2227fadffe6bcfee95c21598b610f6a1e632d52f3dff016db306fd67a58",
+      "category": "report-or-receipt"
+    },
+    {
+      "path": "audit/20260927/round1/progress.md",
+      "bytes": 7824,
+      "sha256": "d6190766c3bd98c4393b9ca10b10a265f59a7609cb6cc7d84e0250b323b95c50",
+      "category": "report-or-receipt"
+    },
+    {
+      "path": "audit/20260927/round1/review-adjudication.md",
+      "bytes": 5646,
+      "sha256": "94cd22fbcdca06a51aba0f519600fccb69eb3c2fbc44ea87b40f1d0282bb6d39",
+      "category": "report-or-receipt"
+    },
+    {
+      "path": "audit/20260927/round1/review-collection.log",
+      "bytes": 1260,
+      "sha256": "ae71053aa0dafa86113c7a19a8b48f65c2273dcab99a91e452d72b9e931f868e",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/review-fresh-prompt.md",
+      "bytes": 1573,
+      "sha256": "fbe18f842bfb3cb738514895b45e41232b9c805006bf466cd872b0ac0bf396a0",
+      "category": "report-or-receipt"
+    },
+    {
+      "path": "audit/20260927/round1/review-glm-receipt.json",
+      "bytes": 41676,
+      "sha256": "5d0fa038a65c01fba63d8031ca45089608d4b2fb2755c1046d8df79557a41f06",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/review-glm.md",
+      "bytes": 18657,
+      "sha256": "8b5ffdb5da217bc7e628a9479829ed9aeacbc0cf7e32108154f169b0706d9631",
+      "category": "report-or-receipt"
+    },
+    {
+      "path": "audit/20260927/round1/review-identity.json",
+      "bytes": 3332,
+      "sha256": "4adec96a2ac01d9d028a3bf9e6279c227c13b30b54dec2745b8da6004356ad16",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/review-intent-prompt.md",
+      "bytes": 1572,
+      "sha256": "9b61b665ea7cfdab603d7b21b404342396b914ed5b8e8f0f3f148491de7d5296",
+      "category": "report-or-receipt"
+    },
+    {
+      "path": "audit/20260927/round1/review-liveness.jsonl",
+      "bytes": 800,
+      "sha256": "27c77f128e005a206e1cf6898f47c734cb098ea5a5bb2dbb3bb6d75d1037084e",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/review-muse-receipt.json",
+      "bytes": 13955,
+      "sha256": "685487e726e99dfd286862542f8acc56c42f213952608d71cc433391722e93fc",
+      "category": "structured-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/review-muse.md",
+      "bytes": 12360,
+      "sha256": "50068723ee03e582c549a94ec42dee245457ba790fda143ebe430a7044c88325",
+      "category": "report-or-receipt"
+    },
+    {
+      "path": "audit/20260927/round1/review-status.txt",
+      "bytes": 1176,
+      "sha256": "68caa344c10ef2bc8fbcdc774bd546e0ee6d14c4afb23f4342f93936b36ec200",
+      "category": "text-or-diff-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/review-tracked.diff",
+      "bytes": 149227,
+      "sha256": "0ebf19541e862ccc7344730bdf14be9ac686062877a4c921f541aea9c57c75a4",
+      "category": "text-or-diff-evidence"
+    },
+    {
+      "path": "audit/20260927/round1/workspace-build.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/round1/workspace-build.log",
+      "bytes": 72,
+      "sha256": "5a98124ec862935b7871f29f50e2f8500bb7f484065a46c249739acf8120ba21",
+      "category": "log"
+    },
+    {
+      "path": "audit/20260927/round1/workspace-test.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "category": "exit"
+    },
+    {
+      "path": "audit/20260927/round1/workspace-test.log",
+      "bytes": 46627,
+      "sha256": "d7d831a923412e10de9d22a959f87a99dcb645d117a406c17fbf134609bed029",
+      "category": "log"
+    }
+  ],
+  "excluded_files": [
+    {
+      "path": "audit/20260927/adjudication-zcode-main.md",
+      "bytes": 3095,
+      "reason": "foreign concurrent artifact explicitly excluded"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run1/A-in-build-mutation/.code-reality/.gitignore",
+      "bytes": 68,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run1/A-in-build-mutation/app.py",
+      "bytes": 25,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run1/A-in-build-mutation/mutate-after-produce",
+      "bytes": 0,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run1/A-in-build-mutation/producer-input.txt",
+      "bytes": 25,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run1/bin/pyrefly-index",
+      "bytes": 157,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/A-in-build-mutation/.code-reality/.gitignore",
+      "bytes": 68,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/A-in-build-mutation/.code-reality/graph.db",
+      "bytes": 77824,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/A-in-build-mutation/.code-reality/scip/index.scip",
+      "bytes": 140,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/A-in-build-mutation/.code-reality/scip/index.scip.meta.json",
+      "bytes": 537,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/A-in-build-mutation/app.py",
+      "bytes": 53,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/A-in-build-mutation/mutate-after-produce",
+      "bytes": 0,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/A-in-build-mutation/producer-input.txt",
+      "bytes": 53,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/B-first-build-failure/.code-reality/.gitignore",
+      "bytes": 68,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/B-first-build-failure/.code-reality/graph.db",
+      "bytes": 77824,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/B-first-build-failure/.code-reality/scip/index.scip",
+      "bytes": 140,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/B-first-build-failure/.code-reality/scip/index.scip.meta.json",
+      "bytes": 539,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/B-first-build-failure/app.py",
+      "bytes": 53,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/B-first-build-failure/producer-input.txt",
+      "bytes": 53,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/D-concurrent-graph/.code-reality/.gitignore",
+      "bytes": 68,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/D-concurrent-graph/.code-reality/graph.db",
+      "bytes": 3059712,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/D-concurrent-graph/.code-reality/scip/index.scip",
+      "bytes": 309636,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/D-concurrent-graph/app.py",
+      "bytes": 125000,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run2/bin/pyrefly-index",
+      "bytes": 157,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/A-in-build-mutation/.code-reality/.gitignore",
+      "bytes": 68,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/A-in-build-mutation/.code-reality/graph.db",
+      "bytes": 77824,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/A-in-build-mutation/.code-reality/scip/.heal-churn",
+      "bytes": 0,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/A-in-build-mutation/.code-reality/scip/index.scip",
+      "bytes": 140,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/A-in-build-mutation/app.py",
+      "bytes": 53,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/A-in-build-mutation/mutate-after-produce",
+      "bytes": 0,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/A-in-build-mutation/producer-input.txt",
+      "bytes": 53,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/B-first-build-failure/.code-reality/.gitignore",
+      "bytes": 68,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/B-first-build-failure/.code-reality/graph.db",
+      "bytes": 77824,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/B-first-build-failure/.code-reality/scip/index.scip",
+      "bytes": 140,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/B-first-build-failure/app.py",
+      "bytes": 53,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/B-first-build-failure/producer-input.txt",
+      "bytes": 53,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/D-concurrent-graph/.code-reality/.gitignore",
+      "bytes": 68,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/D-concurrent-graph/.code-reality/graph.db",
+      "bytes": 3059712,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/D-concurrent-graph/.code-reality/scip/index.scip",
+      "bytes": 309636,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/D-concurrent-graph/app.py",
+      "bytes": 125000,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run3/bin/pyrefly-index",
+      "bytes": 157,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/A-in-build-mutation/.code-reality/.gitignore",
+      "bytes": 68,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/A-in-build-mutation/.code-reality/graph.db",
+      "bytes": 77824,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/A-in-build-mutation/.code-reality/scip/index.scip",
+      "bytes": 140,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/A-in-build-mutation/.code-reality/scip/index.scip.meta.json",
+      "bytes": 537,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/A-in-build-mutation/app.py",
+      "bytes": 53,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/A-in-build-mutation/mutate-after-produce",
+      "bytes": 0,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/A-in-build-mutation/producer-input.txt",
+      "bytes": 53,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/B-first-build-failure/.code-reality/.gitignore",
+      "bytes": 68,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/B-first-build-failure/.code-reality/graph.db",
+      "bytes": 77824,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/B-first-build-failure/.code-reality/scip/index.scip",
+      "bytes": 140,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/B-first-build-failure/.code-reality/scip/index.scip.meta.json",
+      "bytes": 539,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/B-first-build-failure/app.py",
+      "bytes": 53,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/B-first-build-failure/producer-input.txt",
+      "bytes": 53,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/D-concurrent-graph/.code-reality/.gitignore",
+      "bytes": 68,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/D-concurrent-graph/.code-reality/graph.db",
+      "bytes": 3059712,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/D-concurrent-graph/.code-reality/graph.db.tmp-build",
+      "bytes": 12288,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/D-concurrent-graph/.code-reality/scip/index.scip",
+      "bytes": 309636,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/D-concurrent-graph/app.py",
+      "bytes": 125000,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run4/bin/pyrefly-index",
+      "bytes": 157,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/A-in-build-mutation/.code-reality/.gitignore",
+      "bytes": 68,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/A-in-build-mutation/.code-reality/graph.db",
+      "bytes": 77824,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/A-in-build-mutation/.code-reality/scip/index.scip",
+      "bytes": 140,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/A-in-build-mutation/.code-reality/scip/index.scip.meta.json",
+      "bytes": 537,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/A-in-build-mutation/app.py",
+      "bytes": 53,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/A-in-build-mutation/mutate-after-produce",
+      "bytes": 0,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/A-in-build-mutation/producer-input.txt",
+      "bytes": 53,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/B-first-build-failure/.code-reality/.gitignore",
+      "bytes": 68,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/B-first-build-failure/.code-reality/graph.db",
+      "bytes": 77824,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/B-first-build-failure/.code-reality/scip/index.scip",
+      "bytes": 140,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/B-first-build-failure/.code-reality/scip/index.scip.meta.json",
+      "bytes": 539,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/B-first-build-failure/app.py",
+      "bytes": 53,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/B-first-build-failure/producer-input.txt",
+      "bytes": 53,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/D-concurrent-graph/.code-reality/.gitignore",
+      "bytes": 68,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/D-concurrent-graph/.code-reality/graph.db",
+      "bytes": 3059712,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/D-concurrent-graph/.code-reality/scip/index.scip",
+      "bytes": 309636,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/D-concurrent-graph/app.py",
+      "bytes": 125000,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/data/run5/bin/pyrefly-index",
+      "bytes": 157,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/evidence/lsp/cache-fixture.py",
+      "bytes": 6,
+      "reason": "generated LSP fixture/PID/marker; generator retained"
+    },
+    {
+      "path": "audit/20260927/evidence/lsp/init-attempt",
+      "bytes": 9,
+      "reason": "generated LSP fixture/PID/marker; generator retained"
+    },
+    {
+      "path": "audit/20260927/evidence/lsp/large-fixture.py",
+      "bytes": 4194307,
+      "reason": "generated LSP fixture/PID/marker; generator retained"
+    },
+    {
+      "path": "audit/20260927/evidence/lsp/mcp-backend.pid",
+      "bytes": 6,
+      "reason": "generated LSP fixture/PID/marker; generator retained"
+    },
+    {
+      "path": "audit/20260927/evidence/lsp/probe",
+      "bytes": 2453640,
+      "reason": "compiled platform-specific binary; Rust source/build recipe retained"
+    },
+    {
+      "path": "audit/20260927/evidence/lsp/probe-rebuilt",
+      "bytes": 2453648,
+      "reason": "compiled platform-specific binary; Rust source/build recipe retained"
+    },
+    {
+      "path": "audit/20260927/evidence/mcp-lifecycle/cancel/completed",
+      "bytes": 4,
+      "reason": "generated lifecycle fixture/marker/stub; generator retained"
+    },
+    {
+      "path": "audit/20260927/evidence/mcp-lifecycle/cancel/pyrefly-index",
+      "bytes": 320,
+      "reason": "generated lifecycle fixture/marker/stub; generator retained"
+    },
+    {
+      "path": "audit/20260927/evidence/mcp-lifecycle/cancel/repo/.code-reality/.gitignore",
+      "bytes": 68,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/mcp-lifecycle/cancel/repo/example.py",
+      "bytes": 28,
+      "reason": "generated lifecycle fixture/marker/stub; generator retained"
+    },
+    {
+      "path": "audit/20260927/evidence/mcp-lifecycle/cancel/started",
+      "bytes": 7,
+      "reason": "generated lifecycle fixture/marker/stub; generator retained"
+    },
+    {
+      "path": "audit/20260927/evidence/mcp-lifecycle/eof/completed",
+      "bytes": 4,
+      "reason": "generated lifecycle fixture/marker/stub; generator retained"
+    },
+    {
+      "path": "audit/20260927/evidence/mcp-lifecycle/eof/pyrefly-index",
+      "bytes": 314,
+      "reason": "generated lifecycle fixture/marker/stub; generator retained"
+    },
+    {
+      "path": "audit/20260927/evidence/mcp-lifecycle/eof/repo/.code-reality/.gitignore",
+      "bytes": 68,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/mcp-lifecycle/eof/repo/example.py",
+      "bytes": 28,
+      "reason": "generated lifecycle fixture/marker/stub; generator retained"
+    },
+    {
+      "path": "audit/20260927/evidence/mcp-lifecycle/eof/started",
+      "bytes": 7,
+      "reason": "generated lifecycle fixture/marker/stub; generator retained"
+    },
+    {
+      "path": "audit/20260927/evidence/mcp-lifecycle/large-error/pyrefly-index",
+      "bytes": 256,
+      "reason": "generated lifecycle fixture/marker/stub; generator retained"
+    },
+    {
+      "path": "audit/20260927/evidence/mcp-lifecycle/large-error/repo/.code-reality/.gitignore",
+      "bytes": 68,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/evidence/mcp-lifecycle/large-error/repo/example.py",
+      "bytes": 28,
+      "reason": "generated lifecycle fixture/marker/stub; generator retained"
+    },
+    {
+      "path": "audit/20260927/evidence/mcp-lifecycle/large-error/started",
+      "bytes": 7,
+      "reason": "generated lifecycle fixture/marker/stub; generator retained"
+    },
+    {
+      "path": "audit/20260927/evidence/wrapper-pin/code-reality--rc1_testrev/bins/code-reality-lsp-bridge",
+      "bytes": 131,
+      "reason": "generated wrapper executable stubs; generator and results retained"
+    },
+    {
+      "path": "audit/20260927/evidence/wrapper-pin/code-reality--rc1_testrev/bins/code-reality-mcp",
+      "bytes": 124,
+      "reason": "generated wrapper executable stubs; generator and results retained"
+    },
+    {
+      "path": "audit/20260927/evidence/wrapper-pin/code-reality--rc1_testrev/bins/pyrefly-index",
+      "bytes": 121,
+      "reason": "generated wrapper executable stubs; generator and results retained"
+    },
+    {
+      "path": "audit/20260927/evidence/wrapper-pin/code-reality--rc1_testrev/bins/uv",
+      "bytes": 324,
+      "reason": "generated wrapper executable stubs; generator and results retained"
+    },
+    {
+      "path": "audit/20260927/evidence/wrapper-pin/code-reality-0_testrev/bins/code-reality-lsp-bridge",
+      "bytes": 125,
+      "reason": "generated wrapper executable stubs; generator and results retained"
+    },
+    {
+      "path": "audit/20260927/evidence/wrapper-pin/code-reality-0_testrev/bins/code-reality-mcp",
+      "bytes": 118,
+      "reason": "generated wrapper executable stubs; generator and results retained"
+    },
+    {
+      "path": "audit/20260927/evidence/wrapper-pin/code-reality-0_testrev/bins/pyrefly-index",
+      "bytes": 115,
+      "reason": "generated wrapper executable stubs; generator and results retained"
+    },
+    {
+      "path": "audit/20260927/evidence/wrapper-pin/code-reality-0_testrev/bins/uv",
+      "bytes": 318,
+      "reason": "generated wrapper executable stubs; generator and results retained"
+    },
+    {
+      "path": "audit/20260927/evidence/wrapper-pin/code-reality-_testrev/bins/code-reality-lsp-bridge",
+      "bytes": 123,
+      "reason": "generated wrapper executable stubs; generator and results retained"
+    },
+    {
+      "path": "audit/20260927/evidence/wrapper-pin/code-reality-_testrev/bins/code-reality-mcp",
+      "bytes": 116,
+      "reason": "generated wrapper executable stubs; generator and results retained"
+    },
+    {
+      "path": "audit/20260927/evidence/wrapper-pin/code-reality-_testrev/bins/pyrefly-index",
+      "bytes": 113,
+      "reason": "generated wrapper executable stubs; generator and results retained"
+    },
+    {
+      "path": "audit/20260927/evidence/wrapper-pin/code-reality-_testrev/bins/uv",
+      "bytes": 316,
+      "reason": "generated wrapper executable stubs; generator and results retained"
+    },
+    {
+      "path": "audit/20260927/evidence/wrapper-pin/code-reality-lsp-bridge--rc1_testrev/bins/code-reality-lsp-bridge",
+      "bytes": 131,
+      "reason": "generated wrapper executable stubs; generator and results retained"
+    },
+    {
+      "path": "audit/20260927/evidence/wrapper-pin/code-reality-lsp-bridge--rc1_testrev/bins/code-reality-mcp",
+      "bytes": 124,
+      "reason": "generated wrapper executable stubs; generator and results retained"
+    },
+    {
+      "path": "audit/20260927/evidence/wrapper-pin/code-reality-lsp-bridge--rc1_testrev/bins/pyrefly-index",
+      "bytes": 121,
+      "reason": "generated wrapper executable stubs; generator and results retained"
+    },
+    {
+      "path": "audit/20260927/evidence/wrapper-pin/code-reality-lsp-bridge--rc1_testrev/bins/uv",
+      "bytes": 346,
+      "reason": "generated wrapper executable stubs; generator and results retained"
+    },
+    {
+      "path": "audit/20260927/evidence/wrapper-pin/code-reality-lsp-bridge-0_testrev/bins/code-reality-lsp-bridge",
+      "bytes": 125,
+      "reason": "generated wrapper executable stubs; generator and results retained"
+    },
+    {
+      "path": "audit/20260927/evidence/wrapper-pin/code-reality-lsp-bridge-0_testrev/bins/code-reality-mcp",
+      "bytes": 118,
+      "reason": "generated wrapper executable stubs; generator and results retained"
+    },
+    {
+      "path": "audit/20260927/evidence/wrapper-pin/code-reality-lsp-bridge-0_testrev/bins/pyrefly-index",
+      "bytes": 115,
+      "reason": "generated wrapper executable stubs; generator and results retained"
+    },
+    {
+      "path": "audit/20260927/evidence/wrapper-pin/code-reality-lsp-bridge-0_testrev/bins/uv",
+      "bytes": 340,
+      "reason": "generated wrapper executable stubs; generator and results retained"
+    },
+    {
+      "path": "audit/20260927/evidence/wrapper-pin/code-reality-lsp-bridge-_testrev/bins/code-reality-lsp-bridge",
+      "bytes": 123,
+      "reason": "generated wrapper executable stubs; generator and results retained"
+    },
+    {
+      "path": "audit/20260927/evidence/wrapper-pin/code-reality-lsp-bridge-_testrev/bins/code-reality-mcp",
+      "bytes": 116,
+      "reason": "generated wrapper executable stubs; generator and results retained"
+    },
+    {
+      "path": "audit/20260927/evidence/wrapper-pin/code-reality-lsp-bridge-_testrev/bins/pyrefly-index",
+      "bytes": 113,
+      "reason": "generated wrapper executable stubs; generator and results retained"
+    },
+    {
+      "path": "audit/20260927/evidence/wrapper-pin/code-reality-lsp-bridge-_testrev/bins/uv",
+      "bytes": 338,
+      "reason": "generated wrapper executable stubs; generator and results retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run1/A-production-drift/.code-reality/.gitignore",
+      "bytes": 68,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run1/A-production-drift/.code-reality/.writer.lock",
+      "bytes": 0,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run1/A-production-drift/.code-reality/graph.db",
+      "bytes": 77824,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run1/A-production-drift/.code-reality/scip/index.scip",
+      "bytes": 140,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run1/A-production-drift/.code-reality/scip/index.scip.meta.json",
+      "bytes": 629,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run1/A-production-drift/app.py",
+      "bytes": 53,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run1/A-production-drift/producer-finished",
+      "bytes": 0,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run1/A-production-drift/producer-input.txt",
+      "bytes": 53,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run1/bin/pyrefly-index",
+      "bytes": 148,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/A-production-drift/.code-reality/.gitignore",
+      "bytes": 68,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/A-production-drift/.code-reality/.writer.lock",
+      "bytes": 0,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/A-production-drift/.code-reality/graph.db",
+      "bytes": 77824,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/A-production-drift/.code-reality/scip/index.scip",
+      "bytes": 140,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/A-production-drift/.code-reality/scip/index.scip.meta.json",
+      "bytes": 629,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/A-production-drift/app.py",
+      "bytes": 53,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/A-production-drift/mutate-after-produce",
+      "bytes": 0,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/A-production-drift/producer-finished",
+      "bytes": 0,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/A-production-drift/producer-input.txt",
+      "bytes": 53,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/B-graphfail/.code-reality/.gitignore",
+      "bytes": 68,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/B-graphfail/.code-reality/.writer.lock",
+      "bytes": 0,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/B-graphfail/.code-reality/graph.db",
+      "bytes": 77824,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/B-graphfail/.code-reality/scip/index.scip",
+      "bytes": 140,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/B-graphfail/.code-reality/scip/index.scip.meta.json",
+      "bytes": 622,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/B-graphfail/app.py",
+      "bytes": 53,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/B-graphfail/producer-finished",
+      "bytes": 0,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/B-graphfail/producer-input.txt",
+      "bytes": 53,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/D-concurrent/.code-reality/.gitignore",
+      "bytes": 68,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/D-concurrent/.code-reality/.writer.lock",
+      "bytes": 0,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/D-concurrent/.code-reality/graph.db",
+      "bytes": 2834432,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/D-concurrent/.code-reality/scip/index.scip",
+      "bytes": 309636,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/D-concurrent/.code-reality/scip/index.scip.meta.json",
+      "bytes": 623,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/D-concurrent/app.py",
+      "bytes": 125000,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/D-concurrent/lock-ready",
+      "bytes": 0,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/D-concurrent/producer-finished",
+      "bytes": 0,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/D-concurrent/producer-input.txt",
+      "bytes": 125000,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run2/bin/pyrefly-index",
+      "bytes": 148,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/A-production-drift/.code-reality/.gitignore",
+      "bytes": 68,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/A-production-drift/.code-reality/.writer.lock",
+      "bytes": 0,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/A-production-drift/.code-reality/graph.db",
+      "bytes": 77824,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/A-production-drift/.code-reality/scip/index.scip",
+      "bytes": 140,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/A-production-drift/.code-reality/scip/index.scip.meta.json",
+      "bytes": 629,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/A-production-drift/app.py",
+      "bytes": 53,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/A-production-drift/mutate-after-produce",
+      "bytes": 0,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/A-production-drift/producer-finished",
+      "bytes": 0,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/A-production-drift/producer-input.txt",
+      "bytes": 53,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/B-graphfail/.code-reality/.gitignore",
+      "bytes": 68,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/B-graphfail/.code-reality/.writer.lock",
+      "bytes": 0,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/B-graphfail/.code-reality/graph.db",
+      "bytes": 77824,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/B-graphfail/.code-reality/scip/index.scip",
+      "bytes": 140,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/B-graphfail/.code-reality/scip/index.scip.meta.json",
+      "bytes": 622,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/B-graphfail/app.py",
+      "bytes": 53,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/B-graphfail/producer-finished",
+      "bytes": 0,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/B-graphfail/producer-input.txt",
+      "bytes": 53,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/D-concurrent/.code-reality/.gitignore",
+      "bytes": 68,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/D-concurrent/.code-reality/.writer.lock",
+      "bytes": 0,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/D-concurrent/.code-reality/graph.db",
+      "bytes": 2834432,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/D-concurrent/.code-reality/scip/index.scip",
+      "bytes": 309636,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/D-concurrent/.code-reality/scip/index.scip.meta.json",
+      "bytes": 623,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/D-concurrent/app.py",
+      "bytes": 125000,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/D-concurrent/lock-ready",
+      "bytes": 4,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/D-concurrent/producer-finished",
+      "bytes": 0,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/D-concurrent/producer-input.txt",
+      "bytes": 125000,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run3/bin/pyrefly-index",
+      "bytes": 148,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/A-production-drift/.code-reality/.gitignore",
+      "bytes": 68,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/A-production-drift/.code-reality/.writer.lock",
+      "bytes": 0,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/A-production-drift/.code-reality/graph.db",
+      "bytes": 77824,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/A-production-drift/.code-reality/scip/index.scip",
+      "bytes": 140,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/A-production-drift/.code-reality/scip/index.scip.meta.json",
+      "bytes": 629,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/A-production-drift/app.py",
+      "bytes": 53,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/A-production-drift/mutate-after-produce",
+      "bytes": 0,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/A-production-drift/producer-finished",
+      "bytes": 0,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/A-production-drift/producer-input.txt",
+      "bytes": 53,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/B-graphfail/.code-reality/.gitignore",
+      "bytes": 68,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/B-graphfail/.code-reality/.writer.lock",
+      "bytes": 0,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/B-graphfail/.code-reality/graph.db",
+      "bytes": 77824,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/B-graphfail/.code-reality/scip/index.scip",
+      "bytes": 140,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/B-graphfail/.code-reality/scip/index.scip.meta.json",
+      "bytes": 622,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/B-graphfail/app.py",
+      "bytes": 53,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/B-graphfail/producer-finished",
+      "bytes": 0,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/B-graphfail/producer-input.txt",
+      "bytes": 53,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/D-concurrent/.code-reality/.gitignore",
+      "bytes": 68,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/D-concurrent/.code-reality/.writer.lock",
+      "bytes": 0,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/D-concurrent/.code-reality/graph.db",
+      "bytes": 2834432,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/D-concurrent/.code-reality/scip/index.scip",
+      "bytes": 309636,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/D-concurrent/.code-reality/scip/index.scip.meta.json",
+      "bytes": 623,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/D-concurrent/app.py",
+      "bytes": 125000,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/D-concurrent/lock-ready",
+      "bytes": 5,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/D-concurrent/producer-finished",
+      "bytes": 0,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/D-concurrent/producer-input.txt",
+      "bytes": 125000,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/E-derived-flow/.code-reality/.gitignore",
+      "bytes": 68,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/E-derived-flow/.code-reality/.writer.lock",
+      "bytes": 0,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/E-derived-flow/.code-reality/graph.db",
+      "bytes": 77824,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/E-derived-flow/.code-reality/scip/index.scip",
+      "bytes": 833,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/E-derived-flow/.code-reality/scip/index.scip.meta.json",
+      "bytes": 625,
+      "reason": "generated index/database/cache/lock fixture state"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/E-derived-flow/app.py",
+      "bytes": 248,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/E-derived-flow/flow-control",
+      "bytes": 0,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/E-derived-flow/producer-finished",
+      "bytes": 0,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/E-derived-flow/producer-input.txt",
+      "bytes": 248,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/c/run4/bin/pyrefly-index",
+      "bytes": 148,
+      "reason": "generated run fixture or executable stub; probe source retained"
+    },
+    {
+      "path": "audit/20260927/round1/handoff/ep.md",
+      "bytes": 11247,
+      "reason": "derived handoff presentation/snapshot; accepted round1 EP retained"
+    },
+    {
+      "path": "audit/20260927/round1/handoff/index.html",
+      "bytes": 2131,
+      "reason": "derived handoff presentation/snapshot; accepted round1 EP retained"
+    },
+    {
+      "path": "audit/20260927/round1/handoff/projection.json",
+      "bytes": 217,
+      "reason": "derived handoff presentation/snapshot; accepted round1 EP retained"
+    }
+  ],
+  "markdown_reference_check": [
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/progress.md",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/version-confirmation.txt",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/cargo-test-isolated.log",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/baseline-counts.json",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/cargo-build-workspace.log",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/lsp/findings.md",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/data/findings.md",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/wrapper-pin/results.json",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/wrapper-pin.log",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/mcp-lifecycle/results.json",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/mcp-lifecycle/large-error/response.json",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/mcp-lifecycle.log",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/lsp/README.md",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/lsp/dead-cache-confirm.log",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/lsp/mcp-confirm.log",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/lsp/probe.rs",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/lsp/blocked-write-confirm.log",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/lsp/probe.rs",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/lsp/probe-build.log",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/data/run5/A-observation.json",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/data/run5/A-freshness.json",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/data/run5/A-build.json",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/data/run5/A-refresh.json",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/data/run5/B-build-failure.json",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/data/run5/B-freshness.json",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/data/run5/B-refresh.json",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/data/run5/B-observation.json",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/data/run5/B-query.json",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/data/run5/B-explicit-recovery.json",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/ra-default-battery.log",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/ra-strict-battery.log",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/lsp/retry-confirm.log",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/lsp/probe.rs",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/lsp/README.md",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/data/run5/commands.json",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/data/concurrency-summary.log",
+      "status": "included"
+    },
+    {
+      "source": "audit/20260927/findings.md",
+      "target": "audit/20260927/evidence/data/run5/D-observation.json",
+      "status": "included"
+    }
+  ],
+  "limitations": [
+    "Snapshot only; concurrent additions or content changes require readback. SHA256 seals each recommended file.",
+    "tmp subtree is not enumerated; manifest excludes itself from counts. Foreign adjudication-zcode-main.md is excluded.",
+    "Probe sources/backend wrapper and command records contain historical absolute paths and build-specific library names; adjust paths and rebuild matching binaries for replay. This is portable evidence, not a hermetic runnable environment.",
+    "Generated databases, SCIP indexes, fixture source copies, executable stubs, PID/lock markers and compiled probes remain on disk but are not recommended for staging.",
+    "All attempt-root command/result JSON and failed-attempt logs are preserved for traceability; earlier failures are not promoted to accepted evidence.",
+    "Historical receipt/command text may mention excluded fixture paths. Direct markdown references are inventoried; free-text references are not an exhaustive machine-validated closure.",
+    "No secret-redaction audit or runtime revalidation performed. No source/card/git mutation, deletion, commit or deployment performed."
+  ]
+}

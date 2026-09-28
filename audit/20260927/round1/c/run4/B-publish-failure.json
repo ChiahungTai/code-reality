@@ -1,0 +1,8 @@
+{
+  "label": "B-publish-failure",
+  "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/B-graphfail --json",
+  "exit": 1,
+  "stdout": "",
+  "stderr": "[FAIL] build: graph.db \u539f\u5b50\u66ff\u63db\u5931\u6557\uff08/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/B-graphfail/.code-reality/.graph-build-16452-0.db \u2192 /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/round1/c/run4/B-graphfail/.code-reality/graph.db\uff09\uff1aIs a directory (os error 21)\n",
+  "elapsed": 0.12205608293879777
+}

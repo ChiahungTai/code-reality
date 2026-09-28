@@ -32,7 +32,19 @@ communities, flows, search, …) is also MCP-exposed under the same
 server — 21 tools total.
 
 Responses embed `[SRC]` provenance lines (index version/commit) and a
-`[STDERR]` section for management output.
+`[STDERR]` section for management output. Tool output and internal-error text
+have a UTF-8-safe byte cap plus an explicit truncation marker. Parameter-validation
+errors are outside this bound; it is not a strict serialized JSON frame limit.
+Cancellation suppresses response delivery,
+but already-started blocking work may continue and publish files. Transport
+EOF may await that work; neither cancellation nor EOF implies rollback.
+
+The separate LSP bridge rejects current checks after known backend death,
+including before accepting cached diagnostics. Failed initialization is
+terminal for that session; restart the bridge to recover. Writes await
+bounded acknowledgements; check and shutdown budgets start at their entry
+points, with child cleanup independent of the stdin writer lock. Existing
+overlay, diagnostic version/time and quiescence checks still apply.
 
 ## Prerequisites (per repo)
 
@@ -64,10 +76,11 @@ Responses embed `[SRC]` provenance lines (index version/commit) and a
   scip_refs --repo <repo> --stamp-meta` and `--build-cache`; the Node
   scip-python fork is the retained fallback, not the default face
 - Running pyrefly-index alone and going straight to `graph_db build`
-  is also safe: writing `index.scip` auto-invalidates superseded
+  can populate the graph: writing `index.scip` auto-invalidates superseded
   sidecar artifacts beside the slot, and the build side fails loud on
   an lsp cache db older than `index.scip` (mtime gate) — a stale cache
-  would otherwise be silently trusted
+  would otherwise be silently trusted. This manual chain establishes data
+  availability, not the source identity provenance of orchestrated `build`.
 - Refs density expectation: pyrefly refs counts sit far below the
   LSP-golden baseline (measured ~12.7× at absorption time, 2026-08) —
   expected, not a bug. pyright LSP counts every attribute member
@@ -131,7 +144,8 @@ Responses embed `[SRC]` provenance lines (index version/commit) and a
   the identity keys rebuilds on `identity_drift` (content-addressed —
   the mtime-only blind spot, e.g. a same-size content swap under a
   preserved mtime, is closed at this layer), while the torn-plane guard
-  (graph.db older than the slot) stays unconditional and legacy keyless
+  (canonical main graph.db missing or older than the slot) stays unconditional;
+  alternate and projection indexes are graph-optional. Legacy keyless
   slots keep the baseline mtime/fingerprint criteria. Under an ACTIVE
   writer (a heal that finishes and still finds sources newer than the
   slot) a churn cooldown marker (`.heal-churn`, 10min) is armed — later
@@ -181,7 +195,8 @@ Responses embed `[SRC]` provenance lines (index version/commit) and a
 - JSON contract: `{repo, slot, fresh, stale_reasons, head_drift, faces,
   indexed_source_identity, current_source_identity, identity_algo,
   serves}`. `stale_reasons` vocabulary: `torn-plane` (graph.db older
-  than the slot), `content-drift` (identity mismatch — includes the
+  than the canonical main slot, or missing), `content-drift` (identity or
+  index-byte binding mismatch — includes the
   mtime-preserved swap shape and a newly arrived language face),
   `doc-set-drift`, `policy-drift` (both reported but non-fatal in
   identity mode), `legacy-signals` (keyless meta judged by the baseline
@@ -195,14 +210,32 @@ Responses embed `[SRC]` provenance lines (index version/commit) and a
   — same content ⇒ same identity, so touch / stash round-trips /
   rebase replays are idempotent; mtime gates the per-file hash cache
   only, never the identity body.
+- **Source provenance**: orchestrated `build` captures uncached source
+  identity and corpus policy A before producers, compares after production
+  and again under publication ownership, then stamps A bound to the index
+  bytes (`index_sha256`) when the produced document set matches. Manual and
+  head-only restamps preserve prior provenance only for matching index bytes,
+  repository and selection. They never recompute current source into trusted
+  provenance for an old index. Unbound metadata uses legacy signals, not a
+  verified source-identity comparison. Endpoint equality is not an immutable
+  snapshot: ABA edits and edits after the final check remain outside the
+  guarantee.
+- **Writer ownership**: umbrella publication and explicit graph builds share
+  a bounded writer guard. Contention returns a controlled busy error; retry
+  after the active writer finishes. Explicit graph ownership covers input
+  acquisition through derived tables and publication; derived tables are
+  completed before temporary database rename. Heal single-flight remains a
+  separate outer lock. Non-cooperating writers and live source edits are
+  outside this ownership contract.
 - **Cache-validity residual risk (disclosed)**: the query-side per-file
   cache reuses a content hash when `(size, mtime[secs+nanos])` match
   exactly — a same-size swap whose mtime is restored to the exact
   nanosecond (a precise forgery; ordinary rsync -a/tar restores and
   same-second formatter rewrites do NOT match to the nanosecond) can
   slip the query-side gate. This is accepted and bounded: the
-  stamp/build path ALWAYS recomputes the indexed identity from actual
-  bytes (never the cache), the worst query-side outcome is a false
+  orchestrated production fences hash actual source bytes with the cache
+  disabled; manual restamps only preserve matching prior provenance. The
+  worst query-side outcome is a false
   stale (safe direction — a rebuild purges the cache) or this
   documented residual, and any suspicious cache (corrupt, downgraded
   version, foreign repo binding) is discarded wholesale and recomputed.
@@ -218,7 +251,8 @@ Responses embed `[SRC]` provenance lines (index version/commit) and a
   `<repo>/.code-reality/scip/` slot: when an lsp-harvest cache sits
   beside a SCIP index, the SCIP index is preferred and the cache is
   silently ignored
-- Artifact sequence: generate → `--stamp-meta` → `--build-cache`
+- Manual artifact sequence: generate → `--stamp-meta` → `--build-cache`;
+  use orchestrated `build` to establish bound source-identity provenance.
 - Legacy `~/.mosaic/code-reality/` slots migrate one-shot via
   `code-reality sidecar_migrate --repo <repo>` (missing-index errors
   auto-suggest this bridge)

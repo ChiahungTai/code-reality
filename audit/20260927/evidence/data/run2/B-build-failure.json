@@ -1,0 +1,11 @@
+{
+  "label": "B-build-failure",
+  "command": "/Users/ctai/.codex/worktrees/5967/code-reality/target/debug/code-reality build --repo /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/evidence/data/run2/B-first-build-failure --json",
+  "env_overrides": {
+    "CODE_REALITY_IDENTITY_CACHE": "off",
+    "PATH_prefix": "/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/evidence/data/run2/bin"
+  },
+  "exit": 1,
+  "stdout": "",
+  "stderr": "[WARN] 舊 build 暫存檔清除失敗（/Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/evidence/data/run2/B-first-build-failure/.code-reality/graph.db.tmp-build）：Operation not permitted (os error 1)\n[FAIL] build: graph.db 建立失敗：unable to open database file: /Users/ctai/.codex/worktrees/5967/code-reality/audit/20260927/evidence/data/run2/B-first-build-failure/.code-reality/graph.db.tmp-build\n"
+}

@@ -76,6 +76,7 @@ pub mod language;
 pub mod mcp_server;
 pub mod profile;
 pub mod project;
+mod publication_writer;
 pub mod py_calls;
 pub mod refresh;
 pub mod runtime_edges;

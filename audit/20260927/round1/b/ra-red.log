@@ -1,0 +1,19 @@
+   Compiling code-reality-lsp-bridge v0.9.3 (/Users/ctai/.codex/worktrees/5967/code-reality/crates/code-reality-lsp-bridge)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.99s
+     Running tests/ra_equivalence_battery.rs (target/debug/deps/ra_equivalence_battery-3c38f9a610b03c37)
+
+running 1 test
+
+thread 'rust_hover_roundtrip_vs_frozen_baseline' (74970511) panicked at crates/code-reality-lsp-bridge/tests/ra_equivalence_battery.rs:62:13:
+rust-analyzer version drift under strict battery: live 2026-05-25) vs frozen 1.96.0 — regenerate the baseline
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test rust_hover_roundtrip_vs_frozen_baseline ... FAILED
+
+failures:
+
+failures:
+    rust_hover_roundtrip_vs_frozen_baseline
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+error: test failed, to rerun pass `-p code-reality-lsp-bridge --test ra_equivalence_battery`
