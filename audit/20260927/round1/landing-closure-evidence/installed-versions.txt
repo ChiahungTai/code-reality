@@ -1,0 +1,8 @@
+# Installed-face version readback — 2026-09-28 ~12:00 local (ZCode main session)
+/Users/ctai/.local/bin/code-reality-mcp -> 0.9.3+787d29c
+/Users/ctai/.local/bin/code-reality-lsp-bridge -> 0.9.3+787d29c
+/Users/ctai/.cargo/bin/code-reality -> 0.9.3+787d29c
+/Users/ctai/.cargo/bin/pyrefly-index -> 0.9.3+787d29c
+/Users/ctai/.cargo/bin/pyrefly-lsp -> pyrefly-lsp 0.9.3+787d29c (engine: pinned git rev 1d64c4b)
+/Users/ctai/.cargo/bin/overlay-gen -> 0.9.3+787d29c
+main HEAD: 787d29c8ff2343526614434441b86ed709980b38 (fix: harden lifecycle deadlines and data-plane publication)

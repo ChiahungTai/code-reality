@@ -362,11 +362,45 @@ fn ensure_indexes_is_idempotent_on_built_db() {
     );
 }
 
+/// Pin git ancestor-discovery to stop at `ceiling` for the guard's
+/// lifetime, restoring any pre-existing value on drop (audit baselines
+/// run with an outer GIT_CEILING_DIRECTORIES). Env is process-global and
+/// cargo runs tests in parallel — serialized with the same static-mutex
+/// shape as `churn_env_guard` in tests/build.rs.
+struct GitCeilingPin {
+    _lock: std::sync::MutexGuard<'static, ()>,
+    prior: Option<std::ffi::OsString>,
+}
+
+impl GitCeilingPin {
+    fn new(ceiling: &std::path::Path) -> Self {
+        static GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _lock = GUARD.lock().unwrap_or_else(|e| e.into_inner());
+        let prior = std::env::var_os("GIT_CEILING_DIRECTORIES");
+        std::env::set_var("GIT_CEILING_DIRECTORIES", ceiling);
+        Self { _lock, prior }
+    }
+}
+
+impl Drop for GitCeilingPin {
+    fn drop(&mut self) {
+        match self.prior.take() {
+            Some(v) => std::env::set_var("GIT_CEILING_DIRECTORIES", v),
+            None => std::env::remove_var("GIT_CEILING_DIRECTORIES"),
+        }
+    }
+}
+
 #[test]
 fn build_stamps_snapshot_metadata() {
     let tmp = tempfile::tempdir().unwrap();
     let index = slot(&tmp);
     let repo = repo_dir(&tmp);
+    // The no-ancestor-git assumption below must not depend on where TMPDIR
+    // lives: with TMPDIR inside a worktree, `git -C <repo> rev-parse HEAD`
+    // walks up and stamps the enclosing repo's HEAD. The pin bounds
+    // ancestor discovery (GIT_DIR/GIT_WORK_TREE overrides stay in effect).
+    let _ceiling = GitCeilingPin::new(tmp.path());
     graph_db::build_from_cache_at(&repo, &index).unwrap();
     let conn = open(&graph_db::db_path(&repo));
     let last_updated: Option<String> = conn

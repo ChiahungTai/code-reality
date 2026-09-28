@@ -1,0 +1,5 @@
+Resolved 1 package in 19ms
+Prepared 1 package in 32ms
+Installed 1 package in 3ms
+ + code-reality-lsp-bridge==0.9.3 (from file:///Users/ctai/.codex/worktrees/5967/code-reality/target/wheels/code_reality_lsp_bridge-0.9.3-py3-none-macosx_11_0_arm64.whl)
+Installed 1 executable: code-reality-lsp-bridge

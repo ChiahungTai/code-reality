@@ -11,3 +11,11 @@ Preflight: main HEAD equals eaa5d2462ea7821021ad0ea87403484ac0e47538 and working
 Hooks: core.hooksPath=.githooks. The unmanaged post-commit hook installs crates from the canonical checkout and refreshes the committed worktree. Do not bypass it; collect completion and independently verify final binaries after main integration. Existing Python audit probes stay under audit by explicit user evidence contract; generated fixtures, cache, nested repositories and binaries are excluded from staging. Foreign adjudication-zcode-main.md remains untouched/uncommitted.
 
 Receipt: classification=boundary; review=Muse fresh plus GLM intent completed, main adjudication and native docs followup passed; session-freshness=final file hashes matched before staging; deployment-surfaces=local deployment pending. Public distribution remains unchanged.
+
+## Landing checkpoint
+
+Committed source and selected evidence as 787d29c8ff2343526614434441b86ed709980b38; canonical main fast-forward completed (integration.exit=0). Source-scoped whitespace check passed. Aggregate staged whitespace check reported blank terminal lines in raw logs and context-space lines inside archived diff evidence; the shell continued to commit after that failed check. This was a gate-sequencing error, not a passing aggregate check. Raw evidence remains byte-preserved; no product whitespace failure was found by the subsequent explicit product-path check.
+
+Plugin deployment: backed up and replaced .mcp.json, README.md and consumer SKILL.md in the existing ZCode/Claude/Codex installations; all nine files match committed source (plugin-deployment.json). Canonical local marketplace slice regenerated successfully. No registry metadata or published version was changed; these are local 0.9.3+source-revision builds, not a PyPI release. Already-running MCP processes are not force-killed; fresh processes use updated binaries/configuration.
+
+The unmanaged hook logged an install start but supplied no verified completion in this tool lifetime. Explicit synchronous installs and fresh-process probes own deployment acceptance; hook start is not success evidence. Main/LSP wheels built and uv installs passed. Producer wheel and all three canonical-path cargo installs are collecting; do not yet claim deployment complete.

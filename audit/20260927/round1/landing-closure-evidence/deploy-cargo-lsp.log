@@ -1,0 +1,12 @@
+  Installing code-reality-lsp-bridge v0.9.3 (/Users/ctai/Github/code-reality/crates/code-reality-lsp-bridge)
+warning: default toolchain implicitly overridden with `1.96.0-aarch64-apple-darwin` by rustup toolchain file
+  |
+  = help: use `cargo +stable install` if you meant to use the stable toolchain
+  = note: rustup selects the toolchain based on the parent environment and not the environment of the package being installed
+    Updating crates.io index
+warning: package `chacha20 v0.10.1` in Cargo.lock is yanked in registry `crates-io`, consider running without --locked
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Finished `release` profile [optimized] target(s) in 1.36s
+   Replacing /Users/ctai/.cargo/bin/code-reality-lsp-bridge
+    Replaced package `code-reality-lsp-bridge v0.9.3 (/Users/ctai/Github/code-reality/crates/code-reality-lsp-bridge)` with `code-reality-lsp-bridge v0.9.3 (/Users/ctai/Github/code-reality/crates/code-reality-lsp-bridge)` (executable `code-reality-lsp-bridge`)

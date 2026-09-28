@@ -1,0 +1,21 @@
+  Installing code-reality v0.9.3 (/Users/ctai/Github/code-reality/crates/code-reality)
+warning: default toolchain implicitly overridden with `1.96.0-aarch64-apple-darwin` by rustup toolchain file
+  |
+  = help: use `cargo +stable install` if you meant to use the stable toolchain
+  = note: rustup selects the toolchain based on the parent environment and not the environment of the package being installed
+    Updating crates.io index
+warning: package `chacha20 v0.10.1` in Cargo.lock is yanked in registry `crates-io`, consider running without --locked
+    Blocking waiting for file lock on build directory
+   Compiling psm v0.1.32
+   Compiling tree-sitter v0.25.10
+   Compiling libsqlite3-sys v0.38.2
+   Compiling tree-sitter-typescript v0.23.2
+   Compiling tree-sitter-javascript v0.25.0
+   Compiling stacker v0.1.25
+   Compiling ruff_python_parser v0.0.10
+   Compiling code-reality v0.9.3 (/Users/ctai/Github/code-reality/crates/code-reality)
+   Compiling rusqlite v0.40.2
+    Finished `release` profile [optimized] target(s) in 1m 47s
+   Replacing /Users/ctai/.cargo/bin/code-reality
+   Replacing /Users/ctai/.cargo/bin/code-reality-mcp
+    Replaced package `code-reality v0.9.3 (/Users/ctai/Github/code-reality/crates/code-reality)` with `code-reality v0.9.3 (/Users/ctai/Github/code-reality/crates/code-reality)` (executables `code-reality`, `code-reality-mcp`)

@@ -1,0 +1,42 @@
+⚠️  Warning: `project.version` field is required in pyproject.toml unless it is present in the `project.dynamic` list
+🔗 Found bin bindings
+💻 Using `MACOSX_DEPLOYMENT_TARGET=11.0` for aarch64-apple-darwin by default
+   Compiling serde_core v1.0.229
+   Compiling num-traits v0.2.19
+   Compiling futures-channel v0.3.34
+   Compiling futures-io v0.3.34
+   Compiling syn v3.0.4
+   Compiling serde_json v1.0.151
+   Compiling getrandom v0.4.3
+   Compiling slab v0.4.12
+   Compiling hashbrown v0.17.1
+   Compiling syn v2.0.119
+   Compiling rmcp v3.1.4
+   Compiling code-reality-lsp-bridge v0.9.3 (/Users/ctai/.codex/worktrees/5967/code-reality/crates/code-reality-lsp-bridge)
+   Compiling darling_core v0.24.1
+   Compiling serde_derive_internals v0.30.0
+   Compiling uuid v1.25.0
+   Compiling serde_derive v1.0.229
+   Compiling futures-macro v0.3.34
+   Compiling ref-cast-impl v1.0.27
+   Compiling tokio-macros v2.7.2
+   Compiling thiserror-impl v2.0.20
+   Compiling tracing-attributes v0.1.31
+   Compiling ref-cast v1.0.27
+   Compiling schemars_derive v1.2.2
+   Compiling tokio v1.53.1
+   Compiling futures-util v0.3.34
+   Compiling thiserror v2.0.20
+   Compiling tracing v0.1.44
+   Compiling darling_macro v0.24.1
+   Compiling darling v0.24.1
+   Compiling serde v1.0.229
+   Compiling indexmap v2.14.0
+   Compiling futures-executor v0.3.34
+   Compiling futures v0.3.34
+   Compiling rmcp-macros v3.1.4
+   Compiling chrono v0.4.45
+   Compiling tokio-util v0.7.19
+   Compiling schemars v1.2.2
+    Finished `release` profile [optimized] target(s) in 21.16s
+📦 Built wheel to /Users/ctai/.codex/worktrees/5967/code-reality/target/wheels/code_reality_lsp_bridge-0.9.3-py3-none-macosx_11_0_arm64.whl

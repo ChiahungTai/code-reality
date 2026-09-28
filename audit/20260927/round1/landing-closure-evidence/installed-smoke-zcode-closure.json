@@ -1,0 +1,824 @@
+{
+  "bin_dir": "/Users/ctai/.local/bin",
+  "scope": "initialize and tools/list only",
+  "development_smoke": false,
+  "binaries": [
+    {
+      "path": "/Users/ctai/.local/bin/code-reality-mcp",
+      "resolved_path": "/Users/ctai/.local/share/uv/tools/code-reality/bin/code-reality-mcp",
+      "sha256": "63f806e2dad26e917e48da8ce88da56f4ccffbcf5ad1945ee3c44c1db771898e",
+      "version": {
+        "command": [
+          "/Users/ctai/.local/bin/code-reality-mcp",
+          "--version"
+        ],
+        "stdout": "0.9.3+787d29c\n",
+        "stderr": "",
+        "supported": true,
+        "exit": 0
+      },
+      "smoke": {
+        "command": [
+          "/Users/ctai/.local/bin/code-reality-mcp",
+          "--stdio"
+        ],
+        "responses": [
+          {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+              "protocolVersion": "2024-11-05",
+              "capabilities": {
+                "tools": {}
+              },
+              "serverInfo": {
+                "name": "rmcp",
+                "version": "3.1.4"
+              }
+            }
+          },
+          {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {
+              "tools": [
+                {
+                  "name": "affected_flows",
+                  "description": "Flows whose path touches the changed files",
+                  "inputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "required": [
+                      "repo_root"
+                    ],
+                    "type": "object",
+                    "properties": {
+                      "repo_root": {
+                        "type": "string"
+                      },
+                      "files": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "default": []
+                      }
+                    }
+                  }
+                },
+                {
+                  "name": "architecture_overview",
+                  "description": "Communities + cross-community edge pairs + high-coupling warnings; detail_level=minimal by default (CRG _minimal_overview parity)",
+                  "inputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "required": [
+                      "repo_root"
+                    ],
+                    "properties": {
+                      "repo_root": {
+                        "type": "string"
+                      },
+                      "limit": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "uint",
+                        "minimum": 0,
+                        "default": null
+                      },
+                      "detail_level": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "default": null
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                {
+                  "name": "audit",
+                  "description": "Completeness audit: graph_audit gaps × SCIP refs (two-pass). Rust-only oracle — partial/non-passing when the graph carries JS/TS (no JS/TS completeness oracle this arc).",
+                  "inputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "required": [
+                      "repo_root"
+                    ],
+                    "type": "object",
+                    "properties": {
+                      "repo_root": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                {
+                  "name": "bridge_nodes",
+                  "description": "Architectural chokepoints by (sampled) betweenness centrality",
+                  "inputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "required": [
+                      "repo_root"
+                    ],
+                    "type": "object",
+                    "properties": {
+                      "repo_root": {
+                        "type": "string"
+                      },
+                      "limit": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "uint",
+                        "minimum": 0,
+                        "default": null
+                      },
+                      "use_union": {
+                        "description": "Deprecated (v1+ S4): union edges materialize at `graph_db build`\ntime — queries are always full-graph now; the flag is a no-op.",
+                        "type": [
+                          "boolean",
+                          "null"
+                        ],
+                        "default": null
+                      }
+                    }
+                  }
+                },
+                {
+                  "name": "build",
+                  "description": "One-shot data-plane build: detect language faces, spawn producers (pyrefly-index / rust-analyzer scip / scip-typescript — external JS/TS prerequisite), rebuild graph.db + indexes. WRITES <repo>/.code-reality/ (index slot, graph.db). LONG-RUNNING: minutes-level on large repos, no progress reporting — the call blocks until done; set your client timeout accordingly. Cancellation suppresses response delivery; already-started blocking work may continue and publish files. Transport EOF may await that work. Same lib as `code-reality build --repo <repo>`",
+                  "inputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "required": [
+                      "repo_root"
+                    ],
+                    "type": "object",
+                    "properties": {
+                      "repo_root": {
+                        "type": "string"
+                      },
+                      "producer": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "default": null
+                      },
+                      "json": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ],
+                        "default": null
+                      }
+                    }
+                  }
+                },
+                {
+                  "name": "callers",
+                  "description": "Caller edges of a symbol (sites included; item-level refs noted)",
+                  "inputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "required": [
+                      "symbol",
+                      "repo_root"
+                    ],
+                    "type": "object",
+                    "properties": {
+                      "symbol": {
+                        "type": "string"
+                      },
+                      "repo_root": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                {
+                  "name": "closure",
+                  "description": "Closure of caller edges (BFS; depth default 2, max 10000)",
+                  "inputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "required": [
+                      "symbol",
+                      "repo_root"
+                    ],
+                    "type": "object",
+                    "properties": {
+                      "symbol": {
+                        "type": "string"
+                      },
+                      "repo_root": {
+                        "type": "string"
+                      },
+                      "depth": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "uint32",
+                        "minimum": 0
+                      }
+                    }
+                  }
+                },
+                {
+                  "name": "delta_tour",
+                  "description": "Diff two snapshots into a delta-review CodeTour (git hunk anchors, EP claims comparison). WRITES <repo>/.tours/delta/<date>-<task>.tour — MCP default is in-repo (unlike the CLI's cwd-relative default); pass out_dir to override. Pass ABSOLUTE snapshot paths (the snapshot tool's report carries them). Seconds-level. Cancellation suppresses response delivery; already-started blocking work may continue and publish files. Transport EOF may await that work. Same lib as `code-reality delta_tour <a> <b> --repo <repo>`",
+                  "inputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "required": [
+                      "repo_root",
+                      "snapshot_a",
+                      "snapshot_b"
+                    ],
+                    "type": "object",
+                    "properties": {
+                      "repo_root": {
+                        "type": "string"
+                      },
+                      "snapshot_a": {
+                        "type": "string"
+                      },
+                      "snapshot_b": {
+                        "type": "string"
+                      },
+                      "ep": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "default": null
+                      },
+                      "task": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "default": null
+                      },
+                      "out_dir": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "default": null
+                      }
+                    }
+                  }
+                },
+                {
+                  "name": "detect_changes",
+                  "description": "Risk-scored review guidance from changed files: changed functions, test gaps, priorities",
+                  "inputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "required": [
+                      "repo_root"
+                    ],
+                    "type": "object",
+                    "properties": {
+                      "repo_root": {
+                        "type": "string"
+                      },
+                      "files": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "default": []
+                      }
+                    }
+                  }
+                },
+                {
+                  "name": "document_symbols",
+                  "description": "File outline from SCIP defining occurrences (documentSymbol-alike; hover/signatures stay LSP-only)",
+                  "inputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "required": [
+                      "repo_root",
+                      "file"
+                    ],
+                    "type": "object",
+                    "properties": {
+                      "repo_root": {
+                        "type": "string"
+                      },
+                      "file": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                {
+                  "name": "get_community",
+                  "description": "Single-community drill-down by partial name; include_members=false by default (CRG get_community parity)",
+                  "inputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "required": [
+                      "repo_root",
+                      "community_name"
+                    ],
+                    "type": "object",
+                    "properties": {
+                      "repo_root": {
+                        "type": "string"
+                      },
+                      "community_name": {
+                        "description": "partial community name (from list_communities)",
+                        "type": "string"
+                      },
+                      "include_members": {
+                        "description": "include the member list (default false — CRG parity)",
+                        "type": [
+                          "boolean",
+                          "null"
+                        ],
+                        "default": null
+                      }
+                    }
+                  }
+                },
+                {
+                  "name": "get_minimal_context",
+                  "description": "Ultra-compact entry context: stats, risk band, top communities/flows, next-tool suggestions",
+                  "inputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "required": [
+                      "repo_root"
+                    ],
+                    "type": "object",
+                    "properties": {
+                      "repo_root": {
+                        "type": "string"
+                      },
+                      "task": {
+                        "type": "string",
+                        "default": ""
+                      },
+                      "files": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "default": []
+                      }
+                    }
+                  }
+                },
+                {
+                  "name": "get_review_context",
+                  "description": "Focused review context: impact + source snippets + guidance",
+                  "inputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "required": [
+                      "repo_root"
+                    ],
+                    "type": "object",
+                    "properties": {
+                      "repo_root": {
+                        "type": "string"
+                      },
+                      "files": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "default": []
+                      },
+                      "max_depth": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "uint",
+                        "minimum": 0,
+                        "default": null
+                      }
+                    }
+                  }
+                },
+                {
+                  "name": "hub_nodes",
+                  "description": "Most connected nodes (in+out degree, all edge kinds)",
+                  "inputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "required": [
+                      "repo_root"
+                    ],
+                    "type": "object",
+                    "properties": {
+                      "repo_root": {
+                        "type": "string"
+                      },
+                      "limit": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "uint",
+                        "minimum": 0,
+                        "default": null
+                      },
+                      "use_union": {
+                        "description": "Deprecated (v1+ S4): union edges materialize at `graph_db build`\ntime — queries are always full-graph now; the flag is a no-op.",
+                        "type": [
+                          "boolean",
+                          "null"
+                        ],
+                        "default": null
+                      }
+                    }
+                  }
+                },
+                {
+                  "name": "impact_radius",
+                  "description": "Blast radius of changed files: impacted nodes/files with best-path impact scores",
+                  "inputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "required": [
+                      "repo_root"
+                    ],
+                    "type": "object",
+                    "properties": {
+                      "repo_root": {
+                        "type": "string"
+                      },
+                      "files": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "default": []
+                      },
+                      "max_depth": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "uint",
+                        "minimum": 0,
+                        "default": null
+                      },
+                      "use_union": {
+                        "description": "Deprecated (v1+ S4): union edges materialize at `graph_db build`\ntime — queries are always full-graph now; the flag is a no-op.",
+                        "type": [
+                          "boolean",
+                          "null"
+                        ],
+                        "default": null
+                      }
+                    }
+                  }
+                },
+                {
+                  "name": "list_communities",
+                  "description": "Communities: directory (CRG Tier-0 parity) or seeded Leiden; detail_level=minimal by default (summary fields only — use standard for member lists)",
+                  "inputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "required": [
+                      "repo_root"
+                    ],
+                    "type": "object",
+                    "properties": {
+                      "repo_root": {
+                        "type": "string"
+                      },
+                      "algorithm": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "default": null
+                      },
+                      "use_union": {
+                        "description": "Deprecated (v1+ S4): union edges materialize at `graph_db build`\ntime — queries are always full-graph now; the flag is a no-op.",
+                        "type": [
+                          "boolean",
+                          "null"
+                        ],
+                        "default": null
+                      },
+                      "detail_level": {
+                        "description": "\"minimal\" (default): summary fields only; \"standard\": member lists.",
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "default": null
+                      }
+                    }
+                  }
+                },
+                {
+                  "name": "list_flows",
+                  "description": "Execution flows from entry points (forward BFS over CALLS, criticality-sorted); limit defaults to 50 — pass a larger one for more",
+                  "inputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "required": [
+                      "repo_root"
+                    ],
+                    "type": "object",
+                    "properties": {
+                      "repo_root": {
+                        "type": "string"
+                      },
+                      "limit": {
+                        "description": "flows cap (default 50; CRG list_flows parity)",
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "uint",
+                        "minimum": 0,
+                        "default": null
+                      }
+                    }
+                  }
+                },
+                {
+                  "name": "project",
+                  "description": "Projected-graph overlay for EP planning: compile a declarative plan.toml via overlay-gen, report graft surface + claim verdicts ([projected] = declarations, not evidence). WRITES <repo>/.code-reality/projections/<plan-stem>/; the real index slot stays untouched. Needs overlay-gen resolvable (uv tool install pyrefly-producer). Pass an ABSOLUTE plan path (the server's cwd is meaningless to you). Seconds-level. Cancellation suppresses response delivery; already-started blocking work may continue and publish files. Transport EOF may await that work. Same lib as `code-reality project --repo <repo> --plan <plan.toml>`",
+                  "inputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "required": [
+                      "repo_root",
+                      "plan"
+                    ],
+                    "type": "object",
+                    "properties": {
+                      "repo_root": {
+                        "type": "string"
+                      },
+                      "plan": {
+                        "type": "string"
+                      },
+                      "json": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ],
+                        "default": null
+                      }
+                    }
+                  }
+                },
+                {
+                  "name": "refs",
+                  "description": "Symbol truth query (refs/defs, trait disambiguation) over the repo's SCIP index",
+                  "inputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "required": [
+                      "symbol",
+                      "repo_root"
+                    ],
+                    "type": "object",
+                    "properties": {
+                      "symbol": {
+                        "type": "string"
+                      },
+                      "repo_root": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                {
+                  "name": "semantic_search",
+                  "description": "Keyword search (FTS5 with LIKE fallback; embeddings face not adopted)",
+                  "inputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "required": [
+                      "repo_root",
+                      "query"
+                    ],
+                    "type": "object",
+                    "properties": {
+                      "repo_root": {
+                        "type": "string"
+                      },
+                      "query": {
+                        "type": "string"
+                      },
+                      "limit": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "uint",
+                        "minimum": 0,
+                        "default": null
+                      }
+                    }
+                  }
+                },
+                {
+                  "name": "snapshot",
+                  "description": "Boundary snapshot of the current graph.db state (files + module edges + staleness meta). WRITES a dated snapshot file under <repo>/.code-reality/snapshots/ (or out_dir). Requires an existing graph.db (run build first). Seconds-level. Cancellation suppresses response delivery; already-started blocking work may continue and publish files. Transport EOF may await that work. Same lib as `code-reality snapshot --repo <repo>`",
+                  "inputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "required": [
+                      "repo_root"
+                    ],
+                    "type": "object",
+                    "properties": {
+                      "repo_root": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "default": null
+                      },
+                      "out_dir": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "default": null
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "notifications": [],
+        "stderr": "",
+        "passed": true,
+        "tool_names": [
+          "affected_flows",
+          "architecture_overview",
+          "audit",
+          "bridge_nodes",
+          "build",
+          "callers",
+          "closure",
+          "delta_tour",
+          "detect_changes",
+          "document_symbols",
+          "get_community",
+          "get_minimal_context",
+          "get_review_context",
+          "hub_nodes",
+          "impact_radius",
+          "list_communities",
+          "list_flows",
+          "project",
+          "refs",
+          "semantic_search",
+          "snapshot"
+        ],
+        "build_description": "One-shot data-plane build: detect language faces, spawn producers (pyrefly-index / rust-analyzer scip / scip-typescript — external JS/TS prerequisite), rebuild graph.db + indexes. WRITES <repo>/.code-reality/ (index slot, graph.db). LONG-RUNNING: minutes-level on large repos, no progress reporting — the call blocks until done; set your client timeout accordingly. Cancellation suppresses response delivery; already-started blocking work may continue and publish files. Transport EOF may await that work. Same lib as `code-reality build --repo <repo>`",
+        "cap_description_matches": {},
+        "cleanup_action": "eof",
+        "exit": 0
+      }
+    },
+    {
+      "path": "/Users/ctai/.local/bin/code-reality-lsp-bridge",
+      "resolved_path": "/Users/ctai/.local/share/uv/tools/code-reality-lsp-bridge/bin/code-reality-lsp-bridge",
+      "sha256": "154f71d4fffed1e64af33aeeececcb112c2e52dadda9df8cc02165617e6a3432",
+      "version": {
+        "command": [
+          "/Users/ctai/.local/bin/code-reality-lsp-bridge",
+          "--version"
+        ],
+        "stdout": "0.9.3+787d29c\n",
+        "stderr": "",
+        "supported": true,
+        "exit": 0
+      },
+      "smoke": {
+        "command": [
+          "/Users/ctai/.local/bin/code-reality-lsp-bridge",
+          "--stdio"
+        ],
+        "responses": [
+          {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+              "protocolVersion": "2024-11-05",
+              "capabilities": {
+                "tools": {}
+              },
+              "serverInfo": {
+                "name": "rmcp",
+                "version": "3.1.4"
+              }
+            }
+          },
+          {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {
+              "tools": [
+                {
+                  "name": "check_file",
+                  "description": "Type-check one supported file and return its latest diagnostics (severity, code, range, message). Faces: .py → pyrefly, .rs → rust-analyzer, .js/.jsx/.mjs/.cjs/.ts/.tsx → typescript-language-server. file = absolute path. Out-of-band disk edits are picked up automatically. Note (Rust): flycheck/cargo-check diagnostics run on the DISK content — in-memory edits see rust-analyzer's native diagnostics only",
+                  "inputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "required": [
+                      "file"
+                    ],
+                    "type": "object",
+                    "properties": {
+                      "file": {
+                        "description": "Absolute path of a supported file (must exist on disk): .py,\n.rs, .js, .jsx, .mjs, .cjs, .ts, or .tsx.",
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                {
+                  "name": "edit_file",
+                  "description": "Replace a supported file's content in the language server's workspace (full-content didChange; the disk file is NOT written). Faces: .py → pyrefly, .rs → rust-analyzer, .js/.jsx/.mjs/.cjs/.ts/.tsx → typescript-language-server. Run check_file afterwards for updated diagnostics",
+                  "inputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "required": [
+                      "file",
+                      "content"
+                    ],
+                    "type": "object",
+                    "properties": {
+                      "file": {
+                        "description": "Absolute path of a supported file (must exist on disk): .py,\n.rs, .js, .jsx, .mjs, .cjs, .ts, or .tsx.",
+                        "type": "string"
+                      },
+                      "content": {
+                        "description": "Full replacement content of the file.",
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                {
+                  "name": "hover",
+                  "description": "Hover a symbol and return the upstream markdown type signature. Faces: .py → pyrefly, .rs → rust-analyzer, .js/.jsx/.mjs/.cjs → typescript-language-server (javascript faces), .ts/.tsx → typescript-language-server (typescript faces). file = absolute path (must exist on disk); line/character are zero-based, character counts UTF-16 code units (LSP convention). Files excluded by the repo's .gitignore may return no hover (upstream behavior)",
+                  "inputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "required": [
+                      "file",
+                      "line",
+                      "character"
+                    ],
+                    "type": "object",
+                    "properties": {
+                      "file": {
+                        "description": "Absolute path of a supported file (must exist on disk): .py,\n.rs, .js, .jsx, .mjs, .cjs, .ts, or .tsx.",
+                        "type": "string"
+                      },
+                      "line": {
+                        "description": "Zero-based line (LSP convention).",
+                        "type": "integer",
+                        "format": "uint32",
+                        "minimum": 0
+                      },
+                      "character": {
+                        "description": "Zero-based character offset in UTF-16 code units (LSP convention).",
+                        "type": "integer",
+                        "format": "uint32",
+                        "minimum": 0
+                      }
+                    }
+                  }
+                },
+                {
+                  "name": "lsp_status",
+                  "description": "Bridge/backend health: per-backend-family server info, backend command, open-file count, liveness (py = pyrefly for .py, rs = rust-analyzer for .rs, ts = typescript-language-server for .js/.jsx/.mjs/.cjs/.ts/.tsx), in that stable order. A backend whose executable cannot be resolved reports state=unavailable with install guidance — a missing TypeScript/Node toolchain is a family-level condition, never a server-wide failure",
+                  "inputSchema": {
+                    "type": "object",
+                    "properties": {}
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "notifications": [],
+        "stderr": "",
+        "passed": true,
+        "tool_names": [
+          "check_file",
+          "edit_file",
+          "hover",
+          "lsp_status"
+        ],
+        "cleanup_action": "eof",
+        "exit": 0
+      }
+    }
+  ],
+  "passed": true,
+  "limitations": [
+    "No tool calls, producers, backend initialization or repo mutation.",
+    "Catalog descriptions are inspected; runtime output/internal-error cap and INVALID_PARAMS exclusion are not exercised.",
+    "An empty cap_description_matches means the catalog does not advertise that bound; it is not runtime cap evidence."
+  ]
+}
