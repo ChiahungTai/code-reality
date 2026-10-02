@@ -1,10 +1,10 @@
 ---
 id: CR-1
 title: Prepare the audited fixes for a reviewed commit
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-27 23:22'
-updated_date: '2026-09-28 03:43'
+updated_date: '2026-10-02 01:22'
 labels:
   - audit
   - handoff
@@ -78,3 +78,17 @@ Independent handoff EP review completed PASS across F1-F5. One stale four-versus
 
 AUTH: user said "commit／整合／部署 你可以做" and asked to finish directly. The preparation-only stop is superseded for this arc. Main owns commit, local main integration and deployment verification. Public registry publication is not inferred from local deployment.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Landing executed beyond the preparation scope: committed 787d29c, fast-forwarded local main, locally deployed with formal readback (landing-closure.md), released v0.9.4 to PyPI (551d5ee), closure arc 4cc578a (test ceiling pin; Muse review 0 P1 job-mukqfcyp-pauibi, GLM-5.3 judge ACCEPT job-mukqq28h-jma22f), fmt 036b752, docs seals 857c5f1 pushed to origin.
+
+```mermaid
+flowchart LR
+  A["Reviewed fixes 787d29c"] --> B["Local main ff + deploy"]
+  B --> C["Closure arc 4cc578a reviewed+judged"]
+  C --> D["Release v0.9.4 on PyPI"]
+  D --> E["fmt + seals on origin 857c5f1"]
+```
+<!-- SECTION:FINAL_SUMMARY:END -->
