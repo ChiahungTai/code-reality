@@ -1,13 +1,15 @@
 ---
 id: CR-2
 title: chain_tour 生成標題帶族號——CodeTour 樹依族聚合
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-02 23:42'
-updated_date: '2026-10-02 23:42'
+updated_date: '2026-10-02 23:43'
 labels:
   - tour
 dependencies: []
+references:
+  - CR-2
 ordinal: 2000
 ---
 
