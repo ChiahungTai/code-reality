@@ -80,6 +80,12 @@ pub struct Manifest {
     pub extra: Vec<(String, toml::Value)>, // insertion-irrelevant: dump sorts
 }
 
+/// Load `manifest.toml`; a missing file folds to the default (the
+/// legal new-corpus path). Parseable-but-wrong-typed KNOWN keys are loud
+/// (CR-2 leg-4 R1, the F1b crash-only doctrine at the load boundary):
+/// `tour` and its rows must be tables, `delta_arc` an array — load used
+/// to drop them silently, and a later dump would then evaporate the
+/// rows wholesale. Errors name the key and the actual type.
 pub fn load(path: &Path) -> Result<Manifest, String> {
     if !path.exists() {
         return Ok(Manifest::default());
@@ -94,20 +100,35 @@ pub fn load(path: &Path) -> Result<Manifest, String> {
         match k.as_str() {
             "version" => m.version = Some(v),
             "tour" => {
-                if let Some(t) = v.as_table() {
-                    for (rel, row) in t {
-                        if let Some(row_t) = row.as_table() {
-                            m.tour.insert(rel.clone(), row_t.clone());
-                        }
-                    }
+                let Some(t) = v.as_table() else {
+                    return Err(format!(
+                        "{} 鍵 tour 非 table（實為 {}）——已知鍵型別錯，load 拒絕靜默丟棄",
+                        path.display(),
+                        v.type_str()
+                    ));
+                };
+                for (rel, row) in t {
+                    let Some(row_t) = row.as_table() else {
+                        return Err(format!(
+                            "{} 鍵 tour.\"{rel}\" 非 table（實為 {}）——已知鍵型別錯，load 拒絕靜默丟棄",
+                            path.display(),
+                            row.type_str()
+                        ));
+                    };
+                    m.tour.insert(rel.clone(), row_t.clone());
                 }
             }
             "delta_arc" => {
-                if let Some(a) = v.as_array() {
-                    for row in a {
-                        if let Some(row_t) = row.as_table() {
-                            m.delta_arc.push(row_t.clone());
-                        }
+                let Some(a) = v.as_array() else {
+                    return Err(format!(
+                        "{} 鍵 delta_arc 非 array（實為 {}）——已知鍵型別錯，load 拒絕靜默丟棄",
+                        path.display(),
+                        v.type_str()
+                    ));
+                };
+                for row in a {
+                    if let Some(row_t) = row.as_table() {
+                        m.delta_arc.push(row_t.clone());
                     }
                 }
             }
@@ -179,17 +200,19 @@ fn toml_key(key: &str) -> String {
 }
 
 /// Scalar / scalar-list TOML serialization (`tour_manifest.py:71-89`);
-/// unsupported types are loud — silently dropping data is worse.
-fn toml_value(v: &toml::Value) -> Result<String, String> {
+/// also the leaf renderer for table-valued extras and row keys (below).
+/// `path` is the key's dotted location — errors name it in full so a
+/// nested leaf is never mislabeled as top-level. Unsupported types are
+/// loud — silently dropping data is worse.
+fn toml_value(v: &toml::Value, path: &str) -> Result<String, String> {
     match v {
         toml::Value::Boolean(b) => Ok(b.to_string()),
         toml::Value::Integer(i) => Ok(i.to_string()),
         toml::Value::Float(f) => {
             if !f.is_finite() {
-                return Err(
-                    "manifest 頂層鍵含非有限 float（inf/nan）——TOML 無此字面，寫出即非法"
-                        .to_string(),
-                );
+                return Err(format!(
+                    "manifest 鍵 {path} 含非有限 float（inf/nan）——TOML 無此字面，寫出即非法"
+                ));
             }
             Ok(format!("{}", f))
         }
@@ -207,33 +230,92 @@ fn toml_value(v: &toml::Value) -> Result<String, String> {
                     toml::Value::Boolean(_)
                     | toml::Value::Integer(_)
                     | toml::Value::Float(_)
-                    | toml::Value::String(_) => parts.push(toml_value(x)?),
+                    | toml::Value::String(_) => parts.push(toml_value(x, path)?),
                     _ => {
-                        return Err(
-                            "manifest 頂層鍵型別不支援保存（list 內非 scalar）——只支援 scalar／scalar list"
-                                .to_string(),
-                        );
+                        return Err(format!(
+                            "manifest 鍵 {path} 型別不支援保存（list 內非 scalar）——只支援 scalar／scalar list"
+                        ));
                     }
                 }
             }
             Ok(format!("[{}]", parts.join(", ")))
         }
         other => Err(format!(
-            "manifest 頂層鍵型別不支援保存（{:?}）——只支援 scalar／scalar list",
+            "manifest 鍵 {path} 型別不支援保存（{:?}）——只支援 scalar／scalar list",
             other.type_str()
         )),
     }
 }
 
+fn dotted_header(path: &[String]) -> String {
+    path.iter()
+        .map(|s| toml_key(s))
+        .collect::<Vec<_>>()
+        .join(".")
+}
+
+/// `[section]` rendering for table-valued extras (`[family."NN"]`,
+/// `[route.name]`) — re-serialized from the parsed value, same as the
+/// scalar face (raw-text passthrough would need the load pipe to keep
+/// source slices; the extra roundtrip is value-level, not byte-level).
+/// Leaf keys inline under the header, sub-tables recursively as dotted
+/// headers; same loud-type doctrine as `toml_value` (array-of-tables
+/// etc. inside an extra error rather than drop).
+fn write_table_section(
+    lines: &mut Vec<String>,
+    path: &[String],
+    t: &toml::Table,
+) -> Result<(), String> {
+    let has_leaves = t.values().any(|v| !matches!(v, toml::Value::Table(_)));
+    let has_subtables = t.values().any(|v| matches!(v, toml::Value::Table(_)));
+    // own header only when it carries leaves or is empty — a
+    // container-only table is implied by its children's dotted headers
+    // (keeps `[family.01]` from growing a redundant `[family]` prologue)
+    if has_leaves || !has_subtables {
+        lines.push(String::new());
+        lines.push(format!("[{}]", dotted_header(path)));
+    }
+    // leaves first: once a sub-header opens, later bare `k = v` lines
+    // belong to that sub-table instead of this one
+    for (k, v) in t {
+        if !matches!(v, toml::Value::Table(_)) {
+            let mut p = path.to_vec();
+            p.push(k.clone());
+            lines.push(format!(
+                "{} = {}",
+                toml_key(k),
+                toml_value(v, &dotted_header(&p))?
+            ));
+        }
+    }
+    for (k, v) in t {
+        if let toml::Value::Table(sub) = v {
+            let mut p = path.to_vec();
+            p.push(k.clone());
+            write_table_section(lines, &p, sub)?;
+        }
+    }
+    Ok(())
+}
+
 pub fn dump(path: &Path, m: &Manifest) -> Result<(), String> {
     let mut lines = Vec::new();
     let version = m.version.clone().unwrap_or(toml::Value::Integer(1));
-    lines.push(format!("version = {}", toml_value(&version)?));
-    // unknown top-level keys roundtrip (sorted)
+    lines.push(format!("version = {}", toml_value(&version, "version")?));
+    // unknown top-level keys roundtrip (sorted); scalars inline first,
+    // table-valued keys as [section] blocks after them — once a header
+    // opens, a bare `k = v` line would belong to that table
     let mut extra = m.extra.clone();
     extra.sort_by(|a, b| a.0.cmp(&b.0));
     for (k, v) in &extra {
-        lines.push(format!("{} = {}", toml_key(k), toml_value(v)?));
+        if !matches!(v, toml::Value::Table(_)) {
+            lines.push(format!("{} = {}", toml_key(k), toml_value(v, k)?));
+        }
+    }
+    for (k, v) in &extra {
+        if let toml::Value::Table(t) = v {
+            write_table_section(&mut lines, &[k.to_string()], t)?;
+        }
     }
     for (rel, row) in &m.tour {
         lines.push(format!("\n[tour.\"{rel}\"]"));
@@ -265,17 +347,28 @@ pub fn dump(path: &Path, m: &Manifest) -> Result<(), String> {
             .collect();
         unknown.sort_by(|a, b| a.0.cmp(b.0));
         for (k, v) in unknown {
-            lines.push(format!("{} = {}", toml_key(k), toml_value(v)?));
+            lines.push(format!(
+                "{} = {}",
+                toml_key(k),
+                toml_value(
+                    v,
+                    &dotted_header(&["tour".to_string(), rel.clone(), k.clone()])
+                )?
+            ));
         }
     }
     // delta provenance rows (AIR-80): field order is tool-authoritative,
     // consumers read tolerantly (missing field = no trigger UI)
-    for row in &m.delta_arc {
+    for (i, row) in m.delta_arc.iter().enumerate() {
         lines.push("\n[[delta_arc]]".to_string());
         let mut keys: Vec<(&String, &toml::Value)> = row.iter().collect();
         keys.sort_by(|a, b| a.0.cmp(b.0));
         for (k, v) in keys {
-            lines.push(format!("{} = {}", toml_key(k), toml_value(v)?));
+            lines.push(format!(
+                "{} = {}",
+                toml_key(k),
+                toml_value(v, &format!("delta_arc[{i}].{k}"))?
+            ));
         }
     }
     std::fs::write(path, format!("{}\n", lines.join("\n")))

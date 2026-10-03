@@ -285,12 +285,22 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         return ToolOutput::crash(format!("{} 無 .tour", repo.join(&tours_dir).display()));
     }
     // N → title key (zero-padded prefix strip; key via ts_key — hyphen
-    // truncation semantics included)
+    // truncation semantics included). C2 (CR-2 leg-4): family-format
+    // titles (containing ｜ — the tour_validate classifier) stay OUT of
+    // the map — same-family tours share the NN prefix, so an entry
+    // would be a silent last-write-wins pick among sibling scenes, and
+    // revive --apply would rewrite `[N - name]` refs onto an arbitrary
+    // scene (check_links verifies exactly-one, never semantics)
     let mut key_by_num: BTreeMap<i64, String> = BTreeMap::new();
+    let mut family_withheld: Vec<String> = Vec::new();
     let num_re = regex::Regex::new(r"^#?0*(\d+)\s-").unwrap();
     for (_, d) in &tours {
         let title = d.get("title").and_then(|t| t.as_str()).unwrap_or("");
         if let Some(m) = num_re.captures(title) {
+            if title.contains('｜') {
+                family_withheld.push(title.to_string());
+                continue;
+            }
             if let Ok(n) = m[1].parse::<i64>() {
                 key_by_num.insert(n, tour_validate::ts_key(title));
             }
@@ -319,6 +329,16 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         stdout.push_str(line);
         stdout.push('\n');
     }
+    for t in &family_withheld {
+        stdout.push_str(&format!(
+            "[WARN] 族號制 title「{t}」不參與數字 crossref revive（同族多 tour 共享 NN 前綴，N→鍵 last-write-wins 無單一語義）——其 [N - name] 舊式引用保留原樣\n"
+        ));
+    }
+    if key_by_num.is_empty() {
+        stdout.push_str(
+            "[WARN] 數字 crossref revive 跳過：鍵圖為空（corpus title 皆族號制或無編號前綴）——[N - name] 舊式引用不改寫\n",
+        );
+    }
     for (k, v) in &dup {
         stdout.push_str(&format!(
             "[WARN] 編號 {k} 的匹配鍵含 '-'（截斷風險）: {}\n",
@@ -342,7 +362,17 @@ pub fn run(argv: &[&str]) -> ToolOutput {
     }
     let (commit, _warn) = tour_manifest::git_head(&repo);
     let mpath = root.join("manifest.toml");
-    let mut data: Manifest = tour_manifest::load(&mpath).unwrap_or_default();
+    // R1 (CR-2 leg-4): a load error must not fold to default here —
+    // dump is a full overwrite, so unwrap_or_default would evaporate
+    // every existing row on a broken manifest (the F1b doctrine)
+    let mut data: Manifest = match tour_manifest::load(&mpath) {
+        Ok(m) => m,
+        Err(e) => {
+            return ToolOutput::crash(format!(
+                "{e}——manifest 損壞拒絕 upsert／覆寫；修復或刪除重建 manifest 後重跑"
+            ))
+        }
+    };
     if data.version.is_none() {
         data.version = Some(toml::Value::Integer(1));
     }

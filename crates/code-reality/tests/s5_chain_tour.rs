@@ -185,8 +185,11 @@ fn write_tours_nn_prefix_and_primary() {
     let out_dir = repo.join(".tours").join("arch").join("chain");
     let mut primary = std::collections::BTreeSet::new();
     primary.insert(1);
-    let paths = write_tours(&st, &out_dir, &primary).unwrap();
+    let mut warns = Vec::new();
+    let paths = write_tours(&st, &out_dir, &primary, &mut warns).unwrap();
     assert_eq!(paths.len(), 2);
+    // degenerate pin (CR-2): out_dir basename carries no family number →
+    // legacy `{SS} - heading` titles survive verbatim + the fix-naming WARN
     let t1: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(out_dir.join("01.tour")).unwrap()).unwrap();
     assert_eq!(t1["title"], "01 - Boot scenario");
@@ -195,6 +198,456 @@ fn write_tours_nn_prefix_and_primary() {
         serde_json::from_str(&std::fs::read_to_string(out_dir.join("02.tour")).unwrap()).unwrap();
     assert_eq!(t2["title"], "02 - Second scenario");
     assert!(t2.get("isPrimary").is_none());
+    assert!(
+        warns
+            .iter()
+            .any(|w| w.contains("退化") && w.contains("NN-label")),
+        "{warns:?}"
+    );
+    // degenerate-path pin (CR-2 leg-3 primed-F2): the no-NN fold emits
+    // exactly one WARN — future additions to this path must show up here
+    assert_eq!(warns.len(), 1, "{warns:?}");
+}
+
+// ---------- CR-2: family-numbered titles (`NN - label｜heading`) ----------
+
+fn plant_family_manifest(repo: &std::path::Path, toml: &str) {
+    let root = repo.join(".tours");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("manifest.toml"), toml).unwrap();
+}
+
+fn tour_title(p: &std::path::Path) -> String {
+    let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap();
+    v["title"].as_str().unwrap().to_string()
+}
+
+#[test]
+fn write_tours_family_template_manifest_label() {
+    let (repo, chain) = repo_fixture("fam-label");
+    let st = build_tours(&chain, &repo, None).unwrap();
+    plant_family_manifest(&repo, "version = 1\n\n[family.\"01\"]\nlabel = \"auth\"\n");
+    let out_dir = repo.join(".tours/arch/01-auth");
+    let mut warns = Vec::new();
+    let paths = write_tours(&st, &out_dir, &Default::default(), &mut warns).unwrap();
+    assert_eq!(paths.len(), 2);
+    assert!(warns.is_empty(), "{warns:?}");
+    assert_eq!(
+        tour_title(&out_dir.join("01.tour")),
+        "01 - auth｜Boot scenario"
+    );
+    assert_eq!(
+        tour_title(&out_dir.join("02.tour")),
+        "01 - auth｜Second scenario"
+    );
+}
+
+#[test]
+fn write_tours_family_template_multi_family() {
+    let (repo, chain) = repo_fixture("fam-multi");
+    let st = build_tours(&chain, &repo, None).unwrap();
+    plant_family_manifest(
+        &repo,
+        "version = 1\n\n[family.\"01\"]\nlabel = \"auth\"\n\n[family.\"02\"]\nlabel = \"runtime\"\n",
+    );
+    let mut warns = Vec::new();
+    write_tours(
+        &st,
+        &repo.join(".tours/arch/01-auth"),
+        &Default::default(),
+        &mut warns,
+    )
+    .unwrap();
+    write_tours(
+        &st,
+        &repo.join(".tours/arch/02-runtime"),
+        &Default::default(),
+        &mut warns,
+    )
+    .unwrap();
+    assert!(warns.is_empty(), "{warns:?}");
+    assert_eq!(
+        tour_title(&repo.join(".tours/arch/01-auth/01.tour")),
+        "01 - auth｜Boot scenario"
+    );
+    assert_eq!(
+        tour_title(&repo.join(".tours/arch/02-runtime/01.tour")),
+        "02 - runtime｜Boot scenario"
+    );
+}
+
+#[test]
+fn write_tours_family_template_basename_suffix_label() {
+    let (repo, chain) = repo_fixture("fam-suffix");
+    let st = build_tours(&chain, &repo, None).unwrap();
+    let out_dir = repo.join(".tours/arch/01-runtime");
+    let mut warns = Vec::new();
+    write_tours(&st, &out_dir, &Default::default(), &mut warns).unwrap();
+    assert!(warns.is_empty(), "{warns:?}");
+    assert_eq!(
+        tour_title(&out_dir.join("01.tour")),
+        "01 - runtime｜Boot scenario"
+    );
+}
+
+#[test]
+fn write_tours_label_dual_source_conflict_fails_loud() {
+    let (repo, chain) = repo_fixture("fam-conflict");
+    let st = build_tours(&chain, &repo, None).unwrap();
+    plant_family_manifest(
+        &repo,
+        "version = 1\n\n[family.\"01\"]\nlabel = \"runtime\"\n",
+    );
+    let out_dir = repo.join(".tours/arch/01-auth");
+    let mut warns = Vec::new();
+    let err = write_tours(&st, &out_dir, &Default::default(), &mut warns).unwrap_err();
+    assert!(
+        err.contains("雙源不一致") && err.contains("auth") && err.contains("runtime"),
+        "{err}"
+    );
+    // CLI face: the drift aborts generation with a nonzero exit BEFORE
+    // any tour file lands
+    let out = code_reality::chain_tour::run(&[
+        "chain_tour",
+        &chain.to_string_lossy(),
+        "--repo",
+        &repo.to_string_lossy(),
+        "--out-dir",
+        &out_dir.to_string_lossy(),
+    ]);
+    assert_eq!(out.exit_code, 1, "{}{}", out.stdout, out.stderr);
+    assert!(out.stderr.contains("雙源不一致"), "{}", out.stderr);
+    assert!(!out_dir.join("01.tour").exists());
+}
+
+#[test]
+fn write_tours_label_absent_folds_with_warn() {
+    let (repo, chain) = repo_fixture("fam-fold");
+    let st = build_tours(&chain, &repo, None).unwrap();
+    let out_dir = repo.join(".tours/arch/01");
+    let mut warns = Vec::new();
+    write_tours(&st, &out_dir, &Default::default(), &mut warns).unwrap();
+    assert_eq!(tour_title(&out_dir.join("01.tour")), "01 - Boot scenario");
+    assert_eq!(warns.len(), 1, "{warns:?}");
+    assert!(warns[0].contains("收摺"), "{}", warns[0]);
+}
+
+// ---------- CR-2 leg-3 (F1): manifest corruption faces tell the truth ----------
+
+#[test]
+fn write_tours_unreadable_manifest_warns_truthfully() {
+    let (repo, chain) = repo_fixture("fam-unreadable");
+    let st = build_tours(&chain, &repo, None).unwrap();
+    std::fs::create_dir_all(repo.join(".tours")).unwrap();
+    // syntax-broken manifest: present but unparseable
+    std::fs::write(
+        repo.join(".tours/manifest.toml"),
+        "version = 1\n[family.\"01\" broken\n",
+    )
+    .unwrap();
+    let out_dir = repo.join(".tours/arch/01");
+    let mut warns = Vec::new();
+    write_tours(&st, &out_dir, &Default::default(), &mut warns).unwrap();
+    // the fold itself is legal (parse failure folds to no label source)...
+    assert_eq!(tour_title(&out_dir.join("01.tour")), "01 - Boot scenario");
+    // ...but the WARN must name the real cause — NOT 雙源皆缺
+    assert_eq!(warns.len(), 1, "{warns:?}");
+    assert!(warns[0].contains("manifest 不可讀"), "{warns:?}");
+    assert!(warns[0].contains("TOML 解析失敗"), "{warns:?}");
+    assert!(!warns[0].contains("皆缺"), "{warns:?}");
+}
+
+#[test]
+fn write_tours_malformed_label_type_warns_truthfully() {
+    let (repo, chain) = repo_fixture("fam-badlabel");
+    let st = build_tours(&chain, &repo, None).unwrap();
+    // label present but not a string — parseable manifest, wrong shape
+    plant_family_manifest(&repo, "version = 1\n\n[family.\"01\"]\nlabel = 7\n");
+    // suffix `auth` present: the readable source stands, but the WARN
+    // must disclose the wrong-typed manifest label instead of silence
+    let out_dir = repo.join(".tours/arch/01-auth");
+    let mut warns = Vec::new();
+    write_tours(&st, &out_dir, &Default::default(), &mut warns).unwrap();
+    assert_eq!(
+        tour_title(&out_dir.join("01.tour")),
+        "01 - auth｜Boot scenario"
+    );
+    assert_eq!(warns.len(), 1, "{warns:?}");
+    // C3 (leg-4): the WARN enumerates Malformed's causes instead of
+    // asserting the label-type one it cannot know
+    assert!(warns[0].contains("結構型別錯"), "{warns:?}");
+    assert!(warns[0].contains("label 非 string"), "{warns:?}");
+    assert!(!warns[0].contains("皆缺"), "{warns:?}");
+}
+
+#[test]
+fn run_corrupted_manifest_fails_loud_without_overwrite() {
+    let (repo, chain) = repo_fixture("fam-corrupt-run");
+    let mpath = repo.join(".tours/manifest.toml");
+    std::fs::create_dir_all(repo.join(".tours")).unwrap();
+    let bad = "version = 1\n[tour.\"arch/01-auth/01.tour\"\n";
+    std::fs::write(&mpath, bad).unwrap();
+    let out = code_reality::chain_tour::run(&[
+        "chain_tour",
+        &chain.to_string_lossy(),
+        "--repo",
+        &repo.to_string_lossy(),
+        "--out-dir",
+        &repo.join(".tours/arch/01-auth").to_string_lossy(),
+    ]);
+    // crash-only (F1b): upserting onto an unparseable manifest would
+    // dump a full overwrite and silently evaporate every existing row
+    assert_eq!(
+        out.exit_code, 1,
+        "stdout={} stderr={}",
+        out.stdout, out.stderr
+    );
+    assert!(out.stderr.contains("拒絕"), "{}", out.stderr);
+    // the corrupted bytes survive verbatim — dump never ran
+    assert_eq!(std::fs::read_to_string(&mpath).unwrap(), bad);
+}
+
+// ---------- CR-2 leg-4: C1 preflight / R1 e2e / C3 truthful WARN / R2 warns ----------
+
+#[test]
+fn run_corrupted_manifest_preflight_blocks_tour_writes() {
+    let (repo, chain) = repo_fixture("leg4-preflight");
+    std::fs::create_dir_all(repo.join(".tours/arch/01-auth")).unwrap();
+    // a tour from an earlier run: its bytes must survive a refused
+    // regen verbatim — a partial regen (files written, provenance leg
+    // crashed) is the C1 defect
+    let existing = repo.join(".tours/arch/01-auth/01.tour");
+    std::fs::write(&existing, "{\"title\":\"old\"}\n").unwrap();
+    let mpath = repo.join(".tours/manifest.toml");
+    let bad = "version = 1\n[tour.\"arch/01-auth/01.tour\"\n";
+    std::fs::write(&mpath, bad).unwrap();
+    let out = code_reality::chain_tour::run(&[
+        "chain_tour",
+        &chain.to_string_lossy(),
+        "--repo",
+        &repo.to_string_lossy(),
+        "--out-dir",
+        &repo.join(".tours/arch/01-auth").to_string_lossy(),
+    ]);
+    assert_eq!(
+        out.exit_code, 1,
+        "stdout={} stderr={}",
+        out.stdout, out.stderr
+    );
+    assert!(out.stderr.contains("拒絕"), "{}", out.stderr);
+    // zero partial state: old tour untouched, no new files, corrupt
+    // manifest bytes verbatim
+    assert_eq!(
+        std::fs::read_to_string(&existing).unwrap(),
+        "{\"title\":\"old\"}\n"
+    );
+    assert!(!repo.join(".tours/arch/01-auth/02.tour").exists());
+    assert_eq!(std::fs::read_to_string(&mpath).unwrap(), bad);
+}
+
+#[test]
+fn run_wrong_typed_known_key_manifest_crashes_without_overwrite() {
+    let (repo, chain) = repo_fixture("leg4-r1-e2e");
+    std::fs::create_dir_all(repo.join(".tours")).unwrap();
+    let mpath = repo.join(".tours/manifest.toml");
+    // parseable TOML, wrong-typed known key (R1's loud face)
+    let bad = "version = 1\ntour = 7\n";
+    std::fs::write(&mpath, bad).unwrap();
+    let out_dir = repo.join(".tours/arch/01-auth");
+    let out = code_reality::chain_tour::run(&[
+        "chain_tour",
+        &chain.to_string_lossy(),
+        "--repo",
+        &repo.to_string_lossy(),
+        "--out-dir",
+        &out_dir.to_string_lossy(),
+    ]);
+    assert_eq!(
+        out.exit_code, 1,
+        "stdout={} stderr={}",
+        out.stdout, out.stderr
+    );
+    assert!(
+        out.stderr.contains("tour 非 table") && out.stderr.contains("integer"),
+        "{}",
+        out.stderr
+    );
+    assert_eq!(std::fs::read_to_string(&mpath).unwrap(), bad);
+    assert!(!out_dir.join("01.tour").exists());
+}
+
+#[test]
+fn write_tours_malformed_family_key_not_table_warns_truthfully() {
+    let (repo, chain) = repo_fixture("leg4-fam-nontable");
+    let st = build_tours(&chain, &repo, None).unwrap();
+    // `family` itself is an integer — Malformed cause #1; no dir suffix
+    // → the fold branch, which used to claim 「label 型別錯（非 string）」
+    // — a cause it cannot know
+    plant_family_manifest(&repo, "version = 1\nfamily = 7\n");
+    let out_dir = repo.join(".tours/arch/01");
+    let mut warns = Vec::new();
+    write_tours(&st, &out_dir, &Default::default(), &mut warns).unwrap();
+    assert_eq!(tour_title(&out_dir.join("01.tour")), "01 - Boot scenario");
+    assert_eq!(warns.len(), 1, "{warns:?}");
+    assert!(warns[0].contains("結構型別錯"), "{warns:?}");
+    assert!(warns[0].contains("family 非 table"), "{warns:?}");
+    assert!(!warns[0].contains("label 型別錯（非 string）"), "{warns:?}");
+}
+
+#[test]
+fn write_tours_malformed_nn_row_not_table_warns_truthfully() {
+    let (repo, chain) = repo_fixture("leg4-row-nontable");
+    let st = build_tours(&chain, &repo, None).unwrap();
+    // `[family."01"]` row is an integer — Malformed cause #2; dir suffix
+    // present → the suffix branch
+    plant_family_manifest(&repo, "version = 1\n\n[family]\n\"01\" = 7\n");
+    let out_dir = repo.join(".tours/arch/01-auth");
+    let mut warns = Vec::new();
+    write_tours(&st, &out_dir, &Default::default(), &mut warns).unwrap();
+    assert_eq!(
+        tour_title(&out_dir.join("01.tour")),
+        "01 - auth｜Boot scenario"
+    );
+    assert_eq!(warns.len(), 1, "{warns:?}");
+    assert!(warns[0].contains("結構型別錯"), "{warns:?}");
+    assert!(warns[0].contains("NN 列非 table"), "{warns:?}");
+    assert!(!warns[0].contains("label 型別錯（非 string）"), "{warns:?}");
+}
+
+#[test]
+fn write_tours_legacy_residue_warns_via_warns_vec() {
+    let (repo, chain) = repo_fixture("leg4-legacy-warn");
+    let st = build_tours(&chain, &repo, None).unwrap();
+    let out_dir = repo.join("out");
+    std::fs::create_dir_all(&out_dir).unwrap();
+    std::fs::write(out_dir.join("chain-old.tour"), "{}\n").unwrap();
+    let mut warns = Vec::new();
+    write_tours(&st, &out_dir, &Default::default(), &mut warns).unwrap();
+    // the residue WARN must ride the warns vec (run() routes it to
+    // stderr; in-process consumers see it) — not a bare eprintln
+    assert!(
+        warns.iter().any(|w| w.contains("舊檔名格式殘留")),
+        "{warns:?}"
+    );
+}
+
+#[test]
+fn write_tours_label_ascii_hyphen_replaced_fullwidth() {
+    let (repo, chain) = repo_fixture("fam-hyphen-label");
+    let st = build_tours(&chain, &repo, None).unwrap();
+    plant_family_manifest(
+        &repo,
+        "version = 1\n\n[family.\"01\"]\nlabel = \"auth-chain\"\n",
+    );
+    // bare `01` dir: no basename suffix → the manifest label stands alone
+    let out_dir = repo.join(".tours/arch/01");
+    let mut warns = Vec::new();
+    write_tours(&st, &out_dir, &Default::default(), &mut warns).unwrap();
+    assert_eq!(
+        tour_title(&out_dir.join("01.tour")),
+        "01 - auth－chain｜Boot scenario"
+    );
+    assert!(warns.iter().any(|w| w.contains("－")), "{warns:?}");
+}
+
+#[test]
+fn write_tours_heading_hyphen_kept_with_truncation_key_warn() {
+    let (repo, _chain) = repo_fixture("fam-hyphen-heading");
+    let chain = repo.join("chain-h.md");
+    std::fs::write(
+        &chain,
+        "# Boot - cold start\n\n```text\nkernel (pkg/a.py:1)\n└─ boot() (pkg/a.py:5)\n```\n",
+    )
+    .unwrap();
+    let st = build_tours(&chain, &repo, None).unwrap();
+    plant_family_manifest(&repo, "version = 1\n\n[family.\"01\"]\nlabel = \"auth\"\n");
+    let out_dir = repo.join(".tours/arch/01");
+    let mut warns = Vec::new();
+    write_tours(&st, &out_dir, &Default::default(), &mut warns).unwrap();
+    // heading is author prose: kept verbatim, hyphen included
+    assert_eq!(
+        tour_title(&out_dir.join("01.tour")),
+        "01 - auth｜Boot - cold start"
+    );
+    // the WARN names the effective truncation key under upstream
+    // getTourTitle split semantics ("label｜pre-hyphen heading")
+    assert!(
+        warns
+            .iter()
+            .any(|w| w.contains("有效截斷鍵") && w.contains("auth｜Boot")),
+        "{warns:?}"
+    );
+}
+
+#[test]
+fn write_tours_three_digit_family_nn() {
+    let (repo, chain) = repo_fixture("fam-100");
+    let st = build_tours(&chain, &repo, None).unwrap();
+    let out_dir = repo.join(".tours/arch/100-platform");
+    let mut warns = Vec::new();
+    write_tours(&st, &out_dir, &Default::default(), &mut warns).unwrap();
+    assert!(warns.is_empty(), "{warns:?}");
+    assert_eq!(
+        tour_title(&out_dir.join("01.tour")),
+        "100 - platform｜Boot scenario"
+    );
+}
+
+fn run_bin(cwd: &std::path::Path, args: &[&str]) -> (i32, String, String) {
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_code-reality"))
+        .current_dir(cwd)
+        .args(args)
+        .output()
+        .unwrap();
+    (
+        out.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+#[test]
+fn regen_redirect_titles_carry_target_family_nn() {
+    let (repo, _chain) = repo_fixture("fam-redirect");
+    // an existing numbered family already sourced from chain.md — the
+    // dup-family guard must redirect the default out-dir there and the
+    // titles must carry THAT family's number + suffix label
+    std::fs::create_dir_all(repo.join(".tours/arch/01-alpha-chain")).unwrap();
+    std::fs::write(
+        repo.join(".tours/manifest.toml"),
+        "version = 1\n\n[tour.\"arch/01-alpha-chain/01.tour\"]\ngenerator = \"chain_tour\"\nsources = [\"chain.md\"]\nanchored_commit = \"c0\"\n",
+    )
+    .unwrap();
+    let (code, out, err) = run_bin(&repo, &["chain_tour", "chain.md", "--repo", "."]);
+    assert_eq!(code, 0, "stdout={out} stderr={err}");
+    assert!(out.contains("duplicate-family 防護"), "{out}");
+    // basename label `alpha-chain` carries an ASCII hyphen → sanitized to
+    // fullwidth (CR-2 decision ⑤) in the title slot
+    assert_eq!(
+        tour_title(&repo.join(".tours/arch/01-alpha-chain/01.tour")),
+        "01 - alpha－chain｜Boot scenario"
+    );
+}
+
+#[test]
+fn run_no_nn_out_dir_degrades_with_stderr_warn() {
+    let (repo, chain) = repo_fixture("fam-degen-run");
+    let out_dir = repo.join("out");
+    let out = code_reality::chain_tour::run(&[
+        "chain_tour",
+        &chain.to_string_lossy(),
+        "--repo",
+        &repo.to_string_lossy(),
+        "--out-dir",
+        &out_dir.to_string_lossy(),
+    ]);
+    assert_eq!(out.exit_code, 0, "{}{}", out.stdout, out.stderr);
+    assert!(
+        out.stderr.contains("退化") && out.stderr.contains("--out-dir"),
+        "{}",
+        out.stderr
+    );
+    assert_eq!(tour_title(&out_dir.join("01.tour")), "01 - Boot scenario");
 }
 
 #[test]

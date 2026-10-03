@@ -681,23 +681,139 @@ pub fn build_tours(
     })
 }
 
-/// Write tours: `{NN}.tour` pure sequence numbers, JSON title prefixed
-/// `NN - ` (upstream chain-parseable); primary members carry isPrimary.
+/// Write tours: `{SS}.tour` in-family sequence-number filenames (SS =
+/// scenario order within the family — init_scan's generator guess depends
+/// on the bare numeric names); titles follow the family template
+/// `{NN} - {label}｜{heading}` (`｜` = U+FF5C; the `NN - ` prefix keeps
+/// upstream getTourTitle / Prev/Next / ts_key regexes matching). NN = the
+/// `^\d{2,}` prefix of the FINAL out_dir basename (post dup-family
+/// redirect — resolved here so the caller's redirect is inherently
+/// honored); label = the manifest `[family."NN"]` label (read-only via
+/// the tour_manifest extra roundtrip) or the basename `NN-` suffix —
+/// both present and disagreeing fails loud (drift must not be
+/// auto-resolved), both absent folds to `{NN} - {heading}` with a WARN.
+/// A corrupted-but-present manifest (unparseable, or the label of the
+/// wrong TOML type) is NOT absence: the label still folds, but the WARN
+/// names the real cause (manifest-corruption face, CR-2 leg-3 F1a).
+/// A basename without a family number degrades to the legacy
+/// `{SS} - {heading}` title plus a WARN naming the fix. Primary members
+/// carry isPrimary.
 pub fn write_tours(
     st: &ScenarioTours,
     out_dir: &Path,
     primary: &std::collections::BTreeSet<usize>,
+    warns: &mut Vec<String>,
 ) -> Result<Vec<PathBuf>, String> {
     std::fs::create_dir_all(out_dir).map_err(|e| format!("{} 建立失敗：{e}", out_dir.display()))?;
+    let base = out_dir
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let nn = crate::tour_validate::nn_prefix(&base);
+    let label: Option<String> = match &nn {
+        Some(nn) => {
+            let manifest_label = manifest_family_label(out_dir, nn);
+            let suffix_label = base
+                .strip_prefix(nn.as_str())
+                .and_then(|rest| rest.strip_prefix('-'))
+                .map(|s| s.to_string())
+                .filter(|s| !s.is_empty());
+            match (manifest_label, suffix_label) {
+                (ManifestFamilyLabel::Label(m), Some(s)) => {
+                    // F5 adjudication (CR-2 leg-3): the dual-source check
+                    // is exact PRE-NORMALIZATION equality — sources are
+                    // compared verbatim (the fullwidth-hyphen label
+                    // sanitization below runs only after this gate).
+                    // Deliberately conservative: a normalized comparison
+                    // could auto-reconcile drift that must fail loud.
+                    if m != s {
+                        return Err(format!(
+                            "族 {nn} label 雙源不一致：manifest [family.\"{nn}\"] label=\"{m}\" ≠ 目錄 {nn}- 後綴 \"{s}\"——drift 禁自動擇一，對齊後重產"
+                        ));
+                    }
+                    Some(m)
+                }
+                (ManifestFamilyLabel::Label(m), None) => Some(m),
+                (ManifestFamilyLabel::Absent, Some(s)) => Some(s),
+                (ManifestFamilyLabel::Absent, None) => {
+                    warns.push(format!(
+                        "[WARN] 族 {nn} 無 label（manifest [family.\"{nn}\"] 與目錄 {nn}- 後綴皆缺）——title 收摺「{nn} - 場景標題」；修法：目錄改名 {nn}-label 或 manifest 補 [family.\"{nn}\"] label"
+                    ));
+                    None
+                }
+                (ManifestFamilyLabel::Unreadable(e), suffix) => {
+                    if let Some(s) = &suffix {
+                        warns.push(format!(
+                            "[WARN] manifest 不可讀（{e}）——族 {nn} label 僅取目錄 {nn}- 後綴 \"{s}\"（manifest 在但解析失敗，雙源仲裁待修復後重產）"
+                        ));
+                        suffix
+                    } else {
+                        warns.push(format!(
+                            "[WARN] manifest 不可讀（{e}）——族 {nn} label 無可讀源，title 收摺「{nn} - 場景標題」（manifest 在但解析失敗，非 label 雙源缺失）；修法：修復 manifest 補 [family.\"{nn}\"] label 或目錄改名 {nn}-label"
+                        ));
+                        None
+                    }
+                }
+                (ManifestFamilyLabel::Malformed, suffix) => {
+                    // C3 (leg-4): Malformed covers three distinct causes
+                    // (family key not a table / NN row not a table / label
+                    // not a string) — the WARN enumerates them instead of
+                    // asserting the label-type cause it cannot know
+                    if let Some(s) = &suffix {
+                        warns.push(format!(
+                            "[WARN] manifest [family.\"{nn}\"] 結構型別錯（family 非 table／NN 列非 table／label 非 string 之一）——族 {nn} label 僅取目錄 {nn}- 後綴 \"{s}\""
+                        ));
+                        suffix
+                    } else {
+                        warns.push(format!(
+                            "[WARN] manifest [family.\"{nn}\"] 結構型別錯（family 非 table／NN 列非 table／label 非 string 之一）——title 收摺「{nn} - 場景標題」（label 源在但結構錯，非 label 雙源缺失）；修法：修復 [family.\"{nn}\"] 結構（family/列 table、label string）或目錄改名 {nn}-label"
+                        ));
+                        None
+                    }
+                }
+            }
+        }
+        None => {
+            warns.push(format!(
+                "[WARN] out_dir {} basename 無族號前綴（^\\d{{2,}}）——title 退化舊格式「SS - 場景標題」（CodeTour 樹無法依族聚合）；修法：chain md 改名 NN-label.md（預設 out-dir 取 stem）或顯式 --out-dir .tours/arch/NN-label",
+                out_dir.display()
+            ));
+            None
+        }
+    };
+    let label = label.map(|l| {
+        if l.contains('-') {
+            warns.push(format!(
+                "[WARN] 族 label「{l}」含 ASCII '-'——已代換全形「－」（上游 getTourTitle 於首 '-' 截斷）"
+            ));
+            l.replace('-', "－")
+        } else {
+            l
+        }
+    });
     let mut paths = Vec::new();
     for (i, tour) in st.tours.iter().enumerate() {
         let n = i + 1;
         let p = out_dir.join(format!("{n:02}.tour"));
+        let heading = tour["title"].as_str().unwrap_or("");
+        let title = match (&nn, &label) {
+            (Some(nn), Some(label)) => format!("{nn} - {label}｜{heading}"),
+            (Some(nn), None) => format!("{nn} - {heading}"),
+            (None, _) => format!("{n:02} - {heading}"),
+        };
+        if nn.is_some() && heading.contains('-') {
+            // author prose is never rewritten; disclose what upstream
+            // getTourTitle would truncate the link key to
+            let effective = crate::tour_validate::ts_key(&title);
+            warns.push(format!(
+                "[WARN] 場景標題「{heading}」含 ASCII '-'——作者散文原樣保留；上游 getTourTitle 有效截斷鍵＝「{effective}」"
+            ));
+        }
         let mut emitted = tour.clone();
-        emitted.as_object_mut().unwrap().insert(
-            "title".into(),
-            serde_json::Value::String(format!("{n:02} - {}", tour["title"].as_str().unwrap_or(""))),
-        );
+        emitted
+            .as_object_mut()
+            .unwrap()
+            .insert("title".into(), serde_json::Value::String(title));
         if primary.contains(&n) {
             emitted
                 .as_object_mut()
@@ -720,13 +836,72 @@ pub fn write_tours(
     let mut legacy_sorted = legacy;
     legacy_sorted.sort();
     if !legacy_sorted.is_empty() {
-        eprintln!(
+        // rides the warns vec (R2, CR-2 leg-4): run() routes it to stderr
+        // like every other WARN, and in-process consumers see it too
+        warns.push(format!(
             "[WARN] 舊檔名格式殘留 {} 檔（chain-*.tour）——新舊同 title 會使 player 撞鍵靜默落第一條（corpus 靜默雙份）；重錨過渡＝刪舊檔＋manifest 重建（rm {}/chain-*.tour 後重產或 init-scan）",
             legacy_sorted.len(),
             out_dir.display()
-        );
+        ));
     }
     Ok(paths)
+}
+
+/// Manifest `[family."NN"]` label probe (via the tour_manifest::load
+/// pipe — unknown-key extra roundtrip, read-only; the generator never
+/// writes family rows). Four states so the fold WARN can tell the truth
+/// (CR-2 leg-3 F1a): an unreadable manifest or a wrong-typed label is a
+/// corruption face, NOT "both label sources absent".
+enum ManifestFamilyLabel {
+    /// `label = "..."` under `[family."NN"]`
+    Label(String),
+    /// No manifest tree/file, no family table, no NN row, or no label
+    /// key — the honest "label source absent"
+    Absent,
+    /// Manifest present but load fails (read or TOML parse error);
+    /// carries the load error text for the WARN
+    Unreadable(String),
+    /// family key/NN row not a table, or label present but not a string
+    Malformed,
+}
+
+/// Read the manifest `[family."NN"]` label, keeping the corruption faces
+/// distinguishable. Out-of-tree or label-less manifests yield `Absent`.
+fn manifest_family_label(out_dir: &Path, nn: &str) -> ManifestFamilyLabel {
+    let root = crate::tour_manifest::tours_root_of(out_dir);
+    if root
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .as_deref()
+        != Some(".tours")
+    {
+        return ManifestFamilyLabel::Absent;
+    }
+    let m = match crate::tour_manifest::load(&root.join("manifest.toml")) {
+        Ok(m) => m,
+        Err(e) => return ManifestFamilyLabel::Unreadable(e),
+    };
+    for (k, v) in &m.extra {
+        if k == "family" {
+            let Some(t) = v.as_table() else {
+                return ManifestFamilyLabel::Malformed;
+            };
+            let Some(row) = t.get(nn) else {
+                return ManifestFamilyLabel::Absent;
+            };
+            let Some(row_t) = row.as_table() else {
+                return ManifestFamilyLabel::Malformed;
+            };
+            let Some(label) = row_t.get("label") else {
+                return ManifestFamilyLabel::Absent;
+            };
+            let Some(s) = label.as_str() else {
+                return ManifestFamilyLabel::Malformed;
+            };
+            return ManifestFamilyLabel::Label(s.to_string());
+        }
+    }
+    ManifestFamilyLabel::Absent
 }
 
 /// Route a `code-reality chain_tour ...` invocation.
@@ -842,8 +1017,20 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         .as_deref()
         == Some(".tours")
     {
-        let mpre =
-            crate::tour_manifest::load(&guard_root.join("manifest.toml")).unwrap_or_default();
+        // C1 preflight (CR-2 leg-4): a present-but-broken manifest (TOML
+        // parse error, or a wrong-typed known key since R1) must abort
+        // BEFORE any tour file lands — the old write-then-reload order
+        // crashed at the provenance leg with the corpus already
+        // half-written. Same refusal doctrine as the F1b upsert site
+        // below; the load here doubles as the dup-family guard's input.
+        let mpre = match crate::tour_manifest::load(&guard_root.join("manifest.toml")) {
+            Ok(m) => m,
+            Err(e) => {
+                return ToolOutput::crash(format!(
+                    "{e}——manifest 損壞拒絕生成（tour 檔未寫，零 partial state）；修復或刪除重建 manifest 後重跑"
+                ))
+            }
+        };
         let cur_fam = crate::common::resolve(&out_dir)
             .strip_prefix(&guard_root)
             .map(|p| p.to_string_lossy().replace('\\', "/"))
@@ -891,10 +1078,16 @@ pub fn run(argv: &[&str]) -> ToolOutput {
             out_of_range
         ));
     }
-    let paths = match write_tours(&st, &out_dir, &primary) {
+    let mut gen_warns: Vec<String> = Vec::new();
+    let paths = match write_tours(&st, &out_dir, &primary, &mut gen_warns) {
         Ok(p) => p,
         Err(e) => return ToolOutput::crash(e),
     };
+    let mut stderr = String::new();
+    for w in &gen_warns {
+        stderr.push_str(w);
+        stderr.push('\n');
+    }
     for p in &paths {
         stdout.push_str(&format!("[OK] chain tour -> {}\n", p.display()));
     }
@@ -913,7 +1106,19 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         ));
     } else {
         let mpath = mroot.join("manifest.toml");
-        let mut mdata = crate::tour_manifest::load(&mpath).unwrap_or_default();
+        // CR-2 leg-3 F1b: a present-but-unparseable manifest must crash,
+        // not fold to default — dump is a full overwrite, so upserting on
+        // a corrupted manifest would silently evaporate every existing
+        // row. A missing file legitimately folds (load returns default)
+        // and stays the legal new-corpus path.
+        let mut mdata = match crate::tour_manifest::load(&mpath) {
+            Ok(m) => m,
+            Err(e) => {
+                return ToolOutput::crash(format!(
+                    "{e}——manifest 損壞拒絕 upsert／覆寫；修復或刪除重建 manifest 後重跑"
+                ))
+            }
+        };
         if mdata.version.is_none() {
             mdata.version = Some(toml::Value::Integer(1));
         }
@@ -986,7 +1191,7 @@ pub fn run(argv: &[&str]) -> ToolOutput {
     stdout.push_str(&format!("[LOG] graph 重錨分佈: {:?}\n", st.g_counts));
     ToolOutput {
         stdout,
-        stderr: String::new(),
+        stderr,
         exit_code: 0,
     }
 }

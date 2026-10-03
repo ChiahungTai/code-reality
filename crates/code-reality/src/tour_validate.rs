@@ -51,6 +51,41 @@ fn ts_key_re() -> &'static regex::Regex {
     RE.get_or_init(|| regex::Regex::new(r"^#?\d+\s-").unwrap())
 }
 
+/// Leading two-plus-digit prefix (greedy — `100-x` is family 100, not 10);
+/// the family-number face shared by family dirs, family titles, and the
+/// chain_tour out-dir basename. Single source (CR-2 leg-3 F3) — the
+/// pattern once lived as drifting literals in three files.
+pub(crate) fn nn_prefix_re() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"^(\d{2,})").unwrap())
+}
+
+/// Family-number capture over [`nn_prefix_re`] — `None` when the string
+/// carries no family number.
+pub(crate) fn nn_prefix(s: &str) -> Option<String> {
+    nn_prefix_re().captures(s).map(|c| c[1].to_string())
+}
+
+/// `^(\d{2,})\s-` — the family-title prefix face: the `\s-` separator
+/// distinguishes `NN - ` titles from bare `NN` dirnames. Single source
+/// alongside [`nn_prefix_re`] (CR-2 leg-3 F3).
+pub(crate) fn family_title_prefix_re() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"^(\d{2,})\s-").unwrap())
+}
+
+/// CR-2 family template `{NN} - {label}｜{heading}`: an `NN - ` prefix
+/// plus the U+FF5C separator (legacy `SS - ` titles never carry ｜).
+/// Returns the claimed family number.
+fn family_title_nn(title: &str) -> Option<String> {
+    if !title.contains('｜') {
+        return None;
+    }
+    family_title_prefix_re()
+        .captures(title)
+        .map(|c| c[1].to_string())
+}
+
 /// codetour getTourTitle reproduction (`tour_validate.py:20-24`): strip
 /// the `NN -` prefix (truncate at the FIRST '-').
 pub fn ts_key(title: &str) -> String {
@@ -415,11 +450,30 @@ pub fn validate(repo: &Path, tours_dir: &Path, with_manifest: bool) -> ToolOutpu
             exit_code: 0,
         };
     }
-    let idx = key_index(&iter_tours(repo, tours_dir, true).unwrap_or_default());
+    let all_tours = iter_tours(repo, tours_dir, true).unwrap_or_default();
+    let idx = key_index(&all_tours);
     let by_rel: BTreeMap<String, serde_json::Value> = tours.iter().cloned().collect();
     let mut fails = Vec::new();
     let (mut n_links, mut n_files) = (0, 0);
     for (rel, tour) in &tours {
+        // CR-2 dir-prefix gate: a family-template title must claim the
+        // family number of the directory it lives in (tree aggregation
+        // address vs declaration)
+        let title = tour.get("title").and_then(|t| t.as_str()).unwrap_or("");
+        if let Some(nn) = family_title_nn(title) {
+            let dir = Path::new(rel)
+                .parent()
+                .and_then(|p| p.file_name())
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let dir_nn = nn_prefix(&dir);
+            if dir_nn.as_deref() != Some(nn.as_str()) {
+                fails.push(format!(
+                    "[FAIL] {rel} 族號制 title NN（{nn}）≠ 目錄族號前綴（{}）",
+                    dir_nn.unwrap_or(dir)
+                ));
+            }
+        }
         let (lf, nl) = check_links(rel, tour, &idx, &by_rel, &mut stdout);
         fails.extend(lf);
         n_links += nl;
@@ -440,6 +494,55 @@ pub fn validate(repo: &Path, tours_dir: &Path, with_manifest: bool) -> ToolOutpu
         fails.extend(check_files(rel, tour, repo));
         let (af, _, _) = check_anchors(rel, tour, repo, &mut stdout);
         fails.extend(af);
+    }
+    // CR-2 ts_key uniqueness (tiered, over the full index including
+    // excluded dirs): family-template collisions FAIL (the player
+    // silently lands on the first match); legacy `SS - ` collisions stay
+    // WARN through the transition corpus and may graduate to FAIL once
+    // fully migrated.
+    let title_of: BTreeMap<&String, &str> = all_tours
+        .iter()
+        .map(|(rel, t)| (rel, t.get("title").and_then(|x| x.as_str()).unwrap_or("")))
+        .collect();
+    for (key, rels) in &idx {
+        if rels.len() < 2 {
+            continue;
+        }
+        let title_is = |r: &String, pred: &dyn Fn(&str) -> bool| {
+            title_of.get(r).map(|t| pred(t)).unwrap_or(false)
+        };
+        if rels
+            .iter()
+            .any(|r| title_is(r, &|t| family_title_nn(t).is_some()))
+        {
+            fails.push(format!(
+                "[FAIL] ts_key 撞鍵（族號制）: {} × {}——{:?}（player 撞鍵靜默落第一條）",
+                truncate(key, 40),
+                rels.len(),
+                rels
+            ));
+        } else if rels
+            .iter()
+            .any(|r| title_is(r, &|t| ts_key_re().is_match(t)))
+        {
+            stdout.push_str(&format!(
+                "[WARN] ts_key 撞鍵（legacy 過渡期）: {} × {}——{:?}；全遷移族號制後此級升 FAIL\n",
+                truncate(key, 40),
+                rels.len(),
+                rels
+            ));
+        } else {
+            // Third state (CR-2 leg-3 F2): bare titles with no prefix at
+            // all — no link-key semantics of their own, so FAIL would
+            // red-flag a legitimate legacy corpus; the player collision
+            // harm still needs to be visible.
+            stdout.push_str(&format!(
+                "[WARN] ts_key 撞鍵（裸 title 無前綴）: {} × {}——{:?}（player 撞鍵靜默落第一條；裸 title 無連結鍵語義，故不升 FAIL）\n",
+                truncate(key, 40),
+                rels.len(),
+                rels
+            ));
+        }
     }
     if with_manifest {
         fails.extend(check_manifest(repo, tours_dir, &tours, &mut stdout));

@@ -242,6 +242,119 @@ fn validate_link_and_anchor_faces() {
     );
 }
 
+// ---------- CR-2: family-numbered title gates ----------
+// New template `NN - label｜heading` (｜ = U+FF5C): the family number in
+// the title must equal the directory prefix, and ts_key collisions are
+// tiered — family-format FAIL, legacy `SS - ` WARN through the transition.
+
+#[test]
+fn validate_family_title_dir_prefix_gate() {
+    let repo = repo_fixture("fam-gate");
+    write_tour(&repo, ".tours/arch/01-auth/01.tour", "01 - auth｜Boot", &[]);
+    write_tour(
+        &repo,
+        ".tours/arch/01-auth/02.tour",
+        "01 - auth｜Cold start",
+        &[],
+    );
+    // conformant family corpus stays green
+    let ok = tour_validate::validate(&repo, Path::new(".tours"), false);
+    assert_eq!(ok.exit_code, 0, "{}{}", ok.stdout, ok.stderr);
+    assert!(ok.stdout.contains("fails=0"), "{}", ok.stdout);
+    // title claims family 01 but lives under 02- → FAIL
+    write_tour(
+        &repo,
+        ".tours/arch/02-runtime/01.tour",
+        "01 - auth｜Drift",
+        &[],
+    );
+    let bad = tour_validate::validate(&repo, Path::new(".tours"), false);
+    assert_eq!(bad.exit_code, 1, "{}", bad.stdout);
+    assert!(
+        bad.stdout
+            .contains("[FAIL] .tours/arch/02-runtime/01.tour 族號制 title"),
+        "{}",
+        bad.stdout
+    );
+}
+
+#[test]
+fn validate_ts_key_family_collision_fails() {
+    let repo = repo_fixture("fam-collide");
+    // duplicate scenario heading within one family → identical ts_key
+    write_tour(&repo, ".tours/arch/01-auth/01.tour", "01 - auth｜Boot", &[]);
+    write_tour(&repo, ".tours/arch/01-auth/02.tour", "01 - auth｜Boot", &[]);
+    let out = tour_validate::validate(&repo, Path::new(".tours"), false);
+    assert_eq!(out.exit_code, 1, "{}", out.stdout);
+    assert!(
+        out.stdout.contains("[FAIL] ts_key 撞鍵（族號制）") && out.stdout.contains("auth｜Boot"),
+        "{}",
+        out.stdout
+    );
+}
+
+#[test]
+fn validate_ts_key_legacy_collision_warns_transition() {
+    let repo = repo_fixture("legacy-collide");
+    write_tour(&repo, ".tours/arch/old/01.tour", "01 - Boot", &[]);
+    write_tour(&repo, ".tours/arch/old/02.tour", "02 - Boot", &[]);
+    let out = tour_validate::validate(&repo, Path::new(".tours"), false);
+    assert_eq!(out.exit_code, 0, "{}{}", out.stdout, out.stderr);
+    assert!(
+        out.stdout.contains("[WARN] ts_key 撞鍵") && out.stdout.contains("legacy"),
+        "{}",
+        out.stdout
+    );
+}
+
+#[test]
+fn validate_ts_key_bare_title_collision_warns_not_fails() {
+    // third state (CR-2 leg-3 F2): bare titles carry no link-key
+    // semantics of their own — FAIL would red-flag a legitimate legacy
+    // corpus — but the player collision harm must stay visible
+    let repo = repo_fixture("bare-collide");
+    write_tour(&repo, ".tours/arch/old/01.tour", "Overview", &[]);
+    write_tour(&repo, ".tours/arch/old/02.tour", "Overview", &[]);
+    let out = tour_validate::validate(&repo, Path::new(".tours"), false);
+    assert_eq!(out.exit_code, 0, "{}{}", out.stdout, out.stderr);
+    assert!(
+        out.stdout.contains("[WARN] ts_key 撞鍵") && out.stdout.contains("裸 title"),
+        "{}",
+        out.stdout
+    );
+}
+
+// ---------- CR-2 leg-4 (R4): three-digit NN pins ----------
+// `nn_prefix` is greedy (`100-x` is family 100, not 10) and ts_key
+// strips the whole `100 - ` prefix — behavior pins, no product change.
+
+#[test]
+fn validate_three_digit_family_dir_prefix_gate() {
+    // positive: dir 100-x satisfies title NN 100
+    let repo = repo_fixture("nn100-ok");
+    write_tour(&repo, ".tours/arch/100-x/01.tour", "100 - x｜y", &[]);
+    let ok = tour_validate::validate(&repo, Path::new(".tours"), false);
+    assert_eq!(ok.exit_code, 0, "{}{}", ok.stdout, ok.stderr);
+    assert!(ok.stdout.contains("fails=0"), "{}", ok.stdout);
+    // negative: dir 10-x must NOT satisfy NN 100 (greedy, not
+    // 2-digit-truncated)
+    let repo2 = repo_fixture("nn100-bad");
+    write_tour(&repo2, ".tours/arch/10-x/01.tour", "100 - x｜y", &[]);
+    let bad = tour_validate::validate(&repo2, Path::new(".tours"), false);
+    assert_eq!(bad.exit_code, 1, "{}", bad.stdout);
+    assert!(
+        bad.stdout
+            .contains("族號制 title NN（100）≠ 目錄族號前綴（10）"),
+        "{}",
+        bad.stdout
+    );
+}
+
+#[test]
+fn ts_key_strips_three_digit_family_prefix() {
+    assert_eq!(tour_validate::ts_key("100 - x｜y"), "x｜y");
+}
+
 // ---------- tour_upgrade ----------
 
 #[test]
@@ -332,6 +445,92 @@ fn upgrade_dry_run_and_apply() {
     let manifest = std::fs::read_to_string(repo.join(".tours/manifest.toml")).unwrap();
     assert!(manifest.contains("[tour.\"01.tour\"]"), "{manifest}");
     assert!(manifest.contains("generator = \"manual\""));
+}
+
+// ---------- CR-2 leg-4 (C2): family-format titles stay out of numeric revive ----------
+// Same-family tours share the NN prefix — an N→key map entry would be a
+// silent last-write-wins pick among sibling scenes, and --apply would
+// rewrite `[N - name]` refs onto an arbitrary scene (check_links
+// verifies exactly-one, never semantics).
+
+#[test]
+fn upgrade_family_corpus_withholds_numeric_revive() {
+    let repo = repo_fixture("fam-revive");
+    // two same-NN family tours (sibling scenes) + a notes tour carrying
+    // a legacy-style `[01 - x]` reference
+    write_tour(
+        &repo,
+        ".tours/arch/01-auth/01.tour",
+        "01 - auth｜Boot",
+        &[json!({"description": "boot scene"})],
+    );
+    write_tour(
+        &repo,
+        ".tours/arch/01-auth/02.tour",
+        "01 - auth｜Cold",
+        &[json!({"description": "cold scene"})],
+    );
+    write_tour(
+        &repo,
+        ".tours/arch/01-auth/03.tour",
+        "01 - auth｜Notes",
+        &[json!({"description": "see [01 - x] for details"})],
+    );
+    // dry-run: WARN present, ref untouched on disk
+    let out = code_reality::tour_upgrade::run(&["tour_upgrade", "--repo", &repo.to_string_lossy()]);
+    assert_eq!(out.exit_code, 0, "{}{}", out.stdout, out.stderr);
+    assert!(out.stdout.contains("不參與數字"), "{}", out.stdout);
+    assert!(out.stdout.contains("01 - auth｜Boot"), "{}", out.stdout);
+    // all-family corpus → the numeric map is empty → revive skips with
+    // an explanatory WARN
+    assert!(out.stdout.contains("revive 跳過"), "{}", out.stdout);
+    let raw = std::fs::read_to_string(repo.join(".tours/arch/01-auth/03.tour")).unwrap();
+    assert!(raw.contains("see [01 - x] for details"), "{raw}");
+    // apply: the reference is NOT rewritten onto a sibling scene link
+    // (full-width bracket folding is sanitize's designed prose
+    // fallback, not a revival)
+    let out2 = code_reality::tour_upgrade::run(&[
+        "tour_upgrade",
+        "--repo",
+        &repo.to_string_lossy(),
+        "--apply",
+    ]);
+    assert_eq!(out2.exit_code, 0, "{}{}", out2.stdout, out2.stderr);
+    assert!(out2.stdout.contains("不參與數字"), "{}", out2.stdout);
+    let raw2 = std::fs::read_to_string(repo.join(".tours/arch/01-auth/03.tour")).unwrap();
+    assert!(!raw2.contains("#1]"), "revived onto a scene link: {raw2}");
+    assert!(!raw2.contains("]["), "revived onto a scene link: {raw2}");
+    assert!(raw2.contains("01 - x"), "{raw2}");
+}
+
+#[test]
+fn upgrade_apply_wrong_typed_manifest_refuses_overwrite() {
+    // R1's load Err must not be swallowed at tour_upgrade's apply leg —
+    // unwrap_or_default + dump would evaporate the manifest wholesale
+    let repo = repo_fixture("r1-upgrade-apply");
+    write_tour(
+        &repo,
+        ".tours/01.tour",
+        "01 - One",
+        &[step("src/gone.rs", 1, "x")],
+    );
+    let mpath = repo.join(".tours/manifest.toml");
+    let bad = "version = 1\ntour = 7\n";
+    std::fs::write(&mpath, bad).unwrap();
+    let out = code_reality::tour_upgrade::run(&[
+        "tour_upgrade",
+        "--repo",
+        &repo.to_string_lossy(),
+        "--apply",
+    ]);
+    assert_eq!(out.exit_code, 1, "{}{}", out.stdout, out.stderr);
+    assert!(
+        out.stderr.contains("tour 非 table") && out.stderr.contains("integer"),
+        "{}",
+        out.stderr
+    );
+    // the wrong-typed bytes survive verbatim — dump never ran
+    assert_eq!(std::fs::read_to_string(&mpath).unwrap(), bad);
 }
 
 // ---------- tour_validate acceptance faces (mosaic relay 2026-08-27) ----------
