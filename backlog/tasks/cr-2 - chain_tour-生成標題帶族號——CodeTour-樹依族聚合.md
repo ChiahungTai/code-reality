@@ -1,10 +1,10 @@
 ---
 id: CR-2
 title: chain_tour 生成標題帶族號——CodeTour 樹依族聚合
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-02 23:42'
-updated_date: '2026-10-02 23:43'
+updated_date: '2026-10-03 04:42'
 labels:
   - tour
 dependencies: []
@@ -56,4 +56,29 @@ flowchart LR
 
 <!-- SECTION:NOTES:BEGIN -->
 設計討論收斂記錄（2026-10-03）：codex 腿 job-murlmtfv-rrgzj0（chatgpt-web/high）＋GLM-5.3 腿 job-murlmy4u-bgj54c（plan tier isolated，自行碼面查證：tour_upgrade.rs:287-303 key_by_num、tour_manifest.rs:114 extra roundtrip、s5 fixtures out_dir 無 NN、生成器零 #codetour: 內嵌）。五題全收斂 A 案；分歧點裁決：Q3 採 GLM 分槽（label 改寫/WARN、heading 不改寫/WARN＋印截斷鍵、ts_key 撞鍵 FAIL）非 codex 全 canonicalize（heading 是作者散文）；Q4 缺源採 GLM 收摺＋WARN、雙源衝突採 codex fail-loud。來源鏈：mosaic DRAFT-42 正本（envelope 0c1a50c2／message 5cef1385）＋dogfood addendum（e892f39f）寄 code-reality-marshal；user 裁決「scbus 給 CR 讓他分析開卡實作」＋「5.3 codex 討論後開卡」＋「開卡後 WT 做，AIR-135 系作法」。上游事實驗證：vsls-contrib/codetour main getTourTitle split("-")[1]（utils.ts:37-43）、link key 等值（player/index.ts:92）、Prev/Next 數字走訪（:206-224）、樹 label=raw title（nodes.ts:29）。
+
+【landing 前卡面回填——R3（5.3 跨家族審查簿記項）】
+- fence 擴充記錄：原 scope 四檔之外，marshal 裁決擴入 `tour_manifest.rs`（dump Table extras——實證缺陷：原 toml_value 只吃 scalar，mosaic 實 corpus 帶 [family."NN"] 必炸部分寫入）與 `tour_upgrade.rs`（四棒 C2——codex high：key_by_num 同 NN last-write-wins 會 silent wrong-rewrite）＋新測試檔 `tests/s5_tour_manifest_table.rs`。六＋一檔全屬本弧，judge 已核範圍。
+- leg-3 裁定回填：F1a 真話 WARN 分型、F1b present-but-unparseable manifest → upsert fail-loud（檔案不存在維持 default）、F2 ts_key 裸 title 第三態 WARN、F3 nn_prefix 單一源、F4 dotted path 訊息＋三層/leaf-err 測試、primed-F2 退化 warns.len()==1 釘。
+- 跨家族 post-build 腿（canonical）：codex review job-murue96d-ks1paz（verdict=needs-attention，schema 抽取未過但帳本可撈——2 high 1 low）＋GLM-5.3 job-muruet3h-vx11gx（1🟡 load 已知鍵型別錯靜默丟＋1🟡 卡面簿記＋2🟢）。四條碼面 findings 全採入四棒（job-murvnhgg-go732b）；R3 簿記本條即回填；F5/F6 維持不動裁定。
+- 環境事件備查：delegate plugin 2.10.0→2.11.0 自動升級連環（judge 首派斷、MCP 面斷、三棒 auth-failed）——全走 2.11.0 CLI face 續作；rust_backend 3 fail 判明＝負載敏感 RA 收斂 flake（安靜複跑 WT 4/4＋primary 4/4，CR-2 diff 零觸及該 crate）。
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+CR-2 落地：chain_tour 生成標題帶族號＋validator 兩閘＋manifest Table roundtrip＋tour_upgrade 族號防護（d91ae4c，main ff）。驗證：cargo test workspace 64 suite exit 0、消費端 title 與 mosaic 實檔 byte-identical。審查：dual-context＋跨家族（codex needs-attention→六修復）＋GLM-5.3 judge ACCEPT×2。v0.9.5 release 進行中。
+
+```mermaid
+flowchart LR
+  A["chain md 場景文檔"] --> B["chain_tour 生成器"]
+  B --> C{"out_dir 有族號 NN？"}
+  C -- "有" --> D["標題＝NN - 族名｜場景標題\nlabel 源：manifest→目錄後綴→收摺\n雙源衝突 fail-loud"]
+  C -- "無" --> E["WARN＋退化舊格式"]
+  D --> F["preflight：manifest 損壞擋在寫檔前"]
+  E --> F
+  F --> G["tour_validate\n族號=目錄前綴 FAIL＋ts_key 三態分級"]
+  G --> H["CodeTour 樹依族聚合可尋址"]
+  H -. "tour_upgrade 數字 revive" .-> I["族號制 title withheld＋WARN"]
+```
+<!-- SECTION:FINAL_SUMMARY:END -->
