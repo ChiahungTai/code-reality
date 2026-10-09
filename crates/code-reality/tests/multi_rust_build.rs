@@ -259,8 +259,12 @@ fn tc3b_within_root_duplicate_not_newly_rejected() {
 
 /// TC-3c: rust-analyzer mints function-local variables as unqualified
 /// `local N` symbols (crate-local namespace) — the same string recurs in
-/// unrelated workspaces with no semantic relation and must not trip the
-/// cross-root collision gate (real-dogfood failure on delegate-bridge).
+/// unrelated workspaces with no semantic relation, so the build must not
+/// trip the cross-root collision gate (real-dogfood failure on
+/// delegate-bridge) AND the cleanup leg (EP DB-100) strips them from the
+/// composed index: they carry no cross-file semantics, and letting them
+/// through has graph_db's `nodes.symbol UNIQUE + INSERT OR IGNORE`
+/// silently keep only the first root's node.
 #[test]
 fn tc3c_cross_root_local_symbols_not_collisions() {
     let t = tempfile::tempdir().unwrap();
@@ -275,14 +279,20 @@ fn tc3c_cross_root_local_symbols_not_collisions() {
     support::install_py_deriving_fake(bindir.path());
     // Both roots emit a DEF for the SAME `local 0` string, in different
     // files (scip_bytes carries Index.metadata per the tc3 fixture
-    // convention).
+    // convention); the dm root also carries a `local 0` REF — a local's
+    // references are equally file-local and strip alongside its DEF.
     let rust_scip = scip_bytes(&[("crates/local.rs", "local 0")]);
-    let dm_scip = scip_bytes(&[("crates/dm.rs", "local 0")]);
+    let mut dm_index = Index::parse_from_bytes(&scip_bytes(&[("crates/dm.rs", "local 0")])).unwrap();
+    let mut local_ref = Occurrence::new();
+    local_ref.symbol = "local 0".to_string();
+    local_ref.symbol_roles = 0; // REF
+    local_ref.range = vec![1, 4, 5];
+    dm_index.documents[0].occurrences.push(local_ref);
     let tmp_scip = tempfile::tempdir().unwrap();
     let rust_path = tmp_scip.path().join("rust.scip");
     let dm_path = tmp_scip.path().join("dutymail.scip");
     std::fs::write(&rust_path, rust_scip).unwrap();
-    std::fs::write(&dm_path, dm_scip).unwrap();
+    std::fs::write(&dm_path, dm_index.write_to_bytes().unwrap()).unwrap();
     let script = format!(
         "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'fake-ra 1.96.0-test'; exit 0; fi\ndir=\"$2\"\nout=''; prev=''; for a in \"$@\"; do if [ \"$prev\" = \"--output\" ]; then out=\"$a\"; fi; prev=\"$a\"; done\ncase \"$dir\" in\n  */rust) cp '{rp}' \"$out\" ;;\n  */dutymail) cp '{dm}' \"$out\" ;;\n  *) exit 1 ;;\nesac\n",
         rp = rust_path.display(),
@@ -292,6 +302,8 @@ fn tc3c_cross_root_local_symbols_not_collisions() {
     let roots = vec![bindir.path().to_path_buf()];
     build_repo(&repo, None, &roots)
         .expect("TC3-c: cross-root `local N` DEFs are not collisions");
+    // Documents survive — the strip keeps drained-to-zero documents (the
+    // document face still participates in doc-set semantics).
     let docs = slot_docs(&repo);
     assert_eq!(
         docs,
@@ -300,16 +312,15 @@ fn tc3c_cross_root_local_symbols_not_collisions() {
     );
     let bytes = std::fs::read(default_index_path(&repo).unwrap()).unwrap();
     let index = Index::parse_from_bytes(&bytes).unwrap();
-    let local_defs: Vec<&str> = index
+    let locals: Vec<&str> = index
         .documents
         .iter()
         .flat_map(|d| d.occurrences.iter().map(|o| o.symbol.as_str()))
-        .filter(|s| *s == "local 0")
+        .filter(|s| s.starts_with("local "))
         .collect();
-    assert_eq!(
-        local_defs.len(),
-        2,
-        "TC3-c-b: both roots' `local 0` DEFs survive the merge: {local_defs:?}"
+    assert!(
+        locals.is_empty(),
+        "TC3-c-b: `local N` DEF/REF occurrences are stripped from the composed slot: {locals:?}"
     );
 }
 

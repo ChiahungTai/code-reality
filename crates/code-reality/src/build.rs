@@ -475,6 +475,7 @@ fn stage_rust_multi(
         }
         validate_partial(&raw)?;
         normalize_scip_paths(&raw, root, repo).map_err(BuildError::Env)?;
+        strip_local_occurrences(&raw).map_err(BuildError::Env)?;
         collision_scan_defs(&raw, root, &mut defs).map_err(BuildError::Env)?;
         if gate_fatal {
             coverage_gate(&raw, root, &governed).map_err(BuildError::Env)?;
@@ -561,6 +562,26 @@ fn normalize_scip_paths(part: &Path, root_rel: &str, repo: &Path) -> Result<(), 
     std::fs::write(part, out).map_err(|e| format!("寫入 {} 失敗：{e}", part.display()))
 }
 
+/// Strip rust-analyzer's crate-local `local N` occurrences (EP DB-100
+/// cleanup leg): function-locals live in a crate-local namespace — the
+/// same unqualified string recurs across roots/files with no cross-file
+/// semantics, and letting them into the composed index has graph_db's
+/// `nodes.symbol UNIQUE + INSERT OR IGNORE` silently keep only the
+/// first root's node (a meaningless node plus a wasted UNIQUE key). DEF
+/// and REF occurrences are BOTH stripped (a local's references are
+/// equally file-local). Documents whose occurrences drain to zero are
+/// KEPT — the document face still participates in doc-set semantics.
+fn strip_local_occurrences(part: &Path) -> Result<(), String> {
+    let bytes = std::fs::read(part).map_err(|e| format!("讀取 {} 失敗：{e}", part.display()))?;
+    let mut index =
+        scip::types::Index::parse_from_bytes(&bytes).map_err(|e| format!("SCIP parse 失敗：{e}"))?;
+    for d in index.documents.iter_mut() {
+        d.occurrences.retain(|o| !o.symbol.starts_with("local "));
+    }
+    let out = index.write_to_bytes().map_err(|e| format!("SCIP serialize 失敗：{e}"))?;
+    std::fs::write(part, out).map_err(|e| format!("寫入 {} 失敗：{e}", part.display()))
+}
+
 /// Cross-root DEF collision gate (frozen TC-3): a symbol DEFINED in two
 /// different workspace roots at different locations would be silently
 /// dropped by graph_db's `nodes.symbol UNIQUE + INSERT OR IGNORE` —
@@ -582,6 +603,8 @@ fn collision_scan_defs(
             // rust-analyzer mints function-locals as unqualified `local N`
             // (crate-local namespace) — the same string recurs across
             // unrelated roots with no semantic relation to collide on.
+            // `strip_local_occurrences` removes them upstream, so this
+            // skip is defense-in-depth residue, not the primary gate.
             if occ.symbol.starts_with("local ") {
                 continue;
             }

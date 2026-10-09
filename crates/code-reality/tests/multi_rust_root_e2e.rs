@@ -13,7 +13,7 @@
 
 mod support;
 
-use code_reality::build::build_repo;
+use code_reality::build::{build_repo, ensure_fresh, HealOutcome};
 use code_reality::engine::{default_index_path, meta_path};
 use protobuf::Message as _;
 use scip::types::{Document, Index, Metadata, Occurrence, TextEncoding, ToolInfo};
@@ -458,6 +458,78 @@ fn sm4b_resolver_failure_never_claims_fresh() {
         out.stdout.is_empty(),
         "SM-4b: no verdict — never claims fresh: {:?}",
         out.stdout
+    );
+}
+
+// --- SM-4b auto-heal half (EP deferred-claim collection): a resolver
+// --- failure on the heal face serves stale, never loops, slot intact.
+
+#[test]
+fn sm4b_heal_on_resolver_failure_serves_stale_without_loop() {
+    let l = lab_e2e();
+    build_repo(&l.repo, None, &l.roots).expect("SM-4b: converged build");
+    let slot = default_index_path(&l.repo).unwrap();
+    let graph = l.repo.join(".code-reality").join("graph.db");
+    // sanity: the build is converged before the resolver breaks
+    assert_eq!(
+        ensure_fresh(&l.repo, &l.roots).unwrap(),
+        HealOutcome::Fresh,
+        "SM-4b: fresh before the bad config"
+    );
+    let slot_before = std::fs::read(&slot).unwrap();
+    let graph_before = std::fs::read(&graph).unwrap();
+
+    // Unresolvable configured root: the heal CHECK fails inside
+    // evaluate_staleness (walk_sources → resolver CR-RUST-ROOT-02),
+    // structurally BEFORE any rebuild dispatch. ensure_fresh degrades to
+    // its check-failure contract leg ("Err = the caller warns and
+    // answers from the existing index") — that Err IS the serve-stale
+    // class at this layer: zero rebuild dispatch ⇒ no loop is reachable
+    // (the byte-identical slot below is the mechanical proof). The
+    // ServeStale VARIANT (rebuild dispatched, then failed) is the t16
+    // shape in tests/build.rs and stays covered there — recorded as the
+    // deliberate shape choice for this fixture (the existing helpers do
+    // not surface a ServeStale variant for a check-side failure).
+    write(&l.repo, ".code-reality.toml", "rust_projects = [\"ghost\"]\n");
+
+    for call in 1..=2 {
+        let err = ensure_fresh(&l.repo, &l.roots)
+            .err()
+            .unwrap_or_else(|| panic!("SM-4b: call {call} must fail loud, got Ok"));
+        assert!(
+            err.contains("CR-RUST-ROOT-02") && err.contains("ghost"),
+            "SM-4b: call {call} carries the resolver message: {err}"
+        );
+        assert_eq!(
+            std::fs::read(&slot).unwrap(),
+            slot_before,
+            "SM-4b: call {call} — slot byte-identical (no rebuild dispatched)"
+        );
+        assert_eq!(
+            std::fs::read(&graph).unwrap(),
+            graph_before,
+            "SM-4b: call {call} — graph.db byte-identical"
+        );
+        assert!(
+            !l.repo.join(".code-reality/scip/.heal.lock").exists(),
+            "SM-4b: call {call} — no heal lock left behind"
+        );
+    }
+
+    // Consumer face: the check-failure converts into the serve-stale
+    // WARN (cli.rs heal block) and the query still answers from the
+    // surviving slot.
+    let q = code_reality::cli::run(&["scip_refs", "--repo", &l.repo.to_string_lossy(), "a"]);
+    assert_eq!(q.exit_code, 0, "SM-4b: query answers: {} {}", q.stdout, q.stderr);
+    assert!(
+        q.stderr.contains("索引過期檢查失敗") && q.stderr.contains("CR-RUST-ROOT-02"),
+        "SM-4b: serve-stale WARN names the resolver failure: {}",
+        q.stderr
+    );
+    assert!(
+        q.stdout.contains("DEF") && q.stdout.contains("rust/crates/a.rs"),
+        "SM-4b: answer rides the surviving slot: {}",
+        q.stdout
     );
 }
 
