@@ -1,10 +1,10 @@
 ---
 id: CR-3
 title: multi-Cargo-workspace root graph——SCIP producer 層 composition（DB-100 責任信採納）
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-09 00:36'
-updated_date: '2026-10-09 02:37'
+updated_date: '2026-10-09 11:38'
 labels:
   - feature
   - bridge-request
@@ -36,16 +36,6 @@ flowchart LR
 ```
 <!-- SECTION:DESCRIPTION:END -->
 
-## Implementation Plan
-
-<!-- SECTION:PLAN:BEGIN -->
-〔baseline：code-reality 25fd932（v0.9.5）〕
-
-〔已決策勿重辯：①採 SCIP producer 層 composition——codex 腿(e) 與 GLM 腿(c) 雙腿獨立收斂，實體相同（完整報告：delegate-bridge repo 2026-10/10-09-bridge-architecture/references/cr-root-advisory-{codex,glm}-result.md）②不合併 Cargo workspace——release profile 分離（rust lto+panic=abort crash-only vs dutymail 無）、lock 紀律不對稱（assemble-release rust 腿無 --locked、dutymail 腿有）、產品邊界退化；DB-80 O6 凍結（workspace 搬遷需新決策）③不採 rust-analyzer linkedProjects——scip CLI 不讀（--help 實查）、root 埋 rust-project.json 會劫持本 repo 全部 RA consumer④不做 SQLite 縫合（已有 SCIP merge 無須另建）⑤風險面：跨 workspace SCIP symbol 碰撞被 graph_db.rs INSERT OR IGNORE 靜默掉 node——須負向測試斷言 node count；corpus discovery 禁硬編碼目錄名（CR 是通用工具）〕
-
-〔範圍：stage_rust 支撐多 Cargo workspace roots；**merge 粒度＝pre-concat（EP Q3 凍結取代本句原案的 staged-multi-leg：StagedLeg/merge_and_publish 契約零改動，rust family 內部合流——supersession 依據＝EP 凍結邊界 2）**；root freshness 涵蓋 Cargo manifests/locks/project topology（防 Cargo 變更 false-fresh；identity v2）；root snapshot/delta_tour 以 git HEAD 正確錨定；兩 workspace 雙向 no-cross-path-dep gate 完好。驗收條件（來信 AC1-4，EP TC-7 承載）：AC1 root graph 含 rust+dutymail+JS/TS；AC2 freshness 涵蓋 Cargo 面；AC3 snapshot/delta_tour git 錨定正確；AC4 boundary gate 完好＋symbol 碰撞負向測試。開放設計點已由 EP Q1 裁決：Combined（config rust_projects 權威＋保守 auto，歧義 fail-loud）。規模分級：full → standalone EP＝`ai-analysis/2026-10/10-09-db100-multi-root/ep.md`（v2，EP Review 18 findings 回寫完成）〕
-<!-- SECTION:PLAN:END -->
-
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 - EP TC-1：normalize 後 document paths＝`<project_root_rel>/<old_rel>`（`"."` root 不加前綴）、symbol strings 逐位元組不變、無 `..`/絕對路徑殘留（tests/multi_rust_build.rs）
@@ -59,3 +49,19 @@ flowchart LR
 - [ ] #9 - `cargo test` workspace 全綠（階段 3 完成閘門）
 - [ ] #10 - 真倉 dogfood：delegate-bridge root build exit 0＋freshness v2＋雙 root 符號命中＋對方 boundary test 綠（SM-11）
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+〔baseline：code-reality 25fd932（v0.9.5）〕
+
+〔已決策勿重辯：①採 SCIP producer 層 composition——codex 腿(e) 與 GLM 腿(c) 雙腿獨立收斂，實體相同（完整報告：delegate-bridge repo 2026-10/10-09-bridge-architecture/references/cr-root-advisory-{codex,glm}-result.md）②不合併 Cargo workspace——release profile 分離（rust lto+panic=abort crash-only vs dutymail 無）、lock 紀律不對稱（assemble-release rust 腿無 --locked、dutymail 腿有）、產品邊界退化；DB-80 O6 凍結（workspace 搬遷需新決策）③不採 rust-analyzer linkedProjects——scip CLI 不讀（--help 實查）、root 埋 rust-project.json 會劫持本 repo 全部 RA consumer④不做 SQLite 縫合（已有 SCIP merge 無須另建）⑤風險面：跨 workspace SCIP symbol 碰撞被 graph_db.rs INSERT OR IGNORE 靜默掉 node——須負向測試斷言 node count；corpus discovery 禁硬編碼目錄名（CR 是通用工具）〕
+
+〔範圍：stage_rust 支撐多 Cargo workspace roots；**merge 粒度＝pre-concat（EP Q3 凍結取代本句原案的 staged-multi-leg：StagedLeg/merge_and_publish 契約零改動，rust family 內部合流——supersession 依據＝EP 凍結邊界 2）**；root freshness 涵蓋 Cargo manifests/locks/project topology（防 Cargo 變更 false-fresh；identity v2）；root snapshot/delta_tour 以 git HEAD 正確錨定；兩 workspace 雙向 no-cross-path-dep gate 完好。驗收條件（來信 AC1-4，EP TC-7 承載）：AC1 root graph 含 rust+dutymail+JS/TS；AC2 freshness 涵蓋 Cargo 面；AC3 snapshot/delta_tour git 錨定正確；AC4 boundary gate 完好＋symbol 碰撞負向測試。開放設計點已由 EP Q1 裁決：Combined（config rust_projects 權威＋保守 auto，歧義 fail-loud）。規模分級：full → standalone EP＝`ai-analysis/2026-10/10-09-db100-multi-root/ep.md`（v2，EP Review 18 findings 回寫完成）〕
+<!-- SECTION:PLAN:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+multi-Cargo-workspace root graph 落地：rust_projects resolver（structural/authoritative 兩層＋CR-RUST-ROOT-01..08）＋identity sha256-v2（Cargo/topology 進 trust boundary，v1 Rust slot 升級恆 stale）＋per-root composition（normalize→pre-concat→collision gate，StagedLeg 零改動）＋E2E 7 測試。審查鏈：EP boundary×2（18 findings）＋段級×3＋弧級×2＋跨家族 codex web（3P1+1P2）＋GLM-5.3 judge（5 採納含 P3-E）——七波修正腿全落地，全套 46 targets 578 passed 零 warning。真倉 dogfood：delegate-bridge root build exit 0、graph 3787 nodes、freshness v2 fresh、對方 boundary 18/0。v0.10.0 已發佈（三 dist PyPI＋marketplace slice）。
+<!-- SECTION:FINAL_SUMMARY:END -->
