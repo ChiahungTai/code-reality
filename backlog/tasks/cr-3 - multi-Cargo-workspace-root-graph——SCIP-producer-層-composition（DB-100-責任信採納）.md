@@ -45,3 +45,17 @@ flowchart LR
 
 〔範圍：stage_rust 支撐多 Cargo workspace roots；**merge 粒度＝pre-concat（EP Q3 凍結取代本句原案的 staged-multi-leg：StagedLeg/merge_and_publish 契約零改動，rust family 內部合流——supersession 依據＝EP 凍結邊界 2）**；root freshness 涵蓋 Cargo manifests/locks/project topology（防 Cargo 變更 false-fresh；identity v2）；root snapshot/delta_tour 以 git HEAD 正確錨定；兩 workspace 雙向 no-cross-path-dep gate 完好。驗收條件（來信 AC1-4，EP TC-7 承載）：AC1 root graph 含 rust+dutymail+JS/TS；AC2 freshness 涵蓋 Cargo 面；AC3 snapshot/delta_tour git 錨定正確；AC4 boundary gate 完好＋symbol 碰撞負向測試。開放設計點已由 EP Q1 裁決：Combined（config rust_projects 權威＋保守 auto，歧義 fail-loud）。規模分級：full → standalone EP＝`ai-analysis/2026-10/10-09-db100-multi-root/ep.md`（v2，EP Review 18 findings 回寫完成）〕
 <!-- SECTION:PLAN:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [ ] #1 - EP TC-1：normalize 後 document paths＝`<project_root_rel>/<old_rel>`（`"."` root 不加前綴）、symbol strings 逐位元組不變、無 `..`/絕對路徑殘留（tests/multi_rust_build.rs）
+- [ ] #2 - EP TC-2：合流＝Σ docs；merge_and_publish/StagedLeg 零 diff（rg 斷言）；tests/build.rs 既有測試零改動全綠（zero-roots fallback 承載）
+- [ ] #3 - EP TC-3：跨 root DEF collision publication 前 exit 2 含雙方位置、live slot byte-identical；root 內 duplicate-target 不新增拒絕
+- [ ] #4 - EP TC-4/5：Cargo-only 變更 freshness exit 1 content-drift 非 fresh；identity v2 content-addressing 同構（TC-1a）＋config 效果面（外觀編輯不假 stale）＋byte-exact spec pin
+- [ ] #5 - EP TC-6：v1/legacy/keyless Rust slot → `identity-algo-upgrade` fatal 不得 fresh；auto-heal 重建 restamp v2
+- [ ] #6 - EP TC-7（AC1-4）：root graph 含兩 workspace＋JS/TS/py 三 faces；snapshot/delta_tour git HEAD 錨定 root-relative；node count＝Σ queryable DEF sets（跨 root 交集零）
+- [ ] #7 - EP TC-8/11：CR-RUST-ROOT-01..08 逐一 exit 2＋文本斷言；兩面 roots 集合一致（freshness 零 cargo metadata spawn）
+- [ ] #8 - EP TC-9/10：v1 非 Rust slot 一次性退化揭露（legacy-signals 非 fresh、rebuild 後恢復）；Cargo-present rs-absent 不獲 rust face
+- [ ] #9 - `cargo test` workspace 全綠（階段 3 完成閘門）
+- [ ] #10 - 真倉 dogfood：delegate-bridge root build exit 0＋freshness v2＋雙 root 符號命中＋對方 boundary test 綠（SM-11）
+<!-- AC:END -->
