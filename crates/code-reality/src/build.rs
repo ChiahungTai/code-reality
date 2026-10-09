@@ -31,7 +31,8 @@ use crate::engine::{default_index_path, resolve_repo};
 use crate::graph_db;
 use crate::language::ProducerFamily;
 use crate::ToolOutput;
-use std::collections::BTreeSet;
+use protobuf::Message;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -406,6 +407,229 @@ fn stage_rust(repo: &Path, part: &Path, roots: &[PathBuf]) -> Result<Option<Stri
     Ok(version)
 }
 
+/// Multi-root Rust composition (EP DB-100 S3, frozen Q2/Q3/Q6/Q7/Q8):
+/// resolve the workspace roots (structural + authoritative), stage one
+/// partial per root, normalize each index's document paths to
+/// git-root-relative (`"."` roots keep their paths verbatim), reject
+/// cross-root DEF collisions before any merge, gate governed coverage in
+/// multi-root/config mode, then pre-concat into ONE Rust partial that
+/// replaces `part` — `StagedLeg`/`merge_and_publish` stay untouched.
+fn stage_rust_multi(
+    repo: &Path,
+    stage_dir: &Path,
+    part: &Path,
+    roots: &[PathBuf],
+    profile: Option<&crate::profile::Profile>,
+    rep: &mut Report,
+) -> Result<(), BuildError> {
+    // The Rust leg is the FIRST producer in ORDERED order for rust-only
+    // repos — the attempt stage dir must exist before the raw parts land
+    // (the TS leg used to be its only lazy creator).
+    std::fs::create_dir_all(stage_dir)
+        .map_err(|e| BuildError::Env(format!("stage dir 建立失敗：{e}")))?;
+    let rp = crate::rust_projects::resolve_structural(repo, profile).map_err(BuildError::Env)?;
+    crate::rust_projects::validate_authoritative(repo, &rp).map_err(BuildError::Env)?;
+    let roots_list: Vec<String> = if rp.roots.is_empty() {
+        // Frozen Q6 legacy-parity fallback: no manifest anywhere ⇒ the
+        // whole repo is the single "." root (current behavior byte-shape).
+        vec![".".to_string()]
+    } else {
+        rp.roots
+    };
+    let gate_fatal = roots_list.len() > 1 || profile.is_some_and(|p| p.rust_projects.is_some());
+    let governed: BTreeSet<String> = if gate_fatal {
+        crate::engine::walk_sources(repo)
+            .map_err(BuildError::Env)?
+            .rs
+            .keys()
+            .cloned()
+            .collect()
+    } else {
+        BTreeSet::new()
+    };
+    // Orphan coverage (EP 5.3 P1-C): in the fatal-gate modes a governed
+    // `.rs` that falls under NO resolved root would silently escape both
+    // the producer and the per-root coverage gate — fail loud instead.
+    // Single-root fallback ("." contains everything) cannot fire.
+    if gate_fatal {
+        for g in &governed {
+            let under_any = roots_list
+                .iter()
+                .any(|r| r == "." || g.starts_with(&format!("{r}/")));
+            if !under_any {
+                return Err(BuildError::Env(format!(
+                    "CR-RUST-ROOT-08: governed Rust source '{g}' is outside every resolved workspace root ({}); move it into a workspace or extend rust_projects",
+                    roots_list.join(", ")
+                )));
+            }
+        }
+    }
+    let composed = stage_dir.join("rust-composed.scip");
+    let mut version = String::new();
+    let mut defs: HashMap<String, Vec<(String, String)>> = HashMap::new();
+    for (i, root) in roots_list.iter().enumerate() {
+        let raw = stage_dir.join(format!("{i}-raw.scip"));
+        let ver = stage_rust(&repo.join(root), &raw, roots)?;
+        if version.is_empty() {
+            version = ver.unwrap_or_default();
+        }
+        validate_partial(&raw)?;
+        normalize_scip_paths(&raw, root, repo).map_err(BuildError::Env)?;
+        collision_scan_defs(&raw, root, &mut defs).map_err(BuildError::Env)?;
+        if gate_fatal {
+            coverage_gate(&raw, root, &governed).map_err(BuildError::Env)?;
+        }
+        if i == 0 {
+            std::fs::copy(&raw, &composed).map_err(|e| {
+                BuildError::Core(format!("stage {} → {}: {e}", raw.display(), composed.display()))
+            })?;
+        } else {
+            concat_scip(&composed, &raw).map_err(BuildError::Env)?;
+        }
+        // slot Index.metadata = last root (protobuf last-value-wins) — CR
+        // never consumes it; the sidecar stamp is the sole provenance
+    }
+    crate::engine::load_index(&composed)
+        .map_err(|e| BuildError::Env(format!("merged candidate 驗證失敗：{e}")))?;
+    std::fs::rename(&composed, part).map_err(|e| {
+        BuildError::Core(format!(
+            "rename {} → {}: {e}",
+            composed.display(),
+            part.display()
+        ))
+    })?;
+    let version_face = if version.is_empty() {
+        "unknown".to_string()
+    } else {
+        version
+    };
+    rep.producers
+        .push(format!("rust-analyzer {version_face} [roots: {}]", roots_list.join(", ")));
+    Ok(())
+}
+
+/// Rewrite every document's `relative_path` to git-root-relative
+/// (frozen Q2): `rust-analyzer scip <workspace-dir>` anchors documents
+/// at the workspace root, so the composition needs
+/// `{project_root}/{old}` prefixes — `"."` roots add nothing. Symbol
+/// strings are never rewritten (cross-document references use them).
+fn normalize_scip_paths(part: &Path, root_rel: &str, repo: &Path) -> Result<(), String> {
+    // P2-D (EP 5.3): containment is judged on CANONICAL paths — a
+    // producer-emitted document may traverse an in-repo symlink that
+    // points outside the repo, and the component-level shape checks
+    // below cannot see it. Both sides canonicalize once.
+    let canonical_repo = repo
+        .canonicalize()
+        .map_err(|e| format!("repo root canonicalize failed: {e}"))?;
+    let bytes = std::fs::read(part).map_err(|e| format!("讀取 {} 失敗：{e}", part.display()))?;
+    let mut index =
+        scip::types::Index::parse_from_bytes(&bytes).map_err(|e| format!("SCIP parse 失敗：{e}"))?;
+    let prefix = if root_rel == "." {
+        String::new()
+    } else {
+        format!("{root_rel}/")
+    };
+    for d in index.documents.iter_mut() {
+        let old = d.relative_path.clone();
+        if old.starts_with('/')
+            || old.split('/').any(|c| c == "..")
+            || old.is_empty()
+            || old.contains('\\')
+        {
+            return Err(format!(
+                "Rust SCIP document '{old}' from project '{root_rel}' normalizes to an invalid repo path"
+            ));
+        }
+        let joined = format!("{prefix}{old}");
+        let abs = repo.join(&joined);
+        if !abs.is_file() {
+            return Err(format!(
+                "Rust SCIP document '{old}' from project '{root_rel}' normalizes to a missing file: '{joined}'"
+            ));
+        }
+        let canonical = abs
+            .canonicalize()
+            .map_err(|e| format!("canonicalize '{joined}' 失敗：{e}"))?;
+        if !canonical.starts_with(&canonical_repo) {
+            return Err(format!(
+                "Rust SCIP document '{old}' from project '{root_rel}' normalizes to a path outside the repo root (symlink escape): '{joined}'"
+            ));
+        }
+        d.relative_path = joined;
+    }
+    let out = index.write_to_bytes().map_err(|e| format!("SCIP serialize 失敗：{e}"))?;
+    std::fs::write(part, out).map_err(|e| format!("寫入 {} 失敗：{e}", part.display()))
+}
+
+/// Cross-root DEF collision gate (frozen TC-3): a symbol DEFINED in two
+/// different workspace roots at different locations would be silently
+/// dropped by graph_db's `nodes.symbol UNIQUE + INSERT OR IGNORE` —
+/// reject with both locations instead. Within-root duplicate targets
+/// keep the pre-existing behavior (rust-analyzer already warns in-index).
+fn collision_scan_defs(
+    part: &Path,
+    root_rel: &str,
+    defs: &mut HashMap<String, Vec<(String, String)>>,
+) -> Result<(), String> {
+    let bytes = std::fs::read(part).map_err(|e| format!("讀取 {} 失敗：{e}", part.display()))?;
+    let index =
+        scip::types::Index::parse_from_bytes(&bytes).map_err(|e| format!("SCIP parse 失敗：{e}"))?;
+    for d in index.documents.iter() {
+        for occ in d.occurrences.iter() {
+            if occ.symbol_roles & 1 == 0 {
+                continue; // DEF bit only
+            }
+            // rust-analyzer mints function-locals as unqualified `local N`
+            // (crate-local namespace) — the same string recurs across
+            // unrelated roots with no semantic relation to collide on.
+            if occ.symbol.starts_with("local ") {
+                continue;
+            }
+            let entry = defs.entry(occ.symbol.clone()).or_default();
+            if entry.iter().any(|(r, _)| r == root_rel) {
+                continue; // same-root repeat — pre-existing behavior
+            }
+            if !entry.is_empty() {
+                let (first_root, first_path) = &entry[0];
+                return Err(format!(
+                    "Rust SCIP symbol collision '{}': {}:{} vs {}:{} — the same symbol is DEFINED in two different workspace roots",
+                    occ.symbol, first_root, first_path, root_rel, d.relative_path
+                ));
+            }
+            entry.push((root_rel.to_string(), d.relative_path.clone()));
+        }
+    }
+    Ok(())
+}
+
+/// Governed coverage gate (frozen Q7 — multi-root/config mode only):
+/// every governed `.rs` under the selected roots must appear among the
+/// normalized documents, or the composition is missing producer output
+/// and must not publish a "complete" graph over a partial corpus.
+fn coverage_gate(
+    part: &Path,
+    root_rel: &str,
+    governed: &BTreeSet<String>,
+) -> Result<(), String> {
+    let bytes = std::fs::read(part).map_err(|e| format!("讀取 {} 失敗：{e}", part.display()))?;
+    let index =
+        scip::types::Index::parse_from_bytes(&bytes).map_err(|e| format!("SCIP parse 失敗：{e}"))?;
+    let docs: BTreeSet<String> = index
+        .documents
+        .iter()
+        .map(|d| d.relative_path.clone())
+        .collect();
+    for g in governed {
+        let in_root = root_rel == "." || g.starts_with(&format!("{root_rel}/"));
+        if in_root && !docs.contains(g) {
+            return Err(format!(
+                "CR-RUST-ROOT-08: Rust source '{g}' is outside the produced documents of project '{root_rel}'; resolve coverage or declare its root"
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Best-effort removal of THIS build's staged artifacts only
 /// (attempt-keyed names + its stage dir); never touches unrelated
 /// sidecar files or another attempt's artifacts.
@@ -601,16 +825,28 @@ pub fn build_repo(
                     return Err(e);
                 }
             },
-            ProducerFamily::Rust => match stage_rust(&resolved, &part, roots) {
-                Ok(version) => {
-                    all_policy_empty = false;
-                    if let Some(v) = version {
-                        rep.producers.push(v);
+            ProducerFamily::Rust => {
+                // Malformed profile is an environment failure (exit 2),
+                // same family as resolve_structural / validate_authoritative
+                // / walk_sources in this branch — capture A's walk already
+                // fails loud with Env on the same input, so Core here was
+                // an unreachable latent crash(1); unified for convergence.
+                let profile = crate::profile::load_profile(&resolved).map_err(BuildError::Env)?;
+                match stage_rust_multi(
+                    &resolved,
+                    &stage_dir,
+                    &part,
+                    roots,
+                    profile.as_ref(),
+                    &mut rep,
+                ) {
+                    Ok(()) => {
+                        all_policy_empty = false;
                     }
-                }
-                Err(e) => {
-                    cleanup_staged(&slot_dir, &attempt);
-                    return Err(e);
+                    Err(e) => {
+                        cleanup_staged(&slot_dir, &attempt);
+                        return Err(e);
+                    }
                 }
             },
             ProducerFamily::TypeScript => {
@@ -771,10 +1007,19 @@ pub fn build_repo(
         ));
     }
     // Report what was ACTUALLY stamped (read-back, not a prediction) —
-    // None on a legacy/preserved stamp.
+    // None on a legacy/preserved stamp. P1-C (EP 5.3): a None read-back
+    // after the validated stamp must not stay silent — the slot carries
+    // no consumption evidence, and freshness will classify it through
+    // the identity-algo-upgrade / legacy faces instead of comparing.
     rep.source_identity = crate::engine::load_meta(&slot)
         .0
         .and_then(|m| m["source_identity"].as_str().map(str::to_string));
+    if rep.source_identity.is_none() {
+        rep.notes.push(
+            "[WARN] slot 未取得 source identity 認證（stamp 缺 identity 三元組）——freshness 將以 identity-algo-upgrade／legacy 面處置"
+                .to_string(),
+        );
+    }
 
     if let Some(sel) = producer {
         let omitted: Vec<&str> = ProducerFamily::ORDERED
@@ -808,9 +1053,11 @@ pub fn build_repo(
         crate::identity::cache_path_for_slot(&slot),
         &resolved,
     );
-    crate::identity::compute_identity(
+    crate::identity::compute_identity_scoped(
         &resolved,
         &walk.records(),
+        &walk.rust_inputs,
+        &walk.rust_topology,
         &production_a.faces,
         crate::identity::resolve_policy(crate::identity::IdentityCachePolicy::Full),
         &mut cache,

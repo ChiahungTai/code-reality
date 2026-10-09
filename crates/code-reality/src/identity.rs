@@ -1,10 +1,15 @@
-//! identity — content-addressed source identity (EP 09-23-source-identity).
+//! identity — content-addressed source identity (EP 09-23-source-identity;
+//! v2 per EP DB-100 S2: Rust producer inputs + workspace topology enter
+//! the identity body).
 //!
-//! `identity = sha256("cr-identity-v1\0" + Σ sorted-by-rel
-//! "{face}\0{rel}\0{size}\0{content_hash}\0")` — same content ⇒ same
-//! identity (touch / rebase / stash round-trips are idempotent); mtime
-//! is deliberately NOT part of the identity body (D3), it only gates
-//! the per-file hash cache.
+//! v2: `identity = sha256("cr-identity-v2\0" + Σ sorted-by-rel
+//! "{face}\0{rel}\0{size}\0{content_hash}\0" + Σ sorted rust-input records
+//! (RUST-INPUT domain) + Σ sorted topology markers (TOPOLOGY domain))` —
+//! same content AND same workspace topology ⇒ same identity (touch /
+//! rebase / stash round-trips are idempotent); mtime is deliberately NOT
+//! part of the identity body (D3), it only gates the per-file hash cache.
+//! The v1→v2 bump is a one-time digest change on unchanged trees (the v1
+//! body omitted producer inputs — see EP frozen edge 4).
 //!
 //! Hashing happens ONLY at the identity assembly point (D17 lazy):
 //! [`crate::engine::walk_sources`] stays pure path+stat and hands out
@@ -28,13 +33,21 @@ use std::path::{Path, PathBuf};
 
 /// Algorithm id stamped beside every identity value and pinned by the
 /// freshness JSON face (`identity_algo`). A stamped meta whose
-/// `identity_algo` differs is treated as legacy (not comparable).
-pub const IDENTITY_ALGO: &str = "sha256-v1";
-/// Identity-concatenation domain separator (v1). Bumping invalidates
+/// `identity_algo` differs is treated as legacy (not comparable) —
+/// except the Rust-inclusive upgrade rule (EP S2): a v1/legacy slot over
+/// a Rust face answers `identity-algo-upgrade` stale, never fresh.
+pub const IDENTITY_ALGO: &str = "sha256-v2";
+/// Identity-concatenation domain separator (v2). Bumping invalidates
 /// every stamped identity — a new format is a new algo id.
-pub const IDENTITY_HEADER: &[u8] = b"cr-identity-v1\0";
+pub const IDENTITY_HEADER: &[u8] = b"cr-identity-v2\0";
+/// Domain separator for Rust producer-input records (Cargo manifests /
+/// locks / toolchain config collected from the resolved workspace roots).
+pub const RUST_INPUT_DOMAIN: &[u8] = b"cr-rust-inputs\0";
+/// Domain separator for the workspace topology descriptor (sorted roots
+/// + discovery mode + present/absent markers).
+pub const TOPOLOGY_DOMAIN: &[u8] = b"cr-rust-topology\0";
 /// Cache payload schema version; a mismatch discards the whole cache.
-const IDENTITY_VERSION: u32 = 1;
+const IDENTITY_VERSION: u32 = 2;
 /// Slot-sibling sidecar carrying per-file content hashes (D4).
 pub const IDENTITY_CACHE_NAME: &str = "identity-cache.json";
 
@@ -275,6 +288,26 @@ pub fn compute_identity(
     policy: IdentityCachePolicy,
     cache: &mut IdentityCache,
 ) -> Result<Identity, String> {
+    compute_identity_scoped(root, records, &BTreeMap::new(), &[], faces, policy, cache)
+}
+
+/// v2 identity over source `records` PLUS Rust producer inputs and the
+/// workspace topology descriptor (EP DB-100 S2, frozen Q4). The three
+/// domains are separately delimited (`IDENTITY_HEADER` / RUST-INPUT /
+/// TOPOLOGY) so a Cargo manifest can never collide with a source path.
+/// `rust_inputs` records are collected only when the repo carries a Rust
+/// face (walk-side gate) — a Cargo-present/rs-absent repo contributes
+/// nothing (TC-10). `domain_extras` carries the topology markers as
+/// sorted `(key, value)` pairs.
+pub fn compute_identity_scoped(
+    root: &Path,
+    records: &BTreeMap<String, SourceRecord>,
+    rust_inputs: &BTreeMap<String, SourceRecord>,
+    domain_extras: &[(String, String)],
+    faces: &BTreeSet<LanguageFace>,
+    policy: IdentityCachePolicy,
+    cache: &mut IdentityCache,
+) -> Result<Identity, String> {
     let mut h = Sha256::new();
     h.update(IDENTITY_HEADER);
     let mut keep: BTreeSet<String> = BTreeSet::new();
@@ -304,6 +337,40 @@ pub fn compute_identity(
             rec.size,
             chash
         ));
+    }
+    // Rust producer inputs + workspace topology (EP DB-100 5.3 P1-A):
+    // BOTH domains enter only when the scope carries the Rust face — an
+    // explicit python-only identity must equal the pure-python-scope
+    // identity, so Cargo-only edits can never stale a pin that never
+    // indexed Rust (capture and query sides stay symmetric: both gate on
+    // the same `faces` set).
+    if faces.contains(&crate::language::LanguageFace::Rust) {
+        // Rust producer inputs (domain-separated): same record shape, own
+        // domain header, rel-sorted by the BTreeMap order.
+        for (rel, rec) in rust_inputs {
+            let key = normalize_rel(rel);
+            let chash = content_hash_of(
+                &root.join(&rec.rel),
+                &format!("rust-input:{key}"),
+                rec.size,
+                rec.mtime,
+                policy,
+                cache,
+            )?;
+            h.update(RUST_INPUT_DOMAIN);
+            h.update(format!("{}\0{}\0{}\0", key, rec.size, chash));
+            keep.insert(format!("rust-input:{key}"));
+        }
+        // Topology descriptor (domain-separated): sorted (key, value)
+        // pairs — discovery mode, canonical roots, present/absent
+        // markers. Absent files carry an empty content position so a
+        // lockfile appearing or disappearing always moves the identity.
+        if !domain_extras.is_empty() {
+            h.update(TOPOLOGY_DOMAIN);
+            for (k, v) in domain_extras {
+                h.update(format!("{k}\0{v}\0"));
+            }
+        }
     }
     if !matches!(policy, IdentityCachePolicy::ReadOnly) {
         cache.store(&keep);
@@ -421,12 +488,12 @@ mod tests {
         )
         .unwrap();
         assert_eq!(i1, i2);
-        assert_eq!(i1.algo, "sha256-v1");
+        assert_eq!(i1.algo, "sha256-v2");
     }
 
     /// TC-1b: the entry format pin — header + face field, byte-exact.
     /// The expected digest is assembled here from the frozen spec
-    /// (`"cr-identity-v1\0" + "{face}\0{rel}\0{size}\0{content_hash}\0"`),
+    /// (`"cr-identity-v2\0" + "{face}\0{rel}\0{size}\0{content_hash}\0"`),
     /// with sha2 as the external primitive oracle.
     #[test]
     fn identity_entry_format_pin() {
@@ -653,7 +720,7 @@ mod tests {
             ("corrupt bytes", "{not json".to_string()),
             (
                 "version downgrade",
-                r#"{"version": 0, "algo": "sha256-v1", "repo": "x", "entries": {}}"#.to_string(),
+                r#"{"version": 0, "algo": "sha256-v2", "repo": "x", "entries": {}}"#.to_string(),
             ),
             (
                 "algo drift",
@@ -661,7 +728,7 @@ mod tests {
             ),
             (
                 "repo mismatch",
-                r#"{"version": 1, "algo": "sha256-v1", "repo": "/elsewhere", "entries": {}}"#
+                r#"{"version": 1, "algo": "sha256-v2", "repo": "/elsewhere", "entries": {}}"#
                     .to_string(),
             ),
         ];

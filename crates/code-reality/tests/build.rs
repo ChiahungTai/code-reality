@@ -331,7 +331,16 @@ fn t5_rust_empty_index_guard() {
 #[test]
 fn t6_rust_leg_e2e() {
     let t = tempfile::tempdir().unwrap();
-    let repo = mkrepo(&t, &[("src/lib.rs", "pub fn f() {}\n")]);
+    // rich.scip's docs (crates/a.rs + crates/b.rs) must exist on disk —
+    // normalize resolves every document to a real repo file.
+    let repo = mkrepo(
+        &t,
+        &[
+            ("src/lib.rs", "pub fn f() {}\n"),
+            ("crates/a.rs", "x"),
+            ("crates/b.rs", "x"),
+        ],
+    );
     git_init(&repo);
     let bindir = tempfile::tempdir().unwrap();
     fake_rust_analyzer(bindir.path(), false);
@@ -362,6 +371,9 @@ fn t7_mixed_repo_unified_graph_concat() {
         &[
             ("app.py", "def g():\n    return 2\n"),
             ("src/lib.rs", "pub fn h() {}\n"),
+            // rich.scip's docs must exist on disk (normalize disk check)
+            ("crates/a.rs", "x"),
+            ("crates/b.rs", "x"),
         ],
     );
     let bindir = tempfile::tempdir().unwrap();

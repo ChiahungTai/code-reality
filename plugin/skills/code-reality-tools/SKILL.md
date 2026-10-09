@@ -53,6 +53,13 @@ overlay, diagnostic version/time and quiescence checks still apply.
 - `refs`/`callers`/`closure`/`audit` need a SCIP index:
   `rust-analyzer scip <repo>` output saved under
   `<repo>/.code-reality/scip/index.scip`
+- Multi-root Cargo workspaces: `code-reality build --producer rust`
+  resolves one root set (`rust_projects` in `.code-reality.toml` is
+  authoritative; absence auto-discovers immediate-child `[workspace]`
+  manifests, ambiguity fails loud CR-RUST-ROOT-06/07), stages one
+  rust-analyzer scip per root with git-root-relative path
+  normalization, pre-concats the partials into one Rust partial, and
+  rejects cross-root DEF symbol collisions before the family merge
 - Regenerate by invoking the repo-pinned rust-analyzer binary by its
   full path. The `rust-analyzer` name on PATH is a rustup proxy that
   resolves the toolchain from the current working directory — calling
@@ -200,16 +207,21 @@ overlay, diagnostic version/time and quiescence checks still apply.
   mtime-preserved swap shape and a newly arrived language face),
   `doc-set-drift`, `policy-drift` (both reported but non-fatal in
   identity mode), `legacy-signals` (keyless meta judged by the baseline
-  criteria). `serves`: `current-tree` (fresh — the consumer may claim
+  criteria), `identity-algo-upgrade` (a Rust-face slot whose stamped
+  identity_algo predates sha256-v2 — the Rust producer inputs joined
+  the identity body, so such a slot never answers fresh; a rebuild
+  re-stamps v2). `serves`: `current-tree` (fresh — the consumer may claim
   fresh), `committed-baseline` (stale/torn — graph answers describe the
   committed baseline, the WT delta lives in live LSP), `legacy-signals`
   (keyless meta — interpret by the baseline criteria; the identity
   fields are null there because the current side is not computed).
-- **Identity definition** (cross-repo comparable contract):
-  `sha256("cr-identity-v1\0" + Σ sorted-by-rel "{face}\0{rel}\0{size}\0{content_hash}\0")`
-  — same content ⇒ same identity, so touch / stash round-trips /
-  rebase replays are idempotent; mtime gates the per-file hash cache
-  only, never the identity body.
+- **Identity definition** (cross-repo comparable contract, sha256-v2):
+  `sha256("cr-identity-v2\0" + Σ sorted-by-rel "{face}\0{rel}\0{size}\0{content_hash}\0" + domain-separated Rust producer inputs (Cargo manifests/locks/toolchain config of the resolved workspace roots) + workspace topology markers)`
+  — same content AND same workspace topology ⇒ same identity, so touch /
+  stash round-trips / rebase replays are idempotent; mtime gates the
+  per-file hash cache only, never the identity body. A v1/legacy
+  Rust-face slot answers `identity-algo-upgrade` stale (never fresh);
+  non-Rust v1 slots answer `legacy-signals` one-time until rebuilt.
 - **Source provenance**: orchestrated `build` captures uncached source
   identity and corpus policy A before producers, compares after production
   and again under publication ownership, then stamps A bound to the index

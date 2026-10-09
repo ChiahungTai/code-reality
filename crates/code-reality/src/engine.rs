@@ -519,6 +519,14 @@ pub struct SourceWalk {
     pub rs: BTreeMap<String, crate::identity::SourceRecord>,
     pub js: BTreeMap<String, crate::identity::SourceRecord>,
     pub ts: BTreeMap<String, crate::identity::SourceRecord>,
+    /// Rust producer inputs (EP DB-100 S2): Cargo manifests/locks and
+    /// toolchain config of the resolved workspace roots — identity-
+    /// relevant but NOT source documents (never enters `rs` or the
+    /// doc-set face). Collected only when the repo carries a Rust face.
+    pub rust_inputs: BTreeMap<String, crate::identity::SourceRecord>,
+    /// Workspace topology markers (EP Q4): sorted `(key, value)` pairs —
+    /// discovery mode, canonical roots, present/absent markers.
+    pub rust_topology: Vec<(String, String)>,
     /// Newest across ALL walked faces — the legacy staleness basis for
     /// indexes without stamped face metadata.
     pub newest: Option<std::time::SystemTime>,
@@ -696,7 +704,159 @@ pub fn walk_sources(repo: &Path) -> Result<SourceWalk, String> {
             }
         }
     }
+    // Rust producer inputs (EP DB-100 S2): collected ONLY when the walk
+    // detected a Rust face (governed scope — a Cargo-present/rs-absent
+    // repo contributes nothing, TC-10). The resolver failure is
+    // fail-loud (Err propagates — a config error must not silently
+    // degrade freshness), and the zero-roots legacy-parity fallback
+    // (frozen Q6: whole repo as the "." root) is applied here.
+    if !out.rs.is_empty() {
+        let rust_projects = crate::rust_projects::resolve_structural(&root, profile.as_ref())?;
+        // Discovery-mode truth travels with the resolver verdict; the
+        // legacy-parity fallback DECISION stays here (frozen Q6) — an
+        // empty root set only ever comes from auto-discovery (config
+        // mode rejects its own empty list), so the fallback keeps the
+        // "auto" mode by construction.
+        let mode = rust_projects.mode;
+        let roots: Vec<String> = if rust_projects.roots.is_empty() {
+            vec![".".to_string()]
+        } else {
+            rust_projects.roots
+        };
+        let (inputs, topology) = collect_rust_inputs(&root, &roots, mode);
+        out.rust_inputs = inputs;
+        out.rust_topology = topology;
+    }
     Ok(out)
+}
+
+/// Collect the Rust producer-input corpus for the given workspace roots
+/// (EP S2): every Cargo.toml under each root (conservative member-tree
+/// inclusion — false-stale over false-fresh), root Cargo.lock
+/// (present/absent marker), the root/toolchain cargo config files, and
+/// (EP 5.3 P1-B) the same config files along each root's ANCESTOR chain
+/// up to and including the repo root — a repo-root `rust-toolchain.toml`
+/// or `.cargo/config.toml` governs every nested workspace. Records are
+/// repo-relative; `rust_topology` carries the resolver's discovery-mode
+/// truth (`config`/`auto`), the sorted roots under collision-proof
+/// indexed keys (EP 5.3 P3-E), and present/absent markers as
+/// `(key, value)` pairs (absent markers deduplicated — sibling roots
+/// share their ancestor chain).
+fn collect_rust_inputs(
+    repo: &Path,
+    roots: &[String],
+    mode: &str,
+) -> (
+    BTreeMap<String, crate::identity::SourceRecord>,
+    Vec<(String, String)>,
+) {
+    /// Toolchain / cargo-config files governing a workspace (root level
+    /// AND the ancestor chain — Cargo.lock deliberately excluded: a
+    /// lockfile above the workspace root does not pin its deps).
+    const CONFIG_FILES: [&str; 4] = [
+        "rust-toolchain",
+        "rust-toolchain.toml",
+        ".cargo/config",
+        ".cargo/config.toml",
+    ];
+    let mut inputs = BTreeMap::new();
+    let mut topology: Vec<(String, String)> = Vec::new();
+    topology.push(("mode".to_string(), mode.to_string()));
+    // P3-E (EP 5.3): one indexed key per sorted root — a comma inside a
+    // directory name must not alias two distinct topologies ("a,b"+"c"
+    // vs "a"+"b,c" both joined to "a,b,c" under the old encoding). The
+    // resolver returns sorted roots, so idx is stable across stamps.
+    for (idx, root) in roots.iter().enumerate() {
+        topology.push((format!("root[{idx}]"), root.clone()));
+    }
+    // Absent markers are collected into a set first: sibling roots share
+    // repo-root ancestors (P1-B), so the same marker can be reached from
+    // two roots and must appear exactly once in the topology vector.
+    let mut absent: BTreeSet<String> = BTreeSet::new();
+    let push_absent = |absent: &mut BTreeSet<String>, rel: &str| {
+        absent.insert(format!("absent:{rel}"));
+    };
+    let mut push_input = |repo: &Path, abs: &Path| {
+        let Ok(md) = abs.metadata() else { return };
+        let Ok(rel) = abs.strip_prefix(repo) else { return };
+        let rel = rel.to_string_lossy().into_owned();
+        let mtime = crate::identity::systemtime_tuple(md.modified().ok());
+        inputs.insert(
+            rel.clone(),
+            crate::identity::SourceRecord {
+                face: crate::language::LanguageFace::Rust,
+                rel,
+                size: md.len(),
+                mtime,
+            },
+        );
+    };
+    for root in roots {
+        let root_dir = repo.join(root);
+        // Cargo.toml sweep under the root (skip target/dot dirs — the
+        // producer corpus never sees OUT_DIR manifests either).
+        let mut stack = vec![root_dir.clone()];
+        while let Some(dir) = stack.pop() {
+            let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+            for ent in entries.flatten() {
+                let Ok(ft) = ent.file_type() else { continue };
+                let name = ent.file_name().to_string_lossy().into_owned();
+                if ft.is_dir() {
+                    if name.starts_with('.') || name == "target" {
+                        continue;
+                    }
+                    stack.push(ent.path());
+                } else if name == "Cargo.toml" {
+                    push_input(repo, &ent.path());
+                }
+            }
+        }
+        // Root-level lock + toolchain/cargo config (present ⇒ content
+        // record; absent ⇒ topology marker only).
+        for rel in std::iter::once("Cargo.lock").chain(CONFIG_FILES) {
+            let abs = root_dir.join(rel);
+            if abs.is_file() {
+                push_input(repo, &abs);
+            } else {
+                let marker = if root == "." {
+                    rel.to_string()
+                } else {
+                    format!("{root}/{rel}")
+                };
+                push_absent(&mut absent, &marker);
+            }
+        }
+        // P1-B (EP 5.3): the ancestor chain — from the root's parent up
+        // to and including the repo root, the same config files govern
+        // the workspace from above. The "." root's parent is outside the
+        // repo — no chain (its own root-level check already covered the
+        // repo root's files).
+        if root != "." {
+            let mut dir = root_dir.parent();
+            while let Some(d) = dir {
+                if !d.starts_with(repo) {
+                    break;
+                }
+                for rel in CONFIG_FILES {
+                    let abs = d.join(rel);
+                    if abs.is_file() {
+                        push_input(repo, &abs);
+                    } else if let Ok(marker) = abs.strip_prefix(repo) {
+                        push_absent(&mut absent, &marker.to_string_lossy());
+                    }
+                }
+                if d == repo {
+                    break;
+                }
+                dir = d.parent();
+            }
+        }
+    }
+    for marker in absent {
+        topology.push((marker, String::new()));
+    }
+    topology.sort();
+    (inputs, topology)
 }
 
 /// The index↔source staleness signals. `head_drift=None` means "no
@@ -727,6 +887,12 @@ pub struct StalenessSnapshot {
     /// `Some(current != stamped)` when the meta carries a comparable
     /// identity pair; `None` = legacy (not computed).
     pub identity_drift: Option<bool>,
+    /// EP DB-100 S2 (`Some(true)` = fatal): a Rust-inclusive slot whose
+    /// stamped identity is not v2-comparable (v1 algo, missing triple, or
+    /// keyless meta). Such a slot must never answer fresh — Cargo-only
+    /// changes are invisible to the v1 body. Non-Rust v1 slots keep the
+    /// legacy face (one-time degradation, TC-9).
+    pub identity_algo_upgrade: bool,
     pub head_drift: Option<bool>,
     /// Faces the evaluation was scoped to (stamped ∪ detected on auto,
     /// pinned on explicit) — the freshness face's `faces` field.
@@ -744,7 +910,8 @@ impl StalenessSnapshot {
     /// the fatal signal; in legacy mode the baseline trio applies. The
     /// torn-plane guard fires in BOTH modes, unconditionally.
     pub fn needs_rebuild(&self) -> bool {
-        self.identity_drift == Some(true)
+        self.identity_algo_upgrade
+            || self.identity_drift == Some(true)
             || self.graph_lags
             || (self.identity_drift.is_none()
                 && (self.source_newer
@@ -923,11 +1090,43 @@ pub fn evaluate_staleness(
         .and_then(|m| m["identity_algo"].as_str().map(str::to_string));
     let mut identity_drift = None;
     let mut current_identity = None;
+    // EP DB-100 S2 upgrade pre-check: a Rust-INCLUSIVE slot whose stamped
+    // identity is not v2-comparable (v1 algo, partial triple, keyless
+    // meta) must never answer fresh — Cargo-only changes are invisible to
+    // the v1 body, so the upgrade is fatal. Non-Rust v1 slots keep the
+    // legacy face (one-time degradation, TC-9). The detected walk counts
+    // too (keyless meta carries no faces to inspect).
+    // P1-A (EP 5.3): an EXPLICIT pin whose stamped faces exclude Rust
+    // beats disk detection for this check — the pinned identity body
+    // never contained the Rust domains, so Cargo-only edits cannot stale
+    // it (symmetric with the capture side's face-scoped skip). Keyless
+    // meta has no faces to inspect → detected stays disk-driven.
+    let detected_rust = if explicit_selection
+        && stamped_faces
+            .as_ref()
+            .is_some_and(|f| !f.contains(&crate::language::LanguageFace::Rust))
+    {
+        false
+    } else {
+        !walk.rs.is_empty() || !walk.rust_inputs.is_empty()
+    };
+    let stamped_rust = stamped_faces
+        .as_ref()
+        .is_some_and(|f| f.contains(&crate::language::LanguageFace::Rust));
+    let identity_algo_upgrade = (stamped_rust || detected_rust)
+        && (stamped_algo.as_deref() != Some(crate::identity::IDENTITY_ALGO)
+            || stamped_faces.is_none()
+            || stamped_identity_val.is_none()
+            || meta
+                .as_ref()
+                .and_then(|m| m["index_sha256"].as_str())
+                .is_none());
     // Identity requires the STAMPED face set (judge C1): the identity
     // baseline is defined over the stamped scope mirrored to eval — a
     // meta carrying the identity pair without `source_faces` was never
     // stamped by this tool, so it degrades to legacy rather than
     // computing a detected-scope identity that was never recorded.
+    if !identity_algo_upgrade {
     if let (Some(_stamped), Some(eval), Some(stamped_val)) =
         (stamped_faces.as_ref(), &eval_faces, &stamped_identity_val)
     {
@@ -942,9 +1141,11 @@ pub fn evaluate_staleness(
                 crate::identity::cache_path_for_slot(slot),
                 &root,
             );
-            let current = crate::identity::compute_identity(
+            let current = crate::identity::compute_identity_scoped(
                 &root,
                 &walk.records(),
+                &walk.rust_inputs,
+                &walk.rust_topology,
                 eval,
                 policy,
                 &mut cache,
@@ -960,12 +1161,14 @@ pub fn evaluate_staleness(
             current_identity = Some(current.value);
         }
     }
+    }
     Ok(StalenessSnapshot {
         source_newer,
         graph_lags,
         doc_set_drift,
         corpus_policy_drift,
         identity_drift,
+        identity_algo_upgrade,
         head_drift,
         eval_faces: eval_faces.unwrap_or_default(),
         stamped_identity: if identity_drift.is_some() {
@@ -1039,6 +1242,10 @@ pub(crate) struct ProductionIdentity {
     fingerprint: String,
     profile: Option<String>,
     js_ts_profile: String,
+    /// Workspace topology descriptor (EP S2): part of the in-flight
+    /// equality guards — a root arriving mid-build fails the capture
+    /// comparison and the publication is rejected.
+    rust_topology: Vec<(String, String)>,
 }
 
 impl ProductionIdentity {
@@ -1053,9 +1260,11 @@ impl ProductionIdentity {
             .map(|r| r.face)
             .filter(|f| producer.is_none_or(|p| f.producer() == p))
             .collect();
-        let identity = crate::identity::compute_identity(
+        let identity = crate::identity::compute_identity_scoped(
             repo,
             &records,
+            &walk.rust_inputs,
+            &walk.rust_topology,
             &faces,
             crate::identity::IdentityCachePolicy::ReadOnly,
             &mut crate::identity::IdentityCache::disabled(),
@@ -1073,6 +1282,7 @@ impl ProductionIdentity {
             identity,
             profile,
             js_ts_profile: js_ts_profile_fingerprint(repo),
+            rust_topology: walk.rust_topology,
         })
     }
 }
@@ -1174,6 +1384,7 @@ pub(crate) fn stamp_meta_locked(
                 "source_identity",
                 "identity_algo",
                 "index_sha256",
+                "rust_topology",
             ] {
                 if let Some(v) = m.get(key) {
                     if !v.is_null() {
@@ -1203,6 +1414,7 @@ pub(crate) fn stamp_meta_locked(
             payload["source_identity"] = serde_json::json!(a.identity.value);
             payload["identity_algo"] = serde_json::json!(a.identity.algo);
             payload["index_sha256"] = serde_json::json!(index_hash);
+            payload["rust_topology"] = serde_json::json!(a.rust_topology);
         }
     } else {
         preserve_prior_keys(&mut payload);
@@ -1396,19 +1608,32 @@ pub fn source_line(index_path: &Path, repo: Option<&Path>) -> (Option<String>, V
         _ => {
             // Divergence-aware remediation (S2): stamping a stale index
             // formalizes it — when sources moved past the slot, point at
-            // rebuild instead of re-stamp.
-            let drift = repo
-                .and_then(|r| walk_sources(r).ok())
-                .and_then(|w| w.newest)
-                .zip(index_path.metadata().and_then(|m| m.modified()).ok())
-                .is_some_and(|(n, s)| n > s);
+            // rebuild instead of re-stamp. The walk is the drift oracle
+            // here, so a resolver error must not fold into "no drift"
+            // (no `.ok()`): its text rides the WARN face instead —
+            // source_line is a hint surface, never a verdict, so the
+            // function still cannot fail.
+            let walk = repo.map(walk_sources);
+            let drift = match &walk {
+                Some(Ok(w)) => w
+                    .newest
+                    .zip(index_path.metadata().and_then(|m| m.modified()).ok())
+                    .is_some_and(|(n, s)| n > s),
+                _ => false,
+            };
+            let resolver = match &walk {
+                Some(Err(e)) => format!("（resolver：{e}）"),
+                _ => String::new(),
+            };
             warns.push(
                 if drift {
                     "[WARN] index meta 未 stamp 且原始碼已較新——索引過期：跑 code-reality build\n"
+                        .to_string()
                 } else {
-                    "[WARN] index meta 未 stamp（生成後跑 --stamp-meta）——[SRC] 缺 index 版本\n"
-                }
-                .to_string(),
+                    format!(
+                        "[WARN] index meta 未 stamp（生成後跑 --stamp-meta）——[SRC] 缺 index 版本{resolver}\n"
+                    )
+                },
             );
         }
     }

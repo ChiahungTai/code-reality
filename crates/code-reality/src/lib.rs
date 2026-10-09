@@ -79,6 +79,7 @@ pub mod project;
 mod publication_writer;
 pub mod py_calls;
 pub mod refresh;
+pub mod rust_projects;
 pub mod runtime_edges;
 pub mod scip_edges;
 pub mod sidecar_migrate;

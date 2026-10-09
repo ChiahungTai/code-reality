@@ -79,7 +79,7 @@ fn tc8_stamp_writes_identity_keys_on_consistent_pair() {
         identity.chars().all(|c| c.is_ascii_hexdigit()),
         "{identity}"
     );
-    assert_eq!(meta["identity_algo"], "sha256-v1");
+    assert_eq!(meta["identity_algo"], "sha256-v2");
     assert_eq!(
         identity,
         clean_identity(&l.repo),
@@ -186,7 +186,7 @@ fn tc8_preserve_extends_to_identity_keys() {
         stamped,
         "prior identity value preserved verbatim"
     );
-    assert_eq!(meta["identity_algo"], "sha256-v1");
+    assert_eq!(meta["identity_algo"], "sha256-v2");
 }
 
 // ---------- S3: the identity-authoritative staleness decision ----------
@@ -535,7 +535,7 @@ fn tc7_freshness_json_contract_four_states() {
     let current = v["current_source_identity"].as_str().unwrap();
     assert_eq!(indexed.len(), 64);
     assert_eq!(indexed, current, "fresh: indexed == current");
-    assert_eq!(v["identity_algo"], serde_json::json!("sha256-v1"));
+    assert_eq!(v["identity_algo"], serde_json::json!("sha256-v2"));
     assert_eq!(v["serves"], serde_json::json!("current-tree"));
     assert_eq!(
         v["repo"],
@@ -574,7 +574,7 @@ fn tc7_freshness_json_contract_four_states() {
         "stale: the pair diverges"
     );
     assert!(v["current_source_identity"].is_string());
-    assert_eq!(v["identity_algo"], serde_json::json!("sha256-v1"));
+    assert_eq!(v["identity_algo"], serde_json::json!("sha256-v2"));
 
     // ---- state 4: legacy (meta without identity keys) ----
     // The corpus edit from state 2 moved mtimes, so this is first the
@@ -601,7 +601,7 @@ fn tc7_freshness_json_contract_four_states() {
     );
     assert_eq!(
         v["identity_algo"],
-        serde_json::json!("sha256-v1"),
+        serde_json::json!("sha256-v2"),
         "tool algo id, not a computation claim"
     );
 

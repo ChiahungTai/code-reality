@@ -16,7 +16,7 @@ use std::path::Path;
 pub const PROFILE_FILENAME: &str = ".code-reality.toml";
 pub const DEFAULT_EXCLUDE: [&str; 1] = [".venv/"];
 
-const VALID_KEYS: [&str; 4] = ["module", "exclude", "scan_root", "hazard_registry"];
+const VALID_KEYS: [&str; 5] = ["module", "exclude", "scan_root", "hazard_registry", "rust_projects"];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModuleRule {
@@ -49,6 +49,10 @@ pub struct Profile {
     pub exclude: Vec<String>,
     pub scan_roots: Vec<ScanRoot>,
     pub hazard_registries: Vec<HazardRegistry>,
+    /// Configured Cargo-workspace roots (EP DB-100 Q1): `None` = key
+    /// absent (conservative auto-discovery); `Some(list)` = config mode
+    /// (authoritative — an empty list is a resolver error, not auto).
+    pub rust_projects: Option<Vec<String>>,
 }
 
 /// Load the profile at repo root; missing file → `Ok(None)` (generic
@@ -74,7 +78,7 @@ pub fn load_profile(repo_root: &Path) -> Result<Option<Profile>, String> {
         let mut sorted = unknown;
         sorted.sort();
         return Err(format!(
-            "{} 含未知鍵 {}——拼錯 section 名會靜默退化 generic fallback（合法鍵：module／exclude／scan_root）",
+            "{} 含未知鍵 {}——拼錯 section 名會靜默退化 generic fallback（合法鍵：module／exclude／scan_root／hazard_registry／rust_projects）",
             path.display(),
             py_list_repr(&sorted)
         ));
@@ -107,6 +111,20 @@ pub fn load_profile(repo_root: &Path) -> Result<Option<Profile>, String> {
             Some(toml::Value::String(s)) => Ok(s.clone()),
             Some(other) => Err(schema_msg(&path, &py_repr(other))),
             None => Err(schema_msg(&path, &format!("'{}'", k))),
+        }
+    };
+    let rust_projects = match table.get("rust_projects") {
+        None => None,
+        Some(toml::Value::Array(a)) => Some(a
+            .iter()
+            .map(|v| {
+                v.as_str()
+                    .map(|s| s.to_string())
+                    .ok_or_else(|| format!("{} rust_projects 項需字串：{:?}", path.display(), v))
+            })
+            .collect::<Result<Vec<String>, _>>()?),
+        Some(_) => {
+            return Err(format!("{} rust_projects 需字串陣列", path.display()));
         }
     };
     let mut modules = Vec::new();
@@ -201,6 +219,7 @@ pub fn load_profile(repo_root: &Path) -> Result<Option<Profile>, String> {
         exclude,
         scan_roots,
         hazard_registries: registries,
+        rust_projects,
     }))
 }
 
@@ -406,6 +425,7 @@ mod tests {
             exclude: vec![],
             scan_roots: vec![],
             hazard_registries: vec![],
+            rust_projects: None,
         };
         assert_eq!(module_of("crates/a/b/c/mod.rs", Some(&p)), "crates/a/b");
         assert_eq!(module_of("crates/lib.rs", Some(&p)), "crates"); // F6 root file
@@ -430,6 +450,7 @@ mod tests {
             exclude: vec![],
             scan_roots: vec![],
             hazard_registries: vec![],
+            rust_projects: None,
         };
         let re = claims_regex(Some(&p));
         let hits: Vec<&str> = re
@@ -448,6 +469,7 @@ mod tests {
             exclude: vec!["ai-analysis/".into()],
             scan_roots: vec![],
             hazard_registries: vec![],
+            rust_projects: None,
         };
         assert!(is_excluded("ai-analysis/ep.md", Some(&p)));
         // Additive (2026-09-11 ruling): a profile widens, never narrows —
@@ -467,6 +489,7 @@ mod tests {
             exclude: vec![".venv/".into(), "dist/".into()],
             scan_roots: vec![],
             hazard_registries: vec![],
+            rust_projects: None,
         };
         assert_eq!(
             effective_excludes(Some(&p)),

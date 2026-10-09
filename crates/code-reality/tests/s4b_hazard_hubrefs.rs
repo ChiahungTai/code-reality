@@ -125,6 +125,7 @@ fn profile_fixture() -> Profile {
         exclude: vec![".venv/".into()],
         scan_roots: vec![],
         hazard_registries: vec![],
+        rust_projects: None,
     }
 }
 
@@ -796,6 +797,7 @@ fn fs_fallback_restores_class_facts_and_registry_hazard() {
             registry: "REGISTRY".into(),
             evidence: String::new(),
         }],
+        rust_projects: None,
     };
     // graph-invisible class: facts would degrade to name-only without the
     // filesystem fallback — rel_path and is_class must be restored

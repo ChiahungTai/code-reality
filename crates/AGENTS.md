@@ -187,9 +187,10 @@ tests are the sole gate face.
   governed JS/TS source set; the single answer to "which JS/TS
   documents belong to this repo" on both the producer and freshness
   sides) / `identity` (domain — content-addressed source identity, EP
-  09-23-source-identity: `compute_identity` assembles
-  `sha256("cr-identity-v1\0" + Σ sorted-by-rel "{face}\0{rel}\0{size}\0{content_hash}\0")`
-  — mtime is NOT in the body (touch/rebase/stash idempotent), only in
+  09-23-source-identity + DB-100 v2: `compute_identity` assembles
+  `sha256("cr-identity-v2\0" + Σ sorted-by-rel "{face}\0{rel}\0{size}\0{content_hash}\0" + domain-separated Rust producer inputs (Cargo manifests/locks/toolchain config of the resolved workspace roots) + workspace topology markers)`
+  — same content AND same workspace topology ⇒ same identity; mtime is
+  NOT in the body (touch/rebase/stash idempotent), only in
   the `(size, mtime[secs+nanos])` gate of the slot-sibling
   `identity-cache.json` (D16: repo-bound payload, crash-only discard on
   any inconsistency, merged atomic write with out-of-set pruning,
@@ -206,7 +207,10 @@ tests are the sole gate face.
   with guidance that names the empty-terminal state and never claims
   fresh; JSON carries the indexed/current identity pair, `serves` ∈
   current-tree/committed-baseline/legacy-signals, `head_drift`
-  disclosed and never fatal (D14); NAMING NEIGHBORS: the `cr-freshness`
+  disclosed and never fatal (D14); a v1/legacy Rust-face slot answers
+  `identity-algo-upgrade` stale (sha256-v2 upgrade — never fresh),
+  non-Rust v1 slots fall to `legacy-signals` until rebuilt;
+  NAMING NEIGHBORS: the `cr-freshness`
   leaf crate and `tests/freshness.rs` are the BINARY version-freshness
   axis — this module and `tests/source_identity.rs` are the index
   source-identity axis) / `ts_producer` (adapter — the scip-typescript leg:
@@ -278,7 +282,14 @@ tests are the sole gate face.
   knowingly not auto-attributed, EP data-plane-unification) / `build`
   (orchestration leaf — one-shot data-plane bootstrap: detect language
   face → spawn pyrefly-index / `rust-analyzer scip` (sibling bins,
-  separate dists) → in-process graph_db build + ensure_indexes; mixed
+  separate dists) → in-process graph_db build + ensure_indexes; the
+  Rust leg resolves Cargo-workspace roots (`rust_projects` config
+  authoritative, conservative auto-discovery of immediate-child
+  `[workspace]` manifests, ambiguity fails loud CR-RUST-ROOT-06/07),
+  stages one partial per root with git-root-relative path
+  normalization, pre-concats into one Rust partial, and gates
+  cross-root DEF collisions (frozen TC-3) plus multi-root/config-mode
+  coverage (CR-RUST-ROOT-08) before merge; mixed
   repos merge producer indexes into one graph; uncached source/policy A
   is captured before producers, compared after production and again under
   publication ownership before live mutation, then passed into stamping;

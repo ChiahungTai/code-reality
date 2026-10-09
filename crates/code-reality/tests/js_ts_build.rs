@@ -315,6 +315,9 @@ fn s1_three_family_merge_is_ordered_and_deterministic() {
             ("app.py", "x = 1\n"),
             ("src/lib.rs", "pub fn f() {}\n"),
             ("src/a.mjs", "export const a = 1;\n"),
+            // rich.scip's docs must exist on disk (normalize disk check)
+            ("crates/a.rs", "x"),
+            ("crates/b.rs", "x"),
         ],
     );
     let bindir = tempfile::tempdir().unwrap();

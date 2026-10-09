@@ -93,19 +93,29 @@ pub fn freshness(repo: &Path, json: bool) -> ToolOutput {
     // D14: head drift never kills fresh (AIR-135.2's LHS has no HEAD);
     // it is disclosed via `head_drift` only.
     let fresh = !snap.needs_rebuild();
-    let serves = match snap.identity_drift {
-        // legacy 判別優先（R19 observation 1）— 不分 fresh/stale
-        None => "legacy-signals",
-        Some(false) if fresh => "current-tree",
-        // stale and torn-with-matching-identity both serve the
-        // committed baseline (graph answers are baseline + live-LSP
-        // delta for the working tree)
-        Some(_) => "committed-baseline",
+    // EP DB-100 S2: a Rust-inclusive upgrade-required slot serves the
+    // committed baseline (never legacy-signals/fresh — Cargo-only changes
+    // are invisible to its v1 body).
+    let serves = if snap.identity_algo_upgrade {
+        "committed-baseline"
+    } else {
+        match snap.identity_drift {
+            // legacy 判別優先（R19 observation 1）— 不分 fresh/stale
+            None => "legacy-signals",
+            Some(false) if fresh => "current-tree",
+            // stale and torn-with-matching-identity both serve the
+            // committed baseline (graph answers are baseline + live-LSP
+            // delta for the working tree)
+            Some(_) => "committed-baseline",
+        }
     };
     // stale_reasons mapping — fixed order (R24); head_drift never enters.
     let mut reasons: Vec<&str> = Vec::new();
     if snap.graph_lags {
         reasons.push("torn-plane");
+    }
+    if snap.identity_algo_upgrade {
+        reasons.push("identity-algo-upgrade");
     }
     if snap.identity_drift == Some(true) {
         reasons.push("content-drift");
