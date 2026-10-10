@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-10 04:41'
-updated_date: '2026-10-10 06:48'
+updated_date: '2026-10-10 07:37'
 labels:
   - bug
 dependencies: []
@@ -49,3 +49,9 @@ flowchart LR
 
 〔範圍：profile.rs（exclude 語義擴及 rust face）＋engine.rs walk_sources（rust profile filter）＋build.rs（single-root gate＋認證差集診斷）＋本 repo .code-reality.toml＋回歸測試（source_identity.rs 慣例：orphan fixture gate fail-loud 帶差集／排除後 certified＋fresh／新增孤兒不得靜默過／雙 root 對照）。驗收終點：本 repo build exit 0＋meta 帶 identity 三元組＋freshness --json fresh=true。〕
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+review 裁決記錄：fresh F1 的 (a) drop-if-excluded 不採——produced∖governed 混雜 policy 排除與 symlink 真實檔兩族群，drop 無法區分＝對後者 silent corruption；superset 維持 fatal，修 (c) per-direction hints＋(b) empty-governed 對稱 SkippedByProfile。ROOT-08（multi-root subset gate）與 ROOT-09（single-root exact gate）保護面不對稱＝frozen 決策（multi-root superset 由 stamp 差集診斷接手），已雙向 doc-comment 互指＋AGENTS.md 記錄。dogfood 指引（primed#6）：孤兒兩顆——audit/20260927/evidence/lsp/probe.rs 用檔案級 prefix 排除（禁 blanket audit/，該樹含 indexed python evidence）；crates/code-reality-lsp-bridge/tests/fixtures/ rust-only 可目錄級排除；ROOT-09 diff 為最終仲裁。
+<!-- SECTION:NOTES:END -->
