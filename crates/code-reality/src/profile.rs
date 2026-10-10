@@ -196,12 +196,16 @@ pub fn load_profile(repo_root: &Path) -> Result<Option<Profile>, String> {
             ));
         }
     }
-    for prefix in &exclude {
-        if !prefix.ends_with('/') {
+    for entry in &exclude {
+        if entry.is_empty() {
+            // Directory entries carry a trailing slash, file entries name
+            // the full path — both prefix-match under is_excluded. The
+            // dropped trailing-slash assert used to reject the empty
+            // string incidentally; under starts_with matching an empty
+            // entry would exclude EVERYTHING, so it stays loud.
             return Err(format!(
-                "{} exclude='{}' 須以 / 結尾（目錄粒度）",
-                path.display(),
-                prefix
+                "{} exclude 項不可為空字串（會排除全部）",
+                path.display()
             ));
         }
     }
@@ -303,8 +307,10 @@ pub fn scan_roots(profile: Option<&Profile>) -> &[ScanRoot] {
     profile.map(|p| p.scan_roots.as_slice()).unwrap_or(&[])
 }
 
-/// Shared exclusion layer (`exclusions.py:13-16`): directory-granular
-/// prefixes, ADDITIVE semantics (user ruling 2026-09-11 — was
+/// Shared exclusion layer (`exclusions.py:13-16`): directory
+/// (trailing-slash) or exact-file entries, both prefix-matched — under
+/// starts_with, a full file path is an exact-file match. ADDITIVE
+/// semantics (user ruling 2026-09-11 — was
 /// replace-on-profile before): builtin [`DEFAULT_EXCLUDE`] ∪
 /// `profile.exclude`. A repo profile can only widen the set, never
 /// narrow the builtin (the old replace rule silently dropped `.venv/`

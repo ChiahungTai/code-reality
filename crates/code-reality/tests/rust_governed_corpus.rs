@@ -453,3 +453,87 @@ fn s4_dual_root_converges_and_stamps() {
     let out = code_reality::freshness::freshness(&repo, true);
     assert_eq!(out.exit_code, 0, "fresh: {out:?}");
 }
+
+// ---------- S6: file-granularity exclude entries ----------
+
+/// S6 (file-level exclude): a slashless exclude entry loads fine and
+/// prefix-matches exactly — the named file drops, same-directory
+/// neighbors stay. `is_excluded`'s starts_with matching already gives
+/// exact-file semantics for a full file path; only the loader's
+/// trailing-slash assert blocked the shape (dogfood: an orphan
+/// `audit/.../probe.rs` sharing a directory with indexed python
+/// evidence could only be excluded at directory granularity, silently
+/// dropping the python face with it). Directory entries keep their
+/// semantics.
+#[test]
+fn s6_file_level_exclude_entry_loads_and_matches_exactly() {
+    let t = tempfile::tempdir().unwrap();
+    let repo = t.path().join("repo");
+    write(
+        &repo,
+        ".code-reality.toml",
+        "exclude = [\"audit/lsp/probe.rs\"]\n",
+    );
+    let p = code_reality::profile::load_profile(&repo)
+        .expect("slashless exclude entry loads")
+        .expect("profile present");
+    assert_eq!(p.exclude, vec!["audit/lsp/probe.rs".to_string()]);
+    assert!(
+        code_reality::profile::is_excluded("audit/lsp/probe.rs", Some(&p)),
+        "the exact file path is excluded"
+    );
+    assert!(
+        !code_reality::profile::is_excluded("audit/lsp/demo.py", Some(&p)),
+        "same-directory python evidence survives the file-level entry"
+    );
+
+    // directory entries keep their semantics
+    write(&repo, ".code-reality.toml", "exclude = [\"audit/\"]\n");
+    let p = code_reality::profile::load_profile(&repo)
+        .unwrap()
+        .expect("profile present");
+    assert!(
+        code_reality::profile::is_excluded("audit/lsp/probe.rs", Some(&p)),
+        "directory entry still excludes the file"
+    );
+    assert!(
+        code_reality::profile::is_excluded("audit/lsp/demo.py", Some(&p)),
+        "directory entry still excludes the whole subtree"
+    );
+}
+
+/// S6 fixture face (the dogfood shape end-to-end): an orphan probe.rs
+/// and indexed python evidence in the SAME directory — a file-level
+/// exclude entry converges the build while the python doc survives.
+#[test]
+fn s6_file_level_exclude_converges_build_keeps_python_evidence() {
+    let t = tempfile::tempdir().unwrap();
+    let repo = t.path().join("repo");
+    write(&repo, "Cargo.toml", workspace_manifest());
+    write(&repo, "Cargo.lock", "version = 3\n");
+    write(&repo, "crates/a.rs", "pub fn a() {}\n");
+    write(&repo, "crates/b.rs", "pub fn b() {}\n");
+    write(&repo, "audit/lsp/probe.rs", "fn probe() {}\n");
+    write(&repo, "audit/lsp/demo.py", "x = 1\n");
+    write(
+        &repo,
+        ".code-reality.toml",
+        "exclude = [\"audit/lsp/probe.rs\"]\n",
+    );
+    support::git_init(&repo);
+    let bindir = tempfile::tempdir().unwrap();
+    support::install_ts_deriving_fake(bindir.path());
+    support::install_py_deriving_fake(bindir.path());
+    install_rust_rich_fake(bindir.path());
+    let roots = vec![bindir.path().to_path_buf()];
+    build_repo(&repo, None, &roots).expect("file-level exclude converges the build");
+    let docs = support::slot_docs(&repo);
+    assert!(
+        docs.contains(&"audit/lsp/demo.py".to_string()),
+        "python evidence kept: {docs:?}"
+    );
+    assert!(
+        !docs.contains(&"audit/lsp/probe.rs".to_string()),
+        "orphan .rs excluded: {docs:?}"
+    );
+}

@@ -295,7 +295,7 @@ overlay, diagnostic version/time and quiescence checks still apply.
 Generic shape:
 
 ```toml
-exclude = ["docs/", "fixtures/", ".venv/"]  # directory granularity, trailing slash
+exclude = ["docs/", "fixtures/", ".venv/"]  # directories end with a slash; a slashless entry is an exact-file path
 
 [[module]]             # ordered, first match wins
 prefix = "src/mylib/"  # main code directory, trailing slash
@@ -310,7 +310,10 @@ The `exclude` table governs the Python walk face and, since CR-5, the
 Rust face alike — use it to declare ungoverned orphan Rust paths
 (evidence scripts, fixtures outside Cargo targets); an orphan that is
 not excluded now fails the build loudly (CR-RUST-ROOT-09) instead of
-silently forfeiting the source-identity certification. Upgrade note:
+silently forfeiting the source-identity certification. When the orphan
+shares a directory with indexed python evidence, exclude the exact
+file path (a slashless entry) — a directory entry would drop the
+python face along with it. Upgrade note:
 repos whose exclude table already covers `.rs` paths change identity
 input on first build after upgrading — the first freshness verdict
 answers `identity_drift` once and one rebuild converges it.
@@ -324,17 +327,19 @@ Authoring procedure for a new repo (four fixed steps):
    belong to the prefix itself). Multi-root repos write multiple
    `[[module]]` blocks (ordered, first match wins). Rule of thumb: the
    granularity you want module-level comparisons reported at is the
-   module layer. Prefixes must end with a slash (profile-load assert,
-   same as exclude). Prefix coverage also decides chain_tour frame
+   module layer. Prefixes must end with a slash (profile-load assert).
+   Prefix coverage also decides chain_tour frame
    survival — frames whose paths fall under no prefix resolve-fail
    into the external-skip bucket, so cover every layer callstacks pass
    through, including declaration layers (`.pyi` stubs) and examples.
 2. **Decide exclude.** List every non-code directory (docs, research
    artifacts, fixtures, stubs, generated `dist`/`node_modules`).
-   Always directory-granularity with a trailing slash: `"docs/"`, not
-   `"docs"` — the profile-load assert enforces it, and under startswith
-   matching a slashless entry would also hit same-prefixed files like
-   `.venv-setup.py`.
+   Directory entries keep the trailing slash: `"docs/"`, not `"docs"`
+   — under startswith matching a slashless directory name would also
+   hit same-prefixed files like `.venv-setup.py`. A slashless entry is
+   an exact-file path (`"audit/lsp/probe.rs"`) — name the full file
+   path; it is prefix-matched exactly, never interpreted as a
+   directory.
 3. **scan_root only for pyo3 reconciliation repos** — a rust-source ×
    `.pyi`-stub boundary scan (boundary_build/boundary). General repos
    don't write it.

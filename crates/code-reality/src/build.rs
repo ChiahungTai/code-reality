@@ -714,10 +714,12 @@ fn bounded_diff(
     let face = if n == 0 {
         "0 筆".to_string()
     } else {
+        // "例：" stays truthful at every n: the count already discloses
+        // the total, and when n < bound the old "（前 {bound}：…）" face
+        // over-claimed what the list shows.
         format!(
-            "{} 筆（前 {}：{}）",
+            "{} 筆（例：{}）",
             n,
-            bound,
             items
                 .iter()
                 .take(bound)
