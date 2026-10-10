@@ -1,0 +1,24 @@
+---
+id: CR-6
+title: PyPI release 後回信 delegate-bridge-marshal 告知版本號（db108 對齊）
+status: To Do
+assignee: []
+created_date: '2026-10-10 05:01'
+labels:
+  - bridge-request
+dependencies: []
+ordinal: 6000
+---
+
+## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
+delegate-bridge 回信（db108-cr-converge-ack-001）：六項契約全收、bridge 側定稿——3.10.0 supply v2 將讀 `--manifest`，但會等我方**下一個 PyPI release** 落地後才冷探（uv-installed binary 才有新面；3.9.1 pin hotfix 已出、probe 對有無 manifest 兩態相容）。義務：release 打包時（v* tag → release-wheels 流程）回信 delegate-bridge-marshal 告知版本號。一次性行動，release session 執行。
+
+```mermaid
+flowchart LR
+    T["v* tag → release-wheels"] --> P["PyPI 三 dist 發佈"]
+    P --> N["dutymail 回信 delegate-bridge-marshal：告知版本號"]
+    N --> C["bridge 3.10.0 冷探 --manifest"]
+```
+<!-- SECTION:DESCRIPTION:END -->
