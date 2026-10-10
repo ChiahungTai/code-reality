@@ -4,7 +4,7 @@ title: DB-108 bridge 供給契約——MCP serverInfo 身分戳與 publisher ABI
 status: In Progress
 assignee: []
 created_date: '2026-10-10 03:06'
-updated_date: '2026-10-10 03:13'
+updated_date: '2026-10-10 04:06'
 labels:
   - feature
   - bridge-request
@@ -54,3 +54,9 @@ flowchart LR
 
 〔範圍：crates/code-reality/src/bin/code-reality-mcp/main.rs（--manifest arm）、src/mcp_server.rs（get_info 身分＋工具枚舉可達面）、crates/code-reality-lsp-bridge/src/bin＋server.rs（同兩面）；tests/s6_mcp_server.rs（工具名凍結）延伸 manifest 斷言。回執＝dutymail 六項逐項寄 delegate-bridge-marshal（envelope body ≤8KB＋landing 指針）。規模分級：standard——card Planning Contract 承載，無 standalone EP。〕
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+實作定案（F5 deviation，reviewer 確認）：face＝`--manifest` 單 flag、輸出恆 JSON（終端面語義同 --version）——卡文原寫 `--manifest --json`，`--json` companion 未做（在後被吞、在前 exit 2，與 --version 同性質，接受不作）。digest 口徑 reviewer 獨立重算證實＝name+input_schema（tools_digest_scope 宣告為真）。
+<!-- SECTION:NOTES:END -->
