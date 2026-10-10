@@ -1,10 +1,10 @@
 ---
 id: CR-4
 title: DB-108 bridge 供給契約——MCP serverInfo 身分戳與 publisher ABI manifest face
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-10 03:06'
-updated_date: '2026-10-10 04:06'
+updated_date: '2026-10-10 04:39'
 labels:
   - feature
   - bridge-request
@@ -60,3 +60,23 @@ flowchart LR
 <!-- SECTION:NOTES:BEGIN -->
 實作定案（F5 deviation，reviewer 確認）：face＝`--manifest` 單 flag、輸出恆 JSON（終端面語義同 --version）——卡文原寫 `--manifest --json`，`--json` companion 未做（在後被吞、在前 exit 2，與 --version 同性質，接受不作）。digest 口徑 reviewer 獨立重算證實＝name+input_schema（tools_digest_scope 宣告為真）。
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+DB-108 六項供給契約收斂：四項現成面（plugin pin 安裝登記／lsp-bridge 獨立面／freshness exit-code oracle／tools-list 測試凍結）逐項答覆＋兩缺口實作落地——initialize serverInfo 真身分戳（原自查 rmcp/3.5.1）＋雙 bin `--manifest` publisher ABI face（cr-mcp-manifest/1：tools+schema canonical sha256 digest、write_faces 誠實標記、mutating_notes/index_dependency 揭露）。審查鏈：codex adversarial advisory（job-mv1syt54-k9owju）＋fresh（needs-fix→全修）＋primed（accept）＋re-review（pass）四腿；全倉 cargo test 672/0、安裝面 live probe 過。回執已寄 delegate-bridge-marshal（db108-cr-six-item-reply-001，accepted seq 64）。
+
+```mermaid
+flowchart LR
+    S["db108 solicit 六項契約"] --> V["codex adversarial 驗證腿"]
+    V --> A{"裁決"}
+    A -->|現成面 ①③④⑥| R1["逐項 face 名答覆"]
+    A -->|缺口 ②| I["serverInfo 身分戳＋--manifest ABI face"]
+    A -->|⑤ 組合式| R2["freshness exit-code oracle 為 v1；per-answer meta 列後續"]
+    I --> T["cargo test 672/0＋fresh+primed+re-review 收斂"]
+    R1 --> M["main @ 929e373＋回執寄出 seq 64"]
+    T --> M
+    R2 --> M
+    M --> W["mail waiter 掛哨——新信喚醒"]
+```
+<!-- SECTION:FINAL_SUMMARY:END -->
