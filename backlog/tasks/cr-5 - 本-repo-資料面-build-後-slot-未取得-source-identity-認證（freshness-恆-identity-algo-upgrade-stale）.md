@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-10 04:41'
-updated_date: '2026-10-10 07:37'
+updated_date: '2026-10-10 08:04'
 labels:
   - bug
 dependencies: []
@@ -54,4 +54,6 @@ flowchart LR
 
 <!-- SECTION:NOTES:BEGIN -->
 review 裁決記錄：fresh F1 的 (a) drop-if-excluded 不採——produced∖governed 混雜 policy 排除與 symlink 真實檔兩族群，drop 無法區分＝對後者 silent corruption；superset 維持 fatal，修 (c) per-direction hints＋(b) empty-governed 對稱 SkippedByProfile。ROOT-08（multi-root subset gate）與 ROOT-09（single-root exact gate）保護面不對稱＝frozen 決策（multi-root superset 由 stamp 差集診斷接手），已雙向 doc-comment 互指＋AGENTS.md 記錄。dogfood 指引（primed#6）：孤兒兩顆——audit/20260927/evidence/lsp/probe.rs 用檔案級 prefix 排除（禁 blanket audit/，該樹含 indexed python evidence）；crates/code-reality-lsp-bridge/tests/fixtures/ rust-only 可目錄級排除；ROOT-09 diff 為最終仲裁。
+
+re-review pass（兩項 🟢）：R1 bounded_diff 文案「前 N」在 n<bound 時措辭誤導（例：1 筆（前 10：…））——下次觸及 build.rs 訊息面時改 min(n,bound) 或『例：』；R2 已由 marshal 當場修（AGENTS.md『exact』→分派語句）。
 <!-- SECTION:NOTES:END -->
