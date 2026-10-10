@@ -3,13 +3,15 @@ id: CR-5
 title: >-
   本 repo 資料面 build 後 slot 未取得 source identity 認證（freshness 恆
   identity-algo-upgrade stale）
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-10 04:41'
 updated_date: '2026-10-10 06:48'
 labels:
   - bug
 dependencies: []
+references:
+  - ai-analysis/2026-10/10-10-cr5-identity-stamp/advisory-codex-result.md
 ordinal: 5000
 ---
 
