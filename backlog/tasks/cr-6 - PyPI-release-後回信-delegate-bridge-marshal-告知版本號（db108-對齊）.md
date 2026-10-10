@@ -1,9 +1,10 @@
 ---
 id: CR-6
 title: PyPI release 後回信 delegate-bridge-marshal 告知版本號（db108 對齊）
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-10 05:01'
+updated_date: '2026-10-10 10:16'
 labels:
   - bridge-request
 dependencies: []
@@ -22,3 +23,16 @@ flowchart LR
     N --> C["bridge 3.10.0 冷探 --manifest"]
 ```
 <!-- SECTION:DESCRIPTION:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+0.11.0 已發佈（PyPI 三 dist live＋marketplace slice；release.sh 全鏈綠）——回執寄 delegate-bridge-marshal（cr6-release-notify-0110-001，accepted seq 65）：supply v2 可冷探 --manifest；行為變更提醒（ROOT-09 孤兒 fail-loud／heal Err cooldown）。uv face 四 bin 已 bootstrap 至 0.11.0+26c05f2。
+
+```mermaid
+flowchart LR
+    V["v0.11.0 tag"] --> W["release-wheels CI"] --> P["PyPI 三 dist live"]
+    P --> S["marketplace slice"] --> N["dutymail 回執 seq 65 → delegate-bridge"]
+    P --> U["uv face 0.11.0 bootstrap"]
+```
+<!-- SECTION:FINAL_SUMMARY:END -->
