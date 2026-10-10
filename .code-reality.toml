@@ -1,5 +1,8 @@
 # Self profile — dogfood: this repo is scanned by its own toolchain.
-exclude = [".venv/", ".agent-tmp/"]
+# audit/lsp probe.rs: ungoverned evidence script (file-level — blanket
+# audit/ would drop indexed python evidence); lsp-bridge fixtures dir
+# is rust-only, undeclared Cargo targets (CR-RUST-ROOT-09 orphans).
+exclude = [".venv/", ".agent-tmp/", "audit/20260927/evidence/lsp/probe.rs", "crates/code-reality-lsp-bridge/tests/fixtures/"]
 
 [[module]]
 prefix = "crates/"
