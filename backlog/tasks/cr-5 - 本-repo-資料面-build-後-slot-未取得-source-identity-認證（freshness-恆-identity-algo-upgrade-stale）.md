@@ -3,10 +3,10 @@ id: CR-5
 title: >-
   本 repo 資料面 build 後 slot 未取得 source identity 認證（freshness 恆
   identity-algo-upgrade stale）
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-10 04:41'
-updated_date: '2026-10-10 08:04'
+updated_date: '2026-10-10 08:26'
 labels:
   - bug
 dependencies: []
@@ -57,3 +57,18 @@ review 裁決記錄：fresh F1 的 (a) drop-if-excluded 不採——produced∖g
 
 re-review pass（兩項 🟢）：R1 bounded_diff 文案「前 N」在 n<bound 時措辭誤導（例：1 筆（前 10：…））——下次觸及 build.rs 訊息面時改 min(n,bound) 或『例：』；R2 已由 marshal 當場修（AGENTS.md『exact』→分派語句）。
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+source-identity 認證缺口修復：walk 與 Cargo 索引範圍不一致（孤兒 .rs——audit/ probe.rs＋未宣告 fixtures——被計入 governed 卻不被 rust-analyzer emit）→ docs==a.docs 恆假 → 本 repo freshness 恆 stale。落地四件：①profile exclude 表擴及 rust face（同表同語義）＋檔案粒度條目（dogfood 實證孤兒與 indexed python evidence 同目錄，目錄級會誤傷）②single-root auto 也跑 exact coverage gate＝CR-RUST-ROOT-09（雙向 fatal＋per-direction 修法指引；empty governed 對稱 SkippedByProfile；multi-root ROOT-08 不變、不對稱 frozen 記錄）③stamp 認證失敗帶 walk−index／index−walk 差集診斷（讀回失敗如實攤）④heal Err 分支 arm churn cooldown（孤兒 repo 不再每查詢重燒 minutes 級 rebuild）。審查鏈：codex advisory＋marshal bisect 雙源調查→fresh（needs-fix 8）→primed（needs-fix 窄域）→judge 8 項裁決→fix 輪（8/8＋dogfood 檔案粒度加項）→re-review（pass）。全倉 679→-p code-reality 592/0；dogfood：本 repo build exit 0、meta certified sha256-v2、freshness fresh=true serves current-tree。
+
+```mermaid
+flowchart LR
+    O["孤兒 .rs 被走查不被索引"] --> G["docs==a.docs 恆假"] --> S["freshness 恆 stale"]
+    F["CR-5：profile exclude 擴 rust face＋檔案粒度"] --> G9["CR-RUST-ROOT-09 exact gate 雙向 fatal"] --> B["build fail loud 帶差集與修法指引"]
+    F --> E["本 repo 排除 probe.rs＋fixtures"] --> C["build exit 0"]
+    G9 --> C
+    C --> D["meta certified sha256-v2"] --> FR["freshness fresh=true serves current-tree"]
+```
+<!-- SECTION:FINAL_SUMMARY:END -->
