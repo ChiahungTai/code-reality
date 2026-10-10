@@ -4,7 +4,7 @@ title: DB-108 bridge 供給契約——MCP serverInfo 身分戳與 publisher ABI
 status: In Progress
 assignee: []
 created_date: '2026-10-10 03:06'
-updated_date: '2026-10-10 03:07'
+updated_date: '2026-10-10 03:13'
 labels:
   - feature
   - bridge-request
@@ -34,6 +34,16 @@ flowchart LR
     S -->|stale| R["typed stale refusal（bridge 側）"]
 ```
 <!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [ ] #1 #1 - MCP initialize serverInfo 身分戳：code-reality-mcp 與 code-reality-lsp-bridge 的 initialize 回應 serverInfo.name＝各自 binary 名、version＝CARGO_PKG_VERSION（非 rmcp/3.5.1）——live probe 測試斷言（s6 http smoke peer_info＋stdio probe）
+- [ ] #2 #2 - code-reality-mcp --manifest 印 cr-mcp-manifest/1 JSON：crate_version、build_rev、entrypoints（stdio/streamable-http）、protocol.latest、tools（name/description/input_schema）21 隻、tools_digest＝canonical（遞迴排序鍵）sha256 hex、write_faces 宣告⊆tools——exit 0；跑兩次 byte-identical
+- [ ] #3 #3 - code-reality-lsp-bridge --manifest 同 schema：4 工具、index_dependency:false、backend_prereqs 三 family、write_faces 含 edit_file（in-memory overlay）——exit 0
+- [ ] #4 #4 - 雙 bin 未知參數仍 fail loud exit 2；--manifest 不破壞 --stdio/HTTP 兩模式路由（s6 既有 http smoke 全綠）
+- [ ] #5 #5 - cargo test workspace 全綠零 warning；安裝面 uv 灌新版後 stdio probe 複驗 serverInfo 與 manifest（live驗收）
+- [ ] #6 #6 - 回執：dutymail 六項逐項答覆寄 delegate-bridge-marshal（body ≤8KB、landing 指針、in_reply_to db108-cr-supply-contract-001-1791659500）
+<!-- AC:END -->
 
 ## Implementation Plan
 
