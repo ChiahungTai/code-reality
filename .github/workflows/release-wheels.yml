@@ -150,6 +150,3 @@ jobs:
         with:
           packages-dir: dist
 
-  # npm embedded face: RETIRED 2026-08-29 (PyPI single-layer
-  # convergence; the npm-pack/npm-publish jobs are gone). The registry
-  # entry code-reality-darwin-arm64 stays frozen at 0.3.1, unmaintained.

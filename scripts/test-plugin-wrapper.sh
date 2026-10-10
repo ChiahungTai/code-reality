@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Wrapper regression for plugin/.mcp.json (npm-face retirement arc:
-# deferred uv bootstrap replaces the embedded face; node_modules stays
-# as a deprecation-grace rescue when uv is missing).
+# the uv bootstrap is the only consumer face; the embedded node_modules
+# rescue is REMOVED — a stray node_modules must not be served).
 #
 # Runs the ACTUAL wrapper strings extracted via jq — not a copy. The
 # pin under test is extracted from the wrapper string itself, so a
@@ -18,12 +18,14 @@
 #   T2c only a side face (bridge) stale -> postcheck fails: the three-face
 #                                          conjunction is load-bearing
 #   T2d fresh machine, empty uv bin dir -> install converges, uv-face exec
-#   T3 nothing + no uv + no embedded    -> 127 + uv install guidance
+#   T3 nothing + no uv                  -> 127 + uv install guidance
 #   T4 CODE_REALITY_BOOTSTRAP=off       -> stale bin exec'd, uv untouched
-#   T5 no uv + embedded node_modules    -> grace exec + deprecation notice
+#   T5 no uv -> 127 + uv guidance even with stray node_modules
+#                                          (rescue removed)
 #   B1 bridge uv face beats PATH        -> direct pinned uv-face exec
 #   B2 bridge nowhere + no uv           -> 127 fast (no wait loop)
-#   B3 bridge via embedded node_modules -> direct exec
+#   B3 bridge nowhere + no uv + stray
+#      node_modules                     -> 127 fast (rescue removed)
 #   B4 bridge BOOTSTRAP=off             -> developer PATH face wins
 #
 # Exec-source identity (F2): uv-face fixtures are tagged "+uvface" so the
@@ -191,12 +193,13 @@ out="$(env -i PATH="$WORK/path-stale:$WORK/uvnoop" CODE_REALITY_BOOTSTRAP=off HO
 expect "T4 BOOTSTRAP=off -> exec as-is" "0.0.0+rev" 0 "$out" "$rc" "$(cat "$WORK/err")"
 no_install "T4"
 
-# T5: no uv but the retired embedded face is populated -> grace exec
+# T5: no uv -> 127 + uv guidance even with stray node_modules
+# (rescue removed; the stray fixture proves leftovers are not served)
 mkfake "$WORK/proot/node_modules/.bin" code-reality-mcp 0.3.0
 out="$(env -i PATH=/nonexistent CLAUDE_PLUGIN_ROOT="$WORK/proot" HOME="$WORK/home" /bin/sh -c "$wrap" 2>"$WORK/err")"; rc=$?
 err="$(cat "$WORK/err")"
-if [ "$rc" = 0 ] && printf '%s' "$out" | grep -q "0.3.0+rev" && printf '%s' "$err" | grep -q "deprecation grace"; then
-  pass=$((pass + 1)); printf '  ok   T5 embedded grace exec + notice\n'
+if [ "$rc" = 127 ] && printf '%s' "$err" | grep -q "uv not found" && printf '%s' "$err" | grep -q "curl -LsSf https://astral.sh/uv/install.sh"; then
+  pass=$((pass + 1)); printf '  ok   T5 no-uv rejects stray embedded\n'
 else
   fail=$((fail + 1)); printf '  FAIL T5 rc=%s out=%s err=%s\n' "$rc" "$out" "$err"
 fi
@@ -216,10 +219,16 @@ else
   fail=$((fail + 1)); printf '  FAIL B2 rc=%s err=%s\n' "$rc" "$err"
 fi
 
-# B3: bridge via the embedded grace path
+# B3: bridge nowhere + no uv + stray node_modules -> 127 fast
+# (rescue removed; the stray fixture proves leftovers are not served)
 mkfake "$WORK/proot/node_modules/.bin" code-reality-lsp-bridge 0.3.0
 out="$(env -i PATH=/nonexistent CLAUDE_PLUGIN_ROOT="$WORK/proot" HOME="$WORK/home" /bin/sh -c "$wrapb" 2>"$WORK/err")"; rc=$?
-expect "B3 bridge embedded grace" "0.3.0+rev" 0 "$out" "$rc" "$(cat "$WORK/err")"
+err="$(cat "$WORK/err")"
+if [ "$rc" = 127 ] && printf '%s' "$err" | grep -q "uv is missing"; then
+  pass=$((pass + 1)); printf '  ok   B3 no-uv rejects stray embedded (127 fast)\n'
+else
+  fail=$((fail + 1)); printf '  FAIL B3 rc=%s out=%s err=%s\n' "$rc" "$out" "$err"
+fi
 
 # B4: developer override intentionally returns to normal PATH resolution.
 out="$(env -i PATH="$WORK/bdir:$WORK/uvnoop" CODE_REALITY_BOOTSTRAP=off HOME="$WORK/home" /bin/sh -c "$wrapb" 2>"$WORK/err")"; rc=$?

@@ -80,12 +80,12 @@ loud and retries the next one.
    cargo install --path ~/Github/code-reality/crates/code-reality-lsp-bridge
    ```
 
-No uv on the machine: the wrapper fails loud with install guidance
-(`curl -LsSf https://astral.sh/uv/install.sh | sh`); installs that
-still carry the retired npm-embedded `node_modules` keep working as a
-deprecation grace until uv arrives. The npm package
-(`code-reality-darwin-arm64`, the embedded face retired 2026-08-29) is
-frozen at 0.3.1 and unmaintained — use the uv face.
+No uv on the machine: the wrapper fails loud with uv install guidance
+(`curl -LsSf https://astral.sh/uv/install.sh | sh`) — there is no
+embedded-face fallback (the npm face, `code-reality-darwin-arm64`,
+was retired 2026-08-29 and abandoned outright 2026-10-10; the registry
+listing is frozen at 0.3.1 and unmaintained). The uv face is the only
+supported install path.
 
 If a server failed to start right after install and you have since
 fixed the environment (e.g. installed uv), restart the harness or
