@@ -1,7 +1,7 @@
 ---
 id: CR-4
 title: DB-108 bridge 供給契約——MCP serverInfo 身分戳與 publisher ABI manifest face
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-10 03:06'
 updated_date: '2026-10-10 03:07'
@@ -9,6 +9,8 @@ labels:
   - feature
   - bridge-request
 dependencies: []
+references:
+  - ai-analysis/2026-10/10-10-db108-supply-contract/advisory-codex-result.md
 ordinal: 4000
 ---
 
