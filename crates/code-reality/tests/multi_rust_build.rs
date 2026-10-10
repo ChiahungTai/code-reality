@@ -460,24 +460,34 @@ fn p2d_symlink_escape_doc_fails_loud() {
 }
 
 /// P2-D (b): a symlink resolving INSIDE the repo passes containment —
-/// the gate rejects escapes, not symlinks. The symlink doc itself is
-/// invisible to the source walk, so the stamp cannot certify docs==disk:
-/// the P1-C WARN must say so explicitly instead of staying silent.
+/// the gate rejects escapes, not symlinks. CR-5 amendment: the symlink
+/// doc is invisible to the source walk (a symlink entry is not is_file),
+/// so the produced doc set is a strict SUPERSET of the governed walk set
+/// — under the frozen strict set-equality decision this is no longer a
+/// publish-then-WARN shape but a CR-RUST-ROOT-09 build failure in
+/// single-root auto mode (fatal gate, diff names the symlink doc). The
+/// containment face is unchanged: the failure is the diff gate, never a
+/// symlink-escape rejection.
 #[test]
 fn p2d_symlink_inside_doc_passes() {
     let l = lab_symlink(false);
-    let report = build_repo(&l.repo, None, &l.roots)
-        .expect("P2-D: inside symlink passes containment");
+    let err = build_repo(&l.repo, None, &l.roots)
+        .err()
+        .expect("CR-5: superset doc set fails the exact-equality gate");
+    let code_reality::build::BuildError::Env(msg) = err else {
+        panic!("Env-class failure (CLI exit 2): {err:?}");
+    };
+    assert!(msg.contains("CR-RUST-ROOT-09"), "{msg}");
     assert!(
-        report
-            .notes
-            .iter()
-            .any(|n| n.contains("source identity")),
-        "P1-C: uncertified stamp disclosed via WARN note: {:?}",
-        report.notes
+        msg.contains("rust/crates/link.rs"),
+        "diff names the walk-invisible symlink doc: {msg}"
     );
     assert!(
-        report.source_identity.is_none(),
-        "premise: the symlink doc blocks docs==disk certification"
+        msg.contains("index−walk"),
+        "the symlink doc is the index−walk side: {msg}"
+    );
+    assert!(
+        !msg.contains("symlink escape"),
+        "containment passes — this is the diff gate, not an escape: {msg}"
     );
 }

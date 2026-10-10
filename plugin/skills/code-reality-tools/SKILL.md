@@ -155,7 +155,11 @@ overlay, diagnostic version/time and quiescence checks still apply.
   alternate and projection indexes are graph-optional. Legacy keyless
   slots keep the baseline mtime/fingerprint criteria. Under an ACTIVE
   writer (a heal that finishes and still finds sources newer than the
-  slot) a churn cooldown marker (`.heal-churn`, 10min) is armed — later
+  slot) — and equally when the heal fails outright (since CR-5 this
+  includes the CR-RUST-ROOT-09 rust coverage gate rejecting an
+  ungoverned orphan; before that failure paths armed nothing, so every
+  query re-burned the build) — a churn cooldown marker (`.heal-churn`,
+  10min) is armed — later
   queries inside the window serve the existing index with a WARN
   instead of re-burning a minutes-scale heal that cannot converge
   anyway; a head drift (commit boundary) always overrides, and a
@@ -302,6 +306,14 @@ Without a profile: modules fall back to top-level directories, exclude
 covers only `.venv/`, claims always read NONE, boundary stays
 crash-only, and the hazard-registry rules never fire (the other hazard
 rules don't depend on the profile).
+The `exclude` table governs the Python walk face and, since CR-5, the
+Rust face alike — use it to declare ungoverned orphan Rust paths
+(evidence scripts, fixtures outside Cargo targets); an orphan that is
+not excluded now fails the build loudly (CR-RUST-ROOT-09) instead of
+silently forfeiting the source-identity certification. Upgrade note:
+repos whose exclude table already covers `.rs` paths change identity
+input on first build after upgrading — the first freshness verdict
+answers `identity_drift` once and one rebuild converges it.
 
 Authoring procedure for a new repo (four fixed steps):
 

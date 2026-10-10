@@ -407,6 +407,20 @@ fn stage_rust(repo: &Path, part: &Path, roots: &[PathBuf]) -> Result<Option<Stri
     Ok(version)
 }
 
+/// Outcome of the Rust producer leg (python/TS-leg mirror).
+#[derive(Debug)]
+enum RsProduceOutcome {
+    /// The governed (profile-filtered) Rust corpus is empty — the leg is
+    /// intentionally absent, not a failure (same empty-convergence
+    /// terminal as python/TS `SkippedByProfile`; fresh F1: ROOT-09 must
+    /// not fire on the empty-vs-nonempty mismatch — rust-analyzer
+    /// follows Cargo regardless of profile excludes, so an empty
+    /// governed set can never equal the produced set).
+    SkippedByProfile,
+    /// Composed rust partial staged at the path.
+    Staged,
+}
+
 /// Multi-root Rust composition (EP DB-100 S3, frozen Q2/Q3/Q6/Q7/Q8):
 /// resolve the workspace roots (structural + authoritative), stage one
 /// partial per root, normalize each index's document paths to
@@ -414,6 +428,8 @@ fn stage_rust(repo: &Path, part: &Path, roots: &[PathBuf]) -> Result<Option<Stri
 /// cross-root DEF collisions before any merge, gate governed coverage in
 /// multi-root/config mode, then pre-concat into ONE Rust partial that
 /// replaces `part` — `StagedLeg`/`merge_and_publish` stay untouched.
+/// An entirely profile-excluded rust corpus skips the leg
+/// ([`RsProduceOutcome::SkippedByProfile`]) instead of gating.
 fn stage_rust_multi(
     repo: &Path,
     stage_dir: &Path,
@@ -421,7 +437,7 @@ fn stage_rust_multi(
     roots: &[PathBuf],
     profile: Option<&crate::profile::Profile>,
     rep: &mut Report,
-) -> Result<(), BuildError> {
+) -> Result<RsProduceOutcome, BuildError> {
     // The Rust leg is the FIRST producer in ORDERED order for rust-only
     // repos — the attempt stage dir must exist before the raw parts land
     // (the TS leg used to be its only lazy creator).
@@ -437,16 +453,27 @@ fn stage_rust_multi(
         rp.roots
     };
     let gate_fatal = roots_list.len() > 1 || profile.is_some_and(|p| p.rust_projects.is_some());
-    let governed: BTreeSet<String> = if gate_fatal {
-        crate::engine::walk_sources(repo)
-            .map_err(BuildError::Env)?
-            .rs
-            .keys()
-            .cloned()
-            .collect()
-    } else {
-        BTreeSet::new()
-    };
+    // Governed rust corpus (CR-5): the profile-filtered walk set — the
+    // same source+filter the stamp's `ProductionIdentity::capture` sees
+    // through `paths_for_faces`, so this IS one side of the set equality
+    // the certification requires. Computed in EVERY mode now: gate_fatal
+    // modes keep their per-root CR-RUST-ROOT-08 gates on it; single-root
+    // auto additionally gets the exact-equality gate below (it had none,
+    // which let a silent subset corpus forfeit the identity stamp).
+    let governed: BTreeSet<String> = crate::engine::walk_sources(repo)
+        .map_err(BuildError::Env)?
+        .rs
+        .keys()
+        .cloned()
+        .collect();
+    // All-excluded corpus → skip the leg (fresh F1), symmetric with the
+    // python/TS `SkippedByProfile` faces: gating an empty governed set
+    // against a non-empty produced set can never converge (ra follows
+    // Cargo, profile-blind), and the ROOT-09 hints would dead-end the
+    // operator.
+    if governed.is_empty() {
+        return Ok(RsProduceOutcome::SkippedByProfile);
+    }
     // Orphan coverage (EP 5.3 P1-C): in the fatal-gate modes a governed
     // `.rs` that falls under NO resolved root would silently escape both
     // the producer and the per-root coverage gate — fail loud instead.
@@ -490,8 +517,22 @@ fn stage_rust_multi(
         // slot Index.metadata = last root (protobuf last-value-wins) — CR
         // never consumes it; the sidecar stamp is the sole provenance
     }
-    crate::engine::load_index(&composed)
+    let composed_loaded = crate::engine::load_index(&composed)
         .map_err(|e| BuildError::Env(format!("merged candidate 驗證失敗：{e}")))?;
+    let composed_docs: BTreeSet<String> = composed_loaded
+        .index
+        .documents
+        .iter()
+        .map(|d| d.relative_path.clone())
+        .collect();
+    // CR-RUST-ROOT-09 (CR-5): single-root auto mode gains the strict
+    // governed-corpus equality gate — the multi-root per-root gates
+    // (CR-RUST-ROOT-08) already own the fatal modes and stay untouched.
+    // Consumes the doc set of the already-validated composed load (no
+    // second full parse; fresh F5).
+    if !gate_fatal {
+        coverage_gate_exact(&composed_docs, &governed).map_err(BuildError::Env)?;
+    }
     std::fs::rename(&composed, part).map_err(|e| {
         BuildError::Core(format!(
             "rename {} → {}: {e}",
@@ -506,7 +547,7 @@ fn stage_rust_multi(
     };
     rep.producers
         .push(format!("rust-analyzer {version_face} [roots: {}]", roots_list.join(", ")));
-    Ok(())
+    Ok(RsProduceOutcome::Staged)
 }
 
 /// Rewrite every document's `relative_path` to git-root-relative
@@ -629,6 +670,11 @@ fn collision_scan_defs(
 /// every governed `.rs` under the selected roots must appear among the
 /// normalized documents, or the composition is missing producer output
 /// and must not publish a "complete" graph over a partial corpus.
+/// Direction scope (frozen CR-5 asymmetry): this gate owns ONLY the
+/// orphan direction — its superset face (a produced doc outside the
+/// governed walk: symlink, excluded-dir workspace) is left to the stamp
+/// WARN + read-back diff diagnostics; the single-root exact gate
+/// ([`coverage_gate_exact`]) documents the other half.
 fn coverage_gate(
     part: &Path,
     root_rel: &str,
@@ -651,6 +697,84 @@ fn coverage_gate(
         }
     }
     Ok(())
+}
+
+/// Shared bounded diff face for the two doc-set diagnostics (fresh F5):
+/// the count of `left − right` plus at most `bound` examples, one
+/// formatter for both. The exact-equality gate calls it with bound 10,
+/// the stamp read-back with 5 — the bound is a parameter, so the faces
+/// stay mechanically consistent.
+fn bounded_diff(
+    left: &BTreeSet<String>,
+    right: &BTreeSet<String>,
+    bound: usize,
+) -> (usize, String) {
+    let items: Vec<&String> = left.iter().filter(|x| !right.contains(*x)).collect();
+    let n = items.len();
+    let face = if n == 0 {
+        "0 筆".to_string()
+    } else {
+        format!(
+            "{} 筆（前 {}：{}）",
+            n,
+            bound,
+            items
+                .iter()
+                .take(bound)
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join("、")
+        )
+    };
+    (n, face)
+}
+
+/// Governed-corpus equality gate (CR-RUST-ROOT-09, CR-5 — single-root
+/// auto mode): the profile-filtered walk set and the produced doc set
+/// must be STRICTLY equal. A subset (orphan .rs the producer never
+/// emits) or a superset (excluded file that still reached the index)
+/// breaks `stamp_meta_locked`'s `docs == a.docs` certification — the
+/// slot would publish without consumption evidence and every freshness
+/// check degrades to identity-algo-upgrade stale. Fail at the build
+/// boundary with both diff directions and PER-DIRECTION remediations
+/// (fresh F1): the orphan direction keeps the exclude/declare hints;
+/// the superset direction (symlink corpus, excluded-dir Cargo workspace
+/// — ra follows Cargo, profile-blind) gets its own hint, since the
+/// orphan hints are dead advice there (dropping an excluded produced
+/// doc would also mask a real symlink doc — silent corruption).
+/// Multi-root/config mode's gate ([`coverage_gate`]) deliberately does
+/// NOT own the superset direction — there it is the stamp WARN +
+/// read-back diff diagnostics' face (frozen asymmetry).
+fn coverage_gate_exact(docs: &BTreeSet<String>, governed: &BTreeSet<String>) -> Result<(), String> {
+    if docs == governed {
+        return Ok(());
+    }
+    let (orphan_n, orphan_face) = bounded_diff(governed, docs, 10);
+    let (extra_n, extra_face) = bounded_diff(docs, governed, 10);
+    let mut remediation = String::new();
+    if orphan_n > 0 {
+        // Orphan direction: governed sources the producer never emitted.
+        remediation.push_str(
+            "修法：①孤兒檔於 .code-reality.toml exclude 排除該路徑；②將檔案納入 Cargo target（tests/ 自動、examples/ 自動；fixtures 需 [[bin]]/[[test]] declare）",
+        );
+    }
+    if extra_n > 0 {
+        if !remediation.is_empty() {
+            remediation.push('\n');
+        }
+        // Superset direction: produced docs outside the walk set.
+        remediation.push_str(
+            "產出含走查集外文檔（symlink 或被排除目錄內的 Cargo workspace——rust-analyzer 跟隨 Cargo、不受 profile exclude 約束）。修法：③移除 symlink、將 workspace 移出 exclude、或以 rust_projects 明確設定 roots",
+        );
+    }
+    Err(format!(
+        "CR-RUST-ROOT-09: Rust governed 語料與產出文檔集不一致（walk {} 筆 vs 產出 {} 筆）——walk−index {}；index−walk {}。{}",
+        governed.len(),
+        docs.len(),
+        orphan_face,
+        extra_face,
+        remediation,
+    ))
 }
 
 /// Best-effort removal of THIS build's staged artifacts only
@@ -863,7 +987,14 @@ pub fn build_repo(
                     profile.as_ref(),
                     &mut rep,
                 ) {
-                    Ok(()) => {
+                    Ok(RsProduceOutcome::SkippedByProfile) => {
+                        rep.notes.push(
+                            "rust 語言面：governed 語料為空（profile exclude）——略過此腿"
+                                .to_string(),
+                        );
+                        continue;
+                    }
+                    Ok(RsProduceOutcome::Staged) => {
                         all_policy_empty = false;
                     }
                     Err(e) => {
@@ -1042,6 +1173,36 @@ pub fn build_repo(
             "[WARN] slot 未取得 source identity 認證（stamp 缺 identity 三元組）——freshness 將以 identity-algo-upgrade／legacy 面處置"
                 .to_string(),
         );
+        // CR-5: the certification gate is `docs == production_a.docs` —
+        // name both diff directions (bounded examples) so the operator
+        // can converge the corpus instead of reading the WARN as noise.
+        // Reachable post-gate: the python/TS legs tolerate a producer
+        // miss with a WARN (F1), so equality can legitimately fail here.
+        match crate::engine::load_index(&slot) {
+            Ok(loaded) => {
+                let produced: BTreeSet<String> = loaded
+                    .index
+                    .documents
+                    .iter()
+                    .map(|d| d.relative_path.clone())
+                    .collect();
+                rep.notes.push(format!(
+                    "walk−index：{}",
+                    bounded_diff(&production_a.docs, &produced, 5).1
+                ));
+                rep.notes.push(format!(
+                    "index−walk：{}",
+                    bounded_diff(&produced, &production_a.docs, 5).1
+                ));
+            }
+            Err(e) => {
+                // A failed read-back must not pose as an empty diff — the
+                // "0 筆" faces would claim a converged corpus that was
+                // never compared (fresh F4). Name the failure instead.
+                rep.notes
+                    .push(format!("index 讀回失敗、diff 不可判：{e}"));
+            }
+        }
     }
 
     if let Some(sel) = producer {
@@ -1318,6 +1479,13 @@ fn run_heal_locked(
 ) -> Result<HealOutcome, String> {
     match build_repo(repo, None, roots) {
         Err(e) => {
+            // A failed rebuild is still a heal that failed to converge
+            // (fresh F2): arm the same churn cooldown the SM-9 loop guard
+            // arms — without it every query re-burns a full rebuild into
+            // the same failure. Concurrent healers are still deduped by
+            // the single-flight lock; a head drift (commit boundary)
+            // overrides the window.
+            write_churn_marker(slot);
             let mut out = heal_outcome_after_rebuild_err(repo, slot, e.msg().to_string())?;
             if let HealOutcome::ServeStale(lines) = &mut out {
                 lines.extend(producer_drift_notes(repo, slot, roots));

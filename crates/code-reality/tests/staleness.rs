@@ -54,10 +54,12 @@ fn walk_sources_skips_and_collects() {
 }
 
 #[test]
-fn walk_sources_profile_excludes_python_not_rust() {
-    // AD-11 one-policy: profile exclude shapes the Python walk set (and
-    // hence freshness/doc-set/fingerprint). Rust is the recorded
-    // exemption — workspace-scoped producer, walk stays unfiltered.
+fn walk_sources_profile_excludes_python() {
+    // AD-11 one-policy: profile exclude shapes the walk set per face (and
+    // hence freshness/doc-set/fingerprint). The rust face joined the same
+    // table in CR-5 — the old "rust is exempt" asymmetry no longer
+    // exists; this fixture predates that join and its assertions hold
+    // unchanged.
     let (t, repo) = mkrepo(&[
         ("src/a.py", "x"),
         ("dist/c.py", "x"),

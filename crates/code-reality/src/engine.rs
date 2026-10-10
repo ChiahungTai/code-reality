@@ -507,12 +507,10 @@ pub fn is_test_path(rel: &str) -> bool {
 /// One disk walk feeding every staleness signal: the per-language file
 /// sets (doc-set comparison), the newest source mtime (cheap trigger),
 /// and the face-scoped source-set fingerprint (S4 add/delete/rename
-/// detection — mtime alone cannot see a deletion). Python and JS/TS
-/// files are profile-excluded HERE (AD-11: producer corpus and freshness
-/// corpus share one effective policy); Rust keeps its historical corpus
-/// rules (no profile filter — rust-analyzer is workspace-scoped with no
-/// per-file corpus input, so a walk-side filter would desync freshness
-/// from what the producer actually indexes; recorded exemption).
+/// detection — mtime alone cannot see a deletion). ALL faces are
+/// profile-excluded HERE (AD-11: producer corpus and freshness corpus
+/// share one effective policy; the rust face joined in CR-5 so the walk
+/// set and the produced doc set can actually meet at set equality).
 #[derive(Debug, Default)]
 pub struct SourceWalk {
     pub py: BTreeMap<String, crate::identity::SourceRecord>,
@@ -551,8 +549,8 @@ impl SourceWalk {
             .collect()
     }
 
-    /// Disk paths for the given faces (Python/JS/TS sets are already
-    /// governed — profile-excluded at walk time; Rust is unfiltered).
+    /// Disk paths for the given faces (all sets are governed —
+    /// profile-excluded at walk time, rust face since CR-5).
     pub fn paths_for_faces(
         &self,
         faces: &BTreeSet<crate::language::LanguageFace>,
@@ -612,9 +610,13 @@ impl SourceWalk {
 }
 
 /// Walk `repo` for source files, mirroring the producer's corpus rules
-/// (dot-dirs + [`SKIP_DIRS`]) plus the repo-owned profile exclusions for
-/// the Python/JS/TS faces (Rust exempt — see [`SourceWalk`]). Fail-loud:
-/// a walk error is an error, never a silent empty set posing as fresh.
+/// (dot-dirs + [`SKIP_DIRS`]) plus the repo-owned profile exclusions
+/// (additive [`crate::profile::is_excluded`] layer, all faces — the
+/// rust face joined in CR-5: an orphan `.rs` outside every cargo target
+/// used to make the produced doc set a strict subset of the walk set
+/// and permanently forfeit the stamp's `docs == a.docs` certification).
+/// Fail-loud: a walk error is an error, never a silent empty set posing
+/// as fresh.
 pub fn walk_sources(repo: &Path) -> Result<SourceWalk, String> {
     let root = resolve_repo(repo);
     // JS/TS corpus policy: repo-owned profile exclusions (loaded once
@@ -676,7 +678,15 @@ pub fn walk_sources(repo: &Path) -> Result<SourceWalk, String> {
                         out.py.insert(rel, rec)
                     }
                     crate::language::LanguageFace::Rust => {
-                        if under_target {
+                        // CR-5: the rust corpus joins the same additive
+                        // exclusion layer as the other faces — an orphan
+                        // .rs under an excluded directory must not enter
+                        // the governed walk set, or the produced doc set
+                        // can never equal it and the stamp certification
+                        // permanently fails (identity-algo-upgrade stale
+                        // forever). `target/` keeps its structural skip
+                        // (cargo OUT_DIR artifacts are not corpus).
+                        if under_target || crate::profile::is_excluded(&rel, profile.as_ref()) {
                             continue;
                         }
                         out.rs.insert(rel, rec)
@@ -1184,9 +1194,9 @@ pub fn evaluate_staleness(
 /// only extensions already present in the index are compared, so a
 /// python-face index never goes false-stale over stray .rs files (the
 /// reverse blind spot — index language ≠ repo language — is a recorded
-/// v1 boundary). Python/JS/TS compare against the governed
+/// v1 boundary). ALL faces compare against the governed
 /// (profile-filtered) walk sets — the same corpus policy the producer
-/// applies; Rust compares unfiltered (recorded exemption).
+/// applies (rust joined in CR-5).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DocDelta {
     pub missing: usize,

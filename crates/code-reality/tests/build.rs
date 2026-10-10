@@ -331,12 +331,15 @@ fn t5_rust_empty_index_guard() {
 #[test]
 fn t6_rust_leg_e2e() {
     let t = tempfile::tempdir().unwrap();
-    // rich.scip's docs (crates/a.rs + crates/b.rs) must exist on disk —
-    // normalize resolves every document to a real repo file.
+    // CR-5: the governed walk set must EQUAL the produced doc set, so the
+    // fixture carries exactly rich.scip's docs (crates/a.rs + crates/b.rs)
+    // — normalize resolves every document to a real repo file and the
+    // exact-equality gate sees a matched corpus. (The legacy src/lib.rs
+    // was an unindexed orphan that only the pre-CR-5 gateless build
+    // tolerated.)
     let repo = mkrepo(
         &t,
         &[
-            ("src/lib.rs", "pub fn f() {}\n"),
             ("crates/a.rs", "x"),
             ("crates/b.rs", "x"),
         ],
@@ -370,8 +373,9 @@ fn t7_mixed_repo_unified_graph_concat() {
         &t,
         &[
             ("app.py", "def g():\n    return 2\n"),
-            ("src/lib.rs", "pub fn h() {}\n"),
-            // rich.scip's docs must exist on disk (normalize disk check)
+            // rich.scip's docs must exist on disk (normalize disk check);
+            // CR-5: exactly those — an extra unindexed .rs would trip
+            // CR-RUST-ROOT-09 (the legacy src/lib.rs was such an orphan).
             ("crates/a.rs", "x"),
             ("crates/b.rs", "x"),
         ],
@@ -930,22 +934,33 @@ fn t18_false_stale_warns_once_no_loop() {
 
     let out1 = ensure_fresh(&repo, &roots).unwrap();
     assert!(
-        matches!(out1, HealOutcome::ServeStale(ref l) if l[0].contains("語料不一致")),
-        "out={out1:?}"
+        matches!(out1, HealOutcome::ServeStale(ref l) if l[0].contains("CR-RUST-ROOT-09")),
+        "CR-5: the new orphan fails the heal rebuild at the exact-\
+         equality gate; the serve-stale face carries it: {out1:?}"
     );
-    // Post-codex-P0-4 semantics: the non-converged heal ARMS the churn
-    // cooldown, so the second query is cooldown-ServeStale — never Fresh
-    // (calling an incomplete index fresh was the closed hole). The
-    // warn-once core invariant holds either way: no further rebuild.
+    // CR-5 amendment: the succeed-but-incomplete face this test pinned is
+    // structurally gone for single-root rust (a rebuild either converges
+    // completely or fails the gate). A FAILED rebuild is still a heal
+    // that failed to converge — it now arms the same churn cooldown the
+    // SM-9 loop guard arms, so the next query serves stale instead of
+    // re-burning a rebuild that cannot succeed (fresh F2). Concurrency
+    // is still deduped by the single-flight lock; a head drift (commit)
+    // overrides, and convergence clears the marker as usual.
+    assert!(
+        repo.join(".code-reality/scip/.heal-churn").exists(),
+        "failed rebuild arms the churn cooldown"
+    );
+    let calls_after_first = counter_lines(&counter);
+    assert!(calls_after_first >= 1);
     let out2 = ensure_fresh(&repo, &roots).unwrap();
     assert!(
         matches!(out2, HealOutcome::ServeStale(ref l) if l.iter().any(|s| s.contains("cooldown"))),
-        "out={out2:?}"
+        "cooldown window: the next query must not re-attempt: {out2:?}"
     );
     assert_eq!(
         counter_lines(&counter),
-        1,
-        "exactly one rebuild across both calls"
+        calls_after_first,
+        "failed-rebuild cooldown spawns nothing on the next query"
     );
 }
 

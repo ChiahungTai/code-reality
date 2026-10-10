@@ -313,9 +313,10 @@ fn s1_three_family_merge_is_ordered_and_deterministic() {
         &t,
         &[
             ("app.py", "x = 1\n"),
-            ("src/lib.rs", "pub fn f() {}\n"),
             ("src/a.mjs", "export const a = 1;\n"),
-            // rich.scip's docs must exist on disk (normalize disk check)
+            // rich.scip's docs must exist on disk (normalize disk check);
+            // CR-5: exactly those — the legacy src/lib.rs was an unindexed
+            // orphan that trips CR-RUST-ROOT-09 now.
             ("crates/a.rs", "x"),
             ("crates/b.rs", "x"),
         ],
