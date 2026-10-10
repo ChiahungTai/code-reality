@@ -4,7 +4,7 @@ title: DB-108 bridge 供給契約——MCP serverInfo 身分戳與 publisher ABI
 status: Done
 assignee: []
 created_date: '2026-10-10 03:06'
-updated_date: '2026-10-10 04:39'
+updated_date: '2026-10-10 04:41'
 labels:
   - feature
   - bridge-request
@@ -59,6 +59,8 @@ flowchart LR
 
 <!-- SECTION:NOTES:BEGIN -->
 實作定案（F5 deviation，reviewer 確認）：face＝`--manifest` 單 flag、輸出恆 JSON（終端面語義同 --version）——卡文原寫 `--manifest --json`，`--json` companion 未做（在後被吞、在前 exit 2，與 --version 同性質，接受不作）。digest 口徑 reviewer 獨立重算證實＝name+input_schema（tools_digest_scope 宣告為真）。
+
+跟催：build 後 slot 無 identity 認證（freshness 恆 stale）＝前於本弧既存狀態，已開卡追蹤。
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
