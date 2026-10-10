@@ -156,12 +156,156 @@ impl LspBridgeServer {
 #[tool_handler(router = self.tool_router)]
 impl rmcp::ServerHandler for LspBridgeServer {
     fn get_info(&self) -> rmcp::model::ServerInfo {
+        // Publisher identity stamp (DB-108): `ServerInfo::new` alone
+        // answers `Implementation::from_build_env()`, whose `env!`
+        // expands inside the rmcp crate — the handshake then self-reports
+        // `{"name":"rmcp", ...}` and is useless as a version anchor for
+        // supply-side compatibility probes. `Implementation` and
+        // `InitializeResult` are `#[non_exhaustive]`, so the identity is
+        // stamped through the crate's own builder face (identical field
+        // values to a struct literal).
         rmcp::model::ServerInfo::new(
             rmcp::model::ServerCapabilities::builder()
                 .enable_tools()
                 .build(),
         )
+        .with_server_info(
+            rmcp::model::Implementation::new(
+                "code-reality-lsp-bridge",
+                env!("CARGO_PKG_VERSION"),
+            )
+            .with_title("code-reality LSP type-face bridge"),
+        )
     }
+}
+
+// ---------- DB-108 publisher ABI face (`--manifest`) ----------
+// The bridge is an independent distribution (no cross-crate dependency
+// on code-reality), so the canonicalize+sha256 helpers are deliberately
+// duplicated here — independence is the design constraint.
+
+/// Recursively key-sorted, compact JSON serialization — the canonical
+/// byte form under `tools_digest`. HashMap iteration order (rmcp's
+/// `ToolRouter` iterates a `HashMap`) must never reach the digest:
+/// objects are key-sorted, arrays keep order, scalars use serde_json.
+fn canonical_json_bytes(v: &serde_json::Value, out: &mut Vec<u8>) {
+    match v {
+        serde_json::Value::Object(map) => {
+            let mut keys: Vec<&str> = map.keys().map(String::as_str).collect();
+            keys.sort_unstable();
+            out.push(b'{');
+            for (i, key) in keys.iter().enumerate() {
+                if i > 0 {
+                    out.push(b',');
+                }
+                out.extend_from_slice(
+                    &serde_json::to_vec(key).expect("JSON string key serializes"),
+                );
+                out.push(b':');
+                canonical_json_bytes(&map[*key], out);
+            }
+            out.push(b'}');
+        }
+        serde_json::Value::Array(items) => {
+            out.push(b'[');
+            for (i, item) in items.iter().enumerate() {
+                if i > 0 {
+                    out.push(b',');
+                }
+                canonical_json_bytes(item, out);
+            }
+            out.push(b']');
+        }
+        other => out.extend_from_slice(&serde_json::to_vec(other).expect("JSON scalar serializes")),
+    }
+}
+
+/// sha256 over the canonical byte form, hex-encoded with a
+/// `"sha256-<hex>"` prefix for self-description; consumers:
+/// delegate-bridge supply probe.
+fn tools_digest(tools: &[serde_json::Value]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut buf = Vec::new();
+    canonical_json_bytes(&serde_json::Value::Array(tools.to_vec()), &mut buf);
+    let hex: String = Sha256::digest(&buf).iter().map(|b| format!("{b:02x}")).collect();
+    format!("sha256-{hex}")
+}
+
+/// The publisher-owned ABI manifest (terminal `--manifest` face, same
+/// semantics as `--version`): deterministic JSON declaring schema name,
+/// crate version, build rev, the single stdio entrypoint, the protocol
+/// negotiation face, the full tool list with input schemas, a canonical
+/// sha256 digest, honest write-face marking, and the per-family backend
+/// prerequisites (external programs, never shipped). Byte-deterministic
+/// across runs of one binary. Digest input per tool is `name` +
+/// `input_schema` only — descriptions are prose, not ABI, matching the
+/// declared `tools_digest_scope`.
+pub fn manifest_face() -> String {
+    let mut tools: Vec<serde_json::Value> = LspBridgeServer::build_router()
+        .into_iter()
+        .map(|route| {
+            let mut t = serde_json::Map::new();
+            t.insert(
+                "name".to_owned(),
+                serde_json::Value::String(route.attr.name.to_string()),
+            );
+            if let Some(desc) = &route.attr.description {
+                t.insert(
+                    "description".to_owned(),
+                    serde_json::Value::String(desc.to_string()),
+                );
+            }
+            t.insert(
+                "input_schema".to_owned(),
+                serde_json::Value::Object((*route.attr.input_schema).clone()),
+            );
+            serde_json::Value::Object(t)
+        })
+        .collect();
+    tools.sort_unstable_by(|a, b| {
+        let ka = a.get("name").and_then(serde_json::Value::as_str).unwrap_or_default();
+        let kb = b.get("name").and_then(serde_json::Value::as_str).unwrap_or_default();
+        ka.cmp(kb)
+    });
+    // Digest scope is declared as `name+input_schema` — project exactly
+    // that subset so the declaration stays truthful (descriptions move
+    // the published tool list, never the digest).
+    let digest_input: Vec<serde_json::Value> = tools
+        .iter()
+        .map(|t| {
+            serde_json::json!({
+                "name": t["name"],
+                "input_schema": t["input_schema"],
+            })
+        })
+        .collect();
+    let digest = tools_digest(&digest_input);
+    let manifest = serde_json::json!({
+        "schema": "cr-mcp-manifest/1",
+        "name": "code-reality-lsp-bridge",
+        "crate_version": env!("CARGO_PKG_VERSION"),
+        "build_rev": option_env!("CR_BUILD_REV"),
+        "entrypoints": [
+            {"mode": "stdio", "argv": ["code-reality-lsp-bridge", "--stdio"]},
+        ],
+        "protocol": {
+            "library": "rmcp",
+            "latest": rmcp::model::ProtocolVersion::LATEST.to_string(),
+            "note": "version negotiated at initialize",
+        },
+        "write_faces": ["edit_file"],
+        "index_dependency": false,
+        "backend_prereqs": {
+            "python": "pyrefly-lsp",
+            "rust": "rust-analyzer",
+            "js_ts": "typescript-language-server",
+        },
+        "tools": tools,
+        "tools_digest": digest,
+        "tools_digest_scope": "name+input_schema",
+        "tools_digest_algorithm": "sorted-keys-compact-json+sha256",
+    });
+    serde_json::to_string_pretty(&manifest).expect("manifest is valid JSON")
 }
 
 impl LspBridgeServer {

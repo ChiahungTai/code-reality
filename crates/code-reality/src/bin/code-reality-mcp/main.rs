@@ -4,8 +4,8 @@
 //! - HTTP resident (default): streamable-http on 127.0.0.1:8200/mcp;
 //!   launchd/systemd owns the lifecycle (multi-harness sharing).
 //!
-//! `--version`/`--help` answer and exit before any mode starts, and any
-//! other argument fails loud — the membership-test parse used to route
+//! `--version`/`--help`/`--manifest` answer and exit before any mode
+//! starts, and any other argument fails loud — the membership-test parse used to route
 //! EVERY unknown flag (including `--version`) into the HTTP resident
 //! default, so a version probe silently started a listener and hung
 //! (2026-08-28). The per-arg loop is ordered (lsp-bridge shape): the
@@ -27,15 +27,22 @@ async fn main() {
                 println!("{}", code_reality::version_face());
                 return;
             }
+            // Terminal face (same semantics as --version): it answers and
+            // exits even when --stdio precedes it — the publisher ABI
+            // manifest never starts a server session.
+            "--manifest" => {
+                println!("{}", code_reality::mcp_server::manifest_face());
+                return;
+            }
             "--help" | "-h" => {
                 println!(
-                    "code-reality-mcp — MCP server: --stdio (harness-owned) | no args: streamable-http 127.0.0.1:8200/mcp (launchd-owned)"
+                    "code-reality-mcp — MCP server: --stdio (harness-owned) | no args: streamable-http 127.0.0.1:8200/mcp (launchd-owned) | --manifest: publisher ABI JSON"
                 );
                 return;
             }
             bad => {
                 eprintln!(
-                    "[FAIL] unknown argument: {bad} (supported: --stdio; no args = HTTP resident mode)"
+                    "[FAIL] unknown argument: {bad} (supported: --stdio, --manifest; no args = HTTP resident mode)"
                 );
                 std::process::exit(2);
             }

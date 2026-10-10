@@ -79,6 +79,15 @@ fn bin_help_face() {
 
 // ---------- live HTTP smoke (V1-V3 subset) ----------
 
+/// Serializes the live-HTTP e2e tests: each binds `127.0.0.1:0` to
+/// discover a port, drops the probe listener, then re-binds that port —
+/// under cargo's parallel test runner the drop/re-bind window is a
+/// race (observed 1/5 flake). Repo precedent: the ra equivalence
+/// battery's test-file mutex. Holding the std `MutexGuard` across
+/// `.await` is safe: `#[tokio::test]` defaults to the current-thread
+/// flavor, so no second worker thread can block on it.
+static HTTP_E2E_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn repo_root_for_engine() -> String {
     let tmp = tempfile::tempdir().unwrap();
     let kept = std::fs::canonicalize(tmp.path()).unwrap();
@@ -89,16 +98,18 @@ fn repo_root_for_engine() -> String {
 
 #[tokio::test]
 async fn http_server_serves_initialize_and_tools_list() {
+    let _guard = HTTP_E2E_LOCK.lock();
     use rmcp::transport::StreamableHttpClientTransport;
     use rmcp::ServiceExt;
 
-    // ephemeral port: bind once to discover, release, reuse
-    let probe = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = probe.local_addr().unwrap().port();
-    drop(probe);
+    // ephemeral port: bind once and hand the bound listener to the
+    // server — no drop/re-bind window for the port to be stolen
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
 
-    let server = tokio::spawn(async move { code_reality::mcp_server::serve(port).await });
-    // give the listener a moment
+    let server =
+        tokio::spawn(async move { code_reality::mcp_server::serve_listener(listener).await });
+    // give the accept loop a moment to start polling
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
     let transport = StreamableHttpClientTransport::from_uri(format!("http://127.0.0.1:{port}/mcp"));
@@ -668,4 +679,115 @@ async fn mcp_snapshot_and_delta_tour_end_to_end() {
         tour_path.ends_with("-mcp-e2e.tour"),
         "task name in file: {tour_path}"
     );
+}
+
+// ---------- DB-108 supply contract: identity stamp + publisher manifest ----------
+
+/// The initialize handshake must self-report the CR binary identity.
+/// rmcp's `Implementation::from_build_env()` expands its `env!` inside
+/// the rmcp crate, so `ServerInfo::new(capabilities)` used to answer
+/// `{"name":"rmcp","version":"<rmcp>"}` — unusable as a version anchor
+/// for supply-side compatibility probes (DB-108 codex leg, live-reproduced).
+#[tokio::test]
+async fn initialize_reports_cr_identity_not_the_library() {
+    let _guard = HTTP_E2E_LOCK.lock();
+    use rmcp::transport::StreamableHttpClientTransport;
+    use rmcp::ServiceExt;
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    let server =
+        tokio::spawn(async move { code_reality::mcp_server::serve_listener(listener).await });
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    let transport = StreamableHttpClientTransport::from_uri(format!("http://127.0.0.1:{port}/mcp"));
+    let client = ().serve(transport).await.unwrap();
+    let info = client.peer_info().expect("initialize handshake completed");
+    // peer_info() answers rmcp's ServerPeerInfo, whose server_info is an
+    // Option (discovery responses may omit the identity) — unwrap it;
+    // the assertions below are unchanged by this mechanical fix.
+    let server_info = info
+        .server_info
+        .as_ref()
+        .expect("serverInfo present in initialize response");
+    assert_eq!(
+        server_info.name, "code-reality-mcp",
+        "serverInfo.name must be the binary identity, not the carrier library"
+    );
+    assert_eq!(server_info.version, env!("CARGO_PKG_VERSION"));
+    drop(client);
+    server.abort();
+}
+
+/// `--manifest` is the publisher-owned ABI face: deterministic JSON
+/// declaring version, entrypoints, protocol negotiation face, the full
+/// tool list with input schemas, a canonical digest, and honest
+/// write-face marking. Byte-deterministic across runs of one binary.
+#[test]
+fn manifest_face_is_deterministic_publisher_json() {
+    let exe = env!("CARGO_BIN_EXE_code-reality-mcp");
+    let run = || {
+        let out = std::process::Command::new(exe)
+            .arg("--manifest")
+            .env("CR_REPO", "/nonexistent")
+            .output()
+            .expect("spawn code-reality-mcp --manifest");
+        (out.status.code(), out.stdout.clone())
+    };
+    let (code1, out1) = run();
+    assert_eq!(code1, Some(0), "manifest face exits 0");
+    let v: serde_json::Value = serde_json::from_slice(&out1).expect("manifest is valid JSON");
+    assert_eq!(v["schema"], "cr-mcp-manifest/1");
+    assert_eq!(v["name"], "code-reality-mcp");
+    assert_eq!(v["crate_version"], env!("CARGO_PKG_VERSION"));
+    let tools = v["tools"].as_array().expect("tools array");
+    assert_eq!(tools.len(), 21, "21 MCP tools (name-frozen in this suite)");
+    let names: Vec<&str> = tools
+        .iter()
+        .map(|t| t["name"].as_str().expect("tool name"))
+        .collect();
+    let mut sorted = names.clone();
+    sorted.sort_unstable();
+    assert_eq!(names, sorted, "tools must be name-sorted for a stable digest");
+    for t in tools {
+        assert!(t["input_schema"].is_object(), "schema per tool: {}", t["name"]);
+    }
+    let digest = v["tools_digest"].as_str().expect("digest");
+    assert!(
+        digest.starts_with("sha256-") && digest.len() == "sha256-".len() + 64,
+        "digest shape: {digest}"
+    );
+    assert_eq!(
+        v["tools_digest_scope"], "name+input_schema",
+        "declared digest policy (descriptions are prose, not ABI)"
+    );
+    for w in v["write_faces"].as_array().expect("write_faces array") {
+        let w = w.as_str().expect("write face name");
+        assert!(names.contains(&w), "write_faces ⊆ tools: {w}");
+    }
+    let (_, out2) = run();
+    assert_eq!(out1, out2, "manifest must be byte-deterministic");
+}
+
+/// `--manifest` is a terminal face (like `--version`): it answers and
+/// exits even when `--stdio` precedes it, and unknown args still fail
+/// loud with exit 2.
+#[test]
+fn manifest_is_terminal_and_unknown_args_still_reject() {
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_code-reality-mcp"))
+        .args(["--stdio", "--manifest"])
+        .env("CR_REPO", "/nonexistent")
+        .output()
+        .expect("spawn --stdio --manifest");
+    assert!(out.status.success(), "--manifest wins over --stdio");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("\"schema\""), "manifest JSON on stdout: {stdout}");
+
+    let bad = std::process::Command::new(env!("CARGO_BIN_EXE_code-reality-mcp"))
+        .arg("--bogus")
+        .env("CR_REPO", "/nonexistent")
+        .output()
+        .expect("spawn --bogus");
+    assert_eq!(bad.status.code(), Some(2), "unknown arg still exit 2");
 }

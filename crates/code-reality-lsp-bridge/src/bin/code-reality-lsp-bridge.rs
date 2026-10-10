@@ -7,7 +7,9 @@
 //! `--rust-backend <cmd>` (Rust backend — spawns with NO flags; its
 //! default stdio mode is LSP), `--typescript-backend <executable>`
 //! (JS/TS backend — the fixed `--stdio` arg is supplied by the bridge,
-//! not the flag). The TypeScript executable resolves deterministically
+//! not the flag). `--version` and `--manifest` (publisher ABI JSON)
+//! are terminal faces: they answer and exit before any session starts.
+//! The TypeScript executable resolves deterministically
 //! and without network access: the explicit override, else
 //! `<workspace>/node_modules/.bin/typescript-language-server`, else
 //! `CODE_REALITY_NODE_BIN_DIR` roots, else PATH. Never npm/npx.
@@ -33,6 +35,13 @@ async fn main() {
                 println!("{face}");
                 std::process::exit(0);
             }
+            // Terminal face (same semantics as --version): it answers and
+            // exits before any session starts — the publisher ABI
+            // manifest never starts a stdio session.
+            "--manifest" => {
+                println!("{}", code_reality_lsp_bridge::server::manifest_face());
+                std::process::exit(0);
+            }
             "--lsp-command" => match args.next() {
                 Some(v) => py_backend = v,
                 None => {
@@ -55,7 +64,9 @@ async fn main() {
                 }
             },
             other => {
-                eprintln!("[FAIL] unrecognized argument {other}");
+                eprintln!(
+                    "[FAIL] unrecognized argument {other} (supported: --stdio, --version, --manifest, --lsp-command, --rust-backend, --typescript-backend)"
+                );
                 std::process::exit(2);
             }
         }
