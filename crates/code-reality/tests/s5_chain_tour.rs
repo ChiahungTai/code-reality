@@ -843,6 +843,320 @@ fn regen_refreshes_pattern_when_same_line_content_changes() {
 
 // ---------- S1 cutover: default db = self-owned .code-reality ----------
 
+// --- CR-7 symbol-only (line-less) anchors ---
+
+const CHAIN_MD_LINELESS: &str = r#"# Boot scenario lineless
+
+```text
+kernel (pkg/a.py)
+├─ boot() (pkg/a.py)  # entry
+│  └─ load_config() (pkg/cfg.py)
+└─ helper() (pkg/a.py)
+└─ ghost() (pkg/a.py)
+```
+"#;
+
+const CHAIN_MD_MIXED: &str = r#"# Mixed scenario
+
+```text
+kernel (pkg/a.py:1)
+└─ boot() (pkg/a.py)
+```
+"#;
+
+/// a.py: kernel@1, boot@5, helper@9; cfg.py: load_config@1.
+fn repo_fixture_lineless(tag: &str) -> (PathBuf, PathBuf) {
+    let tmp = tempfile::tempdir().unwrap().keep();
+    let repo = std::fs::canonicalize(&tmp).unwrap().join(tag);
+    std::fs::create_dir_all(repo.join("pkg")).unwrap();
+    std::fs::write(
+        repo.join(".code-reality.toml"),
+        "[[module]]\nprefix = \"pkg/\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo.join("pkg/a.py"),
+        "def kernel():\n    pass\n\n\ndef boot():\n    load_config()\n\n\ndef helper():\n    pass\n",
+    )
+    .unwrap();
+    std::fs::write(repo.join("pkg/cfg.py"), "def load_config():\n    pass\n").unwrap();
+    let chain = repo.join("chain.md");
+    std::fs::write(&chain, CHAIN_MD_LINELESS).unwrap();
+    let g = |args: &[&str]| {
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(args)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .status()
+            .unwrap();
+    };
+    g(&["init", "-q"]);
+    g(&["add", "."]);
+    g(&["commit", "-qm", "init"]);
+    (repo, chain)
+}
+
+fn seed_node(
+    spec: &mut graph_db_fixture::GraphDbSpec,
+    name: &str,
+    qname: &str,
+    file: &str,
+    line: i64,
+    abs: &dyn Fn(&str) -> String,
+) {
+    spec.nodes.push(graph_db_fixture::NodeSeed {
+        name: name.into(),
+        parent: None,
+        qname: qname.into(),
+        file_path: abs(file),
+    });
+    spec.node_attrs.push((
+        qname.into(),
+        graph_db_fixture::NodeAttr {
+            kind: "Function",
+            language: "python",
+            is_test: 0,
+            community_id: None,
+        },
+    ));
+    spec.node_lines.push((qname.into(), line));
+}
+
+#[test]
+fn lineless_tail_grammar() {
+    // positive: wrapped tail with note
+    let frames = parse_frames(&["└─ boot() (pkg/a.py)  # entry".to_string()]);
+    assert_eq!(frames[0].path.as_deref(), Some("pkg/a.py"));
+    assert_eq!(frames[0].line, None);
+    assert_eq!(frames[0].ident, "boot");
+    assert_eq!(frames[0].note, "entry");
+    // positive: bare tail without wrapper
+    let frames = parse_frames(&["└─ boot pkg/a.py".to_string()]);
+    assert_eq!(frames[0].path.as_deref(), Some("pkg/a.py"));
+    assert_eq!(frames[0].line, None);
+    // the symbol remainder (not the path) becomes the symbol text
+    let frames = parse_frames(&["└─ boot() (pkg/a.py)".to_string()]);
+    assert_eq!(frames[0].symbol, "boot()");
+    // negatives: suffix junk / residual :xxx / URL boundary / two path
+    // tokens — none may be captured as a line-less anchor (noref stays)
+    for frame in [
+        "└─ x (pkg/a.pyc)",
+        "└─ x (pkg/a.py.bak)",
+        "└─ x (pkg/a.py:abc)",
+        "└─ x (https://host/foo.py)",
+        "└─ x pkg/a.py extra (pkg/cfg.py)",
+    ] {
+        let frames = parse_frames(&[frame.to_string()]);
+        assert_eq!(frames[0].path, None, "{frame}");
+        assert_eq!(frames[0].line, None, "{frame}");
+    }
+    // explicit anchors keep their byte-exact behavior
+    let frames = parse_frames(&["└─ boot() (pkg/a.py:5)  # entry".to_string()]);
+    assert_eq!(frames[0].path.as_deref(), Some("pkg/a.py"));
+    assert_eq!(frames[0].line, Some(5));
+}
+
+#[test]
+fn build_tours_lineless_fill_and_miss() {
+    let (repo, chain) = repo_fixture_lineless("lineless-fill");
+    let db = repo.join(".code-reality").join("graph.db");
+    std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_node(&mut spec, "kernel", "pkg/a.py::kernel", "pkg/a.py", 1, &abs);
+    seed_node(&mut spec, "boot", "pkg/a.py::boot", "pkg/a.py", 5, &abs);
+    seed_node(
+        &mut spec,
+        "load_config",
+        "pkg/cfg.py::load_config",
+        "pkg/cfg.py",
+        1,
+        &abs,
+    );
+    seed_node(&mut spec, "helper", "pkg/a.py::helper", "pkg/a.py", 9, &abs);
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    // 5 frames: 4 unique graph hits filled, ghost skipped (not-in-graph)
+    assert_eq!(st.g_counts.get("filled"), Some(&4), "{:?}", st.g_counts);
+    assert_eq!(
+        st.g_counts.get("not-in-graph"),
+        Some(&1),
+        "{:?}",
+        st.g_counts
+    );
+    let t = st.tours[0].as_object().unwrap();
+    let steps = t["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 4);
+    assert_eq!(st.skipped, 1);
+    assert!(t["description"].as_str().unwrap().contains("noanchor 1"));
+    let boot = steps
+        .iter()
+        .find(|s| s["title"].as_str().unwrap().contains("boot"))
+        .unwrap();
+    assert_eq!(boot["line"], 5);
+    assert!(boot["description"].as_str().unwrap().contains("graph 補行號"));
+    assert_eq!(
+        boot["x-codeReality"]["symbol"].as_str().unwrap(),
+        "pkg/a.py::boot"
+    );
+    // every emitted step carries a real pattern (validator exact-match
+    // ingredient — no line=1 pseudo-coordinates anywhere)
+    for s in steps {
+        assert!(s["line"].as_i64().unwrap() >= 1);
+        assert!(s.get("pattern").is_some(), "{s}");
+    }
+}
+
+#[test]
+fn build_tours_lineless_requires_graph() {
+    let (repo, chain) = repo_fixture_lineless("lineless-nograph");
+    // no graph supplied: line-less anchors cannot fill — all frames skip
+    // with noanchor, none may degrade to a line=1 step
+    let st = build_tours(&chain, &repo, None).unwrap();
+    assert_eq!(st.skipped, 5, "{:?}", st.g_counts);
+    assert_eq!(
+        st.g_counts.get("graph-unavailable"),
+        Some(&5),
+        "{:?}",
+        st.g_counts
+    );
+    assert!(st
+        .tours
+        .iter()
+        .all(|t| t["steps"].as_array().unwrap().is_empty()));
+}
+
+#[test]
+fn build_tours_lineless_ambiguous_fails_closed() {
+    let (repo, chain) = repo_fixture_lineless("lineless-ambig");
+    let db = repo.join(".code-reality").join("graph.db");
+    std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_node(&mut spec, "kernel", "pkg/a.py::kernel", "pkg/a.py", 1, &abs);
+    // two same-name defs in the SAME file: the unique-anchor gate must
+    // fail closed (no ORDER-BY-nearest blind pick). Distinct qnames (the
+    // fixture universe keys symbol==qname UNIQUE) with the same name.
+    seed_node(&mut spec, "boot", "pkg/a.py::boot#1", "pkg/a.py", 5, &abs);
+    seed_node(&mut spec, "boot", "pkg/a.py::boot#2", "pkg/a.py", 7, &abs);
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    // CHAIN_MD_LINELESS has 5 frames; only kernel fills here
+    assert_eq!(st.g_counts.get("filled"), Some(&1), "{:?}", st.g_counts);
+    assert_eq!(st.g_counts.get("ambiguous"), Some(&1), "{:?}", st.g_counts);
+    let t = st.tours[0].as_object().unwrap();
+    let steps = t["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 1);
+    assert!(steps[0]["title"].as_str().unwrap().contains("kernel"));
+    assert_eq!(st.skipped, 4);
+}
+
+#[test]
+fn build_tours_lineless_mixed_explicit_unchanged() {
+    // explicit anchor keeps the legacy face (same + 行號一致); the
+    // line-less sibling fills from graph
+    let tmp = tempfile::tempdir().unwrap().keep();
+    let repo = std::fs::canonicalize(&tmp).unwrap().join("lineless-mixed");
+    std::fs::create_dir_all(repo.join("pkg")).unwrap();
+    std::fs::write(
+        repo.join(".code-reality.toml"),
+        "[[module]]\nprefix = \"pkg/\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo.join("pkg/a.py"),
+        "def kernel():\n    pass\n\n\ndef boot():\n    load_config()\n",
+    )
+    .unwrap();
+    let chain = repo.join("chain.md");
+    std::fs::write(&chain, CHAIN_MD_MIXED).unwrap();
+    let g = |args: &[&str]| {
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(args)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .status()
+            .unwrap();
+    };
+    g(&["init", "-q"]);
+    g(&["add", "."]);
+    g(&["commit", "-qm", "init"]);
+    let db = repo.join(".code-reality").join("graph.db");
+    std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_node(&mut spec, "kernel", "pkg/a.py::kernel", "pkg/a.py", 1, &abs);
+    seed_node(&mut spec, "boot", "pkg/a.py::boot", "pkg/a.py", 4, &abs);
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    let steps = st.tours[0]["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 2);
+    let kernel = steps
+        .iter()
+        .find(|s| s["title"].as_str().unwrap().contains("kernel"))
+        .unwrap();
+    assert_eq!(kernel["line"], 1);
+    assert!(kernel["description"].as_str().unwrap().contains("行號一致"));
+    let boot = steps
+        .iter()
+        .find(|s| s["title"].as_str().unwrap().contains("boot"))
+        .unwrap();
+    assert_eq!(boot["line"], 4);
+    assert!(boot["description"].as_str().unwrap().contains("graph 補行號"));
+}
+
+#[test]
+fn lineless_roundtrip_tour_validate() {
+    let (repo, chain) = repo_fixture_lineless("lineless-roundtrip");
+    let db = repo.join(".code-reality").join("graph.db");
+    std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_node(&mut spec, "kernel", "pkg/a.py::kernel", "pkg/a.py", 1, &abs);
+    seed_node(&mut spec, "boot", "pkg/a.py::boot", "pkg/a.py", 5, &abs);
+    seed_node(
+        &mut spec,
+        "load_config",
+        "pkg/cfg.py::load_config",
+        "pkg/cfg.py",
+        1,
+        &abs,
+    );
+    seed_node(&mut spec, "helper", "pkg/a.py::helper", "pkg/a.py", 9, &abs);
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    // an empty tour validates trivially — pin the filled steps first so
+    // the roundtrip actually exercises the graph-filled coordinates
+    assert_eq!(
+        st.tours[0]["steps"].as_array().unwrap().len(),
+        4,
+        "{}",
+        st.tours[0]
+    );
+    let out_dir = repo.join(".tours").join("arch").join("01-lineless");
+    let mut primary = std::collections::BTreeSet::new();
+    primary.insert(1);
+    let mut warns = Vec::new();
+    write_tours(&st, &out_dir, &primary, &mut warns).unwrap();
+    // consumer roundtrip: the generated .tour validates exact — the
+    // graph-filled steps' file/line/pattern triple must hit the source
+    let out = code_reality::tour_validate::validate(
+        &repo,
+        std::path::Path::new(".tours/arch/01-lineless"),
+        false,
+    );
+    assert_eq!(out.exit_code, 0, "{}", out.stdout);
+    assert!(!out.stdout.contains("[FAIL]"), "{}", out.stdout);
+}
+
 mod graph_db_fixture;
 
 use code_reality::chain_tour::GraphAnchor;

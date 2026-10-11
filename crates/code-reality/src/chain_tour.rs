@@ -23,6 +23,48 @@ fn ident_re() -> &'static regex::Regex {
     RE.get_or_init(|| regex::Regex::new(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]*)*").unwrap())
 }
 
+fn lineless_re() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"[\w./\-]+\.(?:py|rs)$").unwrap())
+}
+
+fn any_path_re() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"[\w./\-]+\.(?:py|rs)").unwrap())
+}
+
+/// CR-7 line-less anchor extraction: bounded tail-position grammar. After
+/// `#`-note strip and folding back trailing `)`/`]` closers, the path must
+/// END the frame, preceded by a token boundary (start / whitespace / `(` /
+/// `[` — kills URLs like `https://host/foo.py`); the extension must be the
+/// token's true end (rejects `foo.pyc`, `foo.py.bak`, residual
+/// `foo.py:xxx`); and the symbol remainder must not carry a second path
+/// token (`a.py b.py` is prose, not an anchor). Returns (path, symbol
+/// remainder). A prose mention that survives the grammar (`see foo.py`)
+/// is indistinguishable from an anchor here by design — the graph-fill
+/// gate downstream turns a false hit into a visible `noanchor` skip, not
+/// a fake step.
+fn lineless_tail(content: &str) -> Option<(String, String)> {
+    let trimmed = content.trim_end().trim_end_matches([')', ']']);
+    let m = lineless_re().find(trimmed)?;
+    if m.end() != trimmed.len() {
+        return None;
+    }
+    match trimmed[..m.start()].chars().next_back() {
+        None => {}
+        Some(c) if c.is_whitespace() || c == '(' || c == '[' => {}
+        _ => return None,
+    }
+    let rest = trimmed[..m.start()]
+        .trim_end()
+        .trim_end_matches(['(', '['])
+        .trim_end();
+    if any_path_re().is_match(rest) {
+        return None;
+    }
+    Some((m.as_str().to_string(), rest.to_string()))
+}
+
 const TREE_PREFIX_CHARS: [char; 5] = ['│', '├', '└', '─', ' '];
 
 pub fn prefix_len(line: &str) -> usize {
@@ -140,6 +182,12 @@ pub fn parse_frames(lines: &[String]) -> Vec<Frame> {
                     .trim()
                     .to_string();
             }
+        } else if let Some((p, rest)) = lineless_tail(&content2) {
+            // CR-7: line-less anchor — the path token is stripped so symbol
+            // extraction sees only the remainder; line stays None (the
+            // line-less decision branch downstream fills it or skips)
+            path = Some(p);
+            content2 = rest;
         }
         let ident = best_ident(&content2);
         frames.push(Frame {
@@ -441,6 +489,51 @@ impl GraphAnchor {
     }
 }
 
+/// CR-7 line-less fill outcome: a verified unique anchor or a typed
+/// no-anchor reason (machine-readable — the reason feeds the graph
+/// distribution axis, while the skip is stamped `noanchor`).
+pub enum FillOutcome {
+    Filled(i64, Option<String>),
+    NoAnchor(String),
+}
+
+impl GraphAnchor {
+    /// CR-7 symbol-only backfill: unique same-file anchor by EXACT
+    /// path+name. Strict identity (adversarial-review AC): no suffix LIKE,
+    /// no nearest-line blind pick, no cross-file inference — zero or
+    /// multiple candidates both fail closed; SQLite errors propagate loud
+    /// instead of folding into a miss.
+    pub fn fill_anchor(&self, abs_path: &Path, ident: &str) -> Result<FillOutcome, String> {
+        if ident.is_empty() {
+            return Ok(FillOutcome::NoAnchor("no-ident".into()));
+        }
+        let rel = abs_path
+            .strip_prefix(&self.repo_root)
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_default();
+        let exact = format!("{}/{}", self.repo_root.display(), rel);
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT line_start, symbol FROM nodes \
+                 WHERE file_path = ?1 AND name = ?2 \
+                 AND line_start IS NOT NULL AND line_start >= 1 \
+                 ORDER BY line_start, symbol",
+            )
+            .map_err(|e| format!("graph.db fill query failed: {e}"))?;
+        let rows: Vec<(i64, Option<String>)> = stmt
+            .query_map((&exact, ident), |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(|e| format!("graph.db fill query failed: {e}"))?
+            .collect::<Result<_, _>>()
+            .map_err(|e| format!("graph.db fill query failed: {e}"))?;
+        match rows.as_slice() {
+            [] => Ok(FillOutcome::NoAnchor("not-in-graph".into())),
+            [(line, symbol)] => Ok(FillOutcome::Filled(*line, symbol.clone())),
+            _ => Ok(FillOutcome::NoAnchor("ambiguous".into())),
+        }
+    }
+}
+
 pub struct ScenarioTours {
     pub tours: Vec<serde_json::Value>,
     pub frames: usize,
@@ -469,6 +562,15 @@ fn step_of(
     let mut parts: Vec<String> = Vec::new();
     let anchor_disp = format!("文檔錨 {}:{line}", path.clone().unwrap_or_default());
     match g.g.as_str() {
+        "filled" => {
+            // CR-7: the doc carried no line — the coordinates above come
+            // from the graph's unique same-file hit; no 文檔錨 fake line
+            parts.push(format!("graph 補行號 :{line}（文檔無行號）"));
+            parts.push(format!(
+                "文檔錨 {}",
+                path.clone().unwrap_or_default()
+            ));
+        }
         "moved" => {
             // delta vs the DOC anchor line — compute before reassigning
             let doc_line = line;
@@ -597,6 +699,7 @@ pub fn build_tours(
                 ..Default::default()
             };
             let mut abs_path: Option<PathBuf> = None;
+            let mut filled_line: Option<i64> = None;
             if let Some(p) = &f.path {
                 let (resolved, kind) = resolver.resolve(p);
                 match resolved {
@@ -608,10 +711,42 @@ pub fn build_tours(
                         }
                     }
                     Some(ap) => {
-                        status = check_anchor(&ap, f.line.unwrap_or(0), &f.ident);
-                        if let Some(ga) = &ga {
-                            if !f.ident.is_empty() {
-                                g = ga.anchor(&ap, f.line.unwrap_or(0), &f.ident, &status);
+                        if f.line.is_none() {
+                            // CR-7 line-less: strict fill or typed skip —
+                            // never a pseudo coordinate
+                            match ga.as_ref() {
+                                None => {
+                                    g = GraphHit {
+                                        g: "graph-unavailable".into(),
+                                        ..Default::default()
+                                    };
+                                }
+                                Some(ga) => match ga.fill_anchor(&ap, &f.ident)? {
+                                    FillOutcome::Filled(line, symbol) => {
+                                        status = "filled".into();
+                                        g = GraphHit {
+                                            g: "filled".into(),
+                                            g_line: Some(line),
+                                            g_file: None,
+                                            g_files: Vec::new(),
+                                            g_symbol: symbol,
+                                        };
+                                        filled_line = Some(line);
+                                    }
+                                    FillOutcome::NoAnchor(reason) => {
+                                        g = GraphHit {
+                                            g: reason,
+                                            ..Default::default()
+                                        };
+                                    }
+                                },
+                            }
+                        } else {
+                            status = check_anchor(&ap, f.line.unwrap_or(0), &f.ident);
+                            if let Some(ga) = &ga {
+                                if !f.ident.is_empty() {
+                                    g = ga.anchor(&ap, f.line.unwrap_or(0), &f.ident, &status);
+                                }
                             }
                         }
                         abs_path = Some(ap);
@@ -628,9 +763,20 @@ pub fn build_tours(
                 }
                 continue;
             };
+            if f.line.is_none() && status != "filled" {
+                // CR-7: path resolved but no verified fill — typed skip
+                // (the reason lives on the graph-distribution axis), no
+                // pseudo step
+                skipped += 1;
+                *skip_reasons.entry("noanchor".into()).or_insert(0) += 1;
+                if skip_examples.len() < 3 {
+                    skip_examples.push(f.symbol.chars().take(30).collect());
+                }
+                continue;
+            }
             steps.push(step_of(
                 &f.path,
-                f.line,
+                if status == "filled" { filled_line } else { f.line },
                 &g,
                 &status,
                 &f.symbol,
