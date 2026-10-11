@@ -1,10 +1,10 @@
 ---
 id: CR-7
 title: chain_tour 支援 symbol-only 錨（graph.db 代填行號）——mosaic DRAFT-46 對接
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-11 13:10'
-updated_date: '2026-10-11 13:43'
+updated_date: '2026-10-11 14:41'
 labels: []
 dependencies: []
 ordinal: 7000
@@ -46,12 +46,12 @@ flowchart LR
 ## Acceptance Criteria
 
 <!-- SECTION:AC:BEGIN -->
-- [ ] line-less bounded 文法落地；regex 負例群（prose 檔名／`.pyc`／`.bak`／`foo.py:abc`／URL／雙 path token）全綠不誤捕
-- [ ] line=None 與 Some(0)/負數/巨值分流；無 graph 時 noanchor+reason，全矩陣零 line=1 假 step
-- [ ] 唯一同檔 graph 錨才代填（file repo-relative＋line>=1＋非空 pattern＋symbol 一致）；同名多候選＝ambiguous skip，不抽第一個
-- [ ] 成功章 `filled`／skip 章 `noanchor(+reason)` 進統計；輸出無虛構 graph+Δ
-- [ ] 顯式行號既有 s5 回歸不動全綠（byte-compatible）
-- [ ] chain_tour→tour_validate roundtrip 整合測試（獨立比對 file/line/symbol/pattern）＋mosaic 23 幀樣本逐幀核對
+- [x] line-less bounded 文法落地；regex 負例群（prose 檔名／`.pyc`／`.bak`／`foo.py:abc`／URL／雙 path token）全綠不誤捕
+- [x] line=None 與 Some(0)/負數/巨值分流；無 graph 時 noanchor+reason，全矩陣零 line=1 假 step
+- [x] 唯一同檔 graph 錨才代填（file repo-relative＋line>=1＋非空 pattern＋symbol 一致）；同名多候選＝ambiguous skip，不抽第一個
+- [x] 成功章 `filled`／skip 章 `noanchor(+reason)` 進統計；輸出無虛構 graph+Δ
+- [x] 顯式行號既有 s5 回歸不動全綠（byte-compatible）
+- [x] chain_tour→tour_validate roundtrip 整合測試（獨立比對 file/line/symbol/pattern）＋mosaic 23 幀樣本逐幀核對（roundtrip 已釘；樣本半項＝blocked-on-corpus 見 Notes——語料到後補驗收，不擋出貨）
 <!-- SECTION:AC:END -->
 
 ## Implementation Notes
@@ -64,3 +64,20 @@ flowchart LR
 - **決策③ residual（記錄面）**：symbol-only 補錨的 content-staleness 偵測刻意不做（codex Q6 劃 full EP 邊界）——chain_tour 自身僅 graph mtime race guard；已知 stale 情境由消費端 CR freshness gate（mosaic 遷移時）承接
 - 已知不對稱（記錄面）：單空格 ` # ` 註解在 line-less 幀 → 整幀 noref（顯式幀則錨成立、註解殘餘進 symbol）——既有共用切註解邏輯未動（byte-compat）；放寬與否留 mosaic 語料校準裁決
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+symbol-only 錨出貨：md callstack 錨可省略行號（`Symbol path # 註解`），chain_tour 按 symbol+path 查 graph.db 唯一同檔命中即代填行號（`filled` 章＋真 pattern＋SCIP symbol），miss/歧義/空白目標一律 `noanchor` 帶原因跳過——零假座標；顯式行號行為零變更，`.tour` schema 不變。設計經 codex 對抗審查＋fresh-eyes 獨立審查雙腿收斂（F1 pattern 閘當場抓到錯 fixture）；s5 43/43 綠、全 workspace 綠。residual 兩項顯式記錄：mosaic 樣本驗收 blocked-on-corpus（語料到位補驗收）、content-staleness 由消費端 freshness gate 承接（full EP 邊界）。出貨搭 CR 0.12.0。
+
+```mermaid
+flowchart LR
+    A["md 錨<br/>Symbol path # 註解"] --> B["bounded tail 文法"] --> D{"graph.db<br/>唯一同檔錨?"}
+    D -- "唯一命中＋目標行非空" --> E["step 代填<br/>filled＋pattern"]
+    D -- "miss／歧義／blank" --> S["noanchor skip<br/>（帶原因）"]
+    A2["md 錨 path:line"] --> C["legacy 面<br/>same/moved 不變"]
+    E --> T[".tour"]
+    C --> T
+    T --> V["tour_validate exact"]
+```
+<!-- SECTION:FINAL_SUMMARY:END -->
