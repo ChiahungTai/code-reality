@@ -1286,6 +1286,37 @@ fn build_tours_explicit_zero_pins_legacy_face() {
     assert!(steps[0]["description"].as_str().unwrap().contains("graph +1"));
 }
 
+// CR-7 calibration (mosaic corpus): single-space ` # ` notes are the
+// corpus norm — line-less frames must still anchor AND carry the note
+#[test]
+fn lineless_single_space_note_calibrated() {
+    let frames = parse_frames(&[
+        "└─ get_catalog mosaic_alpha/data/__init__.py # module singleton；重複呼叫回同實例".to_string(),
+    ]);
+    assert_eq!(frames[0].path.as_deref(), Some("mosaic_alpha/data/__init__.py"));
+    assert_eq!(frames[0].line, None);
+    assert_eq!(frames[0].ident, "get_catalog");
+    assert_eq!(frames[0].note, "module singleton；重複呼叫回同實例");
+    // sample C: a pseudo-anchor inside the note must not be captured —
+    // the note segment is cut before tail extraction
+    let frames = parse_frames(&[
+        "└─ IntelService.punish_stocks mosaic_alpha/services/intel.py # services 經過段（外層唯一消費 watchlist/ranking.py:339）".to_string(),
+    ]);
+    assert_eq!(frames[0].path.as_deref(), Some("mosaic_alpha/services/intel.py"));
+    assert_eq!(frames[0].line, None);
+    assert!(frames[0].note.contains("ranking.py:339"));
+    // and the same frame WITH explicit line keeps byte-legacy behavior —
+    // single-space notes ride in the symbol residue (known asymmetry,
+    // documented on the card; note recovery is a line-less-face feature)
+    let frames = parse_frames(&[
+        "└─ get_catalog mosaic_alpha/data/__init__.py:34 # module singleton".to_string(),
+    ]);
+    assert_eq!(frames[0].path.as_deref(), Some("mosaic_alpha/data/__init__.py"));
+    assert_eq!(frames[0].line, Some(34));
+    assert_eq!(frames[0].note, "");
+    assert!(frames[0].symbol.contains("module singleton"));
+}
+
 mod graph_db_fixture;
 
 use code_reality::chain_tour::GraphAnchor;

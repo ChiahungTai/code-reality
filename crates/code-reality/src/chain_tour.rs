@@ -47,7 +47,12 @@ fn any_path_re() -> &'static regex::Regex {
 /// gate downstream turns a false hit into a visible `noanchor` skip, not
 /// a fake step.
 fn lineless_tail(content: &str) -> Option<(String, String)> {
-    let trimmed = content.trim_end().trim_end_matches([')', ']', '）']);
+    // CR-7 calibration (mosaic corpus, 2026-10-11): single-space ` # `
+    // notes are the corpus norm — cut the note segment before tail
+    // extraction. The double-space split upstream is legacy-frozen for
+    // explicit frames; line-less frames have no legacy face to preserve.
+    let anchor_region = content.split(" # ").next().unwrap_or(content);
+    let trimmed = anchor_region.trim_end().trim_end_matches([')', ']', '）']);
     let m = lineless_re().find(trimmed)?;
     if m.end() != trimmed.len() {
         return None;
@@ -182,7 +187,7 @@ pub fn parse_frames(lines: &[String]) -> Vec<Frame> {
         }
         let parent = stack.last().map(|&(_, idx)| idx);
         let depth = stack.len();
-        let (mut content2, note) = if content.contains("  # ") || content.starts_with('#') {
+        let (mut content2, mut note) = if content.contains("  # ") || content.starts_with('#') {
             match content.split_once('#') {
                 Some((c, n)) => (c.trim().to_string(), n.trim().to_string()),
                 None => (content.clone(), String::new()),
@@ -193,19 +198,48 @@ pub fn parse_frames(lines: &[String]) -> Vec<Frame> {
         let mut path = None;
         let mut line_no = None;
         if let Some(m) = ref_re().captures(&content2) {
-            path = Some(m[1].to_string());
-            line_no = Some(m[2].parse().unwrap_or(0));
-            let range = ref_re().find(&content2).map(|m| m.range());
-            if let Some(r) = range {
-                content2 = format!("{}{}", &content2[..r.start], &content2[r.end..])
-                    .trim()
-                    .to_string();
+            // CR-7 calibration (mosaic sample C): a single-space ` # `
+            // note may cite its own path:line — if the explicit match lies
+            // INSIDE the note region, the frame is line-less with a
+            // citing note, not an explicit anchor on the citation
+            // (leftmost-match already protects true explicit frames, so
+            // this reclassification only touches frames that would
+            // otherwise anchor to the citation — a latent misparse)
+            let m_start = m.get(0).unwrap().start();
+            let in_note = content2
+                .find(" # ")
+                .map(|i| m_start > i)
+                .unwrap_or(false);
+            if in_note {
+                if let Some((p, rest)) = lineless_tail(&content2) {
+                    path = Some(p);
+                    if let Some((_, n)) = content2.split_once(" # ") {
+                        note = n.trim().to_string();
+                    }
+                    content2 = rest;
+                }
+            } else {
+                path = Some(m[1].to_string());
+                line_no = Some(m[2].parse().unwrap_or(0));
+                let range = ref_re().find(&content2).map(|m| m.range());
+                if let Some(r) = range {
+                    content2 = format!("{}{}", &content2[..r.start], &content2[r.end..])
+                        .trim()
+                        .to_string();
+                }
             }
         } else if let Some((p, rest)) = lineless_tail(&content2) {
             // CR-7: line-less anchor — the path token is stripped so symbol
             // extraction sees only the remainder; line stays None (the
-            // line-less decision branch downstream fills it or skips)
+            // line-less decision branch downstream fills it or skips).
+            // Calibration: recover the single-space ` # ` note mosaic's
+            // corpus uses (the upstream split only fires on double-space)
             path = Some(p);
+            if note.is_empty() {
+                if let Some((_, n)) = content2.split_once(" # ") {
+                    note = n.trim().to_string();
+                }
+            }
             content2 = rest;
         }
         let ident = best_ident(&content2);
