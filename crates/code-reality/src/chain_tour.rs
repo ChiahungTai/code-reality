@@ -34,35 +34,54 @@ fn any_path_re() -> &'static regex::Regex {
 }
 
 /// CR-7 line-less anchor extraction: bounded tail-position grammar. After
-/// `#`-note strip and folding back trailing `)`/`]` closers, the path must
-/// END the frame, preceded by a token boundary (start / whitespace / `(` /
-/// `[` — kills URLs like `https://host/foo.py`); the extension must be the
-/// token's true end (rejects `foo.pyc`, `foo.py.bak`, residual
-/// `foo.py:xxx`); and the symbol remainder must not carry a second path
-/// token (`a.py b.py` is prose, not an anchor). Returns (path, symbol
+/// `#`-note strip and folding back trailing `)`/`]`/`）` closers, the path
+/// must END the frame, preceded by a token boundary (start / whitespace /
+/// `(` / `[` / `（` — kills URLs like `https://host/foo.py`); the
+/// extension must be the token's true end (rejects `foo.pyc`,
+/// `foo.py.bak`, residual `foo.py:xxx`); and the symbol remainder must
+/// not carry a second independent path token (`a.py b.py` is prose, not
+/// an anchor; `client.py_helper` is one word whose `.py` is buried —
+/// trailing word-chars disqualify a candidate). Returns (path, symbol
 /// remainder). A prose mention that survives the grammar (`see foo.py`)
 /// is indistinguishable from an anchor here by design — the graph-fill
 /// gate downstream turns a false hit into a visible `noanchor` skip, not
 /// a fake step.
 fn lineless_tail(content: &str) -> Option<(String, String)> {
-    let trimmed = content.trim_end().trim_end_matches([')', ']']);
+    let trimmed = content.trim_end().trim_end_matches([')', ']', '）']);
     let m = lineless_re().find(trimmed)?;
     if m.end() != trimmed.len() {
         return None;
     }
     match trimmed[..m.start()].chars().next_back() {
         None => {}
-        Some(c) if c.is_whitespace() || c == '(' || c == '[' => {}
+        Some(c) if c.is_whitespace() || c == '(' || c == '[' || c == '（' => {}
         _ => return None,
     }
     let rest = trimmed[..m.start()]
         .trim_end()
-        .trim_end_matches(['(', '['])
+        .trim_end_matches(['(', '[', '（'])
         .trim_end();
-    if any_path_re().is_match(rest) {
+    if stray_path_token(rest) {
         return None;
     }
     Some((m.as_str().to_string(), rest.to_string()))
+}
+
+/// Second-path-token detector for the line-less symbol remainder (CR-7
+/// review F6): a `.py`/`.rs` occurrence only counts as an independent
+/// path token when the extension is not buried inside a longer word —
+/// `client.py_helper` is one identifier, `a.py extra` is two tokens.
+/// Conservative direction: a false positive rejects the anchor to noref
+/// (fail-closed), never fabricates one.
+fn stray_path_token(text: &str) -> bool {
+    for m in any_path_re().find_iter(text) {
+        match text[m.end()..].chars().next() {
+            None => return true,
+            Some(c) if !c.is_ascii_alphanumeric() && c != '_' => return true,
+            _ => {}
+        }
+    }
+    false
 }
 
 const TREE_PREFIX_CHARS: [char; 5] = ['│', '├', '└', '─', ' '];
@@ -502,7 +521,12 @@ impl GraphAnchor {
     /// path+name. Strict identity (adversarial-review AC): no suffix LIKE,
     /// no nearest-line blind pick, no cross-file inference — zero or
     /// multiple candidates both fail closed; SQLite errors propagate loud
-    /// instead of folding into a miss.
+    /// instead of folding into a miss. Assumption (review F7): the graph
+    /// db was produced for THIS repo checkout (in-repo `.code-reality/`
+    /// producer face stores canonical absolute paths) — a db copied
+    /// across checkouts degrades line-less anchors to `not-in-graph`
+    /// while the explicit-line face keeps matching via its suffix LIKE;
+    /// both directions are fail-safe.
     pub fn fill_anchor(&self, abs_path: &Path, ident: &str) -> Result<FillOutcome, String> {
         if ident.is_empty() {
             return Ok(FillOutcome::NoAnchor("no-ident".into()));
@@ -723,15 +747,48 @@ pub fn build_tours(
                                 }
                                 Some(ga) => match ga.fill_anchor(&ap, &f.ident)? {
                                     FillOutcome::Filled(line, symbol) => {
-                                        status = "filled".into();
-                                        g = GraphHit {
-                                            g: "filled".into(),
-                                            g_line: Some(line),
-                                            g_file: None,
-                                            g_files: Vec::new(),
-                                            g_symbol: symbol,
+                                        // review F1: the fill is only as
+                                        // good as its target line — blank,
+                                        // out-of-range, or unreadable
+                                        // targets downgrade to a typed
+                                        // skip (tour_validate skips an
+                                        // absent pattern silently, so the
+                                        // gate must live here)
+                                        let key = ap.to_string_lossy().replace('\\', "/");
+                                        let target_ok = {
+                                            let lines = lines_cache
+                                                .entry(key)
+                                                .or_insert_with(|| {
+                                                    std::fs::read_to_string(&ap)
+                                                        .map(|t| {
+                                                            t.split('\n')
+                                                                .map(|s| s.to_string())
+                                                                .collect()
+                                                        })
+                                                        .unwrap_or_default()
+                                                });
+                                            line >= 1
+                                                && ((line - 1) as usize) < lines.len()
+                                                && !lines[(line - 1) as usize]
+                                                    .trim()
+                                                    .is_empty()
                                         };
-                                        filled_line = Some(line);
+                                        if target_ok {
+                                            status = "filled".into();
+                                            g = GraphHit {
+                                                g: "filled".into(),
+                                                g_line: Some(line),
+                                                g_file: None,
+                                                g_files: Vec::new(),
+                                                g_symbol: symbol,
+                                            };
+                                            filled_line = Some(line);
+                                        } else {
+                                            g = GraphHit {
+                                                g: "invalid-line".into(),
+                                                ..Default::default()
+                                            };
+                                        }
                                     }
                                     FillOutcome::NoAnchor(reason) => {
                                         g = GraphHit {

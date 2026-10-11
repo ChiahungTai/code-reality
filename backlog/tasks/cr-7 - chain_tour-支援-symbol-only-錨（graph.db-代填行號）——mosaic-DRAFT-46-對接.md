@@ -59,4 +59,8 @@ flowchart LR
 <!-- SECTION:NOTES:BEGIN -->
 - 源起：mosaic DRAFT-46（backlog/drafts/draft-46 - chain_tour-支援-symbol-only-錨）＋2026-10-11 傳話；codex 對抗審查 verdict＝`.agent-tmp/draft46-codex-verdict.md`（13.6KB，14 情境測試矩陣全文在檔）
 - mosaic 邊界假設修正：解析器是 CR 本體代碼，CR 直接承做，不經 ai-guide session；ai-guide 側僅出貨後文檔一行
+- fresh-eyes 審查腿（agent，2026-10-11）：7 findings 全裁決——F1🔴 pattern 閘（採納：filled 臂加目標行驗證，blank/越界 → `invalid-line` typed skip；此閘當場抓到一個錯誤測試 fixture）、F5🟢 全形括號（採納）、F6🟢 buried-`.py` 誤拒（採納：尾 word-char 檢查）、F4🟡 補五缺口測試（no-ident／cross-file／prose-survivor／explicit-:0／blank-target）；F7🟢 exact vs LIKE 分歧＝文檔化（fill_anchor doc 記 db 同 checkout 假設，改 LIKE 會重引入 suffix 歧義）
+- **AC6 residual（blocked-on-corpus）**：mosaic 23 幀真實樣本逐幀核對——語料在 mosaic 側（校準請託信 `cr-draft46-disposition-1011-001` seq 2 已發），樣本到達後補驗收測試；合成 fixture 已釘行為面，不擋出貨
+- **決策③ residual（記錄面）**：symbol-only 補錨的 content-staleness 偵測刻意不做（codex Q6 劃 full EP 邊界）——chain_tour 自身僅 graph mtime race guard；已知 stale 情境由消費端 CR freshness gate（mosaic 遷移時）承接
+- 已知不對稱（記錄面）：單空格 ` # ` 註解在 line-less 幀 → 整幀 noref（顯式幀則錨成立、註解殘餘進 symbol）——既有共用切註解邏輯未動（byte-compat）；放寬與否留 mosaic 語料校準裁決
 <!-- SECTION:NOTES:END -->

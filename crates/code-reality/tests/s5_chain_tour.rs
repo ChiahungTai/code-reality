@@ -1094,7 +1094,7 @@ fn build_tours_lineless_mixed_explicit_unchanged() {
     let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
     let mut spec = graph_db_fixture::GraphDbSpec::default();
     seed_node(&mut spec, "kernel", "pkg/a.py::kernel", "pkg/a.py", 1, &abs);
-    seed_node(&mut spec, "boot", "pkg/a.py::boot", "pkg/a.py", 4, &abs);
+    seed_node(&mut spec, "boot", "pkg/a.py::boot", "pkg/a.py", 5, &abs);
     graph_db_fixture::make_graph_db(&db, &spec).unwrap();
     let st = build_tours(&chain, &repo, Some(&db)).unwrap();
     let steps = st.tours[0]["steps"].as_array().unwrap();
@@ -1109,7 +1109,10 @@ fn build_tours_lineless_mixed_explicit_unchanged() {
         .iter()
         .find(|s| s["title"].as_str().unwrap().contains("boot"))
         .unwrap();
-    assert_eq!(boot["line"], 4);
+    // a.py: boot sits at line 5 (two blank lines after pass); the graph
+    // hit agrees, and the F1 blank-target gate would have rejected a
+    // wrong seed (this assertion caught exactly that during review)
+    assert_eq!(boot["line"], 5);
     assert!(boot["description"].as_str().unwrap().contains("graph 補行號"));
 }
 
@@ -1155,6 +1158,132 @@ fn lineless_roundtrip_tour_validate() {
     );
     assert_eq!(out.exit_code, 0, "{}", out.stdout);
     assert!(!out.stdout.contains("[FAIL]"), "{}", out.stdout);
+}
+
+// review F5/F6: full-width wrappers and buried `.py` substrings
+#[test]
+fn lineless_tail_grammar_review_fixes() {
+    // F5: full-width parens (CJK docs) work as wrappers
+    let frames = parse_frames(&["└─ boot（pkg/a.py）".to_string()]);
+    assert_eq!(frames[0].path.as_deref(), Some("pkg/a.py"));
+    assert_eq!(frames[0].ident, "boot");
+    // F6: a `.py` buried in a longer identifier does not veto the anchor
+    // (the buried token still wins legacy best_ident — symbol naming is
+    // the doc author's concern; the anchor surviving is the contract)
+    let frames = parse_frames(&["└─ client.py_helper() (pkg/a.py)".to_string()]);
+    assert_eq!(frames[0].path.as_deref(), Some("pkg/a.py"));
+    assert_eq!(frames[0].ident, "py_helper");
+    // two-path rejection still holds after the boundary fix
+    let frames = parse_frames(&["└─ x pkg/a.py extra (pkg/cfg.py)".to_string()]);
+    assert_eq!(frames[0].path, None);
+}
+
+// review F1: blank/out-of-range fill target downgrades to a typed skip
+#[test]
+fn build_tours_lineless_blank_target_fails_closed() {
+    let (repo, chain) = repo_fixture_lineless("lineless-blank");
+    // a.py line 3 is blank — a graph hit pointing there must not fill
+    std::fs::write(&chain, "# T\n\n```text\n└─ boot() (pkg/a.py)\n```\n").unwrap();
+    let db = repo.join(".code-reality").join("graph.db");
+    std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_node(&mut spec, "boot", "pkg/a.py::boot", "pkg/a.py", 3, &abs);
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(st.g_counts.get("invalid-line"), Some(&1), "{:?}", st.g_counts);
+    assert_eq!(st.skipped, 1);
+    assert!(st.tours[0]["steps"].as_array().unwrap().is_empty());
+}
+
+// review F4 (#3): empty symbol remainder → typed no-ident skip
+#[test]
+fn build_tours_lineless_no_ident() {
+    let (repo, chain) = repo_fixture_lineless("lineless-noident");
+    std::fs::write(&chain, "# T\n\n```text\n└─ (pkg/a.py)\n```\n").unwrap();
+    let db = repo.join(".code-reality").join("graph.db");
+    std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_node(&mut spec, "kernel", "pkg/a.py::kernel", "pkg/a.py", 1, &abs);
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(st.g_counts.get("no-ident"), Some(&1), "{:?}", st.g_counts);
+    assert_eq!(st.skipped, 1);
+    assert!(st.tours[0]["steps"].as_array().unwrap().is_empty());
+}
+
+// review F4 (#5): cross-file hits must NOT be inferred — exact-path query
+// degrades to not-in-graph, never moved-file
+#[test]
+fn build_tours_lineless_cross_file_stays_unfilled() {
+    let (repo, chain) = repo_fixture_lineless("lineless-crossfile");
+    std::fs::write(&chain, "# T\n\n```text\n└─ load_config() (pkg/a.py)\n```\n").unwrap();
+    let db = repo.join(".code-reality").join("graph.db");
+    std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    // load_config exists ONLY in cfg.py; the anchor names a.py
+    seed_node(
+        &mut spec,
+        "load_config",
+        "pkg/cfg.py::load_config",
+        "pkg/cfg.py",
+        1,
+        &abs,
+    );
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(
+        st.g_counts.get("not-in-graph"),
+        Some(&1),
+        "{:?}",
+        st.g_counts
+    );
+    assert!(st.g_counts.get("moved-file").is_none(), "{:?}", st.g_counts);
+    assert!(st.tours[0]["steps"].as_array().unwrap().is_empty());
+}
+
+// review F4 (#7): a prose mention that survives the grammar is a visible
+// noanchor skip (documented by-design trade-off), not a fake step
+#[test]
+fn build_tours_lineless_prose_survivor_visible_skip() {
+    let (repo, chain) = repo_fixture_lineless("lineless-prose");
+    std::fs::write(&chain, "# T\n\n```text\n└─ see pkg/a.py\n```\n").unwrap();
+    let db = repo.join(".code-reality").join("graph.db");
+    std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_node(&mut spec, "kernel", "pkg/a.py::kernel", "pkg/a.py", 1, &abs);
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    // ident "see" is not in the graph → not-in-graph skip
+    assert_eq!(
+        st.g_counts.get("not-in-graph"),
+        Some(&1),
+        "{:?}",
+        st.g_counts
+    );
+    assert!(st.tours[0]["steps"].as_array().unwrap().is_empty());
+}
+
+// review F4 (#9): explicit `:0` pins the legacy face (moved via the
+// nearest-line probe) — this arc does not touch explicit-anchor behavior
+#[test]
+fn build_tours_explicit_zero_pins_legacy_face() {
+    let (repo, chain) = repo_fixture_lineless("lineless-zero");
+    std::fs::write(&chain, "# T\n\n```text\n└─ kernel (pkg/a.py:0)\n```\n").unwrap();
+    let db = repo.join(".code-reality").join("graph.db");
+    std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_node(&mut spec, "kernel", "pkg/a.py::kernel", "pkg/a.py", 1, &abs);
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    let steps = st.tours[0]["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 1);
+    assert_eq!(steps[0]["line"], 1);
+    assert!(steps[0]["description"].as_str().unwrap().contains("graph +1"));
 }
 
 mod graph_db_fixture;
