@@ -35,4 +35,6 @@ flowchart LR
     P --> S["marketplace slice"] --> N["dutymail 回執 seq 65 → delegate-bridge"]
     P --> U["uv face 0.11.0 bootstrap"]
 ```
+
+**冷探回執已到（db108-cold-probe-ack-001，accepted seq 14，2026-10-11）**：bridge 冷探全綠——①stale graph 面 freshness gate loud skip＋row stamp；②fresh graph 面 0.11.0 producer 重 build 4337n/17324e、full arm、`--manifest` 錨生效（digest 凍結進 job row、carrier 見 21 graph tools）；③explicit `--mcp-supply code-reality-lsp-bridge` armed 4 工具、toolsDigest 與我方 manifest 逐字一致。registry-derived version authority 升級獨立性閉環（CR 未來 compatible 升級不需 bridge release）；ROOT-09／cooldown 已知悉無需 bridge 改動。雙方帳本乾淨，通知義務鏈正式終結。
 <!-- SECTION:FINAL_SUMMARY:END -->
