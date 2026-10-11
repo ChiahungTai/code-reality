@@ -1,13 +1,13 @@
 ---
 id: CR-7
 title: chain_tour 支援 symbol-only 錨（graph.db 代填行號）——mosaic DRAFT-46 對接
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-11 13:10'
-updated_date: '2026-10-11 13:10'
-ordinal: 7000
+updated_date: '2026-10-11 13:43'
 labels: []
 dependencies: []
+ordinal: 7000
 ---
 
 ## Description
