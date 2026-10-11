@@ -464,3 +464,35 @@ pyrefly-producer and code-reality-lsp-bridge — or let the plugin's
 MCP wrapper bootstrap all three on first session). Developer face:
 `cargo install --path <this-repo>/crates/code-reality`.
 Full docs: the repo README.
+
+### uv discovery contract (single source for wrapper & downstream resolvers)
+
+How `uv` itself is located when the plugin wrapper (and any downstream
+resolver, e.g. a dispatcher's MCP-supply preflight) needs it. GUI-launched
+harnesses freeze a minimal app PATH that lacks `~/.local/bin` — the uv
+installer's default home — so bare-name lookup alone is launch-face
+dependent. The contract:
+
+1. Resolve once, in order: first executable `uv` on PATH; only if PATH
+   has none, `$HOME/.local/bin/uv` (executable check included). Anything
+   else = typed fail-loud (wrapper: exit 127 with install guidance).
+2. No pivot after selection: every later invocation (`tool dir --bin`,
+   `tool install --force`) uses the SAME selected executable; if its
+   `tool dir --bin` fails, fail loud — never retry the next candidate.
+   A broken or outdated uv must surface as its own error, not be
+   silently masked by the fallback.
+3. Deliberately absent: hardcoded Homebrew/brew-prefix candidates. Both
+   launch faces carry `/opt/homebrew/bin` (or `/usr/local/bin`) in PATH,
+   so step 1 already covers them; hardcoding would override host PATH
+   policy and is not cross-platform.
+4. Downstream gates untouched: `uv tool dir --bin` stays the sole
+   authority for where the tools live; registry pin, plugin-manifest
+   version checks, binary `--version`/digest and freshness gates are
+   unchanged by discovery. Resolving uv is not a supply approval.
+
+Both `.mcp.json` wrapper shells implement this contract;
+`scripts/test-plugin-wrapper.sh` (F-series) pins it: PATH hit / PATH
+miss + HOME hit / all miss / non-executable candidate = miss / found-
+but-broken = no-pivot, per wrapper string. Cross-repo resolvers mirror
+the same observable contract and the same scenario matrix rather than
+importing code.

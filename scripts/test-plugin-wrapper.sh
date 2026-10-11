@@ -28,6 +28,18 @@
 #      node_modules                     -> 127 fast (rescue removed)
 #   B4 bridge BOOTSTRAP=off             -> developer PATH face wins
 #
+# uv discovery fallback (GUI-launch face: PATH lacks ~/.local/bin):
+#   F1 PATH has no uv + $HOME/.local/bin/uv
+#      executable                       -> fallback selected, install
+#                                          converges via the SAME executable
+#   F1b bridge variant of F1            -> wait loop sees the fallback face
+#   F2 HOME candidate not executable    -> same as miss: 127 + guidance
+#   F3 PATH uv found but broken
+#      (tool dir --bin fails)           -> 127, NO pivot to the healthy HOME
+#                                          uv (a broken uv must not be
+#                                          silently masked by the fallback)
+#   F4 bridge variant of F3             -> 127 fast, no pivot
+#
 # Exec-source identity (F2): uv-face fixtures are tagged "+uvface" so the
 # expected output proves WHICH binary exec'd — a wrapper that regresses to
 # exec'ing the PATH binary cannot pass T1/T2/B1.
@@ -269,6 +281,64 @@ for version in "$pin" "$pin+rev" "${pin}0+rev" "$pin-rc1+rev"; do
   esac
   printf '  boundary bridge version=%s rc=%s\n' "$version" "$rc"
 done
+
+# --- uv discovery fallback (F-series): the GUI-launch face — the app's
+# frozen PATH may lack ~/.local/bin where the uv installer puts the binary.
+
+# F1: PATH has no uv; the installer-default $HOME/.local/bin/uv is
+# executable -> fallback selected, and the SAME executable runs both
+# `tool dir --bin` and the install legs.
+mkdir -p "$WORK/home/.local/bin"
+mk_uv_stub "$WORK/home/.local/bin" install
+rm -f "$WORK/uvface/code-reality-mcp" "$WORK/uvface/code-reality-lsp-bridge" "$WORK/uvface/pyrefly-index"
+: > "$WORK/uv.log"
+out="$(env -i PATH=/nonexistent HOME="$WORK/home" /bin/sh -c "$wrap" 2>"$WORK/err")"; rc=$?
+expect "F1 PATH misses uv -> HOME/.local/bin fallback installs" "$pin+rev+uvface" 0 "$out" "$rc" "$(cat "$WORK/err")"
+for spec in "code-reality==$pin" "code-reality-lsp-bridge==$pin" "pyrefly-producer==$pin"; do
+  grep -q -- "--force $spec" "$WORK/uv.log" || { fail=$((fail + 1)); printf '  FAIL F1 install via fallback missing %s\n' "$spec"; }
+done
+pass=$((pass + 1)); printf '  ok   F1 install legs ran via the fallback executable\n'
+
+# F1b: bridge wrapper — same fallback feeds the wait loop's canonical dir.
+mk_uv_stub "$WORK/home/.local/bin" noop
+mkfake "$WORK/uvface" code-reality-lsp-bridge "$pin" "+uvface"
+out="$(env -i PATH=/nonexistent HOME="$WORK/home" /bin/sh -c "$wrapb" 2>"$WORK/err")"; rc=$?
+expect "F1b bridge fallback -> pinned uv-face exec" "$pin+rev+uvface" 0 "$out" "$rc" "$(cat "$WORK/err")"
+
+# F2: a HOME candidate that exists but is NOT executable is the same as a
+# miss — loud 127, never a silent success.
+printf '#!/bin/sh\nexit 0\n' > "$WORK/home/.local/bin/uv"
+chmod 644 "$WORK/home/.local/bin/uv"
+out="$(env -i PATH=/nonexistent HOME="$WORK/home" /bin/sh -c "$wrap" 2>"$WORK/err")"; rc=$?
+err="$(cat "$WORK/err")"
+if [ "$rc" = 127 ] && printf '%s' "$err" | grep -q "uv not found on PATH"; then
+  pass=$((pass + 1)); printf '  ok   F2 non-executable HOME candidate = miss\n'
+else
+  fail=$((fail + 1)); printf '  FAIL F2 rc=%s err=%s\n' "$rc" "$err"
+fi
+
+# F3: no-pivot — a uv ON PATH whose `tool dir --bin` fails must fail loud;
+# the healthy HOME fallback must NOT be consulted after selection.
+mkdir -p "$WORK/uvbroken"
+printf '#!/bin/sh\nexit 3\n' > "$WORK/uvbroken/uv"
+chmod +x "$WORK/uvbroken/uv"
+mk_uv_stub "$WORK/home/.local/bin" noop
+out="$(env -i PATH="$WORK/uvbroken" HOME="$WORK/home" /bin/sh -c "$wrap" 2>"$WORK/err")"; rc=$?
+err="$(cat "$WORK/err")"
+if [ "$rc" = 127 ] && printf '%s' "$err" | grep -q "cannot resolve uv tool bin dir"; then
+  pass=$((pass + 1)); printf '  ok   F3 broken PATH uv fails loud (no HOME pivot)\n'
+else
+  fail=$((fail + 1)); printf '  FAIL F3 rc=%s out=%s err=%s\n' "$rc" "$out" "$err"
+fi
+
+# F4: bridge wrapper — same no-pivot semantics.
+out="$(env -i PATH="$WORK/uvbroken" HOME="$WORK/home" /bin/sh -c "$wrapb" 2>"$WORK/err")"; rc=$?
+err="$(cat "$WORK/err")"
+if [ "$rc" = 127 ] && printf '%s' "$err" | grep -q "cannot resolve uv tool bin dir"; then
+  pass=$((pass + 1)); printf '  ok   F4 bridge broken PATH uv fails loud (no pivot)\n'
+else
+  fail=$((fail + 1)); printf '  FAIL F4 rc=%s err=%s\n' "$rc" "$err"
+fi
 
 printf 'wrapper regression: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" = 0 ]
