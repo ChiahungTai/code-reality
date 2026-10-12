@@ -69,4 +69,5 @@ flowchart LR
 - holder 現況（唯讀）：bindingEpoch 4 bound、cursor 21/22、pending 1——bound≠carrier 活著，未做 takeover/release。
 - 憑證面：本 repo `governance/dutymail-consume.toml`（AIR-311 provisioning，commit 13ac689）仍為 duty_receive 活機制；AIR-312 退役須等共用 skill 接管收信面。
 - 新址 `code-reality`（7af5be6b）：epoch 0、零信——共用 skill watch target。
+- **pending 項閉環（2026-10-12）**：seq 22 回覆文字經 user 轉貼交付（manual paste，無 message_id——semantic ACK 免 formal receipt）；transport cursor 22/22、pending 0（普通 inbox 模型：已讀、原信保留）。殘餘＝退役三閘（外部契約），見 AC 最後一項。
 <!-- SECTION:NOTES:END -->
