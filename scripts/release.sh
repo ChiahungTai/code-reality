@@ -28,6 +28,9 @@
 #              2026-09-14)
 #   slice      bash scripts/dist-marketplace.sh (local-market machines
 #              see the new version only after this — the second miss)
+#   harness    per-harness consumer refresh, guarded per face: CC plugin
+#              update + uv tool upgrade (PATH face); muse/grok ride the
+#              PATH face, ZCode panel refresh stays manual (reported)
 #   report     CI watch hint + consumer next steps
 #
 # --dry-run stops after the guard and restores the tree (no commit,
@@ -185,6 +188,32 @@ echo "  wheels live on PyPI: all three dists at $new"
 
 # ---------- local slice ----------
 bash scripts/dist-marketplace.sh
+
+# ---------- harness consumer refresh ----------
+# Per-harness consumer faces of THIS machine (each guarded — machines
+# without a harness skip gracefully; born of the 0.12.0 arc where the CC
+# plugin had drifted four minors because nothing refreshed it):
+#   CC   `claude plugin update` — CC caches marketplace versions; without
+#        this it lags releases silently (0.12.0 shipped with CC on 0.10.0)
+#   uv   `uv tool upgrade` — the PATH face (~/.local/bin) that muse/grok
+#        raw-command registrations resolve; the ZCode wrapper bootstraps
+#        its own pin, but a release should leave the bare CLI face current
+#   muse/grok: nothing per-release — both register `code-reality-mcp` as
+#        a raw PATH command, so they ride the uv face above
+#   ZCode: panel refresh stays a manual step (app-owned cache; reported)
+echo "  harness consumers:"
+if command -v claude >/dev/null 2>&1; then
+  claude plugin update code-reality@code-reality-market 2>&1 | tail -1
+else
+  echo "    claude CLI absent — CC plugin not refreshed"
+fi
+if command -v uv >/dev/null 2>&1; then
+  uv tool upgrade code-reality code-reality-lsp-bridge pyrefly-producer >/dev/null 2>&1 &&
+    echo "    uv PATH face: code-reality $($HOME/.local/bin/code-reality --version 2>/dev/null)" ||
+    echo "    uv tool upgrade failed (non-fatal — wrapper bootstraps its own pin)"
+else
+  echo "    uv absent — PATH face not refreshed"
+fi
 
 # ---------- report ----------
 echo
