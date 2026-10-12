@@ -4,7 +4,7 @@ title: AIR-312 信箱慣例遷移對接——本 repo 盤點與退役前置
 status: Done
 assignee: []
 created_date: '2026-10-12 00:09'
-updated_date: '2026-10-12 11:21'
+updated_date: '2026-10-12 20:00'
 labels:
   - mailbox-migration
 dependencies: []
@@ -74,18 +74,18 @@ flowchart LR
 - **pending 項閉環（2026-10-12）**：seq 22 回覆文字經 user 轉貼交付（manual paste，無 message_id——semantic ACK 免 formal receipt）；transport cursor 22/22、pending 0（普通 inbox 模型：已讀、原信保留）。殘餘＝退役三閘（外部契約），見 AC 最後一項。
 
 - **AIR-312 落地通知吸收＋舊址退役宣告（2026-10-12）**：收新址 `code-reality` 首封信（seq 1、envelope 2182a50b、ai-guide-marshal coordination/inform 免回信，已 mark-read）。退役三閘全數機械驗證：①共用 skill 落地＝mail-handle 已部署、本 session 實用（pending-replies/inbox/show/mark-read 全通）；②bridge 歷史入口＝tokenless 唯讀面在場，`dutymail mail list --address code-reality-marshal --box pending` 實測 `{items:[], primaryCursor:22}`；③sender 切換＝我方 outbound 六 thread 全數閉（上表），新信/reply_address 起改寄 repo basename 新址。舊址機械狀態：pendingCount=0、cursor 22/22（bridge_mail_status；bindingEpoch 4 唯讀不動）。
-- **殘餘（特赦③範圍外）**：`governance/dutymail-consume.toml` 拆除＝一次 `git rm`＋commit，待 user 點頭；拆除後 duty_receive process 對本 repo 即 deny-all fail-loud（期望終態），檔現存亦無消費路徑（process 受 skill 紅線禁用）。
+- **殘餘閉環（2026-10-12）**：`governance/dutymail-consume.toml` 已拆除（user go——「接續做吧」，`git rm`＋commit 同 batch）。duty_receive process 對本 repo 即 deny-all fail-loud（期望終態）；先前驗證紀錄：檔現存時亦無消費路徑（process 受 skill 紅線禁用），repo 內唯一引用＝本卡（rg 全域掃描）。
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-舊址 code-reality-marshal 退役宣告成立（三閘機驗：共用 skill 落地、tokenless 歷史讀取面、sender 切換；對帳 22/22 pending 0），新址 code-reality 普通 inbox 啟用並吸收首封信；殘餘＝governance/dutymail-consume.toml 拆除待 user go。
+舊址 code-reality-marshal 退役宣告成立（三閘機驗：共用 skill 落地、tokenless 歷史讀取面、sender 切換；對帳 22/22 pending 0），新址 code-reality 普通 inbox 啟用並吸收首封信；殘餘已閉環——governance/dutymail-consume.toml 已拆除（2026-10-12 user go），本弧零殘餘。
 
 ```mermaid
 flowchart LR
     OLD["舊址 code-reality-marshal<br/>22/22 · pending 0"] --> RET["退役宣告成立<br/>（三閘機驗 2026-10-12）"]
     NEW["新址 code-reality<br/>普通 inbox"] --> LIVE["現役信箱<br/>seq 1 已吸收"]
-    CFG["dutymail-consume.toml<br/>退役待閘標記"] --> RM["拆除待 user go<br/>（特赦③範圍外）"]
+    CFG["dutymail-consume.toml<br/>退役待閘標記"] --> RM["已拆除 2026-10-12<br/>（deny-all 期望終態）"]
 ```
 <!-- SECTION:FINAL_SUMMARY:END -->
