@@ -1872,7 +1872,7 @@ fn r2_rust_impl_dual_bracket_positive() {
         &rs_sym("impl#[Lab][WsLab]m()."),
         "m",
         "pkg/lab.rs",
-        4,
+        7,
         "Function",
         "rust",
         &abs,
@@ -1893,7 +1893,7 @@ fn r2_rust_impl_dual_bracket_positive() {
     assert!(st.g_counts.get("ambiguous").is_none(), "{:?}", st.g_counts);
     let steps = st.tours[0]["steps"].as_array().unwrap();
     assert_eq!(steps.len(), 1);
-    assert_eq!(steps[0]["line"], 4);
+    assert_eq!(steps[0]["line"], 7);
     assert_eq!(
         steps[0]["x-codeReality"]["symbol"].as_str().unwrap(),
         rs_sym("impl#[Lab][WsLab]m().")
@@ -2073,6 +2073,167 @@ fn r2_internal_empty_segment_token_stays_ambiguous() {
         desc.contains("歧義候選：a..b → A#b(). :2（Function）／B#b(). :7（Function）"),
         "{desc}"
     );
+}
+
+const CHAIN_MD_PROSE_NEG: &str = r#"# prose frame negative
+
+```text
+└─ see DataPhaseStep.execute (pkg/daily.py)
+```
+"#;
+
+/// COD-1 whole-frame gate, negative: the symbol remainder carries prose
+/// around the token (`see DataPhaseStep.execute`) — prose must not gain
+/// disambiguation power. Over the same-file trio of `execute` methods
+/// the frame stays ambiguous (zero steps, no x-codeReality anywhere)
+/// and the R3 hint still lists all three candidates (fail-visible).
+#[test]
+fn prose_frame_stays_ambiguous_with_candidates() {
+    let src = "class DataPhaseStep:\n    def execute(self):\n        pass\n\n\nclass PowerStep:\n    def execute(self):\n        pass\n\n\nclass GridStep:\n    def execute(self):\n        pass\n";
+    let (repo, chain) = repo_fixture_cr9(
+        "cr9-prose-neg",
+        &[("pkg/daily.py", src.into())],
+        CHAIN_MD_PROSE_NEG,
+    );
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    for (cls, line) in [("DataPhaseStep", 2), ("PowerStep", 7), ("GridStep", 12)] {
+        seed_sym(
+            &mut spec,
+            &py_sym("pkg.daily", &format!("{cls}#execute().")),
+            "execute",
+            "pkg/daily.py",
+            line,
+            "Function",
+            "python",
+            &abs,
+        );
+    }
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(st.g_counts.get("ambiguous"), Some(&1), "{:?}", st.g_counts);
+    assert!(!st.g_counts.contains_key("filled"), "{:?}", st.g_counts);
+    let t = st.tours[0].as_object().unwrap();
+    assert!(t["steps"].as_array().unwrap().is_empty());
+    let tour_json = serde_json::to_string(t).unwrap();
+    assert!(!tour_json.contains("x-codeReality"), "{tour_json}");
+    let desc = t["description"].as_str().unwrap();
+    assert!(desc.contains("ambiguous:1"), "{desc}");
+    assert!(
+        desc.contains(
+            "歧義候選：see DataPhaseStep.execute → DataPhaseStep#execute(). :2（Function）／PowerStep#execute(). :7（Function）／GridStep#execute(). :12（Function）"
+        ),
+        "{desc}"
+    );
+}
+
+const CHAIN_MD_PROSE_POS: &str = r#"# prose gate boundary positive
+
+```text
+└─ DataPhaseStep.execute (pkg/daily2.py)
+```
+"#;
+
+/// COD-1 whole-frame gate, positive boundary: the same-shaped frame
+/// WITHOUT the prose prefix stays eligible — the gate blocks prose, not
+/// qualified-name frames. R2 tier-1 keeps exactly one survivor and
+/// fills it.
+#[test]
+fn qualified_frame_without_prose_still_fills() {
+    let src = "class DataPhaseStep:\n    def execute(self):\n        pass\n\n\nclass PowerStep:\n    def execute(self):\n        pass\n\n\nclass GridStep:\n    def execute(self):\n        pass\n";
+    let (repo, chain) = repo_fixture_cr9(
+        "cr9-prose-pos",
+        &[("pkg/daily2.py", src.into())],
+        CHAIN_MD_PROSE_POS,
+    );
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    for (cls, line) in [("DataPhaseStep", 2), ("PowerStep", 7), ("GridStep", 12)] {
+        seed_sym(
+            &mut spec,
+            &py_sym("pkg.daily2", &format!("{cls}#execute().")),
+            "execute",
+            "pkg/daily2.py",
+            line,
+            "Function",
+            "python",
+            &abs,
+        );
+    }
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(st.g_counts.get("filled"), Some(&1), "{:?}", st.g_counts);
+    assert!(!st.g_counts.contains_key("ambiguous"), "{:?}", st.g_counts);
+    let steps = st.tours[0]["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 1);
+    assert_eq!(steps[0]["line"], 2);
+    assert_eq!(
+        steps[0]["x-codeReality"]["symbol"].as_str().unwrap(),
+        py_sym("pkg.daily2", "DataPhaseStep#execute().")
+    );
+    assert!(!st.tours[0]["description"]
+        .as_str()
+        .unwrap()
+        .contains("歧義候選"));
+}
+
+const CHAIN_MD_MALFORMED_BRACKET: &str = r#"# malformed bracket scenario
+
+```text
+└─ Lab.m (pkg/lab2.rs)
+```
+"#;
+
+/// COD-2 bracket-group validation: a malformed trait group
+/// (`impl#[Lab][]m().` — empty second bracket group) makes the whole
+/// candidate set unresolvable, even though tier-1 would otherwise match
+/// `Lab.m` against it. Fail-closed ambiguous; the malformed candidate
+/// also stays out of the R3 hint (only cleanly-parsing candidates
+/// render there).
+#[test]
+fn r2_malformed_bracket_group_stays_ambiguous() {
+    let src = "mod lab2 {\n    pub struct Lab;\n    pub trait WsLab {\n        fn m(&self);\n    }\n    impl WsLab for Lab {\n        fn m(&self) {}\n    }\n}\n";
+    let (repo, chain) = repo_fixture_cr9(
+        "cr9-malformed-bracket",
+        &[("pkg/lab2.rs", src.into())],
+        CHAIN_MD_MALFORMED_BRACKET,
+    );
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_sym(
+        &mut spec,
+        &rs_sym("impl#[Lab][]m()."),
+        "m",
+        "pkg/lab2.rs",
+        7,
+        "Function",
+        "rust",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &rs_sym("impl#[WsLab]m()."),
+        "m",
+        "pkg/lab2.rs",
+        7,
+        "Function",
+        "rust",
+        &abs,
+    );
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(st.g_counts.get("ambiguous"), Some(&1), "{:?}", st.g_counts);
+    assert!(!st.g_counts.contains_key("filled"), "{:?}", st.g_counts);
+    let desc = st.tours[0]["description"].as_str().unwrap();
+    assert!(
+        desc.contains("歧義候選：Lab.m → impl#[WsLab]m(). :7（Function）"),
+        "{desc}"
+    );
+    // the malformed descriptor never renders into the hint
+    assert!(!desc.contains("impl#[Lab][]m()"), "{desc}");
 }
 
 const CHAIN_MD_R3: &str = r#"# R3 scenario

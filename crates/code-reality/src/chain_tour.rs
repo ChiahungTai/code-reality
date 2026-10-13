@@ -156,6 +156,23 @@ pub fn best_ident(symbol: &str) -> (String, String) {
     (last, full)
 }
 
+/// Whole-frame token of a frame's symbol remainder (CR-9 COD-1 gate):
+/// trim, then cut one trailing `(...)` parameter group, so `main()` /
+/// `execute(ctx)` reduce to `main` / `execute` while a prose-wrapped
+/// remainder (`see Cls.method`) stays a multi-word string. A frame is
+/// disambiguation-eligible (R1/R2) only when this token equals the
+/// frame's full ident — prose around the token carries no
+/// disambiguation evidence.
+fn whole_frame_token(symbol: &str) -> &str {
+    let t = symbol.trim();
+    if t.ends_with(')') {
+        if let Some(i) = t.rfind('(') {
+            return t[..i].trim();
+        }
+    }
+    t
+}
+
 #[derive(Debug, Clone)]
 pub struct Frame {
     pub depth: usize,
@@ -603,7 +620,11 @@ fn sym_char(c: char) -> bool {
 /// `name().` function, `name#` class, `name.` variable. A Rust trait
 /// impl head `impl#[T][Trait]m().` contributes its FIRST bracket group
 /// (the inherent type) and skips the trait groups verbatim, so the
-/// chain is `[T, m]`. Returns None for anything that does not parse
+/// chain is `[T, m]`. Every bracket group validates like the first
+/// (non-empty, all `sym_char`); a malformed group (`impl#[Lab][]m().`)
+/// fails the whole chain — the candidate set stays ambiguous instead of
+/// silently reading past unverified text. Returns None for anything
+/// that does not parse
 /// cleanly — a non-ASCII region, an empty segment, or a delimiter
 /// outside the producer grammar (`().`/`#`/`.`; qname-style fixture
 /// rows). `%` is a name character here (escaped-identifier runs ride
@@ -624,8 +645,13 @@ fn descriptor_chain(region: &str) -> Option<Vec<String>> {
         names.push(group.to_string());
         i = "impl#[".len() + close + 1;
         while region[i..].starts_with('[') {
-            let end = region[i..].find(']')?;
-            i += end + 1;
+            let rest = &region[i + 1..];
+            let end = rest.find(']')?;
+            let group = &rest[..end];
+            if group.is_empty() || !group.chars().all(sym_char) {
+                return None;
+            }
+            i += end + 2;
         }
     }
     let b = region.as_bytes();
@@ -790,7 +816,11 @@ impl GraphAnchor {
     /// outright, every chain is strictly longer AND tail-aligns — the
     /// tier-2 survivor set is the entire candidate set, a forced
     /// multi-hit. Everything else stays fail-closed ambiguous; the R3
-    /// hint line surfaces the candidates to the author instead.
+    /// hint line surfaces the candidates to the author instead. A frame
+    /// whose symbol remainder carries prose around the token (e.g.
+    /// `see Cls.method`) is not eligible for disambiguation and stays
+    /// ambiguous with hints — the whole-frame gate covers R1 and R2
+    /// alike.
     /// Expected shift: `filled` counts move up from the CR-7 baseline
     /// exactly by the R1/R2 resolved frames; the `ambiguous` key keeps
     /// its semantics.
@@ -806,6 +836,7 @@ impl GraphAnchor {
         abs_path: &Path,
         ident: &str,
         ident_full: &str,
+        whole: bool,
     ) -> Result<FillOutcome, String> {
         if ident.is_empty() {
             return Ok(FillOutcome::NoAnchor("no-ident".into(), Vec::new()));
@@ -835,6 +866,15 @@ impl GraphAnchor {
             [] => Ok(FillOutcome::NoAnchor("not-in-graph".into(), Vec::new())),
             [(line, symbol, _)] => Ok(FillOutcome::Filled(*line, Some(symbol.clone()))),
             many => {
+                // whole-frame gate (COD-1): a prose-wrapped remainder
+                // carries no disambiguation evidence — skip R1/R2 and
+                // stay ambiguous with the R3 hint (fail-visible)
+                if !whole {
+                    return Ok(FillOutcome::NoAnchor(
+                        "ambiguous".into(),
+                        fill_candidates(many),
+                    ));
+                }
                 if let Some(fill) = r1_pseudo_ctor_pair(many) {
                     return Ok(FillOutcome::Filled(fill.0, fill.1));
                 }
@@ -1054,6 +1094,10 @@ pub fn build_tours(
             };
             let mut abs_path: Option<PathBuf> = None;
             let mut filled_line: Option<i64> = None;
+            // COD-1 whole-frame gate: only a remainder that is exactly
+            // the anchor token (plus one trailing parameter group) may
+            // spend R1/R2 disambiguation — prose stays ambiguous
+            let whole = !f.ident_full.is_empty() && whole_frame_token(&f.symbol) == f.ident_full;
             if let Some(p) = &f.path {
                 let (resolved, kind) = resolver.resolve(p);
                 match resolved {
@@ -1075,64 +1119,66 @@ pub fn build_tours(
                                         ..Default::default()
                                     };
                                 }
-                                Some(ga) => match ga.fill_anchor(&ap, &f.ident, &f.ident_full)? {
-                                    FillOutcome::Filled(line, symbol) => {
-                                        // review F1: the fill is only as
-                                        // good as its target line — blank,
-                                        // out-of-range, or unreadable
-                                        // targets downgrade to a typed
-                                        // skip (tour_validate skips an
-                                        // absent pattern silently, so the
-                                        // gate must live here)
-                                        let key = ap.to_string_lossy().replace('\\', "/");
-                                        let target_ok = {
-                                            let lines = lines_cache
-                                                .entry(key)
-                                                .or_insert_with(|| {
-                                                    std::fs::read_to_string(&ap)
-                                                        .map(|t| {
-                                                            t.split('\n')
-                                                                .map(|s| s.to_string())
-                                                                .collect()
-                                                        })
-                                                        .unwrap_or_default()
-                                                });
-                                            line >= 1
-                                                && ((line - 1) as usize) < lines.len()
-                                                && !lines[(line - 1) as usize]
-                                                    .trim()
-                                                    .is_empty()
-                                        };
-                                        if target_ok {
-                                            status = "filled".into();
-                                            g = GraphHit {
-                                                g: "filled".into(),
-                                                g_line: Some(line),
-                                                g_file: None,
-                                                g_files: Vec::new(),
-                                                g_symbol: symbol,
+                                Some(ga) => {
+                                    match ga.fill_anchor(&ap, &f.ident, &f.ident_full, whole)? {
+                                        FillOutcome::Filled(line, symbol) => {
+                                            // review F1: the fill is only as
+                                            // good as its target line — blank,
+                                            // out-of-range, or unreadable
+                                            // targets downgrade to a typed
+                                            // skip (tour_validate skips an
+                                            // absent pattern silently, so the
+                                            // gate must live here)
+                                            let key = ap.to_string_lossy().replace('\\', "/");
+                                            let target_ok = {
+                                                let lines = lines_cache
+                                                    .entry(key)
+                                                    .or_insert_with(|| {
+                                                        std::fs::read_to_string(&ap)
+                                                            .map(|t| {
+                                                                t.split('\n')
+                                                                    .map(|s| s.to_string())
+                                                                    .collect()
+                                                            })
+                                                            .unwrap_or_default()
+                                                    });
+                                                line >= 1
+                                                    && ((line - 1) as usize) < lines.len()
+                                                    && !lines[(line - 1) as usize]
+                                                        .trim()
+                                                        .is_empty()
                                             };
-                                            filled_line = Some(line);
-                                        } else {
+                                            if target_ok {
+                                                status = "filled".into();
+                                                g = GraphHit {
+                                                    g: "filled".into(),
+                                                    g_line: Some(line),
+                                                    g_file: None,
+                                                    g_files: Vec::new(),
+                                                    g_symbol: symbol,
+                                                };
+                                                filled_line = Some(line);
+                                            } else {
+                                                g = GraphHit {
+                                                    g: "invalid-line".into(),
+                                                    ..Default::default()
+                                                };
+                                            }
+                                        }
+                                        FillOutcome::NoAnchor(reason, cands) => {
+                                            if reason == "ambiguous" && !cands.is_empty() {
+                                                ambig_frames.push((
+                                                    f.symbol.chars().take(30).collect(),
+                                                    cands,
+                                                ));
+                                            }
                                             g = GraphHit {
-                                                g: "invalid-line".into(),
+                                                g: reason,
                                                 ..Default::default()
                                             };
                                         }
                                     }
-                                    FillOutcome::NoAnchor(reason, cands) => {
-                                        if reason == "ambiguous" && !cands.is_empty() {
-                                            ambig_frames.push((
-                                                f.symbol.chars().take(30).collect(),
-                                                cands,
-                                            ));
-                                        }
-                                        g = GraphHit {
-                                            g: reason,
-                                            ..Default::default()
-                                        };
-                                    }
-                                },
+                                }
                             }
                         } else {
                             status = check_anchor(&ap, f.line.unwrap_or(0), &f.ident);
