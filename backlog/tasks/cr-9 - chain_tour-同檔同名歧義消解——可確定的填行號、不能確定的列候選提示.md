@@ -4,7 +4,7 @@ title: chain_tour 同檔同名歧義消解——可確定的填行號、不能�
 status: In Progress
 assignee: []
 created_date: '2026-10-13 14:00'
-updated_date: '2026-10-13 14:01'
+updated_date: '2026-10-13 15:43'
 labels: []
 dependencies: []
 references:
@@ -36,7 +36,7 @@ flowchart LR
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 - R1：Type＋pseudo-ctor 自撞形（Plain/Greeter 型＋嵌套 Type 型）→ 填 class 行且 x-codeReality.symbol＝Type 本尊；三組反例（Type＋異行同名 fn／同行非配對節點／nested-fn 無 ctor）仍 ambiguous（fixtures 釘）
+- [x] #1 - R1：Type＋pseudo-ctor 自撞形（Plain/Greeter 型＋嵌套 Type 型）→ 填 class 行且 x-codeReality.symbol＝Type 本尊；三組反例（Type＋異行同名 fn／同行非配對節點／nested-fn 無 ctor）仍 ambiguous（fixtures 釘）
 - R2：doc 帶限定名（`DataPhaseStep.execute` 對三類同名方法）→ 恰一存活填行號；`Outer.A.execute` 完整鏈 → 填；限定無候選符／雙候選符／bare 名多法仍 ambiguous（fixtures 釘）
 - R3：殘餘 ambiguous 幀在 tour description 末尾獨立行列候選（≤4/幀、≤3 幀/scenario＋剩餘計數，帶 kind 與行號，非 path:line 形）；無歧義 tour 的 description 零變化；g_counts ambiguous 鍵語義不變
 - CR-7 addendum：doc-comment 修訂落地＋對抗 fixture（無限定資訊仍 fail-closed）在場
@@ -54,3 +54,11 @@ flowchart LR
 
 實作派工：bridge glm --write-mode edit --yolo 卡級 worktree；工單由本卡 Plan＋AC 拼裝，機械驗證＝cargo test 全量＋git diff 範圍檢查。
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+deep-work 值星進度（sess_d22cd132）：顧問雙腿收斂（muse job-mv6qlxka-35tmbw／codex job-mv6qlxhh-i2wevo——R1/R2 修訂形全吸收進 Plan）→ 實作腿 GLM-5.3-Flash job-mv6r479v-nav5a2 verdict done（WT code-reality-cr-9 working tree 交付、未 commit；chain_tour.rs +339/-44＋s5_chain_tour.rs +801；graph_db_fixture.rs 未動＝seed_node 實居 s5 檔、make_graph_db 已支援 kind——准改清單上限非必改）→ 主 session 機驗：clean-env 全量 cargo test exit 0＋scoped s5 53/53 綠。回信 mosaic 已發（cr9-decision-220944c，AUTH 決定好後回信已消費；附樣本清單請求＋外部驗收請求）。在飛：fresh-eyes＋primed 雙審查；下一步：judge→修正→分段 commit（R1+R3／R2，best_ident 簽名耦合已預授權合併）→settle
+
+settle（sess_d22cd132）：judge 裁決後修補腿 job-mv6tthpl-hqbjsv 落地（addendum 精確化＝bare token 只經 R1 或 tier-1 精確全鏈填入永不經 tier-2＋R3 註解歸因修正＋descriptor_chain 註解如實化＋三支邊界 fixtures：bare-tier-1 頂層 fn 釘／module 限定 token ambiguous／a..b 空段 ambiguous）。最終機驗：clean-env 全量 cargo test exit 0、70 test targets、708 passed / 0 FAILED；clippy 零新增；fmt 新碼 0 diff。commit 5795aad 已 ff-merge 進 main（單一 commit——Plan ⑪ 合併例外成立：fill_anchor 簽名/體 R1 與 R2 交織，事後切分需虛構未測中間態）。雙審查 finding 全數收斂：fresh F1/F2/F3 採納（F4①③併入修補、②④⑤由 addendum 文檔化涵蓋）、primed F1 同點裁決採 fresh① 方案（不加 qualified-only 閘——精確全名匹配＝證據型消解）、primed F2/F3 採納。卡片狀態留 In Progress——Done 翻牌歸 user（AIR-200）。後續（user 點頭後）：release 弧吸收 plugin skill chain_tour 行為文檔＋版號鎖步；mosaic 以新版重跑 225 tours＝外部驗收
+<!-- SECTION:NOTES:END -->
