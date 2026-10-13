@@ -88,11 +88,21 @@ fn prefix_and_blocks_and_frames() {
 
 #[test]
 fn best_ident_call_position_wins() {
-    assert_eq!(best_ident("kernel()"), "kernel");
-    assert_eq!(best_ident("obj.method()"), "method");
-    assert_eq!(best_ident("mod.sub.long_name"), "long_name");
+    // CR-9: best_ident returns (last segment, full dotted winning token)
+    assert_eq!(best_ident("kernel()"), ("kernel".into(), "kernel".into()));
+    assert_eq!(
+        best_ident("obj.method()"),
+        ("method".into(), "obj.method".into())
+    );
+    assert_eq!(
+        best_ident("mod.sub.long_name"),
+        ("long_name".into(), "mod.sub.long_name".into())
+    );
     // Python oracle: the regex grabs the longest bare word
-    assert_eq!(best_ident("no idents here 123!"), "idents");
+    assert_eq!(
+        best_ident("no idents here 123!"),
+        ("idents".into(), "idents".into())
+    );
 }
 
 #[test]
@@ -906,6 +916,7 @@ fn seed_node(
     qname: &str,
     file: &str,
     line: i64,
+    kind: &'static str,
     abs: &dyn Fn(&str) -> String,
 ) {
     spec.nodes.push(graph_db_fixture::NodeSeed {
@@ -917,7 +928,7 @@ fn seed_node(
     spec.node_attrs.push((
         qname.into(),
         graph_db_fixture::NodeAttr {
-            kind: "Function",
+            kind,
             language: "python",
             is_test: 0,
             community_id: None,
@@ -967,17 +978,18 @@ fn build_tours_lineless_fill_and_miss() {
     std::fs::create_dir_all(db.parent().unwrap()).unwrap();
     let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
     let mut spec = graph_db_fixture::GraphDbSpec::default();
-    seed_node(&mut spec, "kernel", "pkg/a.py::kernel", "pkg/a.py", 1, &abs);
-    seed_node(&mut spec, "boot", "pkg/a.py::boot", "pkg/a.py", 5, &abs);
+    seed_node(&mut spec, "kernel", "pkg/a.py::kernel", "pkg/a.py", 1, "Function", &abs);
+    seed_node(&mut spec, "boot", "pkg/a.py::boot", "pkg/a.py", 5, "Function", &abs);
     seed_node(
         &mut spec,
         "load_config",
         "pkg/cfg.py::load_config",
         "pkg/cfg.py",
         1,
+        "Function",
         &abs,
     );
-    seed_node(&mut spec, "helper", "pkg/a.py::helper", "pkg/a.py", 9, &abs);
+    seed_node(&mut spec, "helper", "pkg/a.py::helper", "pkg/a.py", 9, "Function", &abs);
     graph_db_fixture::make_graph_db(&db, &spec).unwrap();
     let st = build_tours(&chain, &repo, Some(&db)).unwrap();
     // 5 frames: 4 unique graph hits filled, ghost skipped (not-in-graph)
@@ -1037,12 +1049,12 @@ fn build_tours_lineless_ambiguous_fails_closed() {
     std::fs::create_dir_all(db.parent().unwrap()).unwrap();
     let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
     let mut spec = graph_db_fixture::GraphDbSpec::default();
-    seed_node(&mut spec, "kernel", "pkg/a.py::kernel", "pkg/a.py", 1, &abs);
+    seed_node(&mut spec, "kernel", "pkg/a.py::kernel", "pkg/a.py", 1, "Function", &abs);
     // two same-name defs in the SAME file: the unique-anchor gate must
     // fail closed (no ORDER-BY-nearest blind pick). Distinct qnames (the
     // fixture universe keys symbol==qname UNIQUE) with the same name.
-    seed_node(&mut spec, "boot", "pkg/a.py::boot#1", "pkg/a.py", 5, &abs);
-    seed_node(&mut spec, "boot", "pkg/a.py::boot#2", "pkg/a.py", 7, &abs);
+    seed_node(&mut spec, "boot", "pkg/a.py::boot#1", "pkg/a.py", 5, "Function", &abs);
+    seed_node(&mut spec, "boot", "pkg/a.py::boot#2", "pkg/a.py", 7, "Function", &abs);
     graph_db_fixture::make_graph_db(&db, &spec).unwrap();
     let st = build_tours(&chain, &repo, Some(&db)).unwrap();
     // CHAIN_MD_LINELESS has 5 frames; only kernel fills here
@@ -1093,8 +1105,8 @@ fn build_tours_lineless_mixed_explicit_unchanged() {
     std::fs::create_dir_all(db.parent().unwrap()).unwrap();
     let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
     let mut spec = graph_db_fixture::GraphDbSpec::default();
-    seed_node(&mut spec, "kernel", "pkg/a.py::kernel", "pkg/a.py", 1, &abs);
-    seed_node(&mut spec, "boot", "pkg/a.py::boot", "pkg/a.py", 5, &abs);
+    seed_node(&mut spec, "kernel", "pkg/a.py::kernel", "pkg/a.py", 1, "Function", &abs);
+    seed_node(&mut spec, "boot", "pkg/a.py::boot", "pkg/a.py", 5, "Function", &abs);
     graph_db_fixture::make_graph_db(&db, &spec).unwrap();
     let st = build_tours(&chain, &repo, Some(&db)).unwrap();
     let steps = st.tours[0]["steps"].as_array().unwrap();
@@ -1123,17 +1135,18 @@ fn lineless_roundtrip_tour_validate() {
     std::fs::create_dir_all(db.parent().unwrap()).unwrap();
     let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
     let mut spec = graph_db_fixture::GraphDbSpec::default();
-    seed_node(&mut spec, "kernel", "pkg/a.py::kernel", "pkg/a.py", 1, &abs);
-    seed_node(&mut spec, "boot", "pkg/a.py::boot", "pkg/a.py", 5, &abs);
+    seed_node(&mut spec, "kernel", "pkg/a.py::kernel", "pkg/a.py", 1, "Function", &abs);
+    seed_node(&mut spec, "boot", "pkg/a.py::boot", "pkg/a.py", 5, "Function", &abs);
     seed_node(
         &mut spec,
         "load_config",
         "pkg/cfg.py::load_config",
         "pkg/cfg.py",
         1,
+        "Function",
         &abs,
     );
-    seed_node(&mut spec, "helper", "pkg/a.py::helper", "pkg/a.py", 9, &abs);
+    seed_node(&mut spec, "helper", "pkg/a.py::helper", "pkg/a.py", 9, "Function", &abs);
     graph_db_fixture::make_graph_db(&db, &spec).unwrap();
     let st = build_tours(&chain, &repo, Some(&db)).unwrap();
     // an empty tour validates trivially — pin the filled steps first so
@@ -1188,7 +1201,7 @@ fn build_tours_lineless_blank_target_fails_closed() {
     std::fs::create_dir_all(db.parent().unwrap()).unwrap();
     let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
     let mut spec = graph_db_fixture::GraphDbSpec::default();
-    seed_node(&mut spec, "boot", "pkg/a.py::boot", "pkg/a.py", 3, &abs);
+    seed_node(&mut spec, "boot", "pkg/a.py::boot", "pkg/a.py", 3, "Function", &abs);
     graph_db_fixture::make_graph_db(&db, &spec).unwrap();
     let st = build_tours(&chain, &repo, Some(&db)).unwrap();
     assert_eq!(st.g_counts.get("invalid-line"), Some(&1), "{:?}", st.g_counts);
@@ -1205,7 +1218,7 @@ fn build_tours_lineless_no_ident() {
     std::fs::create_dir_all(db.parent().unwrap()).unwrap();
     let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
     let mut spec = graph_db_fixture::GraphDbSpec::default();
-    seed_node(&mut spec, "kernel", "pkg/a.py::kernel", "pkg/a.py", 1, &abs);
+    seed_node(&mut spec, "kernel", "pkg/a.py::kernel", "pkg/a.py", 1, "Function", &abs);
     graph_db_fixture::make_graph_db(&db, &spec).unwrap();
     let st = build_tours(&chain, &repo, Some(&db)).unwrap();
     assert_eq!(st.g_counts.get("no-ident"), Some(&1), "{:?}", st.g_counts);
@@ -1230,6 +1243,7 @@ fn build_tours_lineless_cross_file_stays_unfilled() {
         "pkg/cfg.py::load_config",
         "pkg/cfg.py",
         1,
+        "Function",
         &abs,
     );
     graph_db_fixture::make_graph_db(&db, &spec).unwrap();
@@ -1254,7 +1268,7 @@ fn build_tours_lineless_prose_survivor_visible_skip() {
     std::fs::create_dir_all(db.parent().unwrap()).unwrap();
     let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
     let mut spec = graph_db_fixture::GraphDbSpec::default();
-    seed_node(&mut spec, "kernel", "pkg/a.py::kernel", "pkg/a.py", 1, &abs);
+    seed_node(&mut spec, "kernel", "pkg/a.py::kernel", "pkg/a.py", 1, "Function", &abs);
     graph_db_fixture::make_graph_db(&db, &spec).unwrap();
     let st = build_tours(&chain, &repo, Some(&db)).unwrap();
     // ident "see" is not in the graph → not-in-graph skip
@@ -1277,7 +1291,7 @@ fn build_tours_explicit_zero_pins_legacy_face() {
     std::fs::create_dir_all(db.parent().unwrap()).unwrap();
     let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
     let mut spec = graph_db_fixture::GraphDbSpec::default();
-    seed_node(&mut spec, "kernel", "pkg/a.py::kernel", "pkg/a.py", 1, &abs);
+    seed_node(&mut spec, "kernel", "pkg/a.py::kernel", "pkg/a.py", 1, "Function", &abs);
     graph_db_fixture::make_graph_db(&db, &spec).unwrap();
     let st = build_tours(&chain, &repo, Some(&db)).unwrap();
     let steps = st.tours[0]["steps"].as_array().unwrap();
@@ -1315,6 +1329,928 @@ fn lineless_single_space_note_calibrated() {
     assert_eq!(frames[0].line, Some(34));
     assert_eq!(frames[0].note, "");
     assert!(frames[0].symbol.contains("module singleton"));
+}
+
+// ---------- CR-9: same-file same-name disambiguation (R1 pair / R2 qualified name / R3 hint) ----------
+
+/// Real SCIP-shaped symbol builders (pyrefly / rust-analyzer faces) —
+/// the CR-9 fixtures must exercise the exact descriptor grammar the
+/// resolver parses, not qname stand-ins.
+fn py_sym(module: &str, descriptor: &str) -> String {
+    format!("`pyrefly python demo 1.0 `{module}`/{descriptor}")
+}
+
+fn rs_sym(descriptor: &str) -> String {
+    format!("`rust-analyzer cargo demo 0.1.0 pkg/{descriptor}")
+}
+
+#[allow(clippy::too_many_arguments)]
+fn seed_sym(
+    spec: &mut graph_db_fixture::GraphDbSpec,
+    symbol: &str,
+    name: &str,
+    file: &str,
+    line: i64,
+    kind: &'static str,
+    language: &'static str,
+    abs: &dyn Fn(&str) -> String,
+) {
+    spec.nodes.push(graph_db_fixture::NodeSeed {
+        name: name.into(),
+        parent: None,
+        qname: symbol.into(),
+        file_path: abs(file),
+    });
+    spec.node_attrs.push((
+        symbol.into(),
+        graph_db_fixture::NodeAttr {
+            kind,
+            language,
+            is_test: 0,
+            community_id: None,
+        },
+    ));
+    spec.node_lines.push((symbol.into(), line));
+}
+
+/// Repo fixture for the CR-9 tests: pkg/ module profile, arbitrary
+/// source files, chain md, one git commit.
+fn repo_fixture_cr9(tag: &str, files: &[(&str, String)], chain_md: &str) -> (PathBuf, PathBuf) {
+    let tmp = tempfile::tempdir().unwrap().keep();
+    let repo = std::fs::canonicalize(&tmp).unwrap().join(tag);
+    std::fs::create_dir_all(repo.join("pkg")).unwrap();
+    std::fs::write(
+        repo.join(".code-reality.toml"),
+        "[[module]]\nprefix = \"pkg/\"\n",
+    )
+    .unwrap();
+    for (rel, content) in files {
+        std::fs::write(repo.join(rel), content).unwrap();
+    }
+    let chain = repo.join("chain.md");
+    std::fs::write(&chain, chain_md).unwrap();
+    let g = |args: &[&str]| {
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(args)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .status()
+            .unwrap();
+    };
+    g(&["init", "-q"]);
+    g(&["add", "."]);
+    g(&["commit", "-qm", "init"]);
+    (repo, chain)
+}
+
+fn db_of(repo: &std::path::Path) -> PathBuf {
+    let db = repo.join(".code-reality").join("graph.db");
+    std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+    db
+}
+
+const CHAIN_MD_R1: &str = r#"# R1 scenario
+
+```text
+Plain (pkg/r1.py)
+└─ Inner (pkg/r1.py)
+```
+"#;
+
+/// R1 positive (Plan ⑧): the candidate set is exactly the {Type `X#`,
+/// pseudo-ctor `X().`} pair — for a plain class AND a nested class.
+/// Both fill the class line and stamp the Type symbol.
+#[test]
+fn r1_pseudo_ctor_pair_fills_type_symbol() {
+    let src = "# module doc\n\nclass Plain:\n    pass\n\nclass Outer:\n    class Inner:\n        pass\n";
+    let (repo, chain) = repo_fixture_cr9("cr9-r1-pos", &[("pkg/r1.py", src.into())], CHAIN_MD_R1);
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.r1", "Plain#"),
+        "Plain",
+        "pkg/r1.py",
+        3,
+        "Type",
+        "python",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.r1", "Plain()."),
+        "Plain",
+        "pkg/r1.py",
+        3,
+        "Function",
+        "python",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.r1", "Outer#Inner#"),
+        "Inner",
+        "pkg/r1.py",
+        7,
+        "Type",
+        "python",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.r1", "Outer#Inner()."),
+        "Inner",
+        "pkg/r1.py",
+        7,
+        "Function",
+        "python",
+        &abs,
+    );
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(st.g_counts.get("filled"), Some(&2), "{:?}", st.g_counts);
+    assert!(st.g_counts.get("ambiguous").is_none(), "{:?}", st.g_counts);
+    let steps = st.tours[0]["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 2);
+    let plain = steps
+        .iter()
+        .find(|s| s["title"].as_str().unwrap().contains("Plain"))
+        .unwrap();
+    assert_eq!(plain["line"], 3);
+    assert_eq!(
+        plain["x-codeReality"]["symbol"].as_str().unwrap(),
+        py_sym("pkg.r1", "Plain#")
+    );
+    assert!(plain["description"].as_str().unwrap().contains("graph 補行號"));
+    let inner = steps
+        .iter()
+        .find(|s| s["title"].as_str().unwrap().contains("Inner"))
+        .unwrap();
+    assert_eq!(inner["line"], 7);
+    assert_eq!(
+        inner["x-codeReality"]["symbol"].as_str().unwrap(),
+        py_sym("pkg.r1", "Outer#Inner#")
+    );
+    assert!(!st.tours[0]["description"]
+        .as_str()
+        .unwrap()
+        .contains("歧義候選"));
+}
+
+const CHAIN_MD_R1_NEG_FN: &str = r#"# R1 neg scenario
+
+```text
+└─ Widget (pkg/r1n.py)
+```
+"#;
+
+/// R1 negative #1: Type `Widget#` plus a same-name FUNCTION on a
+/// different line — the pseudo-ctor pairing requires equal line_start;
+/// the set stays ambiguous (bare doc name matches both chains in R2).
+#[test]
+fn r1_negative_same_name_fn_other_line_stays_ambiguous() {
+    let src = "# mod\n\nclass Widget:\n    pass\n\n\ndef Widget():\n    pass\n";
+    let (repo, chain) =
+        repo_fixture_cr9("cr9-r1-negfn", &[("pkg/r1n.py", src.into())], CHAIN_MD_R1_NEG_FN);
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.r1n", "Widget#"),
+        "Widget",
+        "pkg/r1n.py",
+        3,
+        "Type",
+        "python",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.r1n", "Widget()."),
+        "Widget",
+        "pkg/r1n.py",
+        7,
+        "Function",
+        "python",
+        &abs,
+    );
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(st.g_counts.get("ambiguous"), Some(&1), "{:?}", st.g_counts);
+    assert!(st.g_counts.get("filled").is_none(), "{:?}", st.g_counts);
+    let desc = st.tours[0]["description"].as_str().unwrap();
+    assert!(
+        desc.contains("歧義候選：Widget → Widget# :3（Type）／Widget(). :7（Function）"),
+        "{desc}"
+    );
+}
+
+const CHAIN_MD_R1_NEG_SAME_LINE: &str = r#"# R1 neg same-line
+
+```text
+└─ run (pkg/r1s.py)
+```
+"#;
+
+/// R1 negative #2: two same-name method nodes on the SAME line with no
+/// Type/ctor shape (both Function kind) — the pairing gate must not
+/// fire even when the lines coincide.
+#[test]
+fn r1_negative_same_line_unpaired_stays_ambiguous() {
+    let src = "class Alpha:\n    def run(self):\n        pass\n\n\nclass Beta:\n    def run(self):\n        pass\n";
+    let (repo, chain) = repo_fixture_cr9(
+        "cr9-r1-negsl",
+        &[("pkg/r1s.py", src.into())],
+        CHAIN_MD_R1_NEG_SAME_LINE,
+    );
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.r1s", "Alpha#run()."),
+        "run",
+        "pkg/r1s.py",
+        3,
+        "Function",
+        "python",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.r1s", "Beta#run()."),
+        "run",
+        "pkg/r1s.py",
+        3,
+        "Function",
+        "python",
+        &abs,
+    );
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(st.g_counts.get("ambiguous"), Some(&1), "{:?}", st.g_counts);
+    let desc = st.tours[0]["description"].as_str().unwrap();
+    assert!(
+        desc.contains("Alpha#run(). :3（Function）／Beta#run(). :3（Function）"),
+        "{desc}"
+    );
+}
+
+const CHAIN_MD_R1_NEG_NESTED: &str = r#"# R1 neg nested
+
+```text
+└─ inner (pkg/r1f.py)
+```
+"#;
+
+/// R1 negative #3: two nested same-name functions — no Type/ctor pair
+/// exists in the set at all, and the bare doc name tail-aligns into
+/// BOTH chains in R2 → ambiguous (the CR-7 addendum adversarial face:
+/// docs without qualifying information never get a blind pick).
+#[test]
+fn r1_negative_nested_fns_no_ctor_stays_ambiguous() {
+    let src = "def outer():\n    def inner():\n        pass\n\n\ndef other():\n    def inner():\n        pass\n";
+    let (repo, chain) = repo_fixture_cr9(
+        "cr9-r1-negn",
+        &[("pkg/r1f.py", src.into())],
+        CHAIN_MD_R1_NEG_NESTED,
+    );
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.r1f", "outer().inner()."),
+        "inner",
+        "pkg/r1f.py",
+        3,
+        "Function",
+        "python",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.r1f", "other().inner()."),
+        "inner",
+        "pkg/r1f.py",
+        7,
+        "Function",
+        "python",
+        &abs,
+    );
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(st.g_counts.get("ambiguous"), Some(&1), "{:?}", st.g_counts);
+    assert!(st.g_counts.get("filled").is_none(), "{:?}", st.g_counts);
+    let desc = st.tours[0]["description"].as_str().unwrap();
+    assert!(
+        desc.contains("outer().inner(). :3（Function）／other().inner(). :7（Function）"),
+        "{desc}"
+    );
+}
+
+const CHAIN_MD_R2: &str = r#"# R2 scenario
+
+```text
+DataPhaseStep.execute (pkg/qual.py)
+└─ Outer.A.execute (pkg/nest.py)
+```
+"#;
+
+/// R2 positive (mosaic MOS-190 shape): `DataPhaseStep.execute` against
+/// three same-name methods fills exactly the named one; the full
+/// `Outer.A.execute` chain fills the nested class's method.
+#[test]
+fn r2_qualified_name_picks_unique_candidate() {
+    let qual = "class DataPhaseStep:\n    def execute(self):\n        pass\n\n\nclass PowerStep:\n    def execute(self):\n        pass\n\n\nclass GridStep:\n    def execute(self):\n        pass\n";
+    let nest = "class Outer:\n    class A:\n        def execute(self):\n            pass\n\n\nclass Other:\n    class A:\n        def execute(self):\n            pass\n";
+    let (repo, chain) = repo_fixture_cr9(
+        "cr9-r2-pos",
+        &[("pkg/qual.py", qual.into()), ("pkg/nest.py", nest.into())],
+        CHAIN_MD_R2,
+    );
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.qual", "DataPhaseStep#execute()."),
+        "execute",
+        "pkg/qual.py",
+        2,
+        "Function",
+        "python",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.qual", "PowerStep#execute()."),
+        "execute",
+        "pkg/qual.py",
+        7,
+        "Function",
+        "python",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.qual", "GridStep#execute()."),
+        "execute",
+        "pkg/qual.py",
+        12,
+        "Function",
+        "python",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.nest", "Outer#A#execute()."),
+        "execute",
+        "pkg/nest.py",
+        3,
+        "Function",
+        "python",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.nest", "Other#A#execute()."),
+        "execute",
+        "pkg/nest.py",
+        9,
+        "Function",
+        "python",
+        &abs,
+    );
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(st.g_counts.get("filled"), Some(&2), "{:?}", st.g_counts);
+    assert!(st.g_counts.get("ambiguous").is_none(), "{:?}", st.g_counts);
+    let steps = st.tours[0]["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 2);
+    let dps = steps
+        .iter()
+        .find(|s| s["title"].as_str().unwrap().contains("DataPhaseStep"))
+        .unwrap();
+    assert_eq!(dps["line"], 2);
+    assert_eq!(
+        dps["x-codeReality"]["symbol"].as_str().unwrap(),
+        py_sym("pkg.qual", "DataPhaseStep#execute().")
+    );
+    let outer_a = steps
+        .iter()
+        .find(|s| s["title"].as_str().unwrap().contains("Outer"))
+        .unwrap();
+    assert_eq!(outer_a["line"], 3);
+    assert_eq!(
+        outer_a["x-codeReality"]["symbol"].as_str().unwrap(),
+        py_sym("pkg.nest", "Outer#A#execute().")
+    );
+    assert!(!st.tours[0]["description"]
+        .as_str()
+        .unwrap()
+        .contains("歧義候選"));
+}
+
+const CHAIN_MD_R2_NEG: &str = r#"# R2 neg scenario
+
+```text
+Nope.execute (pkg/qual2.py)
+├─ Base.run (pkg/qual2.rs)
+└─ execute (pkg/qual2.py)
+```
+"#;
+
+/// R2 negatives: a qualified name with NO matching candidate, a
+/// qualified name matching TWO candidates (Rust inherent + trait impl
+/// of the same method — the no-unique-evidence fixture), and a bare
+/// name over multiple methods (CR-7 addendum adversarial face: docs
+/// without qualifying information stay fail-closed). All ambiguous,
+/// all with rendered candidates.
+#[test]
+fn r2_unresolvable_sets_stay_ambiguous() {
+    let qual = "class DataPhaseStep:\n    def execute(self):\n        pass\n\n\nclass PowerStep:\n    def execute(self):\n        pass\n";
+    let lab = "struct Base;\ntrait Runner {\n    fn run(&self);\n}\nimpl Runner for Base {\n    fn run(&self) {}\n}\nimpl Base {\n    fn run(&self) {}\n}\n";
+    let (repo, chain) = repo_fixture_cr9(
+        "cr9-r2-neg",
+        &[("pkg/qual2.py", qual.into()), ("pkg/qual2.rs", lab.into())],
+        CHAIN_MD_R2_NEG,
+    );
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.qual2", "DataPhaseStep#execute()."),
+        "execute",
+        "pkg/qual2.py",
+        2,
+        "Function",
+        "python",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.qual2", "PowerStep#execute()."),
+        "execute",
+        "pkg/qual2.py",
+        7,
+        "Function",
+        "python",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &rs_sym("impl#[Base]run()."),
+        "run",
+        "pkg/qual2.rs",
+        6,
+        "Function",
+        "rust",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &rs_sym("impl#[Base][WsLab]run()."),
+        "run",
+        "pkg/qual2.rs",
+        9,
+        "Function",
+        "rust",
+        &abs,
+    );
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(st.g_counts.get("ambiguous"), Some(&3), "{:?}", st.g_counts);
+    assert!(st.g_counts.get("filled").is_none(), "{:?}", st.g_counts);
+    let desc = st.tours[0]["description"].as_str().unwrap();
+    // 限定無候選符: Nope.execute matches nothing, candidates still listed
+    assert!(
+        desc.contains("Nope.execute → DataPhaseStep#execute(). :2（Function）／PowerStep#execute(). :7（Function）"),
+        "{desc}"
+    );
+    // 雙候選符: Base.run matches BOTH impl chains — no unique evidence
+    assert!(
+        desc.contains("Base.run → impl#[Base]run(). :6（Function）／impl#[Base][WsLab]run(). :9（Function）"),
+        "{desc}"
+    );
+    // bare 名多法: unqualified doc over two methods stays fail-closed
+    assert!(
+        desc.contains("execute → DataPhaseStep#execute(). :2（Function）／PowerStep#execute(). :7（Function）"),
+        "{desc}"
+    );
+    // exactly three detailed frames — no fold marker at the cap boundary
+    assert!(!desc.contains("另有"), "{desc}");
+}
+
+const CHAIN_MD_RS_POS: &str = r#"# Rust scenario
+
+```text
+└─ Lab.m (pkg/lab.rs)
+```
+"#;
+
+/// Rust dual-bracket positive (Plan ⑧): `impl#[Lab][WsLab]m().` vs
+/// `impl#[WsLab]m().` — the doc's `Lab.m` chain takes the FIRST bracket
+/// group (inherent type) and fills the dual-bracket candidate.
+#[test]
+fn r2_rust_impl_dual_bracket_positive() {
+    let src = "mod lab {\n    pub struct Lab;\n    pub trait WsLab {\n        fn m(&self);\n    }\n    impl WsLab for Lab {\n        fn m(&self) {}\n    }\n}\n";
+    let (repo, chain) =
+        repo_fixture_cr9("cr9-rs-pos", &[("pkg/lab.rs", src.into())], CHAIN_MD_RS_POS);
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_sym(
+        &mut spec,
+        &rs_sym("impl#[Lab][WsLab]m()."),
+        "m",
+        "pkg/lab.rs",
+        4,
+        "Function",
+        "rust",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &rs_sym("impl#[WsLab]m()."),
+        "m",
+        "pkg/lab.rs",
+        7,
+        "Function",
+        "rust",
+        &abs,
+    );
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(st.g_counts.get("filled"), Some(&1), "{:?}", st.g_counts);
+    assert!(st.g_counts.get("ambiguous").is_none(), "{:?}", st.g_counts);
+    let steps = st.tours[0]["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 1);
+    assert_eq!(steps[0]["line"], 4);
+    assert_eq!(
+        steps[0]["x-codeReality"]["symbol"].as_str().unwrap(),
+        rs_sym("impl#[Lab][WsLab]m().")
+    );
+}
+
+const CHAIN_MD_BARE_TIER1: &str = r#"# bare tier-1 scenario
+
+```text
+└─ X (pkg/bt1.py)
+```
+"#;
+
+/// Bare-tier-1 contract pin: over the same-file pair {top-level fn
+/// `X`, method `Outer#X`}, the bare doc token `X` fills via R2 tier-1 —
+/// the top-level candidate's complete scope chain (`X`) equals the
+/// token exactly while the scoped candidate's (`Outer`, `X`) does not,
+/// leaving exactly one tier-1 survivor. Bare-token fills carry no
+/// qualifying information by definition; this test pins the exact
+/// full-chain-equality path as contract (an undocumented fill route
+/// that nevertheless never guesses: zero ambiguity in evidence).
+#[test]
+fn r2_bare_token_tier1_exact_chain_fills_top_level_fn() {
+    let src = "def X():\n    pass\n\n\nclass Outer:\n    def X(self):\n        pass\n";
+    let (repo, chain) = repo_fixture_cr9(
+        "cr9-bare-tier1",
+        &[("pkg/bt1.py", src.into())],
+        CHAIN_MD_BARE_TIER1,
+    );
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.bt1", "X()."),
+        "X",
+        "pkg/bt1.py",
+        1,
+        "Function",
+        "python",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.bt1", "Outer#X()."),
+        "X",
+        "pkg/bt1.py",
+        6,
+        "Function",
+        "python",
+        &abs,
+    );
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(st.g_counts.get("filled"), Some(&1), "{:?}", st.g_counts);
+    // clippy unnecessary_get_then_check face (the older CR-9 tests
+    // predate the lint): negated contains_key, no new warnings.
+    assert!(!st.g_counts.contains_key("ambiguous"), "{:?}", st.g_counts);
+    let steps = st.tours[0]["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 1);
+    assert_eq!(steps[0]["line"], 1);
+    assert_eq!(
+        steps[0]["x-codeReality"]["symbol"].as_str().unwrap(),
+        py_sym("pkg.bt1", "X().")
+    );
+    assert!(!st.tours[0]["description"]
+        .as_str()
+        .unwrap()
+        .contains("歧義候選"));
+}
+
+const CHAIN_MD_MOD_QUAL: &str = r#"# module-qualified boundary
+
+```text
+└─ mod.Cls.m (pkg/mq.py)
+```
+"#;
+
+/// Boundary pin: a module-qualified doc token can never resolve. The
+/// descriptor chain cuts the module segment, so the over-qualified
+/// chain (`mod`, `Cls`, `m`) is LONGER than every candidate chain
+/// (`Cls`, `m` / `Other`, `m`): no tier-1 equality and no strictly
+/// longer tail-align exists. Fail-closed ambiguous with the hint line.
+#[test]
+fn r2_module_qualified_token_stays_ambiguous_with_hint() {
+    let src = "class Cls:\n    def m(self):\n        pass\n\n\nclass Other:\n    def m(self):\n        pass\n";
+    let (repo, chain) = repo_fixture_cr9(
+        "cr9-mod-qual",
+        &[("pkg/mq.py", src.into())],
+        CHAIN_MD_MOD_QUAL,
+    );
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.mq", "Cls#m()."),
+        "m",
+        "pkg/mq.py",
+        2,
+        "Function",
+        "python",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.mq", "Other#m()."),
+        "m",
+        "pkg/mq.py",
+        7,
+        "Function",
+        "python",
+        &abs,
+    );
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(st.g_counts.get("ambiguous"), Some(&1), "{:?}", st.g_counts);
+    assert!(!st.g_counts.contains_key("filled"), "{:?}", st.g_counts);
+    let desc = st.tours[0]["description"].as_str().unwrap();
+    assert!(
+        desc.contains("歧義候選：mod.Cls.m → Cls#m(). :2（Function）／Other#m(). :7（Function）"),
+        "{desc}"
+    );
+}
+
+const CHAIN_MD_EMPTY_SEGMENT: &str = r#"# internal-empty-segment boundary
+
+```text
+└─ a..b (pkg/es.py)
+```
+"#;
+
+/// Boundary pin (observed bucket: ambiguous): `a..b` survives ident
+/// extraction as ONE token — the ident regex allows an empty
+/// dot-segment — with non-empty base `b`, so it is not the no-ident
+/// bucket; but the empty middle segment fails R2's usable-chain gate
+/// (any split segment "" refuses the doc chain outright) → ambiguous
+/// with the hint line.
+#[test]
+fn r2_internal_empty_segment_token_stays_ambiguous() {
+    let src =
+        "class A:\n    def b(self):\n        pass\n\n\nclass B:\n    def b(self):\n        pass\n";
+    let (repo, chain) = repo_fixture_cr9(
+        "cr9-empty-seg",
+        &[("pkg/es.py", src.into())],
+        CHAIN_MD_EMPTY_SEGMENT,
+    );
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.es", "A#b()."),
+        "b",
+        "pkg/es.py",
+        2,
+        "Function",
+        "python",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.es", "B#b()."),
+        "b",
+        "pkg/es.py",
+        7,
+        "Function",
+        "python",
+        &abs,
+    );
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(st.g_counts.get("ambiguous"), Some(&1), "{:?}", st.g_counts);
+    assert!(!st.g_counts.contains_key("filled"), "{:?}", st.g_counts);
+    let desc = st.tours[0]["description"].as_str().unwrap();
+    assert!(
+        desc.contains("歧義候選：a..b → A#b(). :2（Function）／B#b(). :7（Function）"),
+        "{desc}"
+    );
+}
+
+const CHAIN_MD_R3: &str = r#"# R3 scenario
+
+```text
+m1 (pkg/cap.py)
+├─ m2 (pkg/cap.py)
+├─ m3 (pkg/cap.py)
+└─ m4 (pkg/cap.py)
+```
+"#;
+
+/// R3 caps: a 5-candidate frame renders ≤4 with an ellipsis marker; a
+/// 4-ambiguous-frame scenario details ≤3 and folds the rest into an
+/// explicit remaining count. Candidate order follows the fill query's
+/// line_start,symbol; no `path.py:NN` shape ever appears.
+#[test]
+fn r3_hint_caps_per_frame_and_folds_frames() {
+    let mut src = String::new();
+    for c in ["C1", "C2", "C3", "C4", "C5"] {
+        src.push_str(&format!("class {c}:\n    def m1(self):\n        pass\n\n"));
+    }
+    for (cls, m) in [
+        ("D1", "m2"),
+        ("D2", "m2"),
+        ("E1", "m3"),
+        ("E2", "m3"),
+        ("F1", "m4"),
+        ("F2", "m4"),
+    ] {
+        src.push_str(&format!("class {cls}:\n    def {m}(self):\n        pass\n\n"));
+    }
+    let (repo, chain) =
+        repo_fixture_cr9("cr9-r3-caps", &[("pkg/cap.py", src)], CHAIN_MD_R3);
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    for (i, c) in ["C1", "C2", "C3", "C4", "C5"].iter().enumerate() {
+        seed_sym(
+            &mut spec,
+            &py_sym("pkg.cap", &format!("{c}#m1().")),
+            "m1",
+            "pkg/cap.py",
+            (i as i64) * 4 + 2,
+            "Function",
+            "python",
+            &abs,
+        );
+    }
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.cap", "D1#m2()."),
+        "m2",
+        "pkg/cap.py",
+        22,
+        "Function",
+        "python",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.cap", "D2#m2()."),
+        "m2",
+        "pkg/cap.py",
+        26,
+        "Function",
+        "python",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.cap", "E1#m3()."),
+        "m3",
+        "pkg/cap.py",
+        30,
+        "Function",
+        "python",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.cap", "E2#m3()."),
+        "m3",
+        "pkg/cap.py",
+        34,
+        "Function",
+        "python",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.cap", "F1#m4()."),
+        "m4",
+        "pkg/cap.py",
+        38,
+        "Function",
+        "python",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.cap", "F2#m4()."),
+        "m4",
+        "pkg/cap.py",
+        42,
+        "Function",
+        "python",
+        &abs,
+    );
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(st.g_counts.get("ambiguous"), Some(&4), "{:?}", st.g_counts);
+    let desc = st.tours[0]["description"].as_str().unwrap();
+    let expected = "\n歧義候選：m1 → C1#m1(). :2（Function）／C2#m1(). :6（Function）／C3#m1(). :10（Function）／C4#m1(). :14（Function）／…；m2 → D1#m2(). :22（Function）／D2#m2(). :26（Function）；m3 → E1#m3(). :30（Function）／E2#m3(). :34（Function）；另有 1 幀（略）";
+    assert!(desc.ends_with(expected), "{desc}");
+    assert!(!desc.contains("C5#m1"), "per-frame cap: {desc}");
+    assert!(!desc.contains("F1#m4"), "folded frame: {desc}");
+    assert!(!desc.contains(".py:"), "no path:line shape: {desc}");
+}
+
+/// R3 zero-change: a tour with no ambiguity keeps the byte-identical
+/// legacy description; the explicit-line face is untouched (same +
+/// 文檔錨 path:line in the frozen step face).
+#[test]
+fn r3_no_ambiguity_description_byte_identical_explicit_face_pinned() {
+    const MD: &str = r#"# Clean scenario
+
+```text
+kernel (pkg/clean.py:1)
+└─ helper (pkg/clean.py:4)
+```
+"#;
+    let src = "def kernel():\n    pass\n\n\ndef helper():\n    pass\n";
+    let (repo, chain) =
+        repo_fixture_cr9("cr9-r3-clean", &[("pkg/clean.py", src.into())], MD);
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.clean", "kernel()."),
+        "kernel",
+        "pkg/clean.py",
+        1,
+        "Function",
+        "python",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.clean", "helper()."),
+        "helper",
+        "pkg/clean.py",
+        4,
+        "Function",
+        "python",
+        &abs,
+    );
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    let desc = st.tours[0]["description"].as_str().unwrap();
+    assert_eq!(
+        desc,
+        "2 幀 → 2 步；0 幀跳過（無——例：無）。\ngraph 重錨分佈：same:2",
+        "no-ambiguity description must stay byte-identical: {desc}"
+    );
+    let steps = st.tours[0]["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 2);
+    let kernel = steps
+        .iter()
+        .find(|s| s["title"].as_str().unwrap().contains("kernel"))
+        .unwrap();
+    assert_eq!(kernel["line"], 1);
+    assert!(kernel["description"].as_str().unwrap().contains("行號一致"));
+    assert!(kernel["description"]
+        .as_str()
+        .unwrap()
+        .contains("文檔錨 pkg/clean.py:1"));
 }
 
 mod graph_db_fixture;

@@ -138,18 +138,22 @@ pub fn parse_blocks(text: &str) -> Vec<(String, Vec<String>)> {
 }
 
 /// Best ident from symbol text: call-position (followed by `(`) first,
-/// then longest; last segment.
-pub fn best_ident(symbol: &str) -> String {
+/// then longest. Returns (last segment, full dotted form) — CR-9 R2
+/// needs the winning token's complete dotted shape (`DataPhaseStep.execute`)
+/// for qualified-name alignment; the last-segment face is unchanged.
+pub fn best_ident(symbol: &str) -> (String, String) {
     let mut cands: Vec<(bool, usize, String)> = Vec::new();
     for m in ident_re().find_iter(symbol) {
         let nxt = symbol[m.end()..].chars().next();
         cands.push((nxt == Some('('), m.as_str().len(), m.as_str().to_string()));
     }
     if cands.is_empty() {
-        return String::new();
+        return (String::new(), String::new());
     }
     cands.sort_by_key(|c| (std::cmp::Reverse(c.0), std::cmp::Reverse(c.1)));
-    cands[0].2.rsplit('.').next().unwrap_or("").to_string()
+    let full = cands[0].2.clone();
+    let last = full.rsplit('.').next().unwrap_or("").to_string();
+    (last, full)
 }
 
 #[derive(Debug, Clone)]
@@ -158,6 +162,10 @@ pub struct Frame {
     pub parent: Option<usize>,
     pub symbol: String,
     pub ident: String,
+    /// Full dotted form of the winning ident token (CR-9 R2): the
+    /// qualified name the doc wrote (`Outer.A.execute`), empty when the
+    /// frame carries no ident.
+    pub ident_full: String,
     pub path: Option<String>,
     pub line: Option<i64>,
     pub note: String,
@@ -242,12 +250,13 @@ pub fn parse_frames(lines: &[String]) -> Vec<Frame> {
             }
             content2 = rest;
         }
-        let ident = best_ident(&content2);
+        let (ident, ident_full) = best_ident(&content2);
         frames.push(Frame {
             depth,
             parent,
             symbol: content2.clone(),
             ident,
+            ident_full,
             path,
             line: line_no,
             note,
@@ -542,12 +551,218 @@ impl GraphAnchor {
     }
 }
 
+/// One ambiguous same-name candidate surfaced to the doc author (CR-9
+/// R3). `descriptor` is the candidate's descriptor region (scope chain +
+/// def, module already cut). Two shapes stay banned in the rendering:
+/// markdown-link form `[..](..)` — the shape tour_validate's
+/// `file_ref()` actually counts in tour descriptions — and `path.py:NN`
+/// form, which chain_tour's own `ref_re` parse face would read back as
+/// a file:line anchor.
+#[derive(Debug, Clone)]
+pub struct FillCandidate {
+    pub descriptor: String,
+    pub line: i64,
+    pub kind: String,
+}
+
 /// CR-7 line-less fill outcome: a verified unique anchor or a typed
 /// no-anchor reason (machine-readable — the reason feeds the graph
-/// distribution axis, while the skip is stamped `noanchor`).
+/// distribution axis, while the skip is stamped `noanchor`). CR-9 R3:
+/// the ambiguous reason carries the same-file same-name candidates for
+/// the tour-description hint line; every other reason carries an empty
+/// vector.
 pub enum FillOutcome {
     Filled(i64, Option<String>),
-    NoAnchor(String),
+    NoAnchor(String, Vec<FillCandidate>),
+}
+
+/// Descriptor region of a SCIP symbol: everything after the module /
+/// discriminator area. Python faces wrap the module in backticks
+/// (`` `pyrefly python p 1.0 `pkg.mod`/Cls#m(). ``), so the boundary is
+/// the last `` `/ ``; the Rust/scip faces carry a bare package-or-path
+/// prefix (`rust-analyzer cargo p 0.1.0 pkg/impl#[T]m().`), so the
+/// boundary falls back to the last `/` of the discriminator-stripped
+/// tail. Returns None when no boundary exists — R2 and the R3 hint
+/// never guess a chain they could not locate (fail closed).
+fn descriptor_region(symbol: &str) -> Option<&str> {
+    let s = symbol.trim_end();
+    if let Some(i) = s.rfind("`/") {
+        return Some(&s[i + 2..]);
+    }
+    let tail = crate::engine::tail(s);
+    let i = tail.rfind('/')?;
+    Some(&tail[i + 1..])
+}
+
+fn sym_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_' || c == '%'
+}
+
+/// Structured scope chain of a descriptor region: every descriptor name
+/// in order (scopes, then the def itself), per the producer grammar —
+/// `name().` function, `name#` class, `name.` variable. A Rust trait
+/// impl head `impl#[T][Trait]m().` contributes its FIRST bracket group
+/// (the inherent type) and skips the trait groups verbatim, so the
+/// chain is `[T, m]`. Returns None for anything that does not parse
+/// cleanly — a non-ASCII region, an empty segment, or a delimiter
+/// outside the producer grammar (`().`/`#`/`.`; qname-style fixture
+/// rows). `%` is a name character here (escaped-identifier runs ride
+/// through as plain segments), not a rejection trigger. R2 refuses to
+/// resolve over an unparseable candidate set.
+fn descriptor_chain(region: &str) -> Option<Vec<String>> {
+    if !region.is_ascii() {
+        return None;
+    }
+    let mut names: Vec<String> = Vec::new();
+    let mut i = 0;
+    if let Some(rest) = region.strip_prefix("impl#[") {
+        let close = rest.find(']')?;
+        let group = &rest[..close];
+        if group.is_empty() || !group.chars().all(sym_char) {
+            return None;
+        }
+        names.push(group.to_string());
+        i = "impl#[".len() + close + 1;
+        while region[i..].starts_with('[') {
+            let end = region[i..].find(']')?;
+            i += end + 1;
+        }
+    }
+    let b = region.as_bytes();
+    while i < region.len() {
+        let start = i;
+        while i < region.len() && sym_char(b[i] as char) {
+            i += 1;
+        }
+        if i == start {
+            return None;
+        }
+        names.push(region[start..i].to_string());
+        if region[i..].starts_with("().") {
+            i += 3;
+        } else if region[i..].starts_with('#') || region[i..].starts_with('.') {
+            i += 1;
+        } else {
+            return None;
+        }
+    }
+    if names.is_empty() {
+        None
+    } else {
+        Some(names)
+    }
+}
+
+/// Mirror of pyrefly-producer's `pseudo_ctor_symbol` (symbol.rs): the
+/// pseudo-constructor form of a class-shaped symbol swaps the trailing
+/// `#` for `().`. Local copy — the tool layer embeds no producer dep.
+fn pseudo_ctor_symbol(sym: &str) -> Option<String> {
+    sym.strip_suffix('#').map(|head| format!("{head}()."))
+}
+
+type FillRows = [(i64, String, String)];
+
+/// R1 (CR-9): the candidate set is EXACTLY the pseudo-constructor
+/// self-collision — one Type node `` …X# `` plus its minted
+/// constructor-call twin `` …X(). `` (producer B7b pairs one logical
+/// definition into two nodes), equal line_start, no other same-name
+/// rows. Any unmet condition keeps the set ambiguous. The fill stamps
+/// the TYPE symbol — a canonicalization choice, not a claim that the
+/// two SCIP symbols are equivalent.
+fn r1_pseudo_ctor_pair(rows: &FillRows) -> Option<(i64, Option<String>)> {
+    if rows.len() != 2 {
+        return None;
+    }
+    let (a, b) = (&rows[0], &rows[1]);
+    let is_type_ctor = |t: &(i64, String, String), c: &(i64, String, String)| {
+        t.1.ends_with('#') && t.2 == "Type" && c.2 == "Function"
+    };
+    let (t, c) = if is_type_ctor(a, b) {
+        (a, b)
+    } else if is_type_ctor(b, a) {
+        (b, a)
+    } else {
+        return None;
+    };
+    if pseudo_ctor_symbol(&t.1).as_deref() != Some(c.1.as_str()) {
+        return None;
+    }
+    if t.0 != c.0 {
+        return None;
+    }
+    Some((t.0, Some(t.1.clone())))
+}
+
+/// R2 (CR-9): the doc's qualified dotted name uniquely identifies one
+/// candidate by structured scope-chain tail alignment. The doc chain
+/// (segments of the winning ident token, case-sensitive) is compared
+/// against each candidate's descriptor chain with whole-segment
+/// equality — never a substring ends_with. Two tiers: equal-length
+/// full match first; when no tier-1 candidate survives, a strictly
+/// SHORTER doc chain may tail-align into longer candidate chains.
+/// Exactly one survivor in the winning tier fills; zero or multiple
+/// survivors, an unusable doc chain, or ANY unparseable candidate
+/// descriptor keeps the set ambiguous (fail closed).
+fn r2_qualified_unique(rows: &FillRows, doc_full: &str) -> Option<(i64, Option<String>)> {
+    let doc_chain: Vec<&str> = doc_full.split('.').collect();
+    if doc_chain.is_empty() || doc_chain.iter().any(|s| s.is_empty()) {
+        return None;
+    }
+    let chains: Vec<Vec<String>> = rows
+        .iter()
+        .map(|(_, sym, _)| descriptor_chain(descriptor_region(sym)?))
+        .collect::<Option<_>>()?;
+    let segs_eq = |chain: &[String]| {
+        chain.len() == doc_chain.len()
+            && chain.iter().zip(doc_chain.iter()).all(|(a, b)| a == b)
+    };
+    let tier1: Vec<usize> = chains
+        .iter()
+        .enumerate()
+        .filter(|(_, chain)| segs_eq(chain))
+        .map(|(i, _)| i)
+        .collect();
+    let pick = |survivors: Vec<usize>| {
+        if survivors.len() == 1 {
+            let (line, sym, _) = &rows[survivors[0]];
+            Some((*line, Some(sym.clone())))
+        } else {
+            None
+        }
+    };
+    if !tier1.is_empty() {
+        return pick(tier1);
+    }
+    let tier2: Vec<usize> = chains
+        .iter()
+        .enumerate()
+        .filter(|(_, chain)| {
+            chain.len() > doc_chain.len()
+                && chain[chain.len() - doc_chain.len()..]
+                    .iter()
+                    .zip(doc_chain.iter())
+                    .all(|(a, b)| a == b)
+        })
+        .map(|(i, _)| i)
+        .collect();
+    pick(tier2)
+}
+
+/// R3 hint payload: only candidates whose descriptor parses cleanly
+/// render (qname-shaped legacy rows stay out of the hint — the line is
+/// advisory; the ambiguous count itself is unaffected).
+fn fill_candidates(rows: &FillRows) -> Vec<FillCandidate> {
+    rows.iter()
+        .filter_map(|(line, sym, kind)| {
+            let region = descriptor_region(sym)?;
+            descriptor_chain(region)?;
+            Some(FillCandidate {
+                descriptor: region.to_string(),
+                line: *line,
+                kind: kind.clone(),
+            })
+        })
+        .collect()
 }
 
 impl GraphAnchor {
@@ -555,15 +770,45 @@ impl GraphAnchor {
     /// path+name. Strict identity (adversarial-review AC): no suffix LIKE,
     /// no nearest-line blind pick, no cross-file inference — zero or
     /// multiple candidates both fail closed; SQLite errors propagate loud
-    /// instead of folding into a miss. Assumption (review F7): the graph
+    /// instead of folding into a miss.
+    ///
+    /// CR-9 addendum (revises the CR-7 adversarial AC; not a "compatible"
+    /// blur): multiple candidates MAY collapse to a fill only under
+    /// independent verification, inside the CLOSED same-file same-name
+    /// candidate set — (R1) the set is exactly {Type `X#`, pseudo-ctor
+    /// `X().`} with equal line_start (the producer's constructor-call
+    /// mint pairs one logical definition with two nodes; the fill stamps
+    /// the Type symbol — canonicalization, not an equivalence claim over
+    /// the two SCIP symbols), or (R2) the doc's qualified dotted name
+    /// uniquely identifies exactly one candidate by structured
+    /// scope-chain tail alignment. A bare (unqualified) doc token fills
+    /// only two ways: R1, or R2 tier-1 exact full-chain equality —
+    /// exactly one candidate whose complete scope chain IS the token
+    /// itself (a top-level `X` whose chain is just `X`). Tier-2 never
+    /// fires for a bare token: every same-file same-name candidate
+    /// chain ends in that name, so once no chain equals the token
+    /// outright, every chain is strictly longer AND tail-aligns — the
+    /// tier-2 survivor set is the entire candidate set, a forced
+    /// multi-hit. Everything else stays fail-closed ambiguous; the R3
+    /// hint line surfaces the candidates to the author instead.
+    /// Expected shift: `filled` counts move up from the CR-7 baseline
+    /// exactly by the R1/R2 resolved frames; the `ambiguous` key keeps
+    /// its semantics.
+    ///
+    /// Assumption (review F7): the graph
     /// db was produced for THIS repo checkout (in-repo `.code-reality/`
     /// producer face stores canonical absolute paths) — a db copied
     /// across checkouts degrades line-less anchors to `not-in-graph`
     /// while the explicit-line face keeps matching via its suffix LIKE;
     /// both directions are fail-safe.
-    pub fn fill_anchor(&self, abs_path: &Path, ident: &str) -> Result<FillOutcome, String> {
+    pub fn fill_anchor(
+        &self,
+        abs_path: &Path,
+        ident: &str,
+        ident_full: &str,
+    ) -> Result<FillOutcome, String> {
         if ident.is_empty() {
-            return Ok(FillOutcome::NoAnchor("no-ident".into()));
+            return Ok(FillOutcome::NoAnchor("no-ident".into(), Vec::new()));
         }
         let rel = abs_path
             .strip_prefix(&self.repo_root)
@@ -573,21 +818,34 @@ impl GraphAnchor {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT line_start, symbol FROM nodes \
+                "SELECT line_start, symbol, kind FROM nodes \
                  WHERE file_path = ?1 AND name = ?2 \
                  AND line_start IS NOT NULL AND line_start >= 1 \
                  ORDER BY line_start, symbol",
             )
             .map_err(|e| format!("graph.db fill query failed: {e}"))?;
-        let rows: Vec<(i64, Option<String>)> = stmt
-            .query_map((&exact, ident), |r| Ok((r.get(0)?, r.get(1)?)))
+        let rows: Vec<(i64, String, String)> = stmt
+            .query_map((&exact, ident), |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })
             .map_err(|e| format!("graph.db fill query failed: {e}"))?
             .collect::<Result<_, _>>()
             .map_err(|e| format!("graph.db fill query failed: {e}"))?;
         match rows.as_slice() {
-            [] => Ok(FillOutcome::NoAnchor("not-in-graph".into())),
-            [(line, symbol)] => Ok(FillOutcome::Filled(*line, symbol.clone())),
-            _ => Ok(FillOutcome::NoAnchor("ambiguous".into())),
+            [] => Ok(FillOutcome::NoAnchor("not-in-graph".into(), Vec::new())),
+            [(line, symbol, _)] => Ok(FillOutcome::Filled(*line, Some(symbol.clone()))),
+            many => {
+                if let Some(fill) = r1_pseudo_ctor_pair(many) {
+                    return Ok(FillOutcome::Filled(fill.0, fill.1));
+                }
+                if let Some(fill) = r2_qualified_unique(many, ident_full) {
+                    return Ok(FillOutcome::Filled(fill.0, fill.1));
+                }
+                Ok(FillOutcome::NoAnchor(
+                    "ambiguous".into(),
+                    fill_candidates(many),
+                ))
+            }
         }
     }
 }
@@ -717,6 +975,41 @@ fn py_list_inline(items: &[String]) -> String {
     format!("[{}]", inner.join(", "))
 }
 
+/// CR-9 R3: the tour-description candidate hint line for frames that
+/// stayed ambiguous after R1/R2. One line at the description tail with
+/// the fixed prefix 「歧義候選：」; per frame at most 4 candidates
+/// (ellipsis marker when truncated), per scenario at most 3 frames
+/// detailed with the rest folded into an explicit remaining count.
+/// Candidates render descriptor + line + kind suffix, preserving the
+/// fill query's line_start,symbol order. Two shapes stay banned in the
+/// rendering: markdown-link form `[..](..)` — the shape
+/// tour_validate's `file_ref()` actually counts in tour descriptions —
+/// and `path.py:NN` form, which chain_tour's own `ref_re` parse face
+/// would read back as a file:line anchor. An empty frame list yields
+/// an empty string: tours with no ambiguity keep byte-identical
+/// descriptions.
+fn ambig_hint_line(frames: &[(String, Vec<FillCandidate>)]) -> String {
+    if frames.is_empty() {
+        return String::new();
+    }
+    let mut segs: Vec<String> = Vec::new();
+    for (sym, cands) in frames.iter().take(3) {
+        let mut parts: Vec<String> = cands
+            .iter()
+            .take(4)
+            .map(|c| format!("{} :{}（{}）", c.descriptor, c.line, c.kind))
+            .collect();
+        if cands.len() > 4 {
+            parts.push("…".into());
+        }
+        segs.push(format!("{sym} → {}", parts.join("／")));
+    }
+    if frames.len() > 3 {
+        segs.push(format!("另有 {} 幀（略）", frames.len() - 3));
+    }
+    format!("歧義候選：{}", segs.join("；"))
+}
+
 /// chain md → one tour per scenario (`chain_tour.py:331-404`).
 pub fn build_tours(
     chain_md: &Path,
@@ -750,6 +1043,9 @@ pub fn build_tours(
         let mut skip_examples: Vec<String> = Vec::new();
         let mut skip_reasons: BTreeMap<String, i64> = BTreeMap::new();
         let mut scen_g: BTreeMap<String, i64> = BTreeMap::new();
+        // CR-9 R3: frames that stayed ambiguous after R1/R2, with their
+        // renderable candidates, in doc-frame order
+        let mut ambig_frames: Vec<(String, Vec<FillCandidate>)> = Vec::new();
         for f in &frames {
             let mut status = "noref".to_string();
             let mut g = GraphHit {
@@ -779,7 +1075,7 @@ pub fn build_tours(
                                         ..Default::default()
                                     };
                                 }
-                                Some(ga) => match ga.fill_anchor(&ap, &f.ident)? {
+                                Some(ga) => match ga.fill_anchor(&ap, &f.ident, &f.ident_full)? {
                                     FillOutcome::Filled(line, symbol) => {
                                         // review F1: the fill is only as
                                         // good as its target line — blank,
@@ -824,7 +1120,13 @@ pub fn build_tours(
                                             };
                                         }
                                     }
-                                    FillOutcome::NoAnchor(reason) => {
+                                    FillOutcome::NoAnchor(reason, cands) => {
+                                        if reason == "ambiguous" && !cands.is_empty() {
+                                            ambig_frames.push((
+                                                f.symbol.chars().take(30).collect(),
+                                                cands,
+                                            ));
+                                        }
                                         g = GraphHit {
                                             g: reason,
                                             ..Default::default()
@@ -893,14 +1195,20 @@ pub fn build_tours(
         } else {
             skip_examples.join("、")
         };
+        let mut description = format!(
+            "{} 幀 → {} 步；{skipped} 幀跳過（{reasons}——例：{examples}）。\ngraph 重錨分佈：{}",
+            frames.len(),
+            steps.len(),
+            dist.join(" ")
+        );
+        let hint = ambig_hint_line(&ambig_frames);
+        if !hint.is_empty() {
+            description.push('\n');
+            description.push_str(&hint);
+        }
         tours.push(serde_json::json!({
             "title": heading,
-            "description": format!(
-                "{} 幀 → {} 步；{skipped} 幀跳過（{reasons}——例：{examples}）。\ngraph 重錨分佈：{}",
-                frames.len(),
-                steps.len(),
-                dist.join(" ")
-            ),
+            "description": description,
             "steps": steps,
         }));
         frames_total += frames.len();
