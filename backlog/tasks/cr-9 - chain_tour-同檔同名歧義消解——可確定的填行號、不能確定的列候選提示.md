@@ -4,7 +4,7 @@ title: chain_tour 同檔同名歧義消解——可確定的填行號、不能�
 status: Done
 assignee: []
 created_date: '2026-10-13 14:00'
-updated_date: '2026-10-13 22:47'
+updated_date: '2026-10-13 23:32'
 labels: []
 dependencies: []
 references:
@@ -63,6 +63,8 @@ deep-work 值星進度（sess_d22cd132）：顧問雙腿收斂（muse job-mv6qlx
 settle（sess_d22cd132）：judge 裁決後修補腿 job-mv6tthpl-hqbjsv 落地（addendum 精確化＝bare token 只經 R1 或 tier-1 精確全鏈填入永不經 tier-2＋R3 註解歸因修正＋descriptor_chain 註解如實化＋三支邊界 fixtures：bare-tier-1 頂層 fn 釘／module 限定 token ambiguous／a..b 空段 ambiguous）。最終機驗：clean-env 全量 cargo test exit 0、70 test targets、708 passed / 0 FAILED；clippy 零新增；fmt 新碼 0 diff。commit 5795aad 已 ff-merge 進 main（單一 commit——Plan ⑪ 合併例外成立：fill_anchor 簽名/體 R1 與 R2 交織，事後切分需虛構未測中間態）。雙審查 finding 全數收斂：fresh F1/F2/F3 採納（F4①③併入修補、②④⑤由 addendum 文檔化涵蓋）、primed F1 同點裁決採 fresh① 方案（不加 qualified-only 閘——精確全名匹配＝證據型消解）、primed F2/F3 採納。卡片狀態留 In Progress——Done 翻牌歸 user（AIR-200）。後續（user 點頭後）：release 弧吸收 plugin skill chain_tour 行為文檔＋版號鎖步；mosaic 以新版重跑 225 tours＝外部驗收
 
 mosaic 樣本清單已收（mos-190-cr9-samples，2026-10-14）：①CorporateAction 確認為唯一 R1 形（Type＋pseudo-ctor 同檔）——我方推判被發送方證實；②R2 形＝Step.execute 家族（22+ class 同檔）＋get_symbols×3／to_polars_exp／from_dict×2／__init__×2／run×2 等嵌套形——皆限定名可解；③裸重名（main／get_segments／_category／INDEX_CODES 等）＝R3 提示後人工補行號預期終態；④越界警示：tour headers 混 prose 敘事幀——不得進 R2 descriptor 解析（我方現行：無 path 幀走 noref、有 path 而 token 不符走 not-in-graph／ambiguous+hint，兩路皆 fail-visible，合於其建議）；⑤對方承諾 CR-9 發佈後重跑 225 tours 回報 R1/R2 殘餘消除與 R3 提示樣態＝外部驗收。信已讀（原信 show --envelope-id mos-190-cr9-samples 可重看）；無待回覆義務——後續回信需新 AUTH
+
+outbound 台帳：發佈通知信 cr9-release-notify-073233 已受理（acceptanceSeq=3，thread=re mos-190-cr9-samples，intent=inform）——AUTH: user said「寄信」（2026-10-14，回應寄信徵詢）。內容＝v0.13.0 發佈＋CR-9 上線清單＋prose gate 說明＋升級路徑＋外部驗收開跑請求
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
