@@ -1,10 +1,10 @@
 ---
 id: CR-9
 title: chain_tour 同檔同名歧義消解——可確定的填行號、不能確定的列候選提示
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-13 14:00'
-updated_date: '2026-10-13 22:00'
+updated_date: '2026-10-13 22:47'
 labels: []
 dependencies: []
 references:
@@ -64,3 +64,21 @@ settle（sess_d22cd132）：judge 裁決後修補腿 job-mv6tthpl-hqbjsv 落地�
 
 mosaic 樣本清單已收（mos-190-cr9-samples，2026-10-14）：①CorporateAction 確認為唯一 R1 形（Type＋pseudo-ctor 同檔）——我方推判被發送方證實；②R2 形＝Step.execute 家族（22+ class 同檔）＋get_symbols×3／to_polars_exp／from_dict×2／__init__×2／run×2 等嵌套形——皆限定名可解；③裸重名（main／get_segments／_category／INDEX_CODES 等）＝R3 提示後人工補行號預期終態；④越界警示：tour headers 混 prose 敘事幀——不得進 R2 descriptor 解析（我方現行：無 path 幀走 noref、有 path 而 token 不符走 not-in-graph／ambiguous+hint，兩路皆 fail-visible，合於其建議）；⑤對方承諾 CR-9 發佈後重跑 225 tours 回報 R1/R2 殘餘消除與 R3 提示樣態＝外部驗收。信已讀（原信 show --envelope-id mos-190-cr9-samples 可重看）；無待回覆義務——後續回信需新 AUTH
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+CR-9 落地：chain_tour 同檔同名歧義消解三規則（R1 建構子結構配對／R2 限定名 scope-chain tier 對齊／R3 候選提示）＋whole-frame prose gate＋CR-7 addendum；跨家族審查（muse approve／codex needs-fix 三項全採納修復）；711 tests 綠；commits 5795aad→d0c2002 進 main。mosaic 樣本清單對照無越界形；外部驗收待其新版重跑 225 tours。
+
+```mermaid
+flowchart LR
+  A["line-less 幀 path+symbol"] --> B{"fill_anchor 同檔同名查詢"}
+  B -->|"0 列"| S1["skip: not-in-graph"]
+  B -->|"恰 1 列"| F["填行號"]
+  B -->|"多列"| G{"whole-frame gate"}
+  G -->|"prose 幀"| H["skip＋候選提示"]
+  G -->|"R1 Type＋ctor 配對"| F
+  G -->|"R2 tier 對齊"| F
+  G -->|"仍歧義"| H
+```
+<!-- SECTION:FINAL_SUMMARY:END -->
