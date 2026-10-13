@@ -437,7 +437,10 @@ on any new repo.
     A bare (unqualified) token only ever fills via R1 or a tier-1
     exact full-chain match — never through tier-2 (every same-name
     candidate chain ends in the name, so a bare token tail-aligns all
-    of them and stays ambiguous).
+    of them and stays ambiguous). Frames whose symbol remainder
+    carries prose around the token (e.g. `see Cls.method`) are not
+    eligible for disambiguation — neither R1 nor R2 — and stay
+    ambiguous with hints.
   - **R3 candidate hints** — residual ambiguous frames stay skipped
     and the tour description gains one trailing `歧義候選：` line
     listing descriptor + line + kind (≤4 per frame, ≤3 frames detailed
