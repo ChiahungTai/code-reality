@@ -418,6 +418,37 @@ on any new repo.
   the tours land in the caller's `.tours/delta/`. The MCP
   `delta_tour` tool has no cwd trap: omitted `out_dir` defaults to
   `<repo_root>/.tours/delta`.
+- `chain_tour` line-less frames (path + symbol, no line number) resolve
+  against `graph.db` by exact file + bare name. Multiple same-file
+  same-name nodes used to fail closed as an `ambiguous` skip; the
+  closed candidate set now narrows through three rules (still
+  fail-closed everywhere else):
+  - **R1 pseudo-constructor pairing** — the candidate set is exactly
+    {Type `X#`, its minted constructor `X().`} with equal `line_start`
+    → fills the class line; the step's `x-codeReality.symbol` carries
+    the Type symbol (a canonicalization, not an equivalence claim over
+    the two SCIP symbols). Python/JS-TS faces only — Rust `Type#`
+    nodes never reach the queryable set.
+  - **R2 qualified-name alignment** — the frame's dotted token must
+    tail-align a candidate's structured descriptor chain
+    segment-by-segment (whole-segment equality, case-sensitive):
+    equal-length full match first (tier-1), then strictly-shorter doc
+    chains (tier-2); exactly one survivor in the winning tier fills.
+    A bare (unqualified) token only ever fills via R1 or a tier-1
+    exact full-chain match — never through tier-2 (every same-name
+    candidate chain ends in the name, so a bare token tail-aligns all
+    of them and stays ambiguous).
+  - **R3 candidate hints** — residual ambiguous frames stay skipped
+    and the tour description gains one trailing `歧義候選：` line
+    listing descriptor + line + kind (≤4 per frame, ≤3 frames detailed
+    per scenario, remainder folded into a count). Unambiguous tours
+    keep a byte-identical description; the `ambiguous` distribution
+    key is unchanged.
+  Non-goals (separate arcs): the explicit-line anchor face, Rust `::`
+  frame grammar, Python overloads. Prose frames without a path never
+  reach the resolver (`noref`); path-bearing frames whose token misses
+  the graph degrade to `not-in-graph` or an ambiguous skip with hints
+  — fail-visible both ways.
 
 ## CLI surface (broader)
 
