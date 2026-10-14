@@ -85,4 +85,17 @@ NULL⇒"" 映射＋lsp-harvest residual＋出版 drift fence＋S4/S5 對照表
 730/0、rust_backend flake 證實併發負載（安靜重跑 4/4）。judge
 converged: accept。CR-10.2 卡結算已寫、Done 翻牌留 user。下一步＝
 S4 開工（cr-10.3）。寄信額度本回報後用罄（第 6 封）。
+
+outbound 台帳續：⑥cr10-s3-report-171645 已受理（ai-guide
+acceptanceSeq=12，deliverySeq=12）——S3 段收線回報（卡級授權末封；
+新 thread inform 走 dutymail send 直呼；首封 envelope 因 heredoc 轉義層
+`\0` 非法 escape 被 usage class 拒收零外流，改 Write 面重造後過——
+idempotency 未觸發）。寄信額度 6/6 用罄、72h 授權面照約終止：S4/S5
+段回報改 journal＋user 報告承載，如需寄信須 user 重新授權。
+
+〔S4 commit gate（2026-10-14，user 回話）〕AUTH: user said「bi
+post-build OK 就可以 commit」——S4 收線 review＝bi panel（muse＋codex；
+codex 腿照塌縮前置判準換新 diff 重測一次，再現同 transport 簽名即
+single＋顯式記錄），review OK 即 landing commit（併入弧內自主 commit
+授權面）；push 恆不碰。
 <!-- SECTION:NOTES:END -->
