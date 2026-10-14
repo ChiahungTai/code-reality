@@ -465,7 +465,9 @@ on any new repo.
   summary gains a `shells-omitted` counter. The manifest itself
   persists via an atomic temp-file+fsync+rename (a partial write can
   never truncate it; rename keys on directory permission — a read-only
-  target file does not block a dump). A fully-shell md fails
+  target file does not block a dump, and the replace swaps the inode,
+  so a pre-existing target's permissions/metadata do not carry over). A
+  fully-shell md fails
   closed — exit 1, zero writes, the existing parse-fail face — with the
   pre-existing family's tours/rows disclosed for manual cleanup.
   `--primary` keeps numbering md scenarios (shells included); pointing

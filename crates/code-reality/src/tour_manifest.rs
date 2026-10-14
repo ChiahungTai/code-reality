@@ -378,6 +378,13 @@ pub fn dump(path: &Path, m: &Manifest) -> Result<(), String> {
     // write permission (POSIX): the target file's own mode is not
     // consulted. Directory fsync omitted (non-portable fcntl machinery;
     // the rename atomicity is the requirement).
+    //
+    // Exclusive creation (NF5): create_new refuses any pre-existing
+    // entry — it never truncates a planted file and never follows a
+    // symlink into an unrelated target. On AlreadyExists the name
+    // regenerates and the loop retries, bounded, then the loud error
+    // face (target untouched, no residue). Write/fsync failures are not
+    // collisions and fail immediately.
     let body = format!("{}\n", lines.join("\n"));
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
     let fname = path
@@ -385,21 +392,49 @@ pub fn dump(path: &Path, m: &Manifest) -> Result<(), String> {
         .and_then(|n| n.to_str())
         .unwrap_or("manifest.toml");
     static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let tmp = dir.join(format!(
-        ".{fname}.tmp-{}-{}",
-        std::process::id(),
-        TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-    ));
-    let write_tmp = || -> Result<(), std::io::Error> {
-        use std::io::Write;
-        let mut f = std::fs::File::create(&tmp)?;
-        f.write_all(body.as_bytes())?;
-        f.sync_all()
-    };
-    if let Err(e) = write_tmp() {
-        let _ = std::fs::remove_file(&tmp);
-        return Err(format!("{} 寫入失敗：{}", path.display(), e));
+    const TMP_ATTEMPTS: u32 = 8;
+    let mut created: Option<PathBuf> = None;
+    let mut last_err: Option<std::io::Error> = None;
+    for _ in 0..TMP_ATTEMPTS {
+        let tmp = dir.join(format!(
+            ".{fname}.tmp-{}-{}",
+            std::process::id(),
+            TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)
+        {
+            Ok(mut f) => {
+                use std::io::Write;
+                match f.write_all(body.as_bytes()).and_then(|_| f.sync_all()) {
+                    Ok(()) => {
+                        created = Some(tmp);
+                        break;
+                    }
+                    Err(e) => {
+                        let _ = std::fs::remove_file(&tmp);
+                        last_err = Some(e);
+                        break;
+                    }
+                }
+            }
+            Err(e) => {
+                let collision = e.kind() == std::io::ErrorKind::AlreadyExists;
+                last_err = Some(e);
+                if !collision {
+                    break;
+                }
+            }
+        }
     }
+    let Some(tmp) = created else {
+        let e = last_err.unwrap_or_else(|| {
+            std::io::Error::other("temp name exhausted")
+        });
+        return Err(format!("{} 寫入失敗：{}", path.display(), e));
+    };
     if let Err(e) = std::fs::rename(&tmp, path) {
         let _ = std::fs::remove_file(&tmp);
         return Err(format!("{} 寫入失敗：{}", path.display(), e));

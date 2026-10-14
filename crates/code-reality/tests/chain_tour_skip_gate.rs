@@ -657,30 +657,20 @@ fn file_removal_failure_warns_and_continues() {
     let out_dir = repo.join(".tours/arch/01-gate");
     let first = run_out_dir(&repo, &chain);
     assert_eq!(first.exit_code, 0, "{}{}", first.stdout, first.stderr);
-    // enforcement probe: flag a scratch file and try to delete it — a
-    // success means this environment ignores uchg → skip
+    // enforcement probe: the flag rides the same RAII guard (loud on
+    // every set/clear) — a delete that succeeds means this environment
+    // ignores uchg → skip
     let probe = out_dir.join(".probe-uchg");
     std::fs::write(&probe, "x").unwrap();
-    let flagged = std::process::Command::new("/usr/bin/chflags")
-        .arg("uchg")
-        .arg(&probe)
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false);
-    if !flagged {
+    let enforced = {
+        let _guard = UchgGuard::set(&probe);
+        std::fs::remove_file(&probe).is_err()
+    };
+    if !enforced {
         let _ = std::fs::remove_file(&probe);
-        eprintln!("skip: chflags unavailable");
-        return;
-    }
-    if std::fs::remove_file(&probe).is_ok() {
-        let _ = std::fs::remove_file(&out_dir.join(".probe-uchg"));
         eprintln!("skip: immutable flag not enforced (root?)");
         return;
     }
-    let _ = std::process::Command::new("/usr/bin/chflags")
-        .arg("nouchg")
-        .arg(&probe)
-        .status();
     let _ = std::fs::remove_file(&probe);
     let stale = out_dir.join("03.tour");
     // the middle scenario becomes a shell → write set shrinks to 2
@@ -902,4 +892,99 @@ fn dump_atomic_replace_leaves_no_temp_residue() {
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .collect();
     assert_eq!(names, vec!["manifest.toml".to_string()], "{names:?}");
+}
+
+// ---------- round 4 (NF5 exclusive temp creation) ----------
+
+/// NF5: temp creation is exclusive — a pre-planted symlink at the child
+/// process's first temp name (pid + seq 0 are predictable for a fresh
+/// process) must NOT be followed. The old non-exclusive File::create
+/// face wrote straight through it, clobbering the sentinel and renaming
+/// the link onto the manifest. Exclusive create_new fails with
+/// AlreadyExists → the retry picks the next name; planted link +
+/// sentinel stay byte-identical, manifest correct, no extra residue.
+#[cfg(unix)]
+#[test]
+fn dump_temp_creation_is_exclusive_and_never_follows_symlinks() {
+    use std::io::{BufRead, Write};
+    use std::os::unix::fs::symlink;
+    use std::process::{Command, Stdio};
+    let md = format!("{REAL_A}\n{REAL_B}");
+    let (repo, chain) = repo_fixture("gate-exclusive-tmp", &md);
+    let mdir = repo.join(".tours");
+    std::fs::create_dir_all(&mdir).unwrap();
+    // the sentinel a followed symlink would clobber
+    let sentinel = mdir.join("sentinel.txt");
+    std::fs::write(&sentinel, "do-not-clobber\n").unwrap();
+    // child process held on stdin, so its pid is knowable before its
+    // first (and only) manifest dump
+    let bin = env!("CARGO_BIN_EXE_code-reality");
+    let script = format!(
+        "echo $$; read _; exec {} chain_tour {} --repo {}",
+        bin,
+        chain.display(),
+        repo.display()
+    );
+    let mut child = Command::new("sh")
+        .arg("-c")
+        .arg(&script)
+        .current_dir(&repo)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut child_out = child.stdout.take().unwrap();
+    let pid = {
+        let mut line = String::new();
+        std::io::BufReader::new(&mut child_out)
+            .read_line(&mut line)
+            .unwrap();
+        let pid = line.trim().to_string();
+        assert!(
+            !pid.is_empty() && pid.chars().all(|c| c.is_ascii_digit()),
+            "expected the child pid, got {line:?}"
+        );
+        pid
+    };
+    // the collision: a symlink at the child's FIRST temp name
+    let planted = mdir.join(format!(".manifest.toml.tmp-{pid}-0"));
+    symlink(&sentinel, &planted).unwrap();
+    child.stdin.as_mut().unwrap().write_all(b"go\n").unwrap();
+    child.stdin.take();
+    let st = child.wait().unwrap();
+    let _ = std::io::Read::read_to_string(&mut child_out, &mut String::new());
+    assert!(st.success(), "child run failed");
+    // the planted symlink was never followed: link + sentinel untouched
+    assert_eq!(
+        std::fs::read_to_string(&sentinel).unwrap(),
+        "do-not-clobber\n"
+    );
+    let meta = std::fs::symlink_metadata(&planted).unwrap();
+    assert!(
+        meta.file_type().is_symlink(),
+        "{planted:?} must survive as a link"
+    );
+    // the manifest landed correctly (fresh names, not through the link)
+    let mut keys = tour_row_keys(&repo);
+    keys.sort();
+    assert_eq!(
+        keys,
+        vec![
+            "arch/chain/01.tour".to_string(),
+            "arch/chain/02.tour".to_string(),
+        ],
+        "{keys:?}"
+    );
+    // residue: exactly the planted name, nothing else in the pattern
+    let temps: Vec<String> = std::fs::read_dir(&mdir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with(".manifest.toml.tmp-"))
+        .collect();
+    assert_eq!(
+        temps,
+        vec![format!(".manifest.toml.tmp-{pid}-0")],
+        "{temps:?}"
+    );
 }
