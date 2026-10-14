@@ -4,7 +4,7 @@ title: delta-freshness：讓 stale graph 可計算差集、查詢面標註新鮮
 status: In Progress
 assignee: []
 created_date: '2026-10-14 02:57'
-updated_date: '2026-10-14 03:36'
+updated_date: '2026-10-14 03:44'
 labels: []
 dependencies: []
 references:
@@ -60,4 +60,6 @@ flowchart LR
 
 <!-- SECTION:NOTES:BEGIN -->
 outbound 台帳：①cr-crdelta-reply-nudge-104913 已受理（acceptanceSeq=10，in_reply_to=aiguide-cr-delta-nudge-20261014，址=delegate-bridge）——催辦回覆：開卡指針＋三對齊錨回執；②cr-crdelta-reply-dborder-104914 已受理（acceptanceSeq=11，in_reply_to=db-crdelta-coderetail-20261014，址=delegate-bridge）——評估結果＋thread 對齊。AUTH: user said「guide 有寄信，請回信」（2026-10-14）。技術註記：duty pin 死鎖一次（首發 draft 缺 schema 欄位即被 pin——pin 寫在 dutymail schema 驗證之前），以 snapshot+pin 對齊修正寄出（內容零變更僅 envelope 格式補欄）；duty_receive pin 先於下游驗證的設計缺口待回饋 ai-guide（另記）。
+
+outbound 台帳續：③cr10-align-reply-110245 已受理（ai-guide acceptanceSeq=10，in_reply_to=aiguide-cr-align-cr10-20261014）——對齊三點確認＋逐段回報改走 ai-guide 本址。④cr9-acceptance-reply-110531 已受理（mosaic_alpha acceptanceSeq=6，in_reply_to=mos-cr9-acceptance-report）——CR-9 驗收回帳＋兩追蹤題答案＋格式閘加嚴詢問。AUTH: user said「先收信，然後再回信」（2026-10-14）。待回覆歸零。
 <!-- SECTION:NOTES:END -->
