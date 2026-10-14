@@ -414,6 +414,158 @@ async fn get_community_drill_down_and_flows_limit() {
     assert_eq!(n, 1, "--limit truncates flows, got {n} entries");
 }
 
+// ---------- CR-10.3 R8: get_community MCP face annotation contract (D9) —
+
+/// The `[CR-META]` header must be output line 2 and parse (D9 header
+/// system on the drill-down's MCP-only face).
+fn community_meta(text: &str) -> serde_json::Value {
+    assert_eq!(
+        text.lines().next().unwrap(),
+        "[OK] graph_query get_community",
+        "line 1 is the annotated [OK] header: {text}"
+    );
+    let payload = text
+        .lines()
+        .nth(1)
+        .expect("line 2 present")
+        .strip_prefix("[CR-META] ")
+        .expect("line 2 is the [CR-META] header");
+    serde_json::from_str(payload).expect("CR-META parses")
+}
+
+#[tokio::test]
+async fn get_community_mcp_face_carries_the_annotation_header() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = std::fs::canonicalize(tmp.path()).unwrap();
+    // no provenance keys in the fixture db → D10 legacy graph face
+    cp_fixture::fat_db(&repo, 40);
+    let server = code_reality::mcp_server::CodeRealityServer::new();
+    let r = server
+        .get_community(rmcp::handler::server::wrapper::Parameters(
+            code_reality::mcp_server::GqCommunityParams {
+                repo_root: repo.display().to_string(),
+                community_name: "sym-module".into(),
+                include_members: None,
+            },
+        ))
+        .await
+        .unwrap();
+    let text = result_text(r);
+    let meta = community_meta(&text);
+    assert_eq!(meta["v"], 1, "{meta}");
+    assert_eq!(
+        meta["tier"], "indeterminate",
+        "legacy db (D10): snapshot_id null → indeterminate: {meta}"
+    );
+    assert!(meta["graph_snapshot_id"].is_null(), "{meta}");
+    assert!(
+        meta.get("delta_summary").is_some(),
+        "D15 fields-never-absent: {meta}"
+    );
+    // the summary body still rides beneath the header
+    assert!(text.contains("\"size\""), "{text}");
+}
+
+#[tokio::test]
+async fn get_community_mcp_face_generation_mismatch_is_indeterminate() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = std::fs::canonicalize(tmp.path()).unwrap();
+    // a stamped slot (identity-stamped meta over real bytes → the
+    // serving artifact hash exists) bound to a graph that claims a
+    // DIFFERENT slot generation — SM-10 through the MCP drill-down face
+    std::fs::create_dir_all(repo.join(".code-reality/scip")).unwrap();
+    let slot = repo.join(".code-reality/scip/index.scip");
+    std::fs::write(&slot, b"cr10-r8-placeholder-index").unwrap();
+    let slot_hash = code_reality::identity::sha256_hex(b"cr10-r8-placeholder-index");
+    let meta = serde_json::json!({
+        "head": "",
+        "producer": "test 0.0.0",
+        "source_faces": ["python"],
+        "source_identity": "stale-si",
+        "identity_algo": code_reality::identity::IDENTITY_ALGO,
+        "index_sha256": slot_hash,
+        "selection": "auto"
+    });
+    std::fs::write(
+        repo.join(".code-reality/scip/index.scip.meta.json"),
+        format!("{}\n", serde_json::to_string_pretty(&meta).unwrap()),
+    )
+    .unwrap();
+    let db = repo.join(".code-reality/graph.db");
+    std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+    // nodes/communities from the shared fixture, then the S3 provenance
+    // keys pinned to a DIFFERENT slot generation (fat_db's DDL has no
+    // metadata table — create it, the engine treats absence as legacy)
+    cp_fixture::fat_db(&repo, 40);
+    let conn = rusqlite::Connection::open(&db).unwrap();
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT)",
+        [],
+    )
+    .unwrap();
+    for (k, v) in [
+        ("graph_snapshot_id", "gid-1"),
+        ("input_index_sha256", "different-generation"),
+        ("builder_revision", "rev0"),
+    ] {
+        conn.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES (?1, ?2)",
+            (k, v),
+        )
+        .unwrap();
+    }
+    let server = code_reality::mcp_server::CodeRealityServer::new();
+    let r = server
+        .get_community(rmcp::handler::server::wrapper::Parameters(
+            code_reality::mcp_server::GqCommunityParams {
+                repo_root: repo.display().to_string(),
+                community_name: "sym-module".into(),
+                include_members: None,
+            },
+        ))
+        .await
+        .unwrap();
+    let text = result_text(r);
+    let meta = community_meta(&text);
+    assert_eq!(meta["tier"], "indeterminate", "{meta}");
+    assert_eq!(
+        meta["graph_snapshot_id"], "gid-1",
+        "the SERVED graph's id, never patched: {meta}"
+    );
+    assert_eq!(
+        meta["delta_summary"]["delta_unavailable"], "graph-generation-mismatch",
+        "SM-10 mismatch backstop on the MCP face: {meta}"
+    );
+}
+
+#[tokio::test]
+async fn get_community_mcp_cap_truncation_keeps_the_header() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = std::fs::canonicalize(tmp.path()).unwrap();
+    cp_fixture::fat_db(&repo, 50_000); // members list > the 1MB text cap
+    let server = code_reality::mcp_server::CodeRealityServer::new();
+    let r = server
+        .get_community(rmcp::handler::server::wrapper::Parameters(
+            code_reality::mcp_server::GqCommunityParams {
+                repo_root: repo.display().to_string(),
+                community_name: "sym-module".into(),
+                include_members: Some(true),
+            },
+        ))
+        .await
+        .unwrap();
+    let text = result_text(r);
+    assert!(
+        text.len() < 1_100_000,
+        "capped near 1MB, got {}",
+        text.len()
+    );
+    assert!(text.contains("[TRUNCATED]"), "cap sentinel present");
+    // D13: the annotation header survives the tail truncation intact
+    let meta = community_meta(&text);
+    assert_eq!(meta["v"], 1, "{meta}");
+}
+
 // ---------- data-plane family (EP ep-mcp-data-plane-tools) ----------
 
 fn dp_git(repo: &std::path::Path, args: &[&str]) {
@@ -774,6 +926,18 @@ fn manifest_face_is_deterministic_publisher_json() {
     assert_eq!(
         v["tools_digest_scope"], "name+input_schema",
         "declared digest policy (descriptions are prose, not ABI)"
+    );
+    // CR-10.3 R13: the freshness tool discloses its one write face —
+    // the identity cache — with the escape hatch, aligned with the CLI
+    // freshness face's disclosure
+    let fr = tools
+        .iter()
+        .find(|t| t["name"] == "freshness")
+        .expect("freshness tool present");
+    let desc = fr["description"].as_str().expect("description");
+    assert!(
+        desc.contains("CODE_REALITY_IDENTITY_CACHE=off"),
+        "identity-cache write disclosure on the MCP face: {desc}"
     );
     for w in v["write_faces"].as_array().expect("write_faces array") {
         let w = w.as_str().expect("write face name");

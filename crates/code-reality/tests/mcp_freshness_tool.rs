@@ -13,7 +13,15 @@ use code_reality::freshness::{serving_stamp, serving_stamp_with_budget};
 use code_reality::mcp_server::{CodeRealityServer, FreshnessParams, RefsParams};
 use rmcp::handler::server::wrapper::Parameters;
 use std::path::PathBuf;
+use std::sync::Mutex;
 use std::time::Duration;
+
+/// CR-10.3 R5: serializes every test that (transitively) reads
+/// CODE_REALITY_VERDICT_BUDGET_MS (via serving_stamp → verdict_budget)
+/// or mutates CODE_REALITY_AUTOHEAL — process-global env races under
+/// cargo's parallel runner; house precedent: the ENV_LOCK in
+/// query_freshness_annotation.rs.
+static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 struct Lab {
     repo: PathBuf,
@@ -119,6 +127,9 @@ async fn tc10_freshness_tool_check_failure_is_error() {
 
 #[tokio::test]
 async fn tc4_mcp_callers_refusal_is_error_with_type_in_content() {
+    // CR-10.3 R5: this test mutates CODE_REALITY_AUTOHEAL — join the
+    // ENV_LOCK convention (same-process readers below)
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let lab = lab_py();
     lab.build();
     lab.drift();
@@ -141,12 +152,19 @@ async fn tc4_mcp_callers_refusal_is_error_with_type_in_content() {
         err.message.contains("negative_verdict=unavailable"),
         "type rides the text face: {err}"
     );
+    // CR-10.3 R9: the folded refusal envelope mints the frozen type
+    // literal (EP D7 — bridge DB-101 matches this string on the text face)
+    assert!(
+        err.message.contains("stale-negative-unavailable"),
+        "frozen refusal literal in the folded content: {err}"
+    );
 }
 
 // ---------- TC-8: the TOCTOU seams (D11) ----------
 
 #[test]
 fn tc8_serving_stamp_hashes_the_serving_bytes() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let lab = lab_py();
     lab.build();
     let pre = serving_stamp(Some(&lab.repo), &lab.slot());
@@ -174,6 +192,7 @@ fn tc8_serving_stamp_hashes_the_serving_bytes() {
 
 #[test]
 fn tc8_binding_mismatch_retries_then_degrades_indeterminate() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let lab = lab_py();
     lab.build();
     // forge a meta whose bound index no longer matches the serving bytes:
@@ -213,6 +232,7 @@ fn tc8_budget_exceeded_degrades_indeterminate() {
 
 #[test]
 fn tc8_graph_old_conn_reads_its_own_generation() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let lab = lab_py();
     lab.build();
     // open the graph BEFORE the slot moves — tmp+rename keeps this
@@ -274,5 +294,93 @@ fn tc8_graph_old_conn_reads_its_own_generation() {
     assert_eq!(
         meta["delta_summary"]["delta_unavailable"],
         "graph-generation-mismatch"
+    );
+}
+
+// ---------- CR-10.3 R1: the post-load leg of the D11 binding window ----
+//
+// serving_stamp binds at query entry; the mode loads the face bytes
+// later. `stamp_after_load` is the seam the modes run after their load:
+// a slot swap inside the stamp→load window DEGRADES to indeterminate —
+// the loaded body's generation is unattributable at recheck time (a
+// swap before the load yields new bytes the old stamp can't describe; a
+// swap after the load yields old bytes a recomputed stamp can't
+// describe; the two are indistinguishable here), so the old stamp's
+// annotations are never served over unverified bytes (muse re-review
+// F1: the earlier rebind-on-settle semantics described bytes the query
+// never loaded).
+
+#[test]
+fn tc8_post_load_slot_swap_degrades_indeterminate() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let lab = lab_py();
+    lab.build();
+    let stamp = serving_stamp(Some(&lab.repo), &lab.slot());
+    assert!(stamp.snapshot.is_some(), "precondition: a bound stamp");
+    // swap the slot AFTER the stamp: forge a meta whose bound hash
+    // matches nothing — the post-load re-verification must catch the
+    // swap and degrade (the load-window swap may never pass the old
+    // stamp off as bound)
+    let meta_path = code_reality::engine::meta_path(&lab.slot());
+    let mut meta: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap();
+    meta["index_sha256"] = serde_json::json!("0".repeat(64));
+    std::fs::write(
+        &meta_path,
+        format!("{}\n", serde_json::to_string_pretty(&meta).unwrap()),
+    )
+    .unwrap();
+    let after = code_reality::freshness::stamp_after_load(&stamp, &lab.slot());
+    assert!(
+        after.snapshot.is_none(),
+        "a load-window swap cannot resolve: {after:?}"
+    );
+    assert_eq!(
+        after.reason,
+        Some(code_reality::engine::DeltaUnavailable::ManifestBindingAuditFailed)
+    );
+}
+
+#[test]
+fn tc8_post_load_settled_swap_still_degrades_body_unattributable() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let lab = lab_py();
+    lab.build();
+    let stamp = serving_stamp(Some(&lab.repo), &lab.slot());
+    assert!(stamp.snapshot.is_some());
+    // a CONSISTENT slot swap (new bytes + rebound meta/manifest, the
+    // atomic-publish shape): even a settled new generation DEGRADES —
+    // whether the loaded body came from the old or the new bytes is
+    // unknowable at this seam, so a re-bound stamp could describe bytes
+    // the query never loaded (muse re-review F1); the conservative
+    // direction is indeterminate, never a possibly-false exact
+    let fixture = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rich.scip");
+    std::fs::copy(fixture, lab.slot()).unwrap();
+    let slot_hash = code_reality::identity::sha256_hex(&std::fs::read(lab.slot()).unwrap());
+    let manifest_path = lab.repo.join(".code-reality/scip/index.scip.manifest.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&manifest_path).unwrap()).unwrap();
+    manifest["index_sha256"] = serde_json::json!(slot_hash);
+    let mtext = format!("{}\n", serde_json::to_string_pretty(&manifest).unwrap());
+    let digest = code_reality::identity::sha256_hex(mtext.as_bytes());
+    std::fs::write(&manifest_path, &mtext).unwrap();
+    let meta_path = code_reality::engine::meta_path(&lab.slot());
+    let mut meta: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap();
+    meta["index_sha256"] = serde_json::json!(slot_hash);
+    meta["base_manifest_digest"] = serde_json::json!(digest);
+    std::fs::write(
+        &meta_path,
+        format!("{}\n", serde_json::to_string_pretty(&meta).unwrap()),
+    )
+    .unwrap();
+    let after = code_reality::freshness::stamp_after_load(&stamp, &lab.slot());
+    assert!(
+        after.snapshot.is_none(),
+        "a post-load swap cannot attribute the loaded body: {after:?}"
+    );
+    assert_eq!(
+        after.reason,
+        Some(code_reality::engine::DeltaUnavailable::ManifestBindingAuditFailed)
     );
 }

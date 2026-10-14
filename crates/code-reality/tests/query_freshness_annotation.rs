@@ -137,11 +137,43 @@ fn cr_verdict_line(stdout: &str) -> Option<&str> {
 }
 
 /// key=value map of the verdict line (the leading `[CR_VERDICT] ` tag
-/// stripped; `v=1` included).
+/// stripped; `v=1` included). CR-10.3 R7 quoting rule: a value
+/// containing whitespace or a comma is double-quoted with inner `"`
+/// escaped as `\"` — the splitter honors quotes when dividing on
+/// spaces; token values keep their verbatim spelling (quotes included)
+/// so assertions can pin the exact wire form.
 fn verdict_fields(line: &str) -> std::collections::BTreeMap<String, String> {
+    let body = line.trim_start_matches("[CR_VERDICT] ");
     let mut out = std::collections::BTreeMap::new();
-    for pair in line.trim_start_matches("[CR_VERDICT] ").split(' ') {
-        if let Some((k, v)) = pair.split_once('=') {
+    let mut tokens: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    let mut in_quotes = false;
+    let mut escaped = false;
+    for c in body.chars() {
+        if escaped {
+            cur.push(c);
+            escaped = false;
+        } else {
+            match c {
+                '\\' if in_quotes => {
+                    cur.push('\\');
+                    escaped = true;
+                }
+                '"' => in_quotes = !in_quotes,
+                ' ' if !in_quotes => {
+                    if !cur.is_empty() {
+                        tokens.push(std::mem::take(&mut cur));
+                    }
+                }
+                _ => cur.push(c),
+            }
+        }
+    }
+    if !cur.is_empty() {
+        tokens.push(cur);
+    }
+    for tok in tokens {
+        if let Some((k, v)) = tok.split_once('=') {
             out.insert(k.to_string(), v.to_string());
         }
     }
@@ -196,6 +228,20 @@ fn reseat_slot_with_callers_fixture(lab: &Lab) {
     .unwrap();
 }
 
+/// Reduce the slot's meta to the lsp_harvest face (D16 shape: `{head,
+/// producer}` only) — no identity triple, no manifest pointer → the
+/// stamp binds (nothing to compare) but the delta face is `None`
+/// (legacy-no-manifest) while staleness stays observable (source mtime).
+fn strip_meta_to_legacy(lab: &Lab) {
+    let mp = meta_path(&lab.slot());
+    let meta = serde_json::json!({"head": "", "producer": "lsp_harvest 0.0.0"});
+    std::fs::write(
+        &mp,
+        format!("{}\n", serde_json::to_string_pretty(&meta).unwrap()),
+    )
+    .unwrap();
+}
+
 // ---------- TC-3b: untracked-file symbol query = no-coverage ----------
 
 #[test]
@@ -240,6 +286,10 @@ fn tc4_stale_callers_empty_is_typed_refusal_exit1() {
     lab.write("mod_a.py", "def fn1():\n    pass_changed\n");
     let out = lab.scip(&["mod_afn1", "--callers"]);
     assert_eq!(out.exit_code, 1, "D7 hard gate: {}", out.stdout);
+    // CR-10.3 R12: the refusal arm's body line wears the typed refusal
+    // label, never the [OK] success tag (exit-1 semantics consistency)
+    assert!(out.stdout.contains("[REFUSED]"), "{}", out.stdout);
+    assert!(!out.stdout.contains("[OK]"), "{}", out.stdout);
     let line = cr_verdict_line(&out.stdout).expect("[CR_VERDICT] line present");
     let f = verdict_fields(line);
     assert_eq!(
@@ -258,6 +308,9 @@ fn tc4_stale_closure_empty_frontier_is_typed_refusal_exit1() {
     lab.write("mod_a.py", "def fn1():\n    pass_changed\n");
     let out = lab.scip(&["mod_afn1", "--closure", "--depth", "2"]);
     assert_eq!(out.exit_code, 1, "D7 hard gate: {}", out.stdout);
+    // CR-10.3 R12: refusal label on the closure arm too
+    assert!(out.stdout.contains("[REFUSED]"), "{}", out.stdout);
+    assert!(!out.stdout.contains("[OK]"), "{}", out.stdout);
     let line = cr_verdict_line(&out.stdout).expect("[CR_VERDICT] line present");
     let f = verdict_fields(line);
     assert_eq!(
@@ -352,6 +405,10 @@ fn tc6_fresh_callers_empty_is_authoritative_zero() {
 
 #[test]
 fn tc8_annotation_follows_served_generation_across_rebuild() {
+    // CR-10.3 R5: both queries transitively read CODE_REALITY_VERDICT_BUDGET_MS
+    // (cli::run → serving_stamp) — join the ENV_LOCK convention so the
+    // tc14 env mutation can never race this file's readers
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let lab = lab_py();
     lab.build();
     // drift the source without rebuilding: the serving slot goes stale
@@ -573,4 +630,114 @@ fn tc21_fresh_gated_empty_is_authoritative_zero() {
     assert_eq!(meta["tier"], "exact", "{}", out.stdout);
     let body: Value = serde_json::from_str(gq_body(&out.stdout)).unwrap();
     assert_eq!(body["results"].as_array().unwrap().len(), 0);
+}
+
+// ---------- CR-10.3 R3: the gate is staleness-truth-bound, not delta-bound
+
+#[test]
+fn r3_deltaless_stale_keeps_the_negative_gate_scip() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let lab = lab_py();
+    lab.build();
+    // legacy-shaped meta (D16 lsp_harvest face): the delta face answers
+    // None (legacy-no-manifest) while needs_rebuild() stays observable —
+    // the gate must fire on the staleness truth alone (D7 hard gate,
+    // CR-10.3 R3); the tier stays indeterminate (no possibly-stale
+    // summary to carry) but the refusal face (exit 1 + unavailable)
+    // still fires
+    strip_meta_to_legacy(&lab);
+    lab.write("mod_a.py", "def fn1():\n    pass_changed\n");
+    let out = lab.scip(&["mod_afn1", "--callers"]);
+    assert_eq!(
+        out.exit_code, 1,
+        "delta-less stale must still refuse the authoritative empty: {}",
+        out.stdout
+    );
+    let line = cr_verdict_line(&out.stdout).expect("[CR_VERDICT] line present");
+    let f = verdict_fields(line);
+    assert_eq!(
+        f.get("negative_verdict").map(String::as_str),
+        Some("unavailable"),
+        "{line}"
+    );
+    assert_eq!(f.get("tier").map(String::as_str), Some("indeterminate"));
+    assert_eq!(f.get("exhaustive").map(String::as_str), Some("false"));
+    assert!(out.stdout.contains("[REFUSED]"), "{}", out.stdout);
+}
+
+#[test]
+fn r3_deltaless_stale_keeps_the_negative_gate_graph() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let lab = lab_py();
+    lab.build();
+    strip_meta_to_legacy(&lab);
+    lab.write("mod_a.py", "def fn1():\n    pass_changed\n");
+    let out = lab.gq(&["search", "--query", "zzz_no_such_symbol"]);
+    assert_eq!(out.exit_code, 0, "{}", out.stdout);
+    let meta = cr_meta_json(&out.stdout).expect("[CR-META] header");
+    assert_eq!(
+        meta["negative_verdict"], "unavailable",
+        "graph gate also delta-independent: {}",
+        out.stdout
+    );
+    assert_eq!(meta["tier"], "indeterminate", "{}", out.stdout);
+    let body: Value = serde_json::from_str(gq_body(&out.stdout)).unwrap();
+    assert!(body["results"].is_null(), "no readable []: {body}");
+}
+
+// ---------- CR-10.3 R6: D13 count-pairing on the verdict line ----------
+
+#[test]
+fn r6_delta_paths_truncation_carries_the_complete_total() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let lab = lab_py();
+    // 60 governed files in the indexed generation…
+    for i in 0..60 {
+        lab.write(
+            &format!("mod_{i:02}.py"),
+            &format!("def fn{i:02}():\n    pass\n"),
+        );
+    }
+    lab.build();
+    // …then drift 55 of them: the delta union (55) exceeds the 50-entry
+    // path cap — the complete count must survive (D13 bounded lists
+    // carry complete counts; R6 count-pairing mirrors the S2 JSON face)
+    for i in 0..55 {
+        lab.write(
+            &format!("mod_{i:02}.py"),
+            &format!("def fn{i:02}():\n    pass_v2\n"),
+        );
+    }
+    let out = lab.scip(&["mod_afn1"]);
+    assert_eq!(out.exit_code, 0, "{}", out.stdout);
+    let line = cr_verdict_line(&out.stdout).expect("[CR_VERDICT] line present");
+    let f = verdict_fields(line);
+    assert_eq!(
+        f.get("delta_paths_total").map(String::as_str),
+        Some("55"),
+        "{line}"
+    );
+    assert_eq!(
+        f.get("delta_paths_truncated").map(String::as_str),
+        Some("true"),
+        "{line}"
+    );
+    // exactly the capped 50 entries ride the line
+    assert_eq!(line.matches("mod_").count(), 50, "{line}");
+}
+
+// ---------- CR-10.3 R14: live-source snippet labeling ----------
+
+#[test]
+fn r14_review_context_labels_live_source_snippets() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let lab = lab_py();
+    lab.build();
+    let out = lab.gq(&["review_context", "--files", "mod_a.py", "--include-source"]);
+    assert_eq!(out.exit_code, 0, "{}", out.stderr);
+    let body: Value = serde_json::from_str(gq_body(&out.stdout)).unwrap();
+    assert_eq!(
+        body["context"]["source_snippets_basis"], "current-tree",
+        "review intent-F9: snippets read the live tree, label them: {body}"
+    );
 }

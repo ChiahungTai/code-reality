@@ -151,7 +151,8 @@ pub fn closure<F: FnMut(&str) -> CallersResult>(
 /// Returns (stdout, exit_code); exit 0 on any DEF hit — except the D7
 /// hard negative gate (stale + zero callers), which flips the exit-0
 /// success form to the typed refusal (`negative_verdict=unavailable`,
-/// exit 1) via the verdict's exit override.
+/// exit 1) via the verdict's exit override; the refusal arm's body line
+/// wears `[REFUSED]`, never the `[OK]` success tag (CR-10.3 R12).
 pub fn format_callers(
     query: &str,
     result: &CallersResult,
@@ -166,8 +167,15 @@ pub fn format_callers(
     out.push_str(&verdict.line);
     out.push('\n');
     let sites: usize = result.callers.iter().map(|c| c.sites.len()).sum();
+    // R12: exit-1 + negative_verdict=unavailable must not present behind
+    // an `[OK]` success label
+    let tag = if verdict.exit_override == Some(1) {
+        "REFUSED"
+    } else {
+        "OK"
+    };
     out.push_str(&format!(
-        "[OK] {}：{} callers（{} sites）\n",
+        "[{tag}] {}：{} callers（{} sites）\n",
         query,
         result.callers.len(),
         sites
@@ -192,7 +200,8 @@ pub fn format_callers(
 /// aggregation, then the cycle-reentry line. Returns (stdout, exit_code);
 /// exit 0 on any DEF hit (empty frontiers included) — except the D7 hard
 /// negative gate (stale + empty frontier), which flips to the typed
-/// refusal via the verdict's exit override.
+/// refusal via the verdict's exit override; the refusal arm's body line
+/// wears `[REFUSED]` (CR-10.3 R12).
 pub fn format_closure(
     query: &str,
     depth: usize,
@@ -207,7 +216,14 @@ pub fn format_closure(
     }
     out.push_str(&verdict.line);
     out.push('\n');
-    out.push_str(&format!("[OK] closure：{}（depth={}）\n", query, depth));
+    // R12: exit-1 + negative_verdict=unavailable must not present behind
+    // an `[OK]` success label
+    let tag = if verdict.exit_override == Some(1) {
+        "REFUSED"
+    } else {
+        "OK"
+    };
+    out.push_str(&format!("[{tag}] closure：{}（depth={}）\n", query, depth));
     for lvl in &result.levels {
         out.push_str(&format!(
             "  depth {}：{} callers\n",

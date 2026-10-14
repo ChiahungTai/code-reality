@@ -351,6 +351,17 @@ tests are the sole gate face.
   / empty-frontier exit 0 with `exhaustive=true`, no-DEF exit 1 on the
   no-coverage axis, graph_query gated-empty exit 0 with
   `exhaustive:true`); the defs/refs face is annotate-only (no gate).
+  **Cross-plane coupling disclosure (CR-10.3 R11, accept-with-note —
+  semantics unchanged by adjudication)**: the scip gate's staleness
+  basis is repo-level `needs_rebuild()`, which includes the unconditional
+  torn-plane guard (`graph_lags` — the graph plane older than the slot).
+  On the paths that cannot heal — explicit `--index`, AUTOHEAL=off, or
+  heal failure — a scip query on an otherwise-fresh slot therefore
+  refuses empty callers/closure results because the GRAPH plane lags
+  (a false-refusal direction: availability loss, never a correctness
+  loss — the refusal is conservative, never a false fresh). Semantic
+  split (scip verdict on a scip-only staleness basis) is a recorded
+  candidate, to be adjudicated before S5 (EP CR-10 progress note).
   MCP text-cap fail-closed (D13): a cut annotation header or refusal
   envelope = `TRUNCATED_UNVERIFIED` error; a tail-truncated body under
   an intact header = annotated partial success.

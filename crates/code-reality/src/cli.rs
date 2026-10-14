@@ -394,7 +394,7 @@ pub fn run(argv: &[&str]) -> ToolOutput {
     let query = args.query.as_deref().unwrap_or("");
 
     if args.callers {
-        return callers_mode(&index_path, repo, query, &verdict_stamp, &mut stderr);
+        return callers_mode(&index_path, repo, query, verdict_stamp, &mut stderr);
     }
     if args.closure {
         const DEFAULT_CLOSURE_DEPTH: usize = 2; // EP S3 要點 (CLI contract)
@@ -403,7 +403,7 @@ pub fn run(argv: &[&str]) -> ToolOutput {
             repo,
             query,
             depth.unwrap_or(DEFAULT_CLOSURE_DEPTH),
-            &verdict_stamp,
+            verdict_stamp,
             &mut stderr,
         );
     }
@@ -416,6 +416,11 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         Ok(v) => v,
         Err(fail_msg) => return ToolOutput::fail(fail_msg),
     };
+    // R1 (EP D11): the face bytes are loaded above — close the
+    // stamp→load binding window before any annotation derives from the
+    // stamp (mismatch → indeterminate: the loaded body's generation is
+    // unattributable — muse re-review F1)
+    let verdict_stamp = crate::freshness::stamp_after_load(&verdict_stamp, &index_path);
     let kind = if defs.is_empty() {
         crate::freshness::ScipResult::DefsEmpty
     } else {
@@ -701,15 +706,18 @@ fn callers_mode(
     index_path: &Path,
     repo: Option<&Path>,
     query: &str,
-    stamp: &crate::freshness::ServingStamp,
+    verdict_stamp: crate::freshness::ServingStamp,
     stderr: &mut String,
 ) -> ToolOutput {
     let (src_line, front) = match callers_front(index_path, repo, query, stderr) {
         Ok(v) => v,
         Err(msg) => return ToolOutput::fail(msg),
     };
+    // R1 (EP D11): the face bytes are loaded inside callers_front —
+    // close the stamp→load binding window before annotating
+    let verdict_stamp = crate::freshness::stamp_after_load(&verdict_stamp, index_path);
     let Some((defs, oracle, spans)) = front else {
-        return no_def_output(&src_line, query, stamp, std::mem::take(stderr));
+        return no_def_output(&src_line, query, &verdict_stamp, std::mem::take(stderr));
     };
     let symbols: BTreeSet<String> = defs.keys().cloned().collect();
     let rows = match oracle.rows(&symbols) {
@@ -732,7 +740,7 @@ fn callers_mode(
     } else {
         crate::freshness::ScipResult::Populated
     };
-    let verdict = crate::freshness::scip_verdict(stamp, kind);
+    let verdict = crate::freshness::scip_verdict(&verdict_stamp, kind);
     let (stdout, exit_code) =
         crate::callers::format_callers(query, &result, src_line.as_deref(), &verdict);
     ToolOutput {
@@ -747,15 +755,18 @@ fn closure_mode(
     repo: Option<&Path>,
     query: &str,
     depth: usize,
-    stamp: &crate::freshness::ServingStamp,
+    verdict_stamp: crate::freshness::ServingStamp,
     stderr: &mut String,
 ) -> ToolOutput {
     let (src_line, front) = match callers_front(index_path, repo, query, stderr) {
         Ok(v) => v,
         Err(msg) => return ToolOutput::fail(msg),
     };
+    // R1 (EP D11): the face bytes are loaded inside callers_front —
+    // close the stamp→load binding window before annotating
+    let verdict_stamp = crate::freshness::stamp_after_load(&verdict_stamp, index_path);
     let Some((defs, oracle, spans)) = front else {
-        return no_def_output(&src_line, query, stamp, std::mem::take(stderr));
+        return no_def_output(&src_line, query, &verdict_stamp, std::mem::take(stderr));
     };
     let seeds: Vec<String> = defs.keys().cloned().collect();
     // Mid-BFS face errors: count skipped symbols, WARN once with the count
@@ -784,12 +795,19 @@ fn closure_mode(
         ));
     }
     let frontier_empty = result.levels.iter().all(|l| l.new_symbols.is_empty());
-    let kind = if frontier_empty {
+    // R4 (CR-10.3): a partially-executed BFS floors the verdict at
+    // `indeterminate` — the frontier is not exhaustive even when
+    // non-empty (exact/exhaustive unreachable), and an all-skipped
+    // frontier never presents as an authoritative empty (the gate's
+    // empty precondition does not verifiably hold) nor as no-coverage
+    let kind = if bfs_skipped > 0 {
+        crate::freshness::ScipResult::Degraded
+    } else if frontier_empty {
         crate::freshness::ScipResult::EdgesEmpty
     } else {
         crate::freshness::ScipResult::Populated
     };
-    let verdict = crate::freshness::scip_verdict(stamp, kind);
+    let verdict = crate::freshness::scip_verdict(&verdict_stamp, kind);
     let (stdout, exit_code) =
         crate::callers::format_closure(query, depth, &result, src_line.as_deref(), &verdict);
     ToolOutput {

@@ -472,6 +472,31 @@ rename 前的 mutate（資料面既有 post-check ABA residual，明示不重複
 - 機驗：`cargo test` 全量綠；golden 更新以「輸出契約 v1」凍結檔承載；
   MCP 契約組（is_error 對照＋cap 前後 1 byte）。
 
+**CR-10.3 S4 修復批進度節（2026-10-14，judge 裁決 R1-R15 執行記錄；
+逐項處置全文＝cr-10.3 WT `.review/cr-10.3.md` 帳本＋卡 notes）**：
+四腿審查（fresh/intent＋muse/codex）合流 15 項，R1-R10、R12-R15 落碼或
+落收據，R11 accept-with-note——R1 綁定視窗閉合（`stamp_after_load`
+post-load 腿，D11；muse 複審後裁定 mismatch 一律降級 `indeterminate`，
+rebind 臂拔除——載入本 generation 於 recheck 點不可歸屬）、R2 graph
+generation-binding 收緊（任一元件缺→indeterminate；symbols bypass 釘
+scip-face 語義＋symbols face 亦接 post-load recheck）、R3 hard gate 改綁
+`needs_rebuild()`（delta 缺場照發 refusal，tier 維持 indeterminate）、
+R4 `ScipResult::Degraded`（partial BFS floor indeterminate＋
+exhaustive=false）、R5/R8 env-lock 與 MCP face 契約測試、R7 [CR_VERDICT]
+值跳脫規則凍結（空白/逗號/雙引號→雙引號包裹＋`\"`；S5 對照表義務）、
+R6 `delta_paths_total`/`delta_paths_truncated`（D13 count-pairing）、
+R9 MCP 折疊 refusal mint 凍結字面串 `stale-negative-unavailable`、
+R12 refusal 臂 `[REFUSED]`、R13 freshness tool 披露 identity cache
+寫面、R14 `source_snippets_basis` 斷言、R15 AM-3 doc 修正。
+**R11 accept-with-note**：scip gate 的 stale 基底含 `graph_lags` 跨平面
+耦合（repo 級 verdict 是本 EP 設計，語義不改）——crates/AGENTS.md
+exit-semantics 段已明示；**semantic split（scip verdict 改 scip-only
+stale 基底）為顯性候選，S5 前裁決**。R10 量測（NT-scale 自食；收據
+原本暫存 .agent-tmp，數字移錄於此）：freshness warm 86ms ✅閘內、cold
+96.8ms ≪1s（`DEFAULT_VERDICT_BUDGET_MS=1000` 維持）；**graph_query
+加標註的 <20% 劣化閘於本語料 FAIL（heal/stamp 雙評估為顯性優化候選，
+S5 前裁決：優化或 amend 閘）——誠實揭露，不宣稱 TC-14 全閘通過**。
+
 ## 段落 S5：跨 repo acceptance hand-off
 
 ### Context

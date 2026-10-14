@@ -336,11 +336,16 @@ fn map_tool_output(out: crate::ToolOutput) -> Result<CallToolResult, McpError> {
         if let Err(msg) = cap_tool_text(text.clone(), MCP_TEXT_CAP) {
             return Err(internal_error(msg));
         }
-        return Err(internal_error(format!(
-            "工具退出碼 {}：{}",
-            out.exit_code,
-            text.trim()
-        )));
+        // R9 (EP D7): the folded refusal envelope mints the frozen type
+        // literal on the text face — bridge DB-101 matches this string;
+        // no new transport face (the map_tool_output fold, as adjudicated)
+        let folded = format!("工具退出碼 {}：{}", out.exit_code, text.trim());
+        let folded = if is_refusal_envelope(&text) {
+            format!("stale-negative-unavailable：{folded}")
+        } else {
+            folded
+        };
+        return Err(internal_error(folded));
     }
     to_tool_result(out)
 }
@@ -1192,7 +1197,7 @@ impl CodeRealityServer {
     /// of `MANIFEST_WRITE_FACES` (zero writes beyond the identity cache
     /// the CLI face already owns).
     #[tool(
-        description = "Source-identity freshness verdict for the repo's index slot (typed: fresh/stale is a legal answer with is_error=false — read `fresh` from the JSON; only check failures are errors). Read-only. Same lib as `code-reality freshness --repo <repo> --json`"
+        description = "Source-identity freshness verdict for the repo's index slot (typed: fresh/stale is a legal answer with is_error=false — read `fresh` from the JSON; only check failures are errors). Read-only except the slot's identity cache (CODE_REALITY_IDENTITY_CACHE=off reverts fully read-only) — same write face as the CLI freshness command. Same lib as `code-reality freshness --repo <repo> --json`"
     )]
     pub async fn freshness(
         &self,
@@ -1432,6 +1437,36 @@ mod error_cap_regression {
         })
         .unwrap_err();
         assert!(err.message.starts_with("TRUNCATED_UNVERIFIED"), "{err}");
+    }
+
+    // ---------- CR-10.3 R9: the folded refusal mints the frozen literal
+
+    #[test]
+    fn r9_folded_refusal_carries_the_frozen_type_literal() {
+        // EP D7: the MCP face folds the scip refusal's exit-1 into a
+        // per-request McpError with the type riding the text — the
+        // frozen literal `stale-negative-unavailable` (bridge DB-101
+        // matches this string)
+        let err = map_tool_output(crate::ToolOutput {
+            stdout: "[CR_VERDICT] v=1 tier=indeterminate exhaustive=false negative_verdict=unavailable producer_version=null delta_changed=null delta_complete=false content_verification=null delta_unavailable=legacy-no-manifest\n[REFUSED] q：0 callers（0 sites）\n"
+                .to_string(),
+            stderr: String::new(),
+            exit_code: 1,
+        })
+        .unwrap_err();
+        assert!(err.message.contains("stale-negative-unavailable"), "{err}");
+        assert!(
+            err.message.contains("negative_verdict=unavailable"),
+            "the envelope itself stays readable: {err}"
+        );
+        // a non-refusal nonzero exit keeps the plain fold (no literal)
+        let err = map_tool_output(crate::ToolOutput {
+            stdout: "[WARN] 查無 DEF：x\n".to_string(),
+            stderr: String::new(),
+            exit_code: 1,
+        })
+        .unwrap_err();
+        assert!(!err.message.contains("stale-negative-unavailable"), "{err}");
     }
 
     #[test]

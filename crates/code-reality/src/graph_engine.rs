@@ -2518,6 +2518,13 @@ pub fn run(argv: &[&str]) -> crate::ToolOutput {
     if *op == "symbols" {
         return match document_symbols(&repo_path, &query) {
             Ok(v) => {
+                // muse re-review F2: the loaded bytes come from the scip
+                // slot the stamp is bound to — close the stamp→load
+                // binding window here too (mismatch → indeterminate)
+                let slot =
+                    crate::engine::default_index_path(&crate::engine::resolve_repo(&repo_path))
+                        .unwrap_or_else(|_| repo_path.to_path_buf());
+                let stamp = crate::freshness::stamp_after_load(&stamp, &slot);
                 // same header system (D9); no graph connection behind
                 // this face — the generation fields read null
                 let ann = crate::freshness::graph_annotation(&stamp, None, false);
