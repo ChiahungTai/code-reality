@@ -103,4 +103,17 @@ single＋顯式記錄），review OK 即 landing commit（併入弧內自主 com
 翻done, 不用等我」——弧內卡（CR-10.1/10.2/10.3）工作落線＋結算完整即
 由 marshal 自行翻 Done 免逐張請示；翻牌前提不變（review/judge 綠＋
 landing＋結算寫入），條件不滿足不翻。父卡 CR-10 收案仍待 S5 完成。
+
+〔S4 收線結算（2026-10-14 20:35）〕S4 落地 main `5a7e3f2`＋`85c520e`
+（cr-10.3 rebase 後 ff）。四腿審查（fresh/intent＋muse＋codex task-face）
+→ judge R1-R15（codex 4🔴 全親驗）→ 修復批 job-mv803hiw → muse 複審
+5 項（F1 high：post-load rebind 臂不健全——裁定 mismatch 一律降級）
+→ round-3 微修 → converged: accept。驗證：684/0＋fmt＋post-merge
+main 綠。CR-10.3 已翻 Done（依上授權）。誠實未決項（S5 前裁決）：
+①TC-14 graph_query 劣化閘本語料 FAIL（heal/stamp 雙評估優化候選）
+②R11 scip stale 基底跨平面耦合 semantic split 候選。bridge 3.16.0
+回饋包（workspace-mismatch 誤分類＋codex review face 污染＋reviewer
+寫檔偏差）待整理回饋 bridge repo。**剩餘＝S5 hand-off**（契約 fixture＋
+S5 對照表＋bridge wrapper pin 對齊＋ai-guide 對接——寄信額度已罄，
+對接信需 user 重新授權）。
 <!-- SECTION:NOTES:END -->
