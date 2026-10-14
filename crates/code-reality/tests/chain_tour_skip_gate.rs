@@ -533,11 +533,13 @@ fn all_shell_gate_preserves_gated_stdout() {
 
 // ---------- review round 2 (NF1 delete-after-persist / NF2 .tour predicate / mapping gap) ----------
 
-/// NF1(a): dump-before-delete — an unwritable manifest (chmod 0444) must
-/// crash the run with ZERO files deleted and the on-disk rows
-/// byte-identical (deleting files and then failing the dump left a
-/// corpus of dangling rows — the defect). Skips cleanly when the
-/// permission model cannot be enforced (e.g. running as root).
+/// NF1(a) + NF3(c): a manifest dump failure must crash the run with ZERO
+/// files deleted and the on-disk rows byte-identical (deleting files and
+/// then failing the dump left a corpus of dangling rows — the defect).
+/// Enforcement: the manifest's DIRECTORY goes read-only, which the
+/// atomic temp-file replace cannot create into; a read-only manifest
+/// FILE would no longer fail (rename replaces by directory permission).
+/// Skips cleanly when the permission model cannot be enforced (root).
 #[test]
 fn dump_failure_leaves_files_and_rows_intact() {
     use std::os::unix::fs::PermissionsExt;
@@ -551,20 +553,32 @@ fn dump_failure_leaves_files_and_rows_intact() {
     // the middle scenario becomes a shell → write set shrinks to 2
     let md2 = format!("{REAL_A}\n{SHELL_BLOCK}\n{REAL_C}");
     std::fs::write(&chain, &md2).unwrap();
-    let mut perms = std::fs::metadata(&mpath).unwrap().permissions();
-    perms.set_mode(0o444);
-    std::fs::set_permissions(&mpath, perms).unwrap();
-    if std::fs::OpenOptions::new().write(true).open(&mpath).is_ok() {
-        let mut p = std::fs::metadata(&mpath).unwrap().permissions();
-        p.set_mode(0o644);
-        std::fs::set_permissions(&mpath, p).unwrap();
+    // dump-failure enforcement: the manifest's DIRECTORY goes read-only —
+    // the atomic replace must create its temp file there. (A read-only
+    // manifest FILE no longer forces a failure: the rename replaces by
+    // directory permission — POSIX semantics.) Skips when the permission
+    // model cannot be enforced (e.g. running as root).
+    let tours = repo.join(".tours");
+    let mut perms = std::fs::metadata(&tours).unwrap().permissions();
+    perms.set_mode(0o555);
+    std::fs::set_permissions(&tours, perms).unwrap();
+    if std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .open(tours.join(".probe"))
+        .is_ok()
+    {
+        let mut p = std::fs::metadata(&tours).unwrap().permissions();
+        p.set_mode(0o755);
+        std::fs::set_permissions(&tours, p).unwrap();
+        let _ = std::fs::remove_file(tours.join(".probe"));
         eprintln!("skip: permission model not enforceable in this environment");
         return;
     }
     let out = run_out_dir(&repo, &chain);
-    let mut p = std::fs::metadata(&mpath).unwrap().permissions();
-    p.set_mode(0o644);
-    std::fs::set_permissions(&mpath, p).unwrap();
+    let mut p = std::fs::metadata(&tours).unwrap().permissions();
+    p.set_mode(0o755);
+    std::fs::set_permissions(&tours, p).unwrap();
     assert_eq!(
         out.exit_code, 1,
         "stdout={} stderr={}",
@@ -574,6 +588,56 @@ fn dump_failure_leaves_files_and_rows_intact() {
     assert!(out_dir.join("03.tour").exists());
     // …and the on-disk rows are byte-identical (dump never landed)
     assert_eq!(std::fs::read_to_string(&mpath).unwrap(), rows_before);
+    // no temp residue beside the target
+    let residue: Vec<String> = std::fs::read_dir(&tours)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with(".manifest.toml.tmp-"))
+        .collect();
+    assert!(residue.is_empty(), "{residue:?}");
+}
+
+/// NF4 RAII: clears the immutable flag on Drop — loud on failure; when a
+/// panic is already unwinding, degrades to eprintln (no double-panic
+/// abort), so a panic anywhere in the test body still clears the flag.
+#[cfg(target_os = "macos")]
+struct UchgGuard(std::path::PathBuf);
+
+#[cfg(target_os = "macos")]
+impl UchgGuard {
+    fn set(p: &std::path::Path) -> Self {
+        let ok = std::process::Command::new("/usr/bin/chflags")
+            .arg("uchg")
+            .arg(p)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        assert!(ok, "chflags uchg failed on {}", p.display());
+        UchgGuard(p.to_path_buf())
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl Drop for UchgGuard {
+    fn drop(&mut self) {
+        let ok = std::process::Command::new("/usr/bin/chflags")
+            .arg("nouchg")
+            .arg(&self.0)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if std::thread::panicking() {
+            if !ok {
+                eprintln!(
+                    "LEAKED uchg flag on {} (clear failed while panicking)",
+                    self.0.display()
+                );
+            }
+        } else {
+            assert!(ok, "chflags nouchg failed on {}", self.0.display());
+        }
+    }
 }
 
 /// NF1(b): a per-file removal failure is NOT a crash — the run
@@ -583,7 +647,8 @@ fn dump_failure_leaves_files_and_rows_intact() {
 /// The enforcement mechanism is the macOS immutable file flag: a
 /// read-only family DIR would crash the earlier write_tours leg (the
 /// same run writes into that dir). Skips when the flag cannot be
-/// enforced (non-macOS / root bypass).
+/// enforced (non-macOS / root bypass). The summary disclosure counts
+/// the failed removal apart from the removed ones.
 #[cfg(target_os = "macos")]
 #[test]
 fn file_removal_failure_warns_and_continues() {
@@ -618,30 +683,31 @@ fn file_removal_failure_warns_and_continues() {
         .status();
     let _ = std::fs::remove_file(&probe);
     let stale = out_dir.join("03.tour");
-    assert!(std::process::Command::new("/usr/bin/chflags")
-        .arg("uchg")
-        .arg(&stale)
-        .status()
-        .unwrap()
-        .success());
     // the middle scenario becomes a shell → write set shrinks to 2
     let md2 = format!("{REAL_A}\n{SHELL_BLOCK}\n{REAL_C}");
     std::fs::write(&chain, &md2).unwrap();
-    let out = run_out_dir(&repo, &chain);
+    let out = {
+        // RAII: the flag clears on scope exit even if the run panics
+        let _guard = UchgGuard::set(&stale);
+        run_out_dir(&repo, &chain)
+    };
     let stale_exists = stale.exists();
     let keys = tour_row_keys(&repo);
-    let stdout = out.stdout.clone();
-    let stderr = out.stderr.clone();
-    let code = out.exit_code;
-    // teardown before assertions so a failing assert never leaks the flag
-    let _ = std::process::Command::new("/usr/bin/chflags")
-        .arg("nouchg")
-        .arg(&stale)
-        .status();
-    let _ = std::fs::remove_file(&stale);
-    assert_eq!(code, 0, "stdout={stdout} stderr={stderr}");
-    assert!(stderr.contains("刪除失敗"), "{stderr}");
-    assert!(stderr.contains("03.tour"), "{stderr}");
+    let _ = std::fs::remove_file(&stale); // unflagged by the guard drop
+    assert_eq!(
+        out.exit_code, 0,
+        "stdout={} stderr={}",
+        out.stdout, out.stderr
+    );
+    assert!(out.stderr.contains("刪除失敗"), "{}", out.stderr);
+    assert!(out.stderr.contains("03.tour"), "{}", out.stderr);
+    // the summary disclosure distinguishes the failed removal
+    assert!(
+        out.stderr
+            .contains("移除寫出集外殘留 1 項（1 項失敗殘留，見 WARN）"),
+        "{}",
+        out.stderr
+    );
     assert!(stale_exists, "the un-deletable file must survive");
     assert_eq!(
         keys,
@@ -652,7 +718,7 @@ fn file_removal_failure_warns_and_continues() {
         "{keys:?}"
     );
     // the run's normal product is intact
-    assert!(stdout.contains("shells-omitted 1"), "{stdout}");
+    assert!(out.stdout.contains("shells-omitted 1"), "{}", out.stdout);
 }
 
 /// NF2: the deletion predicate requires the row to name a `.tour` — a
@@ -750,4 +816,90 @@ fn primary_mapping_with_leading_double_shell() {
         "{}",
         ok.stdout
     );
+}
+
+// ---------- round 3 (NF3 atomic manifest persistence) ----------
+
+/// NF3(a): dump into a read-only directory errors, the target manifest
+/// stays byte-identical, and no temp residue is left beside it. Skips
+/// when the permission model cannot be enforced (root).
+#[test]
+fn dump_readonly_dir_errors_without_residue() {
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = tempfile::tempdir().unwrap().keep();
+    let dir = tmp.join("tours");
+    std::fs::create_dir_all(&dir).unwrap();
+    let mpath = dir.join("manifest.toml");
+    std::fs::write(&mpath, "version = 1\n").unwrap();
+    let before = std::fs::read_to_string(&mpath).unwrap();
+    let mut perms = std::fs::metadata(&dir).unwrap().permissions();
+    perms.set_mode(0o555);
+    std::fs::set_permissions(&dir, perms).unwrap();
+    if std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .open(dir.join(".probe"))
+        .is_ok()
+    {
+        let mut p = std::fs::metadata(&dir).unwrap().permissions();
+        p.set_mode(0o755);
+        std::fs::set_permissions(&dir, p).unwrap();
+        let _ = std::fs::remove_file(dir.join(".probe"));
+        eprintln!("skip: permission model not enforceable in this environment");
+        return;
+    }
+    let m = code_reality::tour_manifest::load(&mpath).unwrap();
+    let err = code_reality::tour_manifest::dump(&mpath, &m)
+        .expect_err("dump into a read-only dir must fail");
+    let mut p = std::fs::metadata(&dir).unwrap().permissions();
+    p.set_mode(0o755);
+    std::fs::set_permissions(&dir, p).unwrap();
+    assert!(err.contains("寫入失敗"), "{err}");
+    assert_eq!(std::fs::read_to_string(&mpath).unwrap(), before);
+    let residue: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with(".manifest.toml.tmp-"))
+        .collect();
+    assert!(residue.is_empty(), "{residue:?}");
+}
+
+/// NF3(b): successful dumps leave no temp files behind, and the rename
+/// replaces the target EVEN when the target file itself is read-only —
+/// rename keys on directory permission (POSIX); the old direct-write
+/// face failed there instead. Pinning that boundary on purpose.
+#[test]
+fn dump_atomic_replace_leaves_no_temp_residue() {
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = tempfile::tempdir().unwrap().keep();
+    let dir = tmp.join("tours");
+    std::fs::create_dir_all(&dir).unwrap();
+    let mpath = dir.join("manifest.toml");
+    let m1 = code_reality::tour_manifest::load(&dir.join("absent.toml")).unwrap();
+    code_reality::tour_manifest::dump(&mpath, &m1).unwrap();
+    code_reality::tour_manifest::dump(&mpath, &m1).unwrap();
+    // exactly the manifest, no temp-pattern residue
+    let names: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, vec!["manifest.toml".to_string()], "{names:?}");
+    // a read-only TARGET file is replaced successfully (rename face);
+    // restore afterwards so tempdir cleanup is unaffected
+    let mut perms = std::fs::metadata(&mpath).unwrap().permissions();
+    perms.set_mode(0o444);
+    std::fs::set_permissions(&mpath, perms).unwrap();
+    code_reality::tour_manifest::dump(&mpath, &m1)
+        .expect("rename replaces a read-only target (dir permission gates)");
+    let mut p = std::fs::metadata(&mpath).unwrap().permissions();
+    p.set_mode(0o644);
+    std::fs::set_permissions(&mpath, p).unwrap();
+    let names: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, vec!["manifest.toml".to_string()], "{names:?}");
 }

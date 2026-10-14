@@ -462,7 +462,10 @@ on any new repo.
   untouched; rows persist before files are deleted, and a file-removal
   failure only warns — a disclosed rowless orphan is the tolerated
   direction), and the
-  summary gains a `shells-omitted` counter. A fully-shell md fails
+  summary gains a `shells-omitted` counter. The manifest itself
+  persists via an atomic temp-file+fsync+rename (a partial write can
+  never truncate it; rename keys on directory permission — a read-only
+  target file does not block a dump). A fully-shell md fails
   closed — exit 1, zero writes, the existing parse-fail face — with the
   pre-existing family's tours/rows disclosed for manual cleanup.
   `--primary` keeps numbering md scenarios (shells included); pointing

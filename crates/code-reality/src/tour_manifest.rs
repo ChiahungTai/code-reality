@@ -371,8 +371,40 @@ pub fn dump(path: &Path, m: &Manifest) -> Result<(), String> {
             ));
         }
     }
-    std::fs::write(path, format!("{}\n", lines.join("\n")))
-        .map_err(|e| format!("{} 寫入失敗：{}", path.display(), e))
+    // Atomic replace (NF3): the bytes land in a unique temp file beside
+    // the target, fsync, then rename over the target — a partial write
+    // or any failure before the rename leaves the on-disk manifest
+    // untouched (temp removed best-effort). Rename keys on DIRECTORY
+    // write permission (POSIX): the target file's own mode is not
+    // consulted. Directory fsync omitted (non-portable fcntl machinery;
+    // the rename atomicity is the requirement).
+    let body = format!("{}\n", lines.join("\n"));
+    let dir = path.parent().unwrap_or_else(|| Path::new("."));
+    let fname = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("manifest.toml");
+    static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let tmp = dir.join(format!(
+        ".{fname}.tmp-{}-{}",
+        std::process::id(),
+        TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+    let write_tmp = || -> Result<(), std::io::Error> {
+        use std::io::Write;
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(body.as_bytes())?;
+        f.sync_all()
+    };
+    if let Err(e) = write_tmp() {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(format!("{} 寫入失敗：{}", path.display(), e));
+    }
+    if let Err(e) = std::fs::rename(&tmp, path) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(format!("{} 寫入失敗：{}", path.display(), e));
+    }
+    Ok(())
 }
 
 /// Walk up from out_dir to a `.tours` root (`tour_manifest.py:114-119`);

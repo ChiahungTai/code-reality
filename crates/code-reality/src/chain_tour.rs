@@ -1981,10 +1981,12 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         if let Err(e) = crate::tour_manifest::dump(&mpath, &mdata) {
             return ToolOutput::crash(e);
         }
+        let mut failed: Vec<String> = Vec::new();
         for rel in &removed {
             let f = mroot.join(rel);
             if f.exists() {
                 if let Err(e) = std::fs::remove_file(&f) {
+                    failed.push(rel.clone());
                     stderr.push_str(&format!(
                         "[WARN] 族 {fam_rel} 對帳：{} 刪除失敗（{e}）——row 已移除，殘檔成無 row 孤兒；請手動刪除\n",
                         f.display()
@@ -1995,10 +1997,18 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         if !removed.is_empty() {
             let mut sorted = removed.clone();
             sorted.sort();
+            // counts stay consistent with the per-file WARNs above: the
+            // planned removals that failed leave disclosed residue
+            let failed_note = if failed.is_empty() {
+                String::new()
+            } else {
+                format!("（{} 項失敗殘留，見 WARN）", failed.len())
+            };
             stderr.push_str(&format!(
-                "[WARN] 族 {} 重產對帳：移除寫出集外殘留 {} 項（chain_tour 自有）：{}\n",
+                "[WARN] 族 {} 重產對帳：移除寫出集外殘留 {} 項{}（chain_tour 自有）：{}\n",
                 fam_rel,
                 sorted.len(),
+                failed_note,
                 sorted.join("、")
             ));
         }
