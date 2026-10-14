@@ -1,10 +1,10 @@
 ---
 id: CR-11
 title: chain_tour 全 skip 場景不寫閘（mosaic CR-9 回饋 B）
-status: To Do
+status: In Progress
 assignee: []
-created_date: '2026-10-15 08:20'
-updated_date: '2026-10-15 08:20'
+created_date: '2026-10-14 02:58'
+updated_date: '2026-10-15 08:35'
 labels: []
 dependencies: []
 references:
