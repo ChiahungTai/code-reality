@@ -89,6 +89,9 @@ fn all_shell_md_fails_closed_with_zero_writes() {
     assert!(out.stderr.contains("external 1"), "{}", out.stderr);
     // the fail-closed line names the all-shell shape
     assert!(out.stderr.contains("全場景殼形"), "{}", out.stderr);
+    // gated stdout survives the fail-closed return (consumer_db WARN
+    // pushed before the gate rides stdout)
+    assert!(out.stdout.contains("graph.db 不存在"), "{}", out.stdout);
     assert!(!out.stdout.contains("[OK] chain tour ->"), "{}", out.stdout);
 }
 
@@ -194,4 +197,336 @@ fn two_frame_real_anchor_scenario_stays_legal() {
         "{}",
         out.stdout
     );
+}
+
+// ---------- review round 1 (A reconciliation / B primary order / C disclosure / D coverage) ----------
+
+/// md blocks: three anchored scenarios + a shell block, so a regen can
+/// flip the middle scenario to a shell.
+const REAL_A: &str = "# Real A\n\n```text\nkernel (pkg/a.py:1)\n└─ boot() (pkg/a.py:5)\n```\n";
+const REAL_B: &str = "# Real B\n\n```text\n└─ boot() (pkg/a.py:5)\n```\n";
+const REAL_C: &str =
+    "# Real C\n\n```text\nkernel (pkg/a.py:1)\n└─ boot() (pkg/a.py:5)  # entry\n```\n";
+const SHELL_BLOCK: &str = "# 夜間維運（殼）\n\n```text\ndeploy_step() (scripts/deploy.sh:1)\n└─ restart() (scripts/ghost.py:3)\n```\n";
+
+fn run_out_dir(repo: &std::path::Path, chain: &std::path::Path) -> code_reality::ToolOutput {
+    let out_dir = repo.join(".tours/arch/01-gate");
+    run(&[
+        "chain_tour",
+        &chain.to_string_lossy(),
+        "--repo",
+        &repo.to_string_lossy(),
+        "--out-dir",
+        &out_dir.to_string_lossy(),
+    ])
+}
+
+/// A: regen shrink must reconcile the owned family — the pre-existing
+/// 03.tour (and its manifest row) disappears when the middle scenario
+/// turned shell; remaining tours/rows stay intact and tour_validate is
+/// clean (the stale file used to survive and collide on ts_key).
+#[test]
+fn partial_shell_regen_reconciles_family_residue() {
+    let md3 = format!("{REAL_A}\n{REAL_B}\n{REAL_C}");
+    let (repo, chain) = repo_fixture("gate-recon", &md3);
+    let out_dir = repo.join(".tours/arch/01-gate");
+    let first = run_out_dir(&repo, &chain);
+    assert_eq!(first.exit_code, 0, "{}{}", first.stdout, first.stderr);
+    assert!(out_dir.join("03.tour").exists());
+    // the middle scenario becomes a shell; the family shrinks 3 → 2
+    let md2 = format!("{REAL_A}\n{SHELL_BLOCK}\n{REAL_C}");
+    std::fs::write(&chain, &md2).unwrap();
+    let out = run_out_dir(&repo, &chain);
+    assert_eq!(
+        out.exit_code, 0,
+        "stdout={} stderr={}",
+        out.stdout, out.stderr
+    );
+    // written set: Real A + Real C (renumbered); the stale 03.tour and
+    // its row are gone
+    assert!(out_dir.join("01.tour").exists());
+    assert!(out_dir.join("02.tour").exists());
+    assert!(
+        !out_dir.join("03.tour").exists(),
+        "stale 03.tour must be reconciled away"
+    );
+    let keys = tour_row_keys(&repo);
+    assert_eq!(
+        keys,
+        vec![
+            "arch/01-gate/01.tour".to_string(),
+            "arch/01-gate/02.tour".to_string()
+        ],
+        "{keys:?}"
+    );
+    // the written tours are Real A and Real C, not shifted shells
+    let t: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out_dir.join("02.tour")).unwrap()).unwrap();
+    assert_eq!(t["title"].as_str().unwrap(), "01 - gate｜Real C");
+    // disclosure names exactly what was removed
+    assert!(out.stderr.contains("重產對帳"), "{}", out.stderr);
+    assert!(
+        out.stderr.contains("arch/01-gate/03.tour"),
+        "{}",
+        out.stderr
+    );
+    assert!(out.stderr.contains("重編號"), "{}", out.stderr);
+    // the corpus validates clean — the reproduced defect was a ts_key
+    // collision FAIL against the stale 03.tour
+    let v = code_reality::tour_validate::validate(&repo, std::path::Path::new(".tours"), false);
+    assert_eq!(v.exit_code, 0, "stdout={} stderr={}", v.stdout, v.stderr);
+}
+
+/// A ownership fence: reconciliation never touches data this generator
+/// does not own — a foreign-generator row (+ its file) and a rowless
+/// numbered file outside the write set both survive.
+#[test]
+fn reconciliation_never_touches_foreign_or_rowless_residue() {
+    let md3 = format!("{REAL_A}\n{REAL_B}\n{REAL_C}");
+    let (repo, chain) = repo_fixture("gate-recon-owned", &md3);
+    let out_dir = repo.join(".tours/arch/01-gate");
+    let first = run_out_dir(&repo, &chain);
+    assert_eq!(first.exit_code, 0, "{}{}", first.stdout, first.stderr);
+    // plant: 05.tour backed by a foreign-generator row, 06.tour with no
+    // row at all — both outside any 2-wide write set
+    std::fs::write(out_dir.join("05.tour"), "{\"title\":\"05 - manual\"}\n").unwrap();
+    std::fs::write(out_dir.join("06.tour"), "{\"title\":\"06 - rowless\"}\n").unwrap();
+    let mpath = repo.join(".tours/manifest.toml");
+    let mut m = code_reality::tour_manifest::load(&mpath).unwrap();
+    if m.version.is_none() {
+        m.version = Some(toml::Value::Integer(1));
+    }
+    m.tour.insert(
+        "arch/01-gate/05.tour".into(),
+        "generator = \"manual_tool\"\nsources = [\"chain.md\"]\nanchored_commit = \"c0\""
+            .parse()
+            .unwrap(),
+    );
+    code_reality::tour_manifest::dump(&mpath, &m).unwrap();
+    // middle scenario becomes a shell → write set shrinks to 2
+    let md2 = format!("{REAL_A}\n{SHELL_BLOCK}\n{REAL_C}");
+    std::fs::write(&chain, &md2).unwrap();
+    let out = run_out_dir(&repo, &chain);
+    assert_eq!(
+        out.exit_code, 0,
+        "stdout={} stderr={}",
+        out.stdout, out.stderr
+    );
+    // chain_tour-owned stale residue is gone; foreign/rowless survives
+    assert!(!out_dir.join("03.tour").exists());
+    assert!(
+        out_dir.join("05.tour").exists(),
+        "foreign-generator row's file must survive"
+    );
+    assert!(
+        out_dir.join("06.tour").exists(),
+        "rowless file must survive"
+    );
+    let mut keys = tour_row_keys(&repo);
+    keys.sort();
+    assert_eq!(
+        keys,
+        vec![
+            "arch/01-gate/01.tour".to_string(),
+            "arch/01-gate/02.tour".to_string(),
+            "arch/01-gate/05.tour".to_string(),
+        ],
+        "{keys:?}"
+    );
+    // the removal disclosure lists only the owned removal
+    assert!(
+        out.stderr.contains("arch/01-gate/03.tour"),
+        "{}",
+        out.stderr
+    );
+    assert!(!out.stderr.contains("05.tour"), "{}", out.stderr);
+}
+
+/// B: `--primary` numbers md scenarios (1-based, shells included) — the
+/// pre-CR-11 meaning. With a shell first, `--primary 2` must land on md
+/// scenario 2 (written 01.tour), not the compressed second file.
+#[test]
+fn primary_numbers_md_scenarios_shells_included() {
+    let md = format!("{SHELL_BLOCK}\n{REAL_A}\n{REAL_B}");
+    let (repo, chain) = repo_fixture("gate-primary-md", &md);
+    let out_dir = repo.join(".tours/arch/01-gate");
+    let out = code_reality::chain_tour::run(&[
+        "chain_tour",
+        &chain.to_string_lossy(),
+        "--repo",
+        &repo.to_string_lossy(),
+        "--out-dir",
+        &out_dir.to_string_lossy(),
+        "--primary",
+        "2",
+    ]);
+    assert_eq!(
+        out.exit_code, 0,
+        "stdout={} stderr={}",
+        out.stdout, out.stderr
+    );
+    let t1: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out_dir.join("01.tour")).unwrap()).unwrap();
+    let t2: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out_dir.join("02.tour")).unwrap()).unwrap();
+    assert_eq!(t1["title"].as_str().unwrap(), "01 - gate｜Real A");
+    assert_eq!(t1["isPrimary"], serde_json::Value::Bool(true), "{t1}");
+    assert!(t2.get("isPrimary").is_none(), "{t2}");
+}
+
+/// B: a primary pointing at an omitted shell fails loud in the invalid
+/// argument face — exit 1, zero writes, naming the scenario title.
+#[test]
+fn primary_pointing_at_shell_fails_loud() {
+    let md = format!("{SHELL_BLOCK}\n{REAL_A}\n{REAL_B}");
+    let (repo, chain) = repo_fixture("gate-primary-shell", &md);
+    let out_dir = repo.join(".tours/arch/01-gate");
+    let out = code_reality::chain_tour::run(&[
+        "chain_tour",
+        &chain.to_string_lossy(),
+        "--repo",
+        &repo.to_string_lossy(),
+        "--out-dir",
+        &out_dir.to_string_lossy(),
+        "--primary",
+        "1",
+    ]);
+    assert_eq!(
+        out.exit_code, 1,
+        "stdout={} stderr={}",
+        out.stdout, out.stderr
+    );
+    assert!(out.stderr.contains("[FAIL]"), "{}", out.stderr);
+    assert!(out.stderr.contains("--primary 1"), "{}", out.stderr);
+    assert!(out.stderr.contains("殼省略"), "{}", out.stderr);
+    assert!(out.stderr.contains("夜間維運（殼）"), "{}", out.stderr);
+    // zero writes
+    assert!(!out_dir.exists());
+    assert!(!repo.join(".tours/manifest.toml").exists());
+}
+
+/// B: middle-shell renumbering — md scenario 3 is written as 02.tour and
+/// `--primary 3` marks it; md scenario 2 (the shell) fails loud.
+#[test]
+fn primary_middle_shell_renumbering() {
+    let md = format!("{REAL_A}\n{SHELL_BLOCK}\n{REAL_C}");
+    let (repo, chain) = repo_fixture("gate-primary-mid", &md);
+    let out_dir = repo.join(".tours/arch/01-gate");
+    let fail = code_reality::chain_tour::run(&[
+        "chain_tour",
+        &chain.to_string_lossy(),
+        "--repo",
+        &repo.to_string_lossy(),
+        "--out-dir",
+        &out_dir.to_string_lossy(),
+        "--primary",
+        "2",
+    ]);
+    assert_eq!(
+        fail.exit_code, 1,
+        "stdout={} stderr={}",
+        fail.stdout, fail.stderr
+    );
+    assert!(fail.stderr.contains("夜間維運（殼）"), "{}", fail.stderr);
+    assert!(!out_dir.exists());
+    let ok = code_reality::chain_tour::run(&[
+        "chain_tour",
+        &chain.to_string_lossy(),
+        "--repo",
+        &repo.to_string_lossy(),
+        "--out-dir",
+        &out_dir.to_string_lossy(),
+        "--primary",
+        "3",
+    ]);
+    assert_eq!(ok.exit_code, 0, "stdout={} stderr={}", ok.stdout, ok.stderr);
+    let t2: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out_dir.join("02.tour")).unwrap()).unwrap();
+    assert_eq!(t2["title"].as_str().unwrap(), "01 - gate｜Real C");
+    assert_eq!(t2["isPrimary"], serde_json::Value::Bool(true), "{t2}");
+    let t1: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out_dir.join("01.tour")).unwrap()).unwrap();
+    assert!(t1.get("isPrimary").is_none(), "{t1}");
+}
+
+/// C: the all-shell fail-closed face over an EXISTING family must
+/// disclose that the family's tours/rows remain (zero-write does not
+/// clean) — old files stay byte-identical.
+#[test]
+fn all_shell_existing_family_discloses_residual() {
+    let md2 = format!("{REAL_A}\n{REAL_B}");
+    let (repo, chain) = repo_fixture("gate-allshell-residual", &md2);
+    let out_dir = repo.join(".tours/arch/01-gate");
+    let first = run_out_dir(&repo, &chain);
+    assert_eq!(first.exit_code, 0, "{}{}", first.stdout, first.stderr);
+    let old1 = std::fs::read_to_string(out_dir.join("01.tour")).unwrap();
+    let old2 = std::fs::read_to_string(out_dir.join("02.tour")).unwrap();
+    // the md goes all-shell; the fail-closed face must not touch the
+    // corpus and must say the residual family needs manual cleanup
+    let md_shell = SHELL_BLOCK.to_string();
+    std::fs::write(&chain, &md_shell).unwrap();
+    let out = run_out_dir(&repo, &chain);
+    assert_eq!(
+        out.exit_code, 1,
+        "stdout={} stderr={}",
+        out.stdout, out.stderr
+    );
+    assert!(out.stderr.contains("全場景殼形"), "{}", out.stderr);
+    assert!(out.stderr.contains("不自動清除"), "{}", out.stderr);
+    assert!(out.stderr.contains("2 條"), "{}", out.stderr);
+    assert_eq!(
+        std::fs::read_to_string(out_dir.join("01.tour")).unwrap(),
+        old1
+    );
+    assert_eq!(
+        std::fs::read_to_string(out_dir.join("02.tour")).unwrap(),
+        old2
+    );
+    assert_eq!(tour_row_keys(&repo).len(), 2);
+}
+
+/// D: the all-shell fail-closed face preserves gated stdout — the
+/// duplicate-family WARN (emitted before the gate; explicit --out-dir
+/// keeps both families, the in-process relative default out-dir would
+/// resolve against the test process cwd) rides stdout while [FAIL] rides
+/// stderr, and the pre-existing family is untouched.
+#[test]
+fn all_shell_gate_preserves_gated_stdout() {
+    let (repo, chain) = repo_fixture("gate-allshell-stdout", &SHELL_BLOCK);
+    // an existing family already sourced from this md — the explicit
+    // --out-dir warns both-families-coexist, then the shell gate fires
+    std::fs::create_dir_all(repo.join(".tours/arch/99-old")).unwrap();
+    std::fs::write(
+        repo.join(".tours/arch/99-old/01.tour"),
+        "{\"title\":\"01 - old\"}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo.join(".tours/manifest.toml"),
+        "version = 1\n\n[tour.\"arch/99-old/01.tour\"]\ngenerator = \"chain_tour\"\nsources = [\"chain.md\"]\nanchored_commit = \"c0\"\n",
+    )
+    .unwrap();
+    let out_dir = repo.join(".tours/arch/01-gate");
+    let out = code_reality::chain_tour::run(&[
+        "chain_tour",
+        &chain.to_string_lossy(),
+        "--repo",
+        &repo.to_string_lossy(),
+        "--out-dir",
+        &out_dir.to_string_lossy(),
+    ]);
+    assert_eq!(
+        out.exit_code, 1,
+        "stdout={} stderr={}",
+        out.stdout, out.stderr
+    );
+    // gated stdout survives the fail-closed return
+    assert!(out.stdout.contains("duplicate-family"), "{}", out.stdout);
+    assert!(out.stderr.contains("全場景殼形"), "{}", out.stderr);
+    // zero writes anywhere: the coexisting family untouched, out_dir absent
+    assert_eq!(
+        std::fs::read_to_string(repo.join(".tours/arch/99-old/01.tour")).unwrap(),
+        "{\"title\":\"01 - old\"}\n"
+    );
+    assert!(!out_dir.exists());
 }

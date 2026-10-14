@@ -1621,7 +1621,7 @@ pub fn run(argv: &[&str]) -> ToolOutput {
                     "  --graph GRAPH         graph.db 覆寫（預設 <repo>/.code-reality/graph.db；不存在則退化純文檔錨）\n",
                     "  --repo REPO           repo 根\n",
                     "  --out-dir OUT_DIR     輸出目錄（預設 .tours/arch/<文檔 stem>/——stem 即 subgroup label）\n",
-                    "  --primary PRIMARY     標 isPrimary 的場景編號（1-based 逗號分隔）；預設不標\n",
+                    "  --primary PRIMARY     標 isPrimary 的場景編號（1-based 逗號分隔；md 場景序，殼省略場景也計入）；預設不標\n",
                 )
                 .to_string(),
                 stderr: String::new(),
@@ -1765,6 +1765,40 @@ pub fn run(argv: &[&str]) -> ToolOutput {
                 st.shells_omitted.len()
             ),
         ));
+        // C: an EXISTING family's tours/rows survive the zero-write face
+        // (the gate never deletes) — disclose the residual for manual
+        // cleanup instead of letting it silently rot
+        let gate_abs = crate::common::resolve(&out_dir);
+        let gate_root = crate::tour_manifest::tours_root_of(&gate_abs);
+        if gate_root
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .as_deref()
+            == Some(".tours")
+        {
+            if let Ok(m) = crate::tour_manifest::load(&gate_root.join("manifest.toml")) {
+                let fam_rel = gate_abs
+                    .strip_prefix(&gate_root)
+                    .map(|p| p.to_string_lossy().replace('\\', "/"))
+                    .unwrap_or_default();
+                let n = m
+                    .tour
+                    .keys()
+                    .filter(|rel| {
+                        ::std::path::Path::new(rel)
+                            .parent()
+                            .map(|p| p.to_string_lossy().replace('\\', "/"))
+                            .as_deref()
+                            == Some(fam_rel.as_str())
+                    })
+                    .count();
+                if n > 0 {
+                    stderr.push_str(&format!(
+                        "[WARN] 既有族 {fam_rel} 留有 {n} 條 tour 檔／manifest rows 於 corpus——零寫入面不自動清除；確認後手動清族目錄＋manifest 列\n"
+                    ));
+                }
+            }
+        }
         // WARN-before-crash keeps the gated stdout (consumer_db /
         // duplicate-family notes) by building the struct directly
         return ToolOutput {
@@ -1773,26 +1807,71 @@ pub fn run(argv: &[&str]) -> ToolOutput {
             exit_code: 1,
         };
     }
-    // partial shells: write set drops them; everything downstream
-    // (files, manifest rows, --primary range, summary) sees written
-    // tours only
-    let st = st.without_shells();
-    let valid: std::collections::BTreeSet<usize> = (1..=st.tours.len()).collect();
+    // B: `--primary` numbers md scenarios (1-based, shells included) —
+    // the pre-CR-11 order where written order ≡ md order. Resolve to the
+    // compressed written position here; a primary pointing at an
+    // omitted shell fails loud (the pre-existing argument-crash class),
+    // zero writes.
+    let md_len = st.tours.len();
+    let written_md: Vec<usize> = st
+        .tours
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| {
+            t["steps"]
+                .as_array()
+                .map(|s| !s.is_empty())
+                .unwrap_or(false)
+        })
+        .map(|(i, _)| i)
+        .collect();
+    let valid: std::collections::BTreeSet<usize> = (1..=md_len).collect();
     let out_of_range: Vec<usize> = primary.difference(&valid).copied().collect();
     if !out_of_range.is_empty() {
         return ToolOutput::crash(format!(
             "--primary 越界（共 {} 場景）：{:?}——輸入錯誤要大聲",
-            st.tours.len(),
-            out_of_range
+            md_len, out_of_range
         ));
     }
+    let mut primary_written: std::collections::BTreeSet<usize> = Default::default();
+    for n in &primary {
+        let t = &st.tours[n - 1];
+        let is_shell = t["steps"]
+            .as_array()
+            .map(|s| s.is_empty())
+            .unwrap_or(false);
+        if is_shell {
+            let title = t["title"].as_str().unwrap_or("");
+            return ToolOutput::crash(format!(
+                "--primary {n} 指向殼省略場景「{title}」（全幀 skip，未寫出）——md 場景序含殼；改指已寫出場景或補錨重產"
+            ));
+        }
+        let pos = written_md
+            .iter()
+            .position(|&i| i == n - 1)
+            .expect("non-shell md scenario is in the written set")
+            + 1;
+        primary_written.insert(pos);
+    }
+    // partial shells: write set drops them; everything downstream
+    // (files, manifest rows, summary) sees written tours only
+    let renumber_note: Vec<String> = if st.shells_omitted.is_empty() {
+        Vec::new()
+    } else {
+        vec!["[WARN] 殼省略：其後場景重編號（壓縮寫出序）；寫出集外的既有族 .tour／manifest rows（generator=chain_tour 自有）於重產對帳移除".to_string()]
+    };
+    let st = st.without_shells();
     let mut gen_warns: Vec<String> = Vec::new();
-    let paths = match write_tours(&st, &out_dir, &primary, &mut gen_warns) {
+    let paths = match write_tours(&st, &out_dir, &primary_written, &mut gen_warns) {
         Ok(p) => p,
         Err(e) => return ToolOutput::crash(e),
     };
     let mut stderr = String::new();
-    for w in shell_warns.iter().chain(gen_warns.iter()) {
+    for w in shell_warns
+        .iter()
+        .chain(renumber_note.iter())
+        .chain(gen_warns.iter())
+    {
         stderr.push_str(w);
         stderr.push('\n');
     }
@@ -1830,6 +1909,61 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         if mdata.version.is_none() {
             mdata.version = Some(toml::Value::Integer(1));
         }
+        // A: reconcile the owned family on this run's write — numbered
+        // .tour files + manifest rows under this family that fall
+        // outside the current write set are removed when owned by this
+        // generator (row generator=chain_tour). A foreign-generator row
+        // (or a rowless numbered file) is data this generator does not
+        // own and is never touched; a shrunk write set (shells /
+        // renumbering) must not leave stale tours colliding on ts_key.
+        let fam_rel = out_abs
+            .strip_prefix(&mroot)
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_default();
+        let write_nums: std::collections::BTreeSet<u32> = paths
+            .iter()
+            .filter_map(|p| {
+                p.file_stem()
+                    .and_then(|s| s.to_str())
+                    .and_then(|s| s.parse::<u32>().ok())
+            })
+            .collect();
+        let mut removed: Vec<String> = Vec::new();
+        let mut stale_rows: Vec<String> = Vec::new();
+        for (rel, row) in &mdata.tour {
+            let Some(row_fam) = ::std::path::Path::new(rel)
+                .parent()
+                .map(|p| p.to_string_lossy().replace('\\', "/"))
+            else {
+                continue;
+            };
+            if row_fam != fam_rel {
+                continue;
+            }
+            let Some(num) = ::std::path::Path::new(rel)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .and_then(|s| s.parse::<u32>().ok())
+            else {
+                continue;
+            };
+            if write_nums.contains(&num) {
+                continue;
+            }
+            if row.get("generator").and_then(|v| v.as_str()) == Some("chain_tour") {
+                let f = mroot.join(rel);
+                if f.exists() {
+                    if let Err(e) = std::fs::remove_file(&f) {
+                        return ToolOutput::crash(format!("{} 對帳移除失敗：{e}", f.display()));
+                    }
+                }
+                stale_rows.push(rel.clone());
+                removed.push(rel.clone());
+            }
+        }
+        for rel in &stale_rows {
+            mdata.tour.remove(rel);
+        }
         let (commit, _w) = crate::tour_manifest::git_head(&repo);
         for p in &paths {
             let rel = crate::common::resolve(p)
@@ -1846,6 +1980,15 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         }
         if let Err(e) = crate::tour_manifest::dump(&mpath, &mdata) {
             return ToolOutput::crash(e);
+        }
+        if !removed.is_empty() {
+            removed.sort();
+            stderr.push_str(&format!(
+                "[WARN] 族 {} 重產對帳：移除寫出集外殘留 {} 項（chain_tour 自有）：{}\n",
+                fam_rel,
+                removed.len(),
+                removed.join("、")
+            ));
         }
         stdout.push_str(&format!(
             "[OK] manifest upsert: {}（{} rows, generator=chain_tour）\n",

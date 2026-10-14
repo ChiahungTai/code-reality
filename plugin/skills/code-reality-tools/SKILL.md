@@ -452,6 +452,19 @@ on any new repo.
   reach the resolver (`noref`); path-bearing frames whose token misses
   the graph degrade to `not-in-graph` or an ambiguous skip with hints
   — fail-visible both ways.
+- `chain_tour` all-skip shell gate (CR-11): a scenario whose every
+  frame skipped (zero anchored steps) is a shell — it lands no `.tour`
+  file and no manifest row; each shell emits a `[WARN]` (family +
+  scenario title + frame count + skip-reason distribution), later
+  scenarios renumber to the compressed written order, regen
+  reconciliation removes chain_tour-owned family files/rows outside the
+  write set (foreign-generator or rowless residue untouched), and the
+  summary gains a `shells-omitted` counter. A fully-shell md fails
+  closed — exit 1, zero writes, the existing parse-fail face — with the
+  pre-existing family's tours/rows disclosed for manual cleanup.
+  `--primary` keeps numbering md scenarios (shells included); pointing
+  at an omitted shell is the invalid-argument crash. There is no
+  frame-count floor: a 1-2-frame real-anchor scenario is legal.
 
 ## CLI surface (broader)
 
