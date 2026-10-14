@@ -1,0 +1,72 @@
+---
+id: CR-13
+title: R11 scip stale reason-set 分軸——typed predicate per-face 語義（方案 A）
+status: To Do
+assignee: []
+created_date: '2026-10-15 09:10'
+updated_date: '2026-10-15 09:10'
+labels: []
+dependencies: []
+references:
+  - ai-analysis/execution-plans/_done/2026-10-14-cr-delta-freshness/ep.md
+  - ai-analysis/execution-plans/_done/2026-10-14-cr-delta-freshness/contract-fixture-v1.md
+  - .agent-tmp/cr-followup-design-brief.md
+ordinal: 13000
+---
+
+# CR-13 — R11 scip stale 基底 reason-set 分軸（方案 A：typed predicate）
+
+## Problem
+
+`engine.rs` needs_rebuild()（~:950-958）含 `graph_lags`（torn-plane：canonical
+graph.db 缺失/滯後）。scip index 內容新鮮但 graph.db 滯後時，scip 查詢被誤標
+stale／誤觸 D7 refusal（暴露面：explicit `--index`、AUTOHEAL=off、heal 失敗
+路徑）。False refusal＝availability 損失非正確性。
+
+**實現方式修正（codex 討論反證，已採納）**：禁用 stale_reasons 字串集交集——
+部分 reason 在 identity mode 非 fatal（診斷值≠fatal 條件）。改 typed
+predicate 單一源；公開 stale_reasons 詞彙不變（診斷照報、fatal 判定改由
+predicate 決定）。
+
+## Plan A（方向已由 user 裁定；設計經 codex 討論 refine，2026-10-15）
+
+- **typed predicate 單一源**：`StalenessSnapshot` 增 `needs_source_rebuild()`
+  ＝ identity_algo_upgrade ‖ identity_drift ‖ (identity_drift.is_none() &&
+  (source_newer ‖ doc_set_drift ‖ corpus_policy_drift))（欄位型別照實際）；
+  `needs_rebuild()` ＝ `needs_source_rebuild() || graph_lags`。
+- **per-face 語義**：`scip_verdict` 用 needs_source_rebuild()；
+  `graph_annotation` 的真 graph-served 分支保持完整 needs_rebuild()；
+  freshness --json 的 repo-level verdict 不變。
+- **torn-plane 歸屬（已裁定）**：canonical graph.db 缺失/滯後不算 scip-face
+  stale（scip 面不消費 graph.db；cli.rs refs/defs/callers 讀 SCIP，
+  僅 --audit 讀 graph.db）；engine.rs ~:950 的 torn-plane **重建觸發不動**。
+- **symbols bypass 對齊（進 AC）**：graph_query symbols 直接消費 SCIP 卻用
+  graph_annotation（freshness.rs ~:607 稱其 semantically scip-face）——
+  改用 source-side 語義與 scip_refs 一致；真 graph-served 分支不動。
+
+## 契約與文檔義務
+
+- **fixture v1.1**：v1（`_done/2026-10-14-cr-delta-freshness/contract-fixture-v1.md`）
+  不可變；新增 v1.1 supplemental 節：per-face stale-base 對照表＋
+  graph-only torn-plane 實輸出 fixture。**誠實披露＝語義契約修訂**
+  （v1 §2.3 把 gate 綁 needs_rebuild()）非純 additive。
+- **消費端披露（PENDING——信件需 user 逐次授權）**：ai-guide AIR-330＋
+  bridge DB-120/DB-101——unavailable 字面值與錯誤處理不變、scip-face
+  觸發集縮小、graph-only torn-plane 下 scip 查詢返回 source-exact 而
+  freshness --json 仍報 repo stale。
+
+## 測試落點（codex 建議，採納）
+
+- freshness.rs ~:780：source-fresh/graph-lags-only vs source-stale 的 D7 單元案。
+- query_freshness_annotation.rs ~:279：callers/closure、--index、AUTOHEAL=off
+  端到端對照。
+- source_identity.rs ~:338：保留 torn-plane 仍令 freshness stale＋heal 觸發
+  的既有斷言。
+- mcp_freshness_tool.rs ~:130：source-stale refusal 仍折疊
+  `stale-negative-unavailable`；graph-only 不再折疊。
+
+## Scope fence
+
+engine.rs（predicate＋needs_rebuild 組合）、freshness.rs（scip_verdict／
+symbols 語義）、contract-fixture v1.1 節；cli.rs 僅 D7 相關；graph_annotation
+graph-served 分支不動。
