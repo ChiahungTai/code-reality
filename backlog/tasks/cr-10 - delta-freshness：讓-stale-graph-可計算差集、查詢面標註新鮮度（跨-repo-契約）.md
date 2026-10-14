@@ -1,14 +1,14 @@
 ---
 id: CR-10
 title: delta-freshness：讓 stale graph 可計算差集、查詢面標註新鮮度（跨 repo 契約）
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-14 02:57'
-updated_date: '2026-10-14 08:08'
+updated_date: '2026-10-14 21:25'
 labels: []
 dependencies: []
 references:
-  - ai-analysis/execution-plans/2026-10-14-cr-delta-freshness/ep.md
+  - ai-analysis/execution-plans/_done/2026-10-14-cr-delta-freshness/ep.md
 ordinal: 10000
 ---
 
@@ -51,7 +51,7 @@ flowchart LR
 <!-- SECTION:PLAN:BEGIN -->
 〔baseline：code-reality 1b0ba1e〕
 
-〔已決策勿重辯：①設計＝muse job-mv7hxe3f＋codex job-mv7hxeai 雙顧問收斂版（verdict 檔 .agent-tmp/cr-delta-freshness-{muse,codex}-verdict.md），裁決 D1-D17 全錄 ai-analysis/execution-plans/2026-10-14-cr-delta-freshness/ep.md——manifest diff 當機械真相源（git diff 僅 display）、側檔不入 meta、negative 硬閘、[CR-META]/[CR_VERDICT] 頭行制、graph generation provenance、TOCTOU serving 本體釘定；②規模＝full EP（兩顧問同裁），分段 S2(manifest+delta)/S3(graph provenance)/S4(query gates+MCP)/S5(hand-off)；③詞彙表凍結於 EP（tier 四值＋reason enum＋negative_verdict），改詞彙＝EP 重開；④跨 repo 邊界＝bridge DB-120/DB-101 與 AIR-330 為他 repo 主權，本弧只交付契約 fixture；⑤kill criteria K1（單趟 hash pass 重構）K2（詞彙收斂）錄 EP 段落 0〕
+〔已決策勿重辯：①設計＝muse job-mv7hxe3f＋codex job-mv7hxeai 雙顧問收斂版（verdict 檔 .agent-tmp/cr-delta-freshness-{muse,codex}-verdict.md），裁決 D1-D17 全錄 ai-analysis/execution-plans/_done/2026-10-14-cr-delta-freshness/ep.md——manifest diff 當機械真相源（git diff 僅 display）、側檔不入 meta、negative 硬閘、[CR-META]/[CR_VERDICT] 頭行制、graph generation provenance、TOCTOU serving 本體釘定；②規模＝full EP（兩顧問同裁），分段 S2(manifest+delta)/S3(graph provenance)/S4(query gates+MCP)/S5(hand-off)；③詞彙表凍結於 EP（tier 四值＋reason enum＋negative_verdict），改詞彙＝EP 重開；④跨 repo 邊界＝bridge DB-120/DB-101 與 AIR-330 為他 repo 主權，本弧只交付契約 fixture；⑤kill criteria K1（單趟 hash pass 重構）K2（詞彙收斂）錄 EP 段落 0〕
 
 範圍限定：本 repo crates/code-reality（identity/engine/freshness/graph_db/graph_engine/callers/mcp_server/cli）＋tests＋plugin skill 契約節；scripts/lsp_harvest.py 不動（降級承接）。追蹤卡——三張 bounded child（CR-10.1/2/3）各承一段，繼承 EP 已定決策；本卡收全弧結案。
 <!-- SECTION:PLAN:END -->
@@ -69,7 +69,7 @@ S2 段收線（commit 94accbe 進 main）：見 CR-10.1 notes。逐段回報信�
 
 outbound 台帳續：⑤cr10-s2-report-142833 已受理（ai-guide acceptanceSeq=11，in_reply_to=aiguide-cr-align-cr10-20261014）——S2 段收線回報（③約定第一封；新 thread inform 信走 dutymail send 直呼——reply face 僅及 pending 義務，此用法記錄）。S2 已落地 main：49d023a。
 
-【bridge 更新前 handoff（2026-10-14 15:56，user 要更新 bridge 後開 new session）】S3 中斷點：writer job-mv7smaa9 已乾淨 stop（interrupted），WT code-reality-cr-10.2 保存交付——graph_db.rs +89/-2（D10 五欄 metadata stamp）＋tests/graph_provenance.rs 6 tests 6/6 綠（我機驗過）。剩餘：全量迴歸＋scoped fmt 檢查＋dual review→judge→landing→回報 ai-guide→S4（查詢面標註＋negative gate＋MCP freshness tool——bridge 啟用閘最後碼段）→S5 hand-off。RESUME＝new session 讀本卡＋EP（ai-analysis/execution-plans/2026-10-14-cr-delta-freshness/ep.md）＋.agent-tmp/session-journal.md 尾段；S3 工單＝code-reality-cr-10.2/.agent-tmp/cr10-s3-workorder.md（續派 continuation 或直接進收線——測試已綠可先收線驗證）。授權現值：卡級寄信（6 信/72h，已用 5）＋弧內自主 commit——記錄見本卡前段 notes。
+【bridge 更新前 handoff（2026-10-14 15:56，user 要更新 bridge 後開 new session）】S3 中斷點：writer job-mv7smaa9 已乾淨 stop（interrupted），WT code-reality-cr-10.2 保存交付——graph_db.rs +89/-2（D10 五欄 metadata stamp）＋tests/graph_provenance.rs 6 tests 6/6 綠（我機驗過）。剩餘：全量迴歸＋scoped fmt 檢查＋dual review→judge→landing→回報 ai-guide→S4（查詢面標註＋negative gate＋MCP freshness tool——bridge 啟用閘最後碼段）→S5 hand-off。RESUME＝new session 讀本卡＋EP（ai-analysis/execution-plans/_done/2026-10-14-cr-delta-freshness/ep.md）＋.agent-tmp/session-journal.md 尾段；S3 工單＝code-reality-cr-10.2/.agent-tmp/cr10-s3-workorder.md（續派 continuation 或直接進收線——測試已綠可先收線驗證）。授權現值：卡級寄信（6 信/72h，已用 5）＋弧內自主 commit——記錄見本卡前段 notes。
 
 〔S3 收線結算（2026-10-14 17:10，new session 接手收線完成）〕S3 落地
 main bfb6c4e（WT daf30e3 rebased→ff）。review 四腿：本地 fresh
@@ -123,4 +123,25 @@ outbound 台帳續：⑦cr-bridge-feedback-204439 已受理（delegate-bridge
 ②codex review face thread.started＋SessionEnd hook 訊息污染③唯讀工單
 下 codex reviewer 自建報告檔觀察）。AUTH: user said「寄信給bridge」
 （逐次授權——非卡級 6 信額度面，該額度仍為已罄狀態）。
+
+〔S5 收線結算＋弧收案（2026-10-14 深夜，deep-work）〕S5 交付全落：
+①契約 fixture `ai-analysis/execution-plans/_done/2026-10-14-cr-delta-
+freshness/contract-fixture-v1.md`（十面逐字機驗 capture——lab 面
+fresh-exact/possibly-stale/no-coverage/D7 硬閘 refusal/freshness JSON
+＋primary dogfood 面＋MCP get_community/freshness tool/manifest 22 工具
+digest）②消費者對照表（fixture §5：graph client 第二行插入、scip 家族
+[CR_VERDICT]、get_community face 變更、工具數 21→22）③兩信已寄受理：
+ai-guide `cr10-s5-air330-probe-212025`（seq14，AIR-330 K2 詞彙 probe——
+衝突回信機制在場）＋bridge `cr-bridge-d101-212025`（seq13，DB-101 對接
+面）。④wrapper pin 對齊：plugin_wrapper_regression 綠（0.13.0 釘面
+一致）。⑤repo AGENTS.md Capabilities 補標註面列＋freshness row
+「MCP carries no freshness tool」drift 修正。⑥EP 歸檔 `_done/`（引用
+五檔同步改寫）。judge 裁決物（AIR-135.9 四欄）：TC-14 劣化閘 FAIL→
+verdict=keep-disclosed（理由：方向安全、優化屬獨立 perf 卡；拒絕選項：
+本弧內優化——風險＞值；可逆性：優化卡候選在案）；R11 語義 split→
+verdict=keep-disclosed（理由：跨平面耦合是 EP 設計、semantic 變更需
+獨立審查弧；拒絕選項：本弧內 split；可逆性：候選在案）。兩者皆記 EP
+進度節＋本卡＝S5 後續候選，晨間 triage 決定開卡與否。
+**弧終態：CR-10.1/10.2/10.3＋本卡全 Done。** 後續候選（非債）：TC-14
+優化卡、R11 semantic-split 卡、PyPI 下一版 release（user 排程）。
 <!-- SECTION:NOTES:END -->
