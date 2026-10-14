@@ -1,12 +1,14 @@
 ---
 id: CR-10
 title: delta-freshness：讓 stale graph 可計算差集、查詢面標註新鮮度（跨 repo 契約）
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-14 02:57'
-updated_date: '2026-10-14 03:31'
+updated_date: '2026-10-14 03:36'
 labels: []
 dependencies: []
+references:
+  - ai-analysis/execution-plans/2026-10-14-cr-delta-freshness/ep.md
 ordinal: 10000
 ---
 
