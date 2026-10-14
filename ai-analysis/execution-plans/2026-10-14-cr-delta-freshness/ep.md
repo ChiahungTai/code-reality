@@ -297,6 +297,28 @@ oracle 全部凍結於本表（advisor 測試矩陣已蒸餾進表——review i
 TC amendment 附錄：凍結後變更走 amendment（old/new oracle＋reason＋
 evidence＋authority）。
 
+**AM-1（2026-10-14，S2 review intent-F3）**：`delta_identity` 欄位語義釘死為
+**manifest entries 重組 identity（綁定審計證據）**——有效時恆等於
+`indexed_source_identity`、manifest 遭竄改時 diverge（TC-7 attack 1a 的
+diverge 斷言）。與 dossier §2(b) 原草案「delta 集雜湊」不同；裁決理由＝
+binding-audit 證據對 bridge 的 fail-closed 消費更有價值（diverge 即攻擊
+訊號），且 delta 集本身可由 entries 差集重建（雜湊為衍生值非契約值）。
+authority＝judge（新 integration evidence：實作＋TC-1/TC-7 斷言）。
+S5 bridge 對照表須列此語義。
+
+**AM-2（2026-10-14，S2 review intent-F1/fresh-F1-F4 修復）**：
+`content_verification` 判準精化——`full-rehash` 僅當 `reads ==
+entries.len()`（全部 entry 真讀）；混合態（cache gate hit＋部分真讀）
+一律 `stat-cache`。修前實作（≥1 真讀即 full-rehash）在 warm 常態過度
+宣稱信任等級，違反 D4「inherited, never denied」精神。TC-19 增混合態
+斷言。authority＝judge（D4 frozen 語義的忠实實作修正，非 oracle 變更）。
+同批修復：legacy reason 分流（NotFound＋pointer 缺→legacy-no-manifest；
+pointer 在→manifest-missing——SM-8 主形狀修正）、TC-17 增
+out_of_scope 成功路徑腿、補 --delta-full 與 walk-Err exit-2 測試、
+build.rs 六重複塊收斂、touched 檔 fmt 歸 repo 工具鏈（style-edition
+外來風格清除）、TC-14 計時分解記錄（warm 總 330-380ms 為 pre-S2 既有
+成本，S2 delta face ≤10ms 無回歸——閘歸屬＝獨立追蹤項）。
+
 ## 段落 S2：(a)+(b) manifest 生產＋freshness delta 輸出
 
 ### Context
