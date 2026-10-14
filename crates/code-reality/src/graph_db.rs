@@ -17,6 +17,11 @@
 //! Write safety: the db is built at a temp sibling and atomically renamed
 //! — a crash never leaves a half db blocking the rebuild (the bootstrap
 //! `graph.exists()` guard is retired with it).
+//!
+//! Publication provenance (EP cr-delta-freshness D10): every build
+//! stamps a content-addressed generation id plus its input hashes into
+//! metadata inside the same write tx as the row data — same-input
+//! rebuilds reproduce the same id, and only an input movement moves it.
 
 use crate::argparse::{parse, FlagSpec, Kind, Outcome, ToolSpec};
 use crate::cache::{self, Face};
@@ -171,6 +176,11 @@ fn materialize_derived_at(db: &Path) -> Result<DerivedReport, String> {
     })
 }
 
+/// Graph db schema version — applied as `PRAGMA user_version` at
+/// publication and hashed into every `graph_snapshot_id` (D10): a schema
+/// revision moves every generation id. Single source for both faces.
+pub const SCHEMA_VERSION: u32 = 1;
+
 const DDL: &str = "
 CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE nodes (
@@ -226,8 +236,7 @@ CREATE TABLE flow_memberships (
     node_id INTEGER NOT NULL,
     position INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (flow_id, node_id));
-CREATE VIRTUAL TABLE nodes_fts USING fts5(name, content='nodes', content_rowid='id');
-PRAGMA user_version = 1;";
+CREATE VIRTUAL TABLE nodes_fts USING fts5(name, content='nodes', content_rowid='id');";
 
 /// Test-entry face for producer nodes: shared path policy (S3 single
 /// source — see [`crate::engine::is_test_path`]) covering Rust `tests/`
@@ -414,6 +423,103 @@ fn stamp_snapshot_metadata(conn: &Connection, repo: &Path) {
     }
 }
 
+/// The D10 per-build generation id: sha256 over the consumed slot
+/// artifact hash, the builder revision, and the schema version. The `‖`
+/// concatenation is encoded as the domain-prefixed, NUL-separated byte
+/// string below — content-addressed, so a same-input rebuild reproduces
+/// the same id and only an input movement moves it.
+fn graph_snapshot_id(
+    input_index_sha256: &str,
+    builder_revision: &str,
+    schema_version: u32,
+) -> String {
+    crate::identity::sha256_hex(
+        format!(
+            "cr-graph-snapshot-v1\0{input_index_sha256}\0{builder_revision}\0{schema_version}\0"
+        )
+        .as_bytes(),
+    )
+}
+
+/// Stamp the D10 publication provenance into metadata — inside the same
+/// write tx as the row data (publication atomicity; the D11 same-conn
+/// consumption reads what this tx committed). `input_index_sha256` is
+/// pinned BEFORE the face loads (`build_from_cache_locked`) and
+/// re-verified here against the on-disk bytes — drift aborts the
+/// publication loud, so provenance never binds bytes the rows didn't
+/// come from (review fresh-F1; residual: a mutation after this check
+/// but before the rename is the data plane's documented post-check ABA
+/// residual, not re-closed here). `source_manifest_digest` is the S2
+/// sidecar digest when the sidecar is readable, SQL NULL when absent;
+/// a present-but-unreadable sidecar degrades to NULL too — deliberate,
+/// the conservative direction (never false-fresh; review fresh-F3).
+/// `coverage_faces`/`selection` mirror the slot meta's S2 stamp, NULL
+/// when the meta doesn't carry them (db key ← meta key:
+/// `coverage_faces` ← `source_faces` as compact JSON text, `selection`
+/// ← `selection` as a bare string — the vocabulary S4/S5 enumerate
+/// verbatim); corrupt-meta warns are surfaced on stderr, never
+/// swallowed. `builder_revision` is this build's compile-time constant
+/// — never a query-time binary rev (D14). Every failure here aborts the
+/// publication loud: an unprovenanced or mis-provenanced db must not
+/// slip out silently, and the temp db is discarded with the previous
+/// graph left intact.
+fn stamp_publication_provenance(
+    conn: &Connection,
+    index_path: &Path,
+    input_index_sha256: &str,
+) -> Result<(), String> {
+    let current = crate::identity::artifact_hash(index_path)?;
+    if current != input_index_sha256 {
+        return Err(format!(
+            "graph.db 拒絕出版：slot artifact 於建置期間變動（load 前 {input_index_sha256} ≠ 出版時 {current}）——provenance 不得綁定未消費的 bytes"
+        ));
+    }
+    let rev = option_env!("CR_BUILD_REV");
+    let set = |key: &str, value: Option<&str>| -> Result<(), String> {
+        conn.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES (?1, ?2)",
+            rusqlite::params![key, value],
+        )
+        .map(|_| ())
+        .map_err(|e| format!("metadata 寫入失敗（{key}）：{e}"))
+    };
+    set(
+        "graph_snapshot_id",
+        Some(&graph_snapshot_id(
+            input_index_sha256,
+            rev.unwrap_or(""),
+            SCHEMA_VERSION,
+        )),
+    )?;
+    set("input_index_sha256", Some(input_index_sha256))?;
+    let manifest_bytes = std::fs::read(crate::identity::manifest_path_for_slot(index_path)).ok();
+    set(
+        "source_manifest_digest",
+        manifest_bytes
+            .as_deref()
+            .map(crate::identity::sha256_hex)
+            .as_deref(),
+    )?;
+    set("builder_revision", rev)?;
+    let (meta, meta_warns) = crate::engine::load_meta(index_path);
+    for w in &meta_warns {
+        eprintln!("{w}");
+    }
+    let faces = meta
+        .as_ref()
+        .and_then(|m| m.get("source_faces"))
+        .filter(|v| v.is_array())
+        .and_then(|v| serde_json::to_string(v).ok());
+    set("coverage_faces", faces.as_deref())?;
+    set(
+        "selection",
+        meta.as_ref()
+            .and_then(|m| m.get("selection"))
+            .and_then(|v| v.as_str()),
+    )?;
+    Ok(())
+}
+
 /// Staleness WARN face for graph.db consumers: the build-time
 /// `git_head_sha` stamp vs the repo's current HEAD — the same
 /// `[SRC]`-style drift guard scip_refs carries for its index. None when
@@ -597,6 +703,11 @@ pub(crate) fn build_from_cache_locked(
         ));
     }
     let repo_abs = resolve(repo);
+    // D10 input pinning (review fresh-F1): hash the slot artifact BEFORE
+    // the face loads — stamp_publication_provenance re-hashes at
+    // publication time and fails loud on drift, so the provenance only
+    // ever binds bytes the rows actually came from.
+    let input_index_sha256 = crate::identity::artifact_hash(index_path)?;
     // LSP-harvest slots carry a placeholder index.scip (no protobuf face):
     // an existing cache with an lsp producer IS the authoritative face —
     // the open_face ladder would try parsing the placeholder on sub-second
@@ -638,6 +749,15 @@ pub(crate) fn build_from_cache_locked(
         cache::open_face(index_path)?.0
     };
     let producer = producer_of(&face);
+    if producer == "lsp-harvest" {
+        // Review fresh-F2 residual (EP AM-3): on this face the consumed
+        // artifact is the harvest cache db — input_index_sha256 binds
+        // the placeholder index.scip instead. Golden-only face; S4 must
+        // not derive delta claims from lsp-harvest generation ids.
+        eprintln!(
+            "[WARN] graph provenance：lsp-harvest face 的 input_index_sha256 綁定 placeholder index.scip（實際消費本體為 harvest cache db）——golden-only face，delta 語義見 EP AM-3"
+        );
+    }
     let rows = scan(&face)?;
     // CALLS-vs-REFERENCES split (occurrence EP S3-F2, build-side
     // mechanism): SCIP has no call role and neither producer marks one —
@@ -767,6 +887,8 @@ pub(crate) fn build_from_cache_locked(
         .map_err(|e| format!("graph.db busy_timeout 設定失敗：{e}"))?;
     g.execute_batch(DDL)
         .map_err(|e| format!("graph.db schema 建立失敗：{e}"))?;
+    g.pragma_update(None, "user_version", SCHEMA_VERSION)
+        .map_err(|e| format!("graph.db user_version 設定失敗：{e}"))?;
     // single index source: build and ensure_indexes both apply
     // ENGINE_INDEX_DDL (schema DDL carries tables only — cannot drift)
     g.execute_batch(ENGINE_INDEX_DDL)
@@ -900,6 +1022,8 @@ pub(crate) fn build_from_cache_locked(
     )
     .map_err(|e| format!("metadata 寫入失敗：{e}"))?;
     stamp_snapshot_metadata(&tx, repo);
+    stamp_publication_provenance(&tx, index_path, &input_index_sha256)
+        .map_err(|e| format!("graph.db 出版 provenance 戳記失敗：{e}"))?;
     tx.execute("INSERT INTO nodes_fts(nodes_fts) VALUES ('rebuild')", [])
         .map_err(|e| format!("nodes_fts 重建失敗：{e}"))?;
     tx.commit().map_err(|e| format!("graph.db 提交失敗：{e}"))?;
@@ -1188,6 +1312,37 @@ pub fn run(argv: &[&str]) -> ToolOutput {
 #[cfg(test)]
 mod tests {
     use super::infer_language;
+    use crate::graph_db::stamp_publication_provenance;
+
+    #[test]
+    fn publication_aborts_when_slot_mutates_during_build() {
+        // Review fresh-F1 fence: the pre-load input hash is re-verified
+        // at stamp time — a slot rewritten mid-build must abort the
+        // publication loud (the rows came from the old bytes; the
+        // provenance must never bind the new ones).
+        let tmp = tempfile::tempdir().unwrap();
+        let index = tmp.path().join("index.scip");
+        std::fs::write(&index, b"gen-one").unwrap();
+        let before = crate::identity::artifact_hash(&index).unwrap();
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT);")
+            .unwrap();
+
+        stamp_publication_provenance(&conn, &index, &before).unwrap();
+        let stamped: String = conn
+            .query_row(
+                "SELECT value FROM metadata WHERE key = 'input_index_sha256'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(stamped, before);
+
+        std::fs::write(&index, b"gen-two").unwrap();
+        let err = stamp_publication_provenance(&conn, &index, &before)
+            .expect_err("a drifted slot must abort the publication");
+        assert!(err.contains("建置期間變動"), "{err}");
+    }
 
     #[test]
     fn python_prefixes_cover_all_python_producers() {
