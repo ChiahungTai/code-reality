@@ -4,7 +4,7 @@ title: delta-freshness：讓 stale graph 可計算差集、查詢面標註新鮮
 status: In Progress
 assignee: []
 created_date: '2026-10-14 02:57'
-updated_date: '2026-10-14 07:32'
+updated_date: '2026-10-14 08:08'
 labels: []
 dependencies: []
 references:
@@ -68,4 +68,6 @@ outbound 台帳續：③cr10-align-reply-110245 已受理（ai-guide acceptanceS
 S2 段收線（commit 94accbe 進 main）：見 CR-10.1 notes。逐段回報信寄 ai-guide（卡級授權第一封）。S3（graph publication provenance）待派。
 
 outbound 台帳續：⑤cr10-s2-report-142833 已受理（ai-guide acceptanceSeq=11，in_reply_to=aiguide-cr-align-cr10-20261014）——S2 段收線回報（③約定第一封；新 thread inform 信走 dutymail send 直呼——reply face 僅及 pending 義務，此用法記錄）。S2 已落地 main：49d023a。
+
+【bridge 更新前 handoff（2026-10-14 15:56，user 要更新 bridge 後開 new session）】S3 中斷點：writer job-mv7smaa9 已乾淨 stop（interrupted），WT code-reality-cr-10.2 保存交付——graph_db.rs +89/-2（D10 五欄 metadata stamp）＋tests/graph_provenance.rs 6 tests 6/6 綠（我機驗過）。剩餘：全量迴歸＋scoped fmt 檢查＋dual review→judge→landing→回報 ai-guide→S4（查詢面標註＋negative gate＋MCP freshness tool——bridge 啟用閘最後碼段）→S5 hand-off。RESUME＝new session 讀本卡＋EP（ai-analysis/execution-plans/2026-10-14-cr-delta-freshness/ep.md）＋.agent-tmp/session-journal.md 尾段；S3 工單＝code-reality-cr-10.2/.agent-tmp/cr10-s3-workorder.md（續派 continuation 或直接進收線——測試已綠可先收線驗證）。授權現值：卡級寄信（6 信/72h，已用 5）＋弧內自主 commit——記錄見本卡前段 notes。
 <!-- SECTION:NOTES:END -->
