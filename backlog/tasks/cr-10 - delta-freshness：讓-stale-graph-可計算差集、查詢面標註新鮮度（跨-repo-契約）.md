@@ -98,4 +98,9 @@ post-build OK 就可以 commit」——S4 收線 review＝bi panel（muse＋code
 codex 腿照塌縮前置判準換新 diff 重測一次，再現同 transport 簽名即
 single＋顯式記錄），review OK 即 landing commit（併入弧內自主 commit
 授權面）；push 恆不碰。
+
+〔Done 翻牌授權（2026-10-14 晚，user 回話）〕AUTH: user said「你做好就
+翻done, 不用等我」——弧內卡（CR-10.1/10.2/10.3）工作落線＋結算完整即
+由 marshal 自行翻 Done 免逐張請示；翻牌前提不變（review/judge 綠＋
+landing＋結算寫入），條件不滿足不翻。父卡 CR-10 收案仍待 S5 完成。
 <!-- SECTION:NOTES:END -->
