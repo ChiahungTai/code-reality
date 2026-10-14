@@ -116,4 +116,11 @@ main 綠。CR-10.3 已翻 Done（依上授權）。誠實未決項（S5 前裁�
 寫檔偏差）待整理回饋 bridge repo。**剩餘＝S5 hand-off**（契約 fixture＋
 S5 對照表＋bridge wrapper pin 對齊＋ai-guide 對接——寄信額度已罄，
 對接信需 user 重新授權）。
+
+outbound 台帳續：⑦cr-bridge-feedback-204439 已受理（delegate-bridge
+址 acceptanceSeq=12，deliverySeq=12）——bridge 3.16.0 回饋包三項
+（①status.rs:285 workspace-mismatch 關鍵詞誤判 Rust test-output 新變體
+②codex review face thread.started＋SessionEnd hook 訊息污染③唯讀工單
+下 codex reviewer 自建報告檔觀察）。AUTH: user said「寄信給bridge」
+（逐次授權——非卡級 6 信額度面，該額度仍為已罄狀態）。
 <!-- SECTION:NOTES:END -->
