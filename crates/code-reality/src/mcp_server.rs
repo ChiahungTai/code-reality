@@ -204,6 +204,12 @@ pub struct ProjectParams {
     pub json: Option<bool>,
 }
 
+/// Read-only freshness verdict params (EP CR-10 S4/D12).
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct FreshnessParams {
+    pub repo_root: String,
+}
+
 #[derive(Clone, Default)]
 pub struct CodeRealityServer {
     tool_router: ToolRouter<CodeRealityServer>,
@@ -217,20 +223,81 @@ pub struct CodeRealityServer {
 /// still slips through, before the client tears the connection down).
 const MCP_TEXT_CAP: usize = 1 << 20;
 
-fn apply_text_cap(mut text: String) -> String {
-    if text.len() > MCP_TEXT_CAP {
+fn apply_text_cap_bounded(mut text: String, cap: usize) -> String {
+    if text.len() > cap {
         // cut at a UTF-8 char boundary
-        let mut cut = MCP_TEXT_CAP;
+        let mut cut = cap;
         while cut > 0 && !text.is_char_boundary(cut) {
             cut -= 1;
         }
         text.truncate(cut);
         text.push_str(&format!(
-            "\n[TRUNCATED] output exceeded {} bytes — pass a smaller detail_level/limit, or use the CLI face (graph_query ... | grep/jq)\n",
-            MCP_TEXT_CAP
+            "\n[TRUNCATED] output exceeded {cap} bytes — pass a smaller detail_level/limit, or use the CLI face (graph_query ... | grep/jq)\n"
         ));
     }
     text
+}
+
+fn apply_text_cap(text: String) -> String {
+    apply_text_cap_bounded(text, MCP_TEXT_CAP)
+}
+
+/// D13 (EP CR-10) fail-closed triggers, checked BEFORE any truncation:
+/// ① the annotation header line itself is cut (pathological small cap)
+/// ② a refusal envelope (`negative_verdict=unavailable`) is cut — both
+/// turn typed `TRUNCATED_UNVERIFIED` errors. A stale large body
+/// tail-truncated with its header intact is an annotated partial
+/// SUCCESS (the exhaustive caveat already arrived on the header), and
+/// unannotated output keeps the legacy truncate+marker behavior.
+fn cap_tool_text(text: String, cap: usize) -> Result<String, String> {
+    let truncated_unverified = || {
+        format!(
+            "TRUNCATED_UNVERIFIED: the freshness annotation header or refusal envelope exceeded the {}-byte MCP text cap — the answer cannot be verified; retry with narrower arguments or the CLI face",
+            cap
+        )
+    };
+    if is_refusal_envelope(&text) && text.len() > cap {
+        return Err(truncated_unverified());
+    }
+    if let Some((_, line_end)) = annotation_header_span(&text) {
+        // the header must survive COMPLETELY (its terminating newline
+        // inside the kept prefix) or nothing can be verified
+        let cut = {
+            let mut c = cap.min(text.len());
+            while c > 0 && !text.is_char_boundary(c) {
+                c -= 1;
+            }
+            c
+        };
+        if line_end > cut {
+            return Err(truncated_unverified());
+        }
+    }
+    Ok(apply_text_cap_bounded(text, cap))
+}
+
+/// (start, end) byte span of the annotation header line — the first
+/// `[CR-META] ` or `[CR_VERDICT] ` line within the first three output
+/// lines (header sits at line 1 or 2 beneath the `[OK]`/`[SRC]` line).
+/// `None` = unannotated output (legacy behavior applies).
+fn annotation_header_span(text: &str) -> Option<(usize, usize)> {
+    let mut offset = 0usize;
+    for line in text.lines().take(3) {
+        let start = offset;
+        let end = start + line.len() + 1; // + the newline
+        if line.starts_with("[CR-META] ") || line.starts_with("[CR_VERDICT] ") {
+            return Some((start, end));
+        }
+        offset = end;
+    }
+    None
+}
+
+fn is_refusal_envelope(text: &str) -> bool {
+    text.lines().take(3).any(|l| {
+        l.contains("negative_verdict=unavailable")
+            || l.contains("\"negative_verdict\":\"unavailable\"")
+    })
 }
 
 fn internal_error(text: String) -> McpError {
@@ -243,7 +310,7 @@ fn to_tool_result(out: crate::ToolOutput) -> Result<CallToolResult, McpError> {
         text.push_str("[STDERR]\n");
         text.push_str(&out.stderr);
     }
-    text = apply_text_cap(text);
+    let text = cap_tool_text(text, MCP_TEXT_CAP).map_err(internal_error)?;
     // non-exhaustive struct — build via success() then set is_error
     let mut result = CallToolResult::success(vec![ContentBlock::text(text)]);
     if out.exit_code != 0 {
@@ -263,6 +330,11 @@ fn map_tool_output(out: crate::ToolOutput) -> Result<CallToolResult, McpError> {
         if !out.stderr.is_empty() {
             text.push_str("[STDERR]\n");
             text.push_str(&out.stderr);
+        }
+        // D13: a refusal envelope cut by the cap cannot be verified —
+        // fail closed with the typed marker instead of a half-verdict
+        if let Err(msg) = cap_tool_text(text.clone(), MCP_TEXT_CAP) {
+            return Err(internal_error(msg));
         }
         return Err(internal_error(format!(
             "工具退出碼 {}：{}",
@@ -312,6 +384,7 @@ impl CodeRealityServer {
             .with_route((Self::snapshot_tool_attr(), Self::snapshot))
             .with_route((Self::delta_tour_tool_attr(), Self::delta_tour))
             .with_route((Self::project_tool_attr(), Self::project))
+            .with_route((Self::freshness_tool_attr(), Self::freshness))
     }
 
     /// Shared per-request isolation (SM-14): blocking I/O leaves the
@@ -424,7 +497,10 @@ fn tools_digest(tools: &[serde_json::Value]) -> String {
     use sha2::{Digest, Sha256};
     let mut buf = Vec::new();
     canonical_json_bytes(&serde_json::Value::Array(tools.to_vec()), &mut buf);
-    let hex: String = Sha256::digest(&buf).iter().map(|b| format!("{b:02x}")).collect();
+    let hex: String = Sha256::digest(&buf)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
     format!("sha256-{hex}")
 }
 
@@ -459,8 +535,14 @@ pub fn manifest_face() -> String {
         })
         .collect();
     tools.sort_unstable_by(|a, b| {
-        let ka = a.get("name").and_then(serde_json::Value::as_str).unwrap_or_default();
-        let kb = b.get("name").and_then(serde_json::Value::as_str).unwrap_or_default();
+        let ka = a
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        let kb = b
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
         ka.cmp(kb)
     });
     // Digest scope is declared as `name+input_schema` — project exactly
@@ -829,14 +911,20 @@ impl CodeRealityServer {
             include_members,
         }): Parameters<GqCommunityParams>,
     ) -> Result<CallToolResult, McpError> {
-        // in-process call (no CLI op — the drill-down is an MCP face)
+        // in-process call (no CLI op — the drill-down is an MCP face);
+        // EP CR-10 D9: routes through the shared annotation helper — the
+        // content is now the header lines + JSON (declared face contract
+        // change, golden'd)
         let repo = repo_root.clone();
         let needle = community_name.clone();
         let with_members = include_members.unwrap_or(false);
-        let out = tokio::task::spawn_blocking(move || {
+        let text = tokio::task::spawn_blocking(move || {
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let conn = crate::graph_engine::open(std::path::Path::new(&repo))?;
-                crate::graph_engine::get_community(&conn, &needle, with_members)
+                crate::graph_engine::annotated_community(
+                    std::path::Path::new(&repo),
+                    &needle,
+                    with_members,
+                )
             }))
         })
         .await
@@ -848,11 +936,10 @@ impl CodeRealityServer {
                 .or_else(|| payload.downcast_ref::<String>().cloned())
                 .unwrap_or_else(|| "non-string panic payload".into());
             internal_error(format!("lib panic：{msg}"))
-        })?;
-        let v = out.map_err(internal_error)?;
-        Ok(CallToolResult::success(vec![ContentBlock::text(
-            apply_text_cap(crate::common::to_json_indent1(&v)),
-        )]))
+        })?
+        .map_err(internal_error)?;
+        let text = cap_tool_text(text, MCP_TEXT_CAP).map_err(internal_error)?;
+        Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
     }
 
     #[tool(description = "Flows whose path touches the changed files")]
@@ -1096,6 +1183,57 @@ impl CodeRealityServer {
         }
         Self::run_module(crate::project::run, args).await
     }
+
+    /// Read-only freshness verdict (EP CR-10 S4/D12). Typed verdict
+    /// handling: fresh/stale (CLI exit 0/1) construct success with
+    /// `is_error=false` EXPLICITLY — routing through `to_tool_result`
+    /// would set `is_error=true` on the stale exit-1 (a legal answer,
+    /// never an error); check failures (exit 2) stay errors. Stays out
+    /// of `MANIFEST_WRITE_FACES` (zero writes beyond the identity cache
+    /// the CLI face already owns).
+    #[tool(
+        description = "Source-identity freshness verdict for the repo's index slot (typed: fresh/stale is a legal answer with is_error=false — read `fresh` from the JSON; only check failures are errors). Read-only. Same lib as `code-reality freshness --repo <repo> --json`"
+    )]
+    pub async fn freshness(
+        &self,
+        Parameters(FreshnessParams { repo_root }): Parameters<FreshnessParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let out = tokio::task::spawn_blocking(move || {
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                crate::freshness::freshness(std::path::Path::new(&repo_root), true)
+            }))
+        })
+        .await
+        .map_err(|e| internal_error(format!("任務 join 失敗：{e}")))?
+        .map_err(|payload| {
+            let msg = payload
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .or_else(|| payload.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "non-string panic payload".into());
+            internal_error(format!("lib panic：{msg}"))
+        })?;
+        match out.exit_code {
+            0 | 1 => {
+                let mut result =
+                    CallToolResult::success(vec![ContentBlock::text(apply_text_cap(out.stdout))]);
+                result.is_error = Some(false);
+                Ok(result)
+            }
+            _ => {
+                let mut text = out.stdout;
+                if !out.stderr.is_empty() {
+                    text.push_str("[STDERR]\n");
+                    text.push_str(&out.stderr);
+                }
+                Err(internal_error(format!(
+                    "工具退出碼 {}：{}",
+                    out.exit_code,
+                    text.trim()
+                )))
+            }
+        }
+    }
 }
 
 /// Bin entry helper: serve streamable-http on the given port. The
@@ -1220,5 +1358,87 @@ mod error_cap_regression {
             .expect("bounded panic marker");
         assert!(prefix.starts_with("lib panic："));
         assert!(prefix.len() <= MCP_TEXT_CAP);
+    }
+
+    // ---------- EP CR-10 S4 TC-13: the truncation contract (D13) ----------
+
+    fn annotated_body() -> String {
+        // header at line 2, big body after it
+        format!(
+            "[OK] graph_query search\n[CR-META] {{\"v\":1,\"tier\":\"possibly-stale\"}}\n{}\n",
+            "x".repeat(4000)
+        )
+    }
+
+    #[test]
+    fn tc13_header_intact_tail_cut_is_annotated_partial_success() {
+        let text = annotated_body();
+        // cap lands inside the body — the header line is fully inside
+        let kept = cap_tool_text(text, 200).expect("annotated partial");
+        assert!(kept.starts_with("[OK] graph_query search\n[CR-META] "));
+        assert!(kept.contains("[TRUNCATED]"));
+        let meta: serde_json::Value = serde_json::from_str(
+            kept.lines()
+                .nth(1)
+                .unwrap()
+                .strip_prefix("[CR-META] ")
+                .unwrap(),
+        )
+        .expect("header survives parseable");
+        assert_eq!(meta["v"], 1);
+    }
+
+    #[test]
+    fn tc13_pathological_small_cap_cutting_header_fails_closed() {
+        let text = annotated_body();
+        // cap lands INSIDE the [CR-META] line — fail closed
+        let err = cap_tool_text(text, 40).unwrap_err();
+        assert!(err.starts_with("TRUNCATED_UNVERIFIED"), "{err}");
+    }
+
+    #[test]
+    fn tc13_refusal_envelope_cut_fails_closed() {
+        let refusal = "[SRC] scip index @ abc\n[CR_VERDICT] v=1 tier=possibly-stale exhaustive=false negative_verdict=unavailable producer_version=p delta_changed=null delta_complete=false content_verification=null delta_unavailable=null\n[OK] q：0 callers（0 sites）\n".to_string();
+        // whole refusal under the cap: plain success path (is_error set
+        // by the caller's exit code — not this function's concern)
+        assert!(cap_tool_text(refusal.clone(), MCP_TEXT_CAP).is_ok());
+        // refusal envelope cut → typed error, never a half-verdict
+        let err = cap_tool_text(refusal, 60).unwrap_err();
+        assert!(err.starts_with("TRUNCATED_UNVERIFIED"), "{err}");
+        // the map_tool_output error path (exit-1 refusal) folds to the
+        // typed-exit face with the type riding the text
+        let err = map_tool_output(crate::ToolOutput {
+            stdout: "[CR_VERDICT] v=1 tier=possibly-stale exhaustive=false negative_verdict=unavailable producer_version=p delta_changed=null delta_complete=false content_verification=null delta_unavailable=null\n[OK] q：0 callers\n".to_string(),
+            stderr: String::new(),
+            exit_code: 1,
+        })
+        .unwrap_err();
+        assert!(
+            err.message.contains("negative_verdict=unavailable"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn tc13_refusal_envelope_over_cap_errors_typed() {
+        let big_refusal = format!(
+            "[CR_VERDICT] v=1 tier=possibly-stale exhaustive=false negative_verdict=unavailable producer_version=p delta_changed=null delta_complete=false content_verification=null delta_unavailable=null\n{}\n",
+            "y".repeat(MCP_TEXT_CAP * 2)
+        );
+        let err = map_tool_output(crate::ToolOutput {
+            stdout: big_refusal,
+            stderr: String::new(),
+            exit_code: 1,
+        })
+        .unwrap_err();
+        assert!(err.message.starts_with("TRUNCATED_UNVERIFIED"), "{err}");
+    }
+
+    #[test]
+    fn tc13_unannotated_output_keeps_legacy_truncation() {
+        let text = format!("plain output\n{}\n", "z".repeat(4000));
+        let kept = cap_tool_text(text, 100).expect("legacy face");
+        assert!(kept.contains("[TRUNCATED]"));
+        assert!(!kept.contains("TRUNCATED_UNVERIFIED"));
     }
 }

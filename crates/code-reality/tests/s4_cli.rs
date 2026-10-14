@@ -108,12 +108,15 @@ fn query_stdout_full_shape_on_fixture() {
     let idx = fixture_copy(&tmp);
     let idx_s = idx.to_string_lossy().to_string();
 
-    // Type.method query, no meta / no repo → no [SRC] line at all.
+    // Type.method query, no meta / no repo → no [SRC] line at all; the
+    // CR-10 S4 [CR_VERDICT] annotation rides line 1 (D8 — explicit
+    // --index without a freshness basis = indeterminate/coverage-unknown).
     // Fixture symbols space-separate the path and descriptor → tail() is the
     // descriptor alone (unlike NT symbols where the descriptor carries "kernel/…").
     let out = run(&argv(&["EventStoreLifecycle.open", "--index", &idx_s]));
     assert_eq!(out.exit_code, 0);
     let expected = concat!(
+        "[CR_VERDICT] v=1 tier=indeterminate exhaustive=false negative_verdict=null producer_version=null delta_changed=null delta_complete=false content_verification=null delta_unavailable=coverage-unknown\n",
         "[OK] EventStoreLifecycle#open().\n",
         "  DEF  crates/b.rs:7\n",
         "  refs: 1 處（跨檔）\n",
@@ -134,10 +137,13 @@ fn query_stdout_full_shape_on_fixture() {
     );
     assert_eq!(out.stdout, expected);
 
-    // no-DEF query → exit 1 with warn
+    // no-DEF query → exit 1 with warn (annotation line first, D8)
     let out = run(&argv(&["Nothing.here", "--index", &idx_s]));
     assert_eq!(out.exit_code, 1);
-    assert_eq!(out.stdout, "[WARN] 查無 DEF：Nothing.here\n");
+    assert_eq!(
+        out.stdout,
+        "[CR_VERDICT] v=1 tier=indeterminate exhaustive=false negative_verdict=null producer_version=null delta_changed=null delta_complete=false content_verification=null delta_unavailable=coverage-unknown\n[WARN] 查無 DEF：Nothing.here\n"
+    );
 }
 
 #[test]

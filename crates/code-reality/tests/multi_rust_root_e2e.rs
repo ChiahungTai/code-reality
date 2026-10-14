@@ -69,7 +69,10 @@ fn scip_bytes(docs: Vec<Document>) -> Vec<u8> {
     let mut tool = ToolInfo::new();
     tool.name = "rust-analyzer".to_string();
     tool.version = "1.96.0-test".to_string();
-    tool.arguments = vec!["scip".to_string(), "file:///test-workspace-root".to_string()];
+    tool.arguments = vec![
+        "scip".to_string(),
+        "file:///test-workspace-root".to_string(),
+    ];
     let mut meta = Metadata::new();
     meta.tool_info = protobuf::MessageField::some(tool);
     meta.project_root = "file:///test-workspace-root".to_string();
@@ -130,7 +133,10 @@ fn lab_e2e() -> Lab {
     .unwrap();
     std::fs::write(
         &dm_path,
-        scip_bytes(vec![doc("crates/dm.rs", vec![def_occ(DM_SYM, [0, 0, 1, 1])])]),
+        scip_bytes(vec![doc(
+            "crates/dm.rs",
+            vec![def_occ(DM_SYM, [0, 0, 1, 1])],
+        )]),
     )
     .unwrap();
     let script = format!(
@@ -184,12 +190,7 @@ fn verdict(out: &code_reality::ToolOutput) -> serde_json::Value {
 }
 
 fn freshness_json(repo: &Path) -> code_reality::ToolOutput {
-    code_reality::freshness::run(&[
-        "freshness",
-        "--repo",
-        &repo.to_string_lossy(),
-        "--json",
-    ])
+    code_reality::freshness::run(&["freshness", "--repo", &repo.to_string_lossy(), "--json"])
 }
 
 fn snapshot_to(repo: &Path, out_dir: &Path) -> code_reality::ToolOutput {
@@ -259,8 +260,7 @@ fn tc7a_build_is_fresh_with_three_faces_and_dual_root_graph() {
     // order ⇒ stable idx) instead of the comma-joined pair.
     for (idx, want) in [("root[0]", "dutymail"), ("root[1]", "rust")] {
         assert!(
-            topo.iter()
-                .any(|kv| kv == &serde_json::json!([idx, want])),
+            topo.iter().any(|kv| kv == &serde_json::json!([idx, want])),
             "TC7-a: topology carries sorted root {idx}={want}: {topo:?}"
         );
     }
@@ -307,7 +307,17 @@ fn tc7a_build_is_fresh_with_three_faces_and_dual_root_graph() {
             query,
         ]);
         assert_eq!(out.exit_code, 0, "{}", out.stderr);
-        let json_part = out.stdout.split_once('\n').unwrap().1;
+        // CR-10 S4 (D9): the [CR-META] header rides line 2 — the JSON
+        // body starts after it (EP-declared golden update; the bridge
+        // graph client is the S5 counterpart to notify)
+        let json_part = out
+            .stdout
+            .split_once('\n')
+            .unwrap()
+            .1
+            .split_once('\n')
+            .unwrap()
+            .1;
         let v: serde_json::Value = serde_json::from_str(json_part).unwrap();
         let hits = v["results"].as_array().unwrap();
         assert!(
@@ -368,7 +378,11 @@ fn tc7c_delta_tour_carries_root_relative_rust_change() {
     let sa = sidecar_path(&l.repo, snaps.path(), &head(&l.repo));
 
     // change a .rs INSIDE the rust workspace root, commit
-    write(&l.repo, "rust/crates/b.rs", "pub fn b() {\n    let _ = 1;\n}\n");
+    write(
+        &l.repo,
+        "rust/crates/b.rs",
+        "pub fn b() {\n    let _ = 1;\n}\n",
+    );
     commit_all(&l.repo, "tc7-c: touch rust/crates/b.rs");
     let after = head(&l.repo);
     let out_b = snapshot_to(&l.repo, snaps.path());
@@ -420,7 +434,11 @@ fn tc7e_cargo_lock_only_change_is_stale() {
     assert_eq!(out.exit_code, 0, "sanity: fresh after build: {out:?}");
 
     // Cargo-only edit inside one root; zero source touch.
-    write(&l.repo, "rust/Cargo.lock", "version = 3\n# tc7-e dep bump\n");
+    write(
+        &l.repo,
+        "rust/Cargo.lock",
+        "version = 3\n# tc7-e dep bump\n",
+    );
     let out = freshness_json(&l.repo);
     assert_eq!(
         out.exit_code, 1,
@@ -446,7 +464,11 @@ fn sm4b_resolver_failure_never_claims_fresh() {
     // Unresolvable configured root: freshness must fail loud (check-
     // failure exit 2) naming CR-RUST-ROOT-02, with NO verdict JSON —
     // a resolver failure must never degrade into a fresh claim.
-    write(&l.repo, ".code-reality.toml", "rust_projects = [\"ghost\"]\n");
+    write(
+        &l.repo,
+        ".code-reality.toml",
+        "rust_projects = [\"ghost\"]\n",
+    );
     let out = freshness_json(&l.repo);
     assert_eq!(out.exit_code, 2, "SM-4b: check-failure exit: {out:?}");
     assert!(
@@ -490,7 +512,11 @@ fn sm4b_heal_on_resolver_failure_serves_stale_without_loop() {
     // shape in tests/build.rs and stays covered there — recorded as the
     // deliberate shape choice for this fixture (the existing helpers do
     // not surface a ServeStale variant for a check-side failure).
-    write(&l.repo, ".code-reality.toml", "rust_projects = [\"ghost\"]\n");
+    write(
+        &l.repo,
+        ".code-reality.toml",
+        "rust_projects = [\"ghost\"]\n",
+    );
 
     for call in 1..=2 {
         let err = ensure_fresh(&l.repo, &l.roots)
@@ -520,7 +546,11 @@ fn sm4b_heal_on_resolver_failure_serves_stale_without_loop() {
     // WARN (cli.rs heal block) and the query still answers from the
     // surviving slot.
     let q = code_reality::cli::run(&["scip_refs", "--repo", &l.repo.to_string_lossy(), "a"]);
-    assert_eq!(q.exit_code, 0, "SM-4b: query answers: {} {}", q.stdout, q.stderr);
+    assert_eq!(
+        q.exit_code, 0,
+        "SM-4b: query answers: {} {}",
+        q.stdout, q.stderr
+    );
     assert!(
         q.stderr.contains("索引過期檢查失敗") && q.stderr.contains("CR-RUST-ROOT-02"),
         "SM-4b: serve-stale WARN names the resolver failure: {}",

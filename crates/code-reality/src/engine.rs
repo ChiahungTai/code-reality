@@ -346,11 +346,15 @@ pub fn refs_rows(index: &Index, symbols: &BTreeSet<String>) -> Vec<(String, Stri
 }
 
 /// Byte-identical query report (report(), scip_refs.py:182). Returns
-/// (stdout, exit_code); defs empty → `[WARN] 查無 DEF` + exit 1.
+/// (stdout, exit_code); defs empty → `[WARN] 查無 DEF` + exit 1. The
+/// `[CR_VERDICT]` line rides directly beneath the `[SRC]` line (EP
+/// CR-10 D8 — the refs face is annotate-only: no negative gate here,
+/// defs/refs empty is the no-coverage axis).
 pub fn report(
     defs: &BTreeMap<String, Vec<String>>,
     refs: &HashMap<String, Vec<String>>,
     src_line: Option<&str>,
+    verdict: &crate::freshness::ScipVerdict,
     query: &str,
 ) -> (String, i32) {
     let mut out = String::new();
@@ -358,6 +362,8 @@ pub fn report(
         out.push_str(line);
         out.push('\n');
     }
+    out.push_str(&verdict.line);
+    out.push('\n');
     if defs.is_empty() {
         out.push_str(&format!("[WARN] 查無 DEF：{}\n", query));
         return (out, 1);
@@ -929,6 +935,11 @@ pub struct StalenessSnapshot {
     /// Build-time stamped producer string (D14 — never a query-time
     /// binary rev).
     pub producer_version: Option<String>,
+    /// EP CR-10 S4/D11 — the serving-slot artifact hash computed by THIS
+    /// pass (identity mode; `None` = legacy, never hashed). The query
+    /// faces' ServingStamp shares THIS value — re-hashing the slot on
+    /// the annotation path is the double-compute fresh-F9 bars.
+    pub serving_artifact_hash: Option<String>,
 }
 
 impl StalenessSnapshot {
@@ -952,8 +963,10 @@ impl StalenessSnapshot {
 /// is set the members render null — never `[]` masquerading as
 /// no-change. `walk-failed`/`coverage-unknown` exist for contract
 /// completeness; S2's producer paths answer via the exit-2 fail-loud
-/// face (walk Err) and never emit them (`budget-exceeded` and
-/// `graph-generation-mismatch` join in S4/S3 respectively).
+/// face (walk Err) and never emit them. The S4 pair joined as planned:
+/// `budget-exceeded` = the per-query annotation cost gate (tier drops
+/// to `indeterminate`), `graph-generation-mismatch` = the serving
+/// graph's generation no longer matches the pinned slot bytes (SM-10).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeltaUnavailable {
     LegacyNoManifest,
@@ -963,6 +976,8 @@ pub enum DeltaUnavailable {
     ManifestBindingAuditFailed,
     WalkFailed,
     CoverageUnknown,
+    BudgetExceeded,
+    GraphGenerationMismatch,
 }
 
 impl DeltaUnavailable {
@@ -975,6 +990,8 @@ impl DeltaUnavailable {
             DeltaUnavailable::ManifestBindingAuditFailed => "manifest-binding-audit-failed",
             DeltaUnavailable::WalkFailed => "walk-failed",
             DeltaUnavailable::CoverageUnknown => "coverage-unknown",
+            DeltaUnavailable::BudgetExceeded => "budget-exceeded",
+            DeltaUnavailable::GraphGenerationMismatch => "graph-generation-mismatch",
         }
     }
 }
@@ -1310,6 +1327,7 @@ pub fn evaluate_staleness(
             .and_then(|m| m["producer"].as_str())
             .filter(|p| !p.is_empty())
             .map(str::to_string),
+        serving_artifact_hash: slot_hash,
     })
 }
 
@@ -1903,14 +1921,21 @@ pub fn stamped_head(index_path: &Path) -> String {
 }
 
 /// No-DEF report fragment (frozen family text): `[SRC]` first when present,
-/// then `[WARN] 查無 DEF` with exit 1 (byte-identical to report()'s no-DEF
-/// branch; used by the R3 modes).
-pub fn no_def_lines(src_line: Option<&str>, query: &str) -> (String, i32) {
+/// the `[CR_VERDICT]` annotation line (EP CR-10 D8 — the defs-empty face
+/// answers on the no-coverage axis), then `[WARN] 查無 DEF` with exit 1
+/// (byte-identical to report()'s no-DEF branch; used by the R3 modes).
+pub fn no_def_lines(
+    src_line: Option<&str>,
+    query: &str,
+    verdict: &crate::freshness::ScipVerdict,
+) -> (String, i32) {
     let mut out = String::new();
     if let Some(line) = src_line {
         out.push_str(line);
         out.push('\n');
     }
+    out.push_str(&verdict.line);
+    out.push('\n');
     out.push_str(&format!("[WARN] 查無 DEF：{}\n", query));
     (out, 1)
 }

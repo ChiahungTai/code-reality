@@ -141,23 +141,30 @@ pub fn closure<F: FnMut(&str) -> CallersResult>(
 
 // ---------- output assembly (Rust-native design face; family style) ----------
 
-/// `--callers` report: `[SRC]` first line, one caller line (tail + site
-/// count) with its site lines beneath (= the call_edges edge set), then the
-/// item-level block (count + list, never silently dropped). Stable shape:
-/// a zero-ref DEF still prints the header and a zero item-level line.
-/// Sites print in full by design (the edge set IS the product; the query
-/// mode's 6-ref truncation does not apply here) — no cap at hub scale.
-/// Returns (stdout, exit_code); exit 0 on any DEF hit.
+/// `--callers` report: `[SRC]` first line, the `[CR_VERDICT]` annotation
+/// line (EP CR-10 D8), one caller line (tail + site count) with its site
+/// lines beneath (= the call_edges edge set), then the item-level block
+/// (count + list, never silently dropped). Stable shape: a zero-ref DEF
+/// still prints the header and a zero item-level line. Sites print in
+/// full by design (the edge set IS the product; the query mode's 6-ref
+/// truncation does not apply here) — no cap at hub scale.
+/// Returns (stdout, exit_code); exit 0 on any DEF hit — except the D7
+/// hard negative gate (stale + zero callers), which flips the exit-0
+/// success form to the typed refusal (`negative_verdict=unavailable`,
+/// exit 1) via the verdict's exit override.
 pub fn format_callers(
     query: &str,
     result: &CallersResult,
     src_line: Option<&str>,
+    verdict: &crate::freshness::ScipVerdict,
 ) -> (String, i32) {
     let mut out = String::new();
     if let Some(line) = src_line {
         out.push_str(line);
         out.push('\n');
     }
+    out.push_str(&verdict.line);
+    out.push('\n');
     let sites: usize = result.callers.iter().map(|c| c.sites.len()).sum();
     out.push_str(&format!(
         "[OK] {}：{} callers（{} sites）\n",
@@ -178,23 +185,28 @@ pub fn format_callers(
     for (path, line) in &result.item_level {
         out.push_str(&format!("    {}\n", loc_line(path, *line)));
     }
-    (out, 0)
+    (out, verdict.exit_override.unwrap_or(0))
 }
 
 /// `--closure` report: per-depth new-caller counts with per-defining-file
 /// aggregation, then the cycle-reentry line. Returns (stdout, exit_code);
-/// exit 0 on any DEF hit (empty frontiers included).
+/// exit 0 on any DEF hit (empty frontiers included) — except the D7 hard
+/// negative gate (stale + empty frontier), which flips to the typed
+/// refusal via the verdict's exit override.
 pub fn format_closure(
     query: &str,
     depth: usize,
     result: &ClosureResult,
     src_line: Option<&str>,
+    verdict: &crate::freshness::ScipVerdict,
 ) -> (String, i32) {
     let mut out = String::new();
     if let Some(line) = src_line {
         out.push_str(line);
         out.push('\n');
     }
+    out.push_str(&verdict.line);
+    out.push('\n');
     out.push_str(&format!("[OK] closure：{}（depth={}）\n", query, depth));
     for lvl in &result.levels {
         out.push_str(&format!(
@@ -210,5 +222,5 @@ pub fn format_closure(
         "  cycles：{} 處（frontier 重入已拜訪符號）\n",
         result.cycle_reentries
     ));
-    (out, 0)
+    (out, verdict.exit_override.unwrap_or(0))
 }

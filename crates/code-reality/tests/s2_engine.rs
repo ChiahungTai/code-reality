@@ -278,10 +278,17 @@ fn report_assembles_poc_verified_byte_shape() {
     let q = Query::parse("EventStoreLifecycle.open");
     let defs = find_defs(&index, &q);
     let refs = find_refs(&index, &BTreeSet::from_iter(defs.keys().cloned()));
-    let (out, code) = report(&defs, &refs, Some("[SRC] line"), "EventStoreLifecycle.open");
+    let (out, code) = report(
+        &defs,
+        &refs,
+        Some("[SRC] line"),
+        &crate_code_reality_verdict_populated(),
+        "EventStoreLifecycle.open",
+    );
     assert_eq!(code, 0);
     let expected = concat!(
         "[SRC] line\n",
+        "[CR_VERDICT] v=1 tier=exact exhaustive=true negative_verdict=null producer_version=null delta_changed=0 delta_complete=true content_verification=stat-cache delta_unavailable=null\n",
         "[OK] kernel/impl#[EventStoreLifecycle][KernelEventStore]open().\n",
         "  DEF  src/kernel.rs:1350\n",
         "  refs: 1 處（跨檔）\n",
@@ -298,9 +305,18 @@ fn report_assembles_poc_verified_byte_shape() {
 
 #[test]
 fn report_empty_defs_is_warn_exit_1() {
-    let (out, code) = report(&BTreeMap::new(), &HashMap::new(), None, "nope");
+    let (out, code) = report(
+        &BTreeMap::new(),
+        &HashMap::new(),
+        None,
+        &crate_code_reality_verdict_populated(),
+        "nope",
+    );
     assert_eq!(code, 1);
-    assert_eq!(out, "[WARN] 查無 DEF：nope\n");
+    assert_eq!(
+        out,
+        "[CR_VERDICT] v=1 tier=exact exhaustive=true negative_verdict=null producer_version=null delta_changed=0 delta_complete=true content_verification=stat-cache delta_unavailable=null\n[WARN] 查無 DEF：nope\n"
+    );
 }
 
 #[test]
@@ -465,4 +481,14 @@ fn source_line_variants() {
     .unwrap();
     let (line, _) = source_line(&idx, None);
     assert_eq!(line.as_deref(), Some("[SRC] scip index @ deadbee（None）"));
+}
+
+/// A populated-result scip verdict (annotate-only on the refs face):
+/// the S4 [CR_VERDICT] line contract, built directly — the display
+/// function is a pure renderer (CR-10 S4 D8).
+fn crate_code_reality_verdict_populated() -> code_reality::freshness::ScipVerdict {
+    code_reality::freshness::ScipVerdict {
+        line: "[CR_VERDICT] v=1 tier=exact exhaustive=true negative_verdict=null producer_version=null delta_changed=0 delta_complete=true content_verification=stat-cache delta_unavailable=null".to_string(),
+        exit_override: None,
+    }
 }

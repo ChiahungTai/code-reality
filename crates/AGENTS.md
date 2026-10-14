@@ -331,6 +331,29 @@ tests are the sole gate face.
   the ToolOutput is constructed directly since `fail` is 2 and `crash`
   is 1+[FAIL]) / no-slot·usage·env·check-failure=2 fail-loud with build
   guidance + the empty-terminal note, never claiming fresh (D9/SM-17).
+  **Query-face annotation exits (EP CR-10 S4, D7/D8/D9 — the frozen
+  vocabulary `exact|possibly-stale|no-coverage|indeterminate` /
+  `unavailable`)**: every successful scip_refs query (refs/callers/
+  closure, the two zero-row forms included) carries the `[CR_VERDICT]`
+  line directly beneath `[SRC]` (line 1 when `[SRC]` is absent); every
+  graph_query success and the MCP `get_community` content carry the
+  `[CR-META]` header line (gq_fail paths carry none — no line = never
+  infer fresh). The **hard negative gate** (stale + callers/closure
+  empty, delta answerable) FLIPS the historical 0-callers/empty-frontier
+  exit-0 success form to a typed refusal: scip faces = exit 1 +
+  `negative_verdict=unavailable` (distinguished from the no-DEF exit-1
+  by the [CR_VERDICT] content; goldens updated deliberately —
+  multi_rust_root_e2e's line-2 parse included); graph_query gated ops
+  (search/impact_radius/affected_flows) = exit 0 + `negative_verdict:
+  unavailable` + the result slot nulled (no readable `[]`); MCP folds
+  the scip refusal's exit-1 into a per-request McpError (type rides the
+  text). **Fresh+empty per-face exits are unchanged** (0-callers exit 0
+  / empty-frontier exit 0 with `exhaustive=true`, no-DEF exit 1 on the
+  no-coverage axis, graph_query gated-empty exit 0 with
+  `exhaustive:true`); the defs/refs face is annotate-only (no gate).
+  MCP text-cap fail-closed (D13): a cut annotation header or refusal
+  envelope = `TRUNCATED_UNVERIFIED` error; a tail-truncated body under
+  an intact header = annotated partial success.
 - **Subcommand names mirror Python module names verbatim** (`scip_refs`,
   `snapshot`, `graph_audit`; not kebab-case) —
   relay minimal-diff contract. (`transition` left the CLI surface at S4 —

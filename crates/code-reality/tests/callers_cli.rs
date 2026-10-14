@@ -124,6 +124,11 @@ fn no_query_with_callers_hits_frozen_final_guard() {
 
 // ---------- output shapes (exact pins; protobuf face, no [SRC]) ----------
 
+// CR-10 S4 (D8): every scip query carries the [CR_VERDICT] line. These
+// fixtures run explicit --index with no --repo — no freshness basis — so
+// the uniform indeterminate/coverage-unknown annotation rides line 1.
+const NO_REPO_VERDICT: &str = "[CR_VERDICT] v=1 tier=indeterminate exhaustive=false negative_verdict=null producer_version=null delta_changed=null delta_complete=false content_verification=null delta_unavailable=coverage-unknown";
+
 const EXPECTED_CALLERS: &str = "\
 [OK] EventStoreLifecycle.open：8 callers（9 sites）
   kernel/impl#[EventStoreLifecycle]macro_fn().（1 處）
@@ -152,7 +157,7 @@ fn callers_output_exact_shape() {
     let tmp = tempfile::tempdir().unwrap();
     let out = run_fixture(&tmp, &["--callers", "EventStoreLifecycle.open"]);
     assert_eq!(out.exit_code, 0);
-    assert_eq!(out.stdout, EXPECTED_CALLERS);
+    assert_eq!(out.stdout, format!("{NO_REPO_VERDICT}\n{EXPECTED_CALLERS}"));
 }
 
 #[test]
@@ -160,7 +165,10 @@ fn callers_no_def_exit_1() {
     let tmp = tempfile::tempdir().unwrap();
     let out = run_fixture(&tmp, &["--callers", "nosuch_method"]);
     assert_eq!(out.exit_code, 1);
-    assert_eq!(out.stdout, "[WARN] 查無 DEF：nosuch_method\n");
+    assert_eq!(
+        out.stdout,
+        format!("{NO_REPO_VERDICT}\n[WARN] 查無 DEF：nosuch_method\n")
+    );
 }
 
 #[test]
@@ -172,7 +180,7 @@ fn callers_zero_refs_stable_shape() {
     assert_eq!(out.exit_code, 0);
     assert_eq!(
         out.stdout,
-        "[OK] inner：0 callers（0 sites）\n  item-level：0 處（未歸屬 fn——use/const/屬性層）\n"
+        format!("{NO_REPO_VERDICT}\n[OK] inner：0 callers（0 sites）\n  item-level：0 處（未歸屬 fn——use/const/屬性層）\n")
     );
 }
 
@@ -181,14 +189,8 @@ fn closure_depth2_and_depth3_cycle() {
     let tmp = tempfile::tempdir().unwrap();
     let out = run_fixture(&tmp, &["--closure", "EventStoreLifecycle.open"]);
     assert_eq!(out.exit_code, 0);
-    let expected = concat!(
-        "[OK] closure：EventStoreLifecycle.open（depth=2）\n",
-        "  depth 1：8 callers\n",
-        "    crates/a.rs：7 符號\n",
-        "    crates/b.rs：1 符號\n",
-        "  depth 2：1 callers\n",
-        "    crates/b.rs：1 符號\n",
-        "  cycles：0 處（frontier 重入已拜訪符號）\n",
+    let expected = format!(
+        "{NO_REPO_VERDICT}\n[OK] closure：EventStoreLifecycle.open（depth=2）\n  depth 1：8 callers\n    crates/a.rs：7 符號\n    crates/b.rs：1 符號\n  depth 2：1 callers\n    crates/b.rs：1 符號\n  cycles：0 處（frontier 重入已拜訪符號）\n",
     );
     assert_eq!(out.stdout, expected);
     let out = run_fixture(

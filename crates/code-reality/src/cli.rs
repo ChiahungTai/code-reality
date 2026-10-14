@@ -384,10 +384,17 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         return audit_mode(&index_path, repo, src_line, &mut stderr);
     }
 
+    // EP CR-10 S4 要點 1: the per-query serving verdict — computed ONCE
+    // at the query-path entry (post-heal: the healed slot is what
+    // serves) and shared by every mode below; per-mode recompute is
+    // barred. The audit face above is exempt (S5 unannotated inventory)
+    // and pays nothing for the stamp.
+    let verdict_stamp = crate::freshness::serving_stamp(repo, &index_path);
+
     let query = args.query.as_deref().unwrap_or("");
 
     if args.callers {
-        return callers_mode(&index_path, repo, query, &mut stderr);
+        return callers_mode(&index_path, repo, query, &verdict_stamp, &mut stderr);
     }
     if args.closure {
         const DEFAULT_CLOSURE_DEPTH: usize = 2; // EP S3 要點 (CLI contract)
@@ -396,6 +403,7 @@ pub fn run(argv: &[&str]) -> ToolOutput {
             repo,
             query,
             depth.unwrap_or(DEFAULT_CLOSURE_DEPTH),
+            &verdict_stamp,
             &mut stderr,
         );
     }
@@ -408,7 +416,14 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         Ok(v) => v,
         Err(fail_msg) => return ToolOutput::fail(fail_msg),
     };
-    let (stdout, exit_code) = crate::engine::report(&defs, &refs, src_line.as_deref(), query);
+    let kind = if defs.is_empty() {
+        crate::freshness::ScipResult::DefsEmpty
+    } else {
+        crate::freshness::ScipResult::Populated
+    };
+    let verdict = crate::freshness::scip_verdict(&verdict_stamp, kind);
+    let (stdout, exit_code) =
+        crate::engine::report(&defs, &refs, src_line.as_deref(), &verdict, query);
     ToolOutput {
         stdout,
         stderr,
@@ -667,8 +682,14 @@ fn callers_front(
     Ok((src_line, Some((defs, oracle, spans))))
 }
 
-fn no_def_output(src_line: &Option<String>, query: &str, stderr: String) -> ToolOutput {
-    let (stdout, exit_code) = crate::engine::no_def_lines(src_line.as_deref(), query);
+fn no_def_output(
+    src_line: &Option<String>,
+    query: &str,
+    stamp: &crate::freshness::ServingStamp,
+    stderr: String,
+) -> ToolOutput {
+    let verdict = crate::freshness::scip_verdict(stamp, crate::freshness::ScipResult::DefsEmpty);
+    let (stdout, exit_code) = crate::engine::no_def_lines(src_line.as_deref(), query, &verdict);
     ToolOutput {
         stdout,
         stderr,
@@ -680,6 +701,7 @@ fn callers_mode(
     index_path: &Path,
     repo: Option<&Path>,
     query: &str,
+    stamp: &crate::freshness::ServingStamp,
     stderr: &mut String,
 ) -> ToolOutput {
     let (src_line, front) = match callers_front(index_path, repo, query, stderr) {
@@ -687,7 +709,7 @@ fn callers_mode(
         Err(msg) => return ToolOutput::fail(msg),
     };
     let Some((defs, oracle, spans)) = front else {
-        return no_def_output(&src_line, query, std::mem::take(stderr));
+        return no_def_output(&src_line, query, stamp, std::mem::take(stderr));
     };
     let symbols: BTreeSet<String> = defs.keys().cloned().collect();
     let rows = match oracle.rows(&symbols) {
@@ -705,7 +727,14 @@ fn callers_mode(
         }
     };
     let result = crate::callers::attribute(&rows, &spans);
-    let (stdout, exit_code) = crate::callers::format_callers(query, &result, src_line.as_deref());
+    let kind = if result.callers.is_empty() {
+        crate::freshness::ScipResult::EdgesEmpty
+    } else {
+        crate::freshness::ScipResult::Populated
+    };
+    let verdict = crate::freshness::scip_verdict(stamp, kind);
+    let (stdout, exit_code) =
+        crate::callers::format_callers(query, &result, src_line.as_deref(), &verdict);
     ToolOutput {
         stdout,
         stderr: std::mem::take(stderr),
@@ -718,6 +747,7 @@ fn closure_mode(
     repo: Option<&Path>,
     query: &str,
     depth: usize,
+    stamp: &crate::freshness::ServingStamp,
     stderr: &mut String,
 ) -> ToolOutput {
     let (src_line, front) = match callers_front(index_path, repo, query, stderr) {
@@ -725,7 +755,7 @@ fn closure_mode(
         Err(msg) => return ToolOutput::fail(msg),
     };
     let Some((defs, oracle, spans)) = front else {
-        return no_def_output(&src_line, query, std::mem::take(stderr));
+        return no_def_output(&src_line, query, stamp, std::mem::take(stderr));
     };
     let seeds: Vec<String> = defs.keys().cloned().collect();
     // Mid-BFS face errors: count skipped symbols, WARN once with the count
@@ -753,8 +783,15 @@ fn closure_mode(
             bfs_first_err.as_deref().unwrap_or_default()
         ));
     }
+    let frontier_empty = result.levels.iter().all(|l| l.new_symbols.is_empty());
+    let kind = if frontier_empty {
+        crate::freshness::ScipResult::EdgesEmpty
+    } else {
+        crate::freshness::ScipResult::Populated
+    };
+    let verdict = crate::freshness::scip_verdict(stamp, kind);
     let (stdout, exit_code) =
-        crate::callers::format_closure(query, depth, &result, src_line.as_deref());
+        crate::callers::format_closure(query, depth, &result, src_line.as_deref(), &verdict);
     ToolOutput {
         stdout,
         stderr: std::mem::take(stderr),

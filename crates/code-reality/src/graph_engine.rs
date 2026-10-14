@@ -2257,18 +2257,50 @@ pub fn get_review_context(
         "Review context for {} changed file(s):\n  - {changed_count} directly changed nodes\n  - {impacted_count} impacted nodes in {file_count} files\n\nReview guidance:\n{guidance}",
         changed_files.len()
     );
+    let mut context = serde_json::json!({
+        "changed_files": changed_files,
+        "impact": impact,
+        "test_gaps": gaps["test_gaps"],
+        "source_snippets": snippets,
+        "review_guidance": guidance,
+    });
+    if include_source {
+        // review intent-F9: the snippet block reads the LIVE working
+        // tree — label the source so it is never mistaken for the
+        // indexed generation's content
+        context["source_snippets_basis"] = Value::String("current-tree".into());
+    }
     Ok(serde_json::json!({
         "status": "ok",
         "summary": summary,
-        "context": {
-            "changed_files": changed_files,
-            "impact": impact,
-            "test_gaps": gaps["test_gaps"],
-            "source_snippets": snippets,
-            "review_guidance": guidance,
-        },
+        "context": context,
         "next_tool_suggestions": ["detect_changes", "affected_flows", "search"],
     }))
+}
+
+/// The MCP `get_community` face's annotated body (EP CR-10 D9): the
+/// drill-down is an MCP-only op, so it routes through the same header
+/// system here — content becomes `[OK] …\n[CR-META] …\n{json}` (a
+/// declared face contract change). The provenance read shares the
+/// connection the community rows came from (D11).
+pub fn annotated_community(
+    repo_root: &Path,
+    needle: &str,
+    include_members: bool,
+) -> Result<String, String> {
+    let conn = open(repo_root)?;
+    let v = get_community(&conn, needle, include_members)?;
+    let repo_abs = crate::engine::resolve_repo(repo_root);
+    let slot =
+        crate::engine::default_index_path(&repo_abs).unwrap_or_else(|_| repo_root.to_path_buf());
+    let stamp = crate::freshness::serving_stamp(Some(&repo_abs), &slot);
+    let prov = graph_provenance_of(&conn);
+    let ann = crate::freshness::graph_annotation(&stamp, Some(&prov), false);
+    Ok(format!(
+        "[OK] graph_query get_community\n[CR-META] {}\n{}",
+        ann.meta_json,
+        crate::common::to_json_indent1(&v)
+    ))
 }
 
 // ---------- S9: CLI face (`graph_query <op>`) ----------
@@ -2279,6 +2311,73 @@ pub fn get_review_context(
 
 fn gq_fail(msg: String) -> crate::ToolOutput {
     crate::ToolOutput::fail(msg)
+}
+
+/// The graph generation's provenance, read from the SAME connection the
+/// results came from (EP CR-10 D11: no WAL — tmp+rename leaves this
+/// connection pinned to its own generation's inode, so these values
+/// describe the graph actually queried). Missing table/keys read as
+/// None (the D10 legacy-db face).
+fn graph_provenance_of(conn: &Connection) -> crate::freshness::GraphProvenance {
+    let read = |key: &str| -> Option<String> {
+        conn.query_row("SELECT value FROM metadata WHERE key = ?1", [key], |r| {
+            r.get::<_, Option<String>>(0)
+        })
+        .ok()
+        .flatten()
+    };
+    crate::freshness::GraphProvenance {
+        snapshot_id: read("graph_snapshot_id"),
+        input_index_sha256: read("input_index_sha256"),
+        builder_revision: read("builder_revision"),
+    }
+}
+
+/// The per-query serving stamp (EP CR-10 S4 要點 1): computed ONCE per
+/// `graph_query` invocation, consumed by every op's annotation.
+fn gq_stamp(repo_path: &Path) -> crate::freshness::ServingStamp {
+    let repo_abs = crate::engine::resolve_repo(repo_path);
+    let slot =
+        crate::engine::default_index_path(&repo_abs).unwrap_or_else(|_| repo_path.to_path_buf());
+    crate::freshness::serving_stamp(Some(&repo_abs), &slot)
+}
+
+/// D7 gate-set emptiness: does this op's result present an empty set as
+/// a completeness claim? (search / impact_radius / affected_flows only
+/// — every other op is annotate-only, exempt explicitly per TC-21.)
+fn gated_empty_of(op: &str, res: &Value) -> bool {
+    match (op, res) {
+        ("search", v) => v["results"].as_array().is_some_and(|a| a.is_empty()),
+        ("impact_radius", v) => v["impacted_nodes"].as_array().is_some_and(|a| a.is_empty()),
+        ("affected_flows", Value::Array(a)) => a.is_empty(),
+        _ => false,
+    }
+}
+
+/// The refusal's null rendering (D7: 結果欄位 null，無可讀 `[]`): the
+/// result slot per op — search's `results`, impact_radius's array
+/// fields, affected_flows' whole array body.
+fn null_gated_result(op: &str, mut res: Value) -> Value {
+    let nullify = |v: &mut Value| {
+        if let Some(obj) = v.as_object_mut() {
+            for key in ["changed_nodes", "impacted_nodes", "impacted_files", "edges"] {
+                obj.insert(key.to_string(), Value::Null);
+            }
+        }
+    };
+    match op {
+        "search" => {
+            if let Some(obj) = res.as_object_mut() {
+                obj.insert("results".to_string(), Value::Null);
+            }
+            res
+        }
+        "impact_radius" => {
+            nullify(&mut res);
+            res
+        }
+        _ => Value::Null,
+    }
 }
 
 /// `graph_query <op> --repo R [--files a,b] [--depth N] [--limit N]
@@ -2410,19 +2509,28 @@ pub fn run(argv: &[&str]) -> crate::ToolOutput {
         ));
     }
     let repo_path = std::path::PathBuf::from(&repo);
+    // EP CR-10 S4: one serving stamp per invocation (要點 1 — per-op
+    // recompute barred); every annotation below derives from it.
+    let stamp = gq_stamp(&repo_path);
     // cache-only face: document_symbols reads the SCIP cache, not
     // graph.db — an index-only repo must not be blocked by a missing CRG
     // graph (delta-review F1)
     if *op == "symbols" {
         return match document_symbols(&repo_path, &query) {
-            Ok(v) => crate::ToolOutput {
-                stdout: format!(
-                    "[OK] graph_query symbols\n{}",
-                    crate::common::to_json_indent1(&v)
-                ),
-                stderr: String::new(),
-                exit_code: 0,
-            },
+            Ok(v) => {
+                // same header system (D9); no graph connection behind
+                // this face — the generation fields read null
+                let ann = crate::freshness::graph_annotation(&stamp, None, false);
+                crate::ToolOutput {
+                    stdout: format!(
+                        "[OK] graph_query symbols\n[CR-META] {}\n{}",
+                        ann.meta_json,
+                        crate::common::to_json_indent1(&v)
+                    ),
+                    stderr: String::new(),
+                    exit_code: 0,
+                }
+            }
             Err(e) => gq_fail(e),
         };
     }
@@ -2515,9 +2623,21 @@ pub fn run(argv: &[&str]) -> crate::ToolOutput {
         Ok(v) => v,
         Err(e) => return gq_fail(e),
     };
+    // EP CR-10 D9: the [CR-META] header line — provenance read from the
+    // SAME connection as the results (D11). gq_fail paths above carry no
+    // header: no [CR-META] line = unannotated, never infer fresh.
+    let prov = graph_provenance_of(&conn);
+    let gated_empty = gated_empty_of(op, &res);
+    let ann = crate::freshness::graph_annotation(&stamp, Some(&prov), gated_empty);
+    let res = if gated_empty && ann.negative_verdict == Some("unavailable") {
+        null_gated_result(op, res)
+    } else {
+        res
+    };
     crate::ToolOutput {
         stdout: format!(
-            "[OK] graph_query {op}\n{}",
+            "[OK] graph_query {op}\n[CR-META] {}\n{}",
+            ann.meta_json,
             crate::common::to_json_indent1(&res)
         ),
         stderr: String::new(),

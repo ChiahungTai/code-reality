@@ -114,7 +114,8 @@ async fn http_server_serves_initialize_and_tools_list() {
 
     let transport = StreamableHttpClientTransport::from_uri(format!("http://127.0.0.1:{port}/mcp"));
     let client = ().serve(transport).await.unwrap();
-    // tools/list: four SCIP-family tools + the engine parity family
+    // tools/list: four SCIP-family tools + the engine parity family +
+    // the read-only freshness verdict (CR-10 S4/D12)
     let tools = client.list_all_tools().await.unwrap();
     let mut names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
     names.sort();
@@ -131,6 +132,7 @@ async fn http_server_serves_initialize_and_tools_list() {
             "delta_tour",
             "detect_changes",
             "document_symbols",
+            "freshness",
             "get_community",
             "get_minimal_context",
             "get_review_context",
@@ -188,7 +190,7 @@ async fn http_server_serves_initialize_and_tools_list() {
         Ok(r) => assert!(r.is_error.unwrap_or(false)),
     }
     let tools2 = client.list_all_tools().await.unwrap();
-    assert_eq!(tools2.len(), 21);
+    assert_eq!(tools2.len(), 22);
     client.cancel().await.unwrap();
     server.abort();
 }
@@ -742,16 +744,27 @@ fn manifest_face_is_deterministic_publisher_json() {
     assert_eq!(v["name"], "code-reality-mcp");
     assert_eq!(v["crate_version"], env!("CARGO_PKG_VERSION"));
     let tools = v["tools"].as_array().expect("tools array");
-    assert_eq!(tools.len(), 21, "21 MCP tools (name-frozen in this suite)");
+    assert_eq!(
+        tools.len(),
+        22,
+        "22 MCP tools (name-frozen in this suite; freshness joined in CR-10 S4/D12)"
+    );
     let names: Vec<&str> = tools
         .iter()
         .map(|t| t["name"].as_str().expect("tool name"))
         .collect();
     let mut sorted = names.clone();
     sorted.sort_unstable();
-    assert_eq!(names, sorted, "tools must be name-sorted for a stable digest");
+    assert_eq!(
+        names, sorted,
+        "tools must be name-sorted for a stable digest"
+    );
     for t in tools {
-        assert!(t["input_schema"].is_object(), "schema per tool: {}", t["name"]);
+        assert!(
+            t["input_schema"].is_object(),
+            "schema per tool: {}",
+            t["name"]
+        );
     }
     let digest = v["tools_digest"].as_str().expect("digest");
     assert!(
@@ -782,7 +795,10 @@ fn manifest_is_terminal_and_unknown_args_still_reject() {
         .expect("spawn --stdio --manifest");
     assert!(out.status.success(), "--manifest wins over --stdio");
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("\"schema\""), "manifest JSON on stdout: {stdout}");
+    assert!(
+        stdout.contains("\"schema\""),
+        "manifest JSON on stdout: {stdout}"
+    );
 
     let bad = std::process::Command::new(env!("CARGO_BIN_EXE_code-reality-mcp"))
         .arg("--bogus")
