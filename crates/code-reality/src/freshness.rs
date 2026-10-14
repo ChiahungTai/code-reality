@@ -34,13 +34,20 @@ const SPEC: ToolSpec = ToolSpec {
             short: None,
             kind: Kind::StoreTrue,
         },
+        FlagSpec {
+            long: "--delta-full",
+            short: None,
+            kind: Kind::StoreTrue,
+        },
     ],
     positionals: &[],
 };
 
-const HELP: &str = "usage: code-reality freshness --repo <repo> [--json]
-  --repo REPO  repo root whose index slot is judged against its sources
-  --json       machine-readable verdict (indexed/current identity pair)
+const HELP: &str = "usage: code-reality freshness --repo <repo> [--json] [--delta-full]
+  --repo        repo root whose index slot is judged against its sources
+  --json        machine-readable verdict (indexed/current identity pair)
+  --delta-full  with --json: enumerate delta paths in full (default take 50;
+                counts are always complete)
 ";
 
 pub fn run(argv: &[&str]) -> ToolOutput {
@@ -59,14 +66,22 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         Outcome::Ok { values, .. } => values,
     };
     let json = values.contains_key("--json");
+    let delta_full = values.contains_key("--delta-full");
     let Some(repo) = values.get("--repo").and_then(|v| v.clone()) else {
         return ToolOutput::fail("the following arguments are required: --repo");
     };
-    freshness(Path::new(&repo), json)
+    freshness_with(Path::new(&repo), json, delta_full)
 }
 
 /// The verdict (lib API — returns data, never prints/exits).
 pub fn freshness(repo: &Path, json: bool) -> ToolOutput {
+    freshness_with(repo, json, false)
+}
+
+/// [`freshness`] with the delta-enumeration breadth flag (EP CR-10 S2:
+/// bounded path lists take 50 with complete counts; `--delta-full`
+/// enumerates in full).
+pub fn freshness_with(repo: &Path, json: bool, delta_full: bool) -> ToolOutput {
     let repo = resolve_repo(repo);
     let Ok(slot) = default_index_path(&repo) else {
         // currently infallible; kept for call-site stability
@@ -133,6 +148,42 @@ pub fn freshness(repo: &Path, json: bool) -> ToolOutput {
     let exit_code = if fresh { 0 } else { 1 };
     if json {
         let faces: Vec<&str> = snap.eval_faces.iter().map(|f| f.meta_name()).collect();
+        // EP CR-10 S2 delta face: the object is ALWAYS present — members
+        // null (with delta_complete:false) exactly when a D15 reason is
+        // set. Path lists take 50 unless --delta-full; counts are the
+        // complete lengths either way (D13: bounded lists carry complete
+        // counts).
+        let delta_paths = |paths: &Vec<String>| {
+            let take = if delta_full {
+                paths.len()
+            } else {
+                paths.len().min(50)
+            };
+            serde_json::json!({
+                "count": paths.len(),
+                "paths": paths[..take],
+            })
+        };
+        let delta = match &snap.delta {
+            Some(d) => serde_json::json!({
+                "changed": delta_paths(&d.changed),
+                "added": delta_paths(&d.added),
+                "removed": delta_paths(&d.removed),
+                "delta_complete": d.delta_complete,
+                "content_verification": d.content_verification.as_str(),
+                "out_of_scope_count": d.out_of_scope_count,
+                "policy_drift_flags": d.policy_drift_flags.iter().collect::<Vec<_>>(),
+            }),
+            None => serde_json::json!({
+                "changed": null,
+                "added": null,
+                "removed": null,
+                "delta_complete": false,
+                "content_verification": null,
+                "out_of_scope_count": null,
+                "policy_drift_flags": null,
+            }),
+        };
         let v = serde_json::json!({
             "repo": repo.display().to_string(),
             "slot": slot.display().to_string(),
@@ -144,6 +195,13 @@ pub fn freshness(repo: &Path, json: bool) -> ToolOutput {
             "current_source_identity": snap.current_identity,
             "identity_algo": IDENTITY_ALGO,
             "serves": serves,
+            "base_commit": snap.base_commit,
+            "producer_version": snap.producer_version,
+            "delta": delta,
+            "delta_identity": snap.delta_identity,
+            "delta_unavailable_reason": snap
+                .delta_unavailable_reason
+                .map(|r| r.as_str()),
         });
         return ToolOutput {
             stdout: format!("{}\n", crate::common::to_json_indent1(&v)),

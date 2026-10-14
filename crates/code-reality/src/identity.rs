@@ -51,6 +51,17 @@ const IDENTITY_VERSION: u32 = 2;
 /// Slot-sibling sidecar carrying per-file content hashes (D4).
 pub const IDENTITY_CACHE_NAME: &str = "identity-cache.json";
 
+/// Base-manifest sidecar (EP CR-10 D2): the fixed-name sibling of the
+/// index slot holding the governed-corpus per-file table.
+pub const MANIFEST_NAME: &str = "index.scip.manifest.json";
+/// Manifest schema version (D2 v1 — a drift is a new contract).
+pub const MANIFEST_SCHEMA_VERSION: u32 = 1;
+/// Face label of the Rust producer-input rows inside
+/// [`ManifestEntry`] (Cargo manifests / locks / toolchain config —
+/// distinct from the `rust` SOURCE face so recomposition can split the
+/// identity body's domains).
+pub const RUST_INPUT_FACE: &str = "rust-input";
+
 /// Who may consult the per-file hash cache. Caller-declared (S1 does
 /// not self-judge): the stamp face passes [`IdentityCachePolicy::Full`],
 /// query faces pass [`IdentityCachePolicy::WriteBack`].
@@ -108,6 +119,108 @@ pub fn systemtime_tuple(t: Option<std::time::SystemTime>) -> (i64, u32) {
 pub struct Identity {
     pub algo: &'static str,
     pub value: String,
+}
+
+/// One per-file row of the base manifest (EP CR-10 D2). `face` is the
+/// language face name (`python`/`rust`/`javascript`/`typescript`) or
+/// [`RUST_INPUT_FACE`] for Rust producer-input rows; `rel` is the
+/// normalized repo-relative path. No mtime — the identity body is
+/// mtime-free by design (D3), so the manifest mirrors that.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ManifestEntry {
+    pub face: String,
+    pub rel: String,
+    pub size: u64,
+    pub hash: String,
+}
+
+/// Full product of the scoped identity pass: the aggregate identity,
+/// the per-file entries (source rows then rust-input rows, in identity
+/// body order), the topology-descriptor hash, and how many files were
+/// actually READ vs served by the stat gate — the delta face's
+/// `content_verification` basis (EP CR-10 D4).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScopedIdentity {
+    pub identity: Identity,
+    pub entries: Vec<ManifestEntry>,
+    /// sha256 over the topology descriptor; empty when the scope
+    /// excludes the Rust face (the topology never entered the body).
+    pub topology_hash: String,
+    pub reads: usize,
+}
+
+/// The base manifest sidecar document (EP CR-10 D2, schema v1). Field
+/// declaration order IS the serialized key order.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SourceManifest {
+    pub schema_version: u32,
+    pub repo: String,
+    pub selection: String,
+    pub faces: Vec<String>,
+    pub identity_algo: String,
+    pub index_sha256: String,
+    pub source_identity: String,
+    pub topology_hash: String,
+    pub entries: Vec<ManifestEntry>,
+}
+
+/// Slot-sibling sidecar path for the given slot
+/// (`<slot_dir>/index.scip.manifest.json`, D2 fixed name).
+pub fn manifest_path_for_slot(slot: &Path) -> PathBuf {
+    slot.parent()
+        .unwrap_or_else(|| Path::new(""))
+        .join(MANIFEST_NAME)
+}
+
+/// sha256 over the topology descriptor (`TOPOLOGY_DOMAIN` + sorted
+/// `key\0value\0` pairs) — the manifest's `topology_hash` basis, shared
+/// by the capture pass and the load-time binding audit.
+pub(crate) fn topology_hash_of(topology: &[(String, String)]) -> String {
+    let mut h = Sha256::new();
+    h.update(TOPOLOGY_DOMAIN);
+    for (k, v) in topology {
+        h.update(format!("{k}\0{v}\0"));
+    }
+    hex(&h.finalize())
+}
+
+/// Recompose the v2 identity body FROM per-file entries — the single
+/// body assembler shared by the capture pass (which builds the entries
+/// during hashing) and the manifest binding audit (which re-hashes the
+/// sidecar's entries and compares against the stamped identity, EP
+/// CR-10 D2 leg ②). Byte-format: `IDENTITY_HEADER` + per source row
+/// `face\0rel\0size\0hash\0`, then — only when the scope carries the
+/// Rust face — per rust-input row `RUST_INPUT_DOMAIN + rel\0size\0hash\0`
+/// and, when the topology is non-empty, `TOPOLOGY_DOMAIN` + the pairs.
+pub fn recompose_identity(
+    entries: &[ManifestEntry],
+    faces: &BTreeSet<crate::language::LanguageFace>,
+    topology: &[(String, String)],
+) -> String {
+    let mut h = Sha256::new();
+    h.update(IDENTITY_HEADER);
+    for e in entries {
+        if e.face == RUST_INPUT_FACE {
+            continue;
+        }
+        h.update(format!("{}\0{}\0{}\0{}\0", e.face, e.rel, e.size, e.hash));
+    }
+    if faces.contains(&crate::language::LanguageFace::Rust) {
+        for e in entries {
+            if e.face != RUST_INPUT_FACE {
+                continue;
+            }
+            h.update(RUST_INPUT_DOMAIN);
+            h.update(format!("{}\0{}\0{}\0", e.rel, e.size, e.hash));
+        }
+        if !topology.is_empty() {
+            h.update(TOPOLOGY_DOMAIN);
+            for (k, v) in topology {
+                h.update(format!("{k}\0{v}\0"));
+            }
+        }
+    }
+    hex(&h.finalize())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -308,9 +421,37 @@ pub fn compute_identity_scoped(
     policy: IdentityCachePolicy,
     cache: &mut IdentityCache,
 ) -> Result<Identity, String> {
-    let mut h = Sha256::new();
-    h.update(IDENTITY_HEADER);
+    compute_identity_scoped_full(
+        root,
+        records,
+        rust_inputs,
+        domain_extras,
+        faces,
+        policy,
+        cache,
+    )
+    .map(|s| s.identity)
+}
+
+/// The full pass (EP CR-10 D3): the SAME authenticated hashing pass that
+/// produces the aggregate identity also emits the per-file manifest
+/// entries (source rows then rust-input rows) and the topology hash —
+/// the stamped manifest is never assembled from query-side caches. The
+/// identity body itself is built by [`recompose_identity`] over the
+/// emitted entries, so the compute pass and the manifest binding audit
+/// share one body assembler by construction.
+pub fn compute_identity_scoped_full(
+    root: &Path,
+    records: &BTreeMap<String, SourceRecord>,
+    rust_inputs: &BTreeMap<String, SourceRecord>,
+    domain_extras: &[(String, String)],
+    faces: &BTreeSet<LanguageFace>,
+    policy: IdentityCachePolicy,
+    cache: &mut IdentityCache,
+) -> Result<ScopedIdentity, String> {
     let mut keep: BTreeSet<String> = BTreeSet::new();
+    let mut entries: Vec<ManifestEntry> = Vec::new();
+    let mut reads: usize = 0;
     for (rel, rec) in records {
         // BTreeMap order = rel-sorted: byte-determinism (D2). Face
         // scoping first — out-of-scope records pay no read and no gate.
@@ -322,7 +463,7 @@ pub fn compute_identity_scoped(
         // fingerprint equality — D17 normalization boundary).
         let key = normalize_rel(rel);
         keep.insert(key.clone());
-        let chash = content_hash_of(
+        let (chash, was_read) = content_hash_of(
             &root.join(&rec.rel),
             &key,
             rec.size,
@@ -330,26 +471,26 @@ pub fn compute_identity_scoped(
             policy,
             cache,
         )?;
-        h.update(format!(
-            "{}\0{}\0{}\0{}\0",
-            rec.face.meta_name(),
-            key,
-            rec.size,
-            chash
-        ));
+        if was_read {
+            reads += 1;
+        }
+        entries.push(ManifestEntry {
+            face: rec.face.meta_name().to_string(),
+            rel: key,
+            size: rec.size,
+            hash: chash,
+        });
     }
-    // Rust producer inputs + workspace topology (EP DB-100 5.3 P1-A):
-    // BOTH domains enter only when the scope carries the Rust face — an
-    // explicit python-only identity must equal the pure-python-scope
-    // identity, so Cargo-only edits can never stale a pin that never
-    // indexed Rust (capture and query sides stay symmetric: both gate on
-    // the same `faces` set).
-    if faces.contains(&crate::language::LanguageFace::Rust) {
-        // Rust producer inputs (domain-separated): same record shape, own
-        // domain header, rel-sorted by the BTreeMap order.
+    // Rust producer inputs (EP DB-100 5.3 P1-A): enter only when the
+    // scope carries the Rust face — an explicit python-only identity
+    // must equal the pure-python-scope identity, so Cargo-only edits can
+    // never stale a pin that never indexed Rust (capture and query sides
+    // stay symmetric: both gate on the same `faces` set).
+    let rust_stamped = faces.contains(&LanguageFace::Rust);
+    if rust_stamped {
         for (rel, rec) in rust_inputs {
             let key = normalize_rel(rel);
-            let chash = content_hash_of(
+            let (chash, was_read) = content_hash_of(
                 &root.join(&rec.rel),
                 &format!("rust-input:{key}"),
                 rec.size,
@@ -357,33 +498,41 @@ pub fn compute_identity_scoped(
                 policy,
                 cache,
             )?;
-            h.update(RUST_INPUT_DOMAIN);
-            h.update(format!("{}\0{}\0{}\0", key, rec.size, chash));
-            keep.insert(format!("rust-input:{key}"));
-        }
-        // Topology descriptor (domain-separated): sorted (key, value)
-        // pairs — discovery mode, canonical roots, present/absent
-        // markers. Absent files carry an empty content position so a
-        // lockfile appearing or disappearing always moves the identity.
-        if !domain_extras.is_empty() {
-            h.update(TOPOLOGY_DOMAIN);
-            for (k, v) in domain_extras {
-                h.update(format!("{k}\0{v}\0"));
+            if was_read {
+                reads += 1;
             }
+            keep.insert(format!("rust-input:{key}"));
+            entries.push(ManifestEntry {
+                face: RUST_INPUT_FACE.to_string(),
+                rel: key,
+                size: rec.size,
+                hash: chash,
+            });
         }
     }
     if !matches!(policy, IdentityCachePolicy::ReadOnly) {
         cache.store(&keep);
     }
-    Ok(Identity {
-        algo: IDENTITY_ALGO,
-        value: hex(&h.finalize()),
+    Ok(ScopedIdentity {
+        topology_hash: if rust_stamped {
+            topology_hash_of(domain_extras)
+        } else {
+            String::new()
+        },
+        identity: Identity {
+            algo: IDENTITY_ALGO,
+            value: recompose_identity(&entries, faces, domain_extras),
+        },
+        entries,
+        reads,
     })
 }
 
 /// Streaming per-file sha256 (multi-GB files never load whole — judge
 /// R16). Read failure → Err (D15). Only WriteBack consults the stat
 /// gate; Full (stamp — D13) and ReadOnly (env-off) always re-read.
+/// Returns the hash plus whether the bytes were actually read (false =
+/// stat-gate hit) — the delta face's `content_verification` disclosure.
 fn content_hash_of(
     path: &Path,
     key: &str,
@@ -391,10 +540,10 @@ fn content_hash_of(
     mtime: (i64, u32),
     policy: IdentityCachePolicy,
     cache: &mut IdentityCache,
-) -> Result<String, String> {
+) -> Result<(String, bool), String> {
     if let IdentityCachePolicy::WriteBack = policy {
         if let Some(hash) = cache.hit(key, size, mtime) {
-            return Ok(hash);
+            return Ok((hash, false));
         }
     }
     let mut f =
@@ -405,11 +554,18 @@ fn content_hash_of(
     if !matches!(policy, IdentityCachePolicy::ReadOnly) {
         cache.record(key.to_string(), size, mtime, hash.clone());
     }
-    Ok(hash)
+    Ok((hash, true))
 }
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// sha256 hex of arbitrary bytes — the manifest-digest primitive (D2's
+/// `base_manifest_digest` meta pointer binds the sidecar bytes; anyone
+/// verifying that pointer uses this same function).
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    hex(&Sha256::digest(bytes))
 }
 
 /// Actual artifact bytes, never a stat/cache approximation. Used to bind

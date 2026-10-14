@@ -788,7 +788,9 @@ fn collect_rust_inputs(
     };
     let mut push_input = |repo: &Path, abs: &Path| {
         let Ok(md) = abs.metadata() else { return };
-        let Ok(rel) = abs.strip_prefix(repo) else { return };
+        let Ok(rel) = abs.strip_prefix(repo) else {
+            return;
+        };
         let rel = rel.to_string_lossy().into_owned();
         let mtime = crate::identity::systemtime_tuple(md.modified().ok());
         inputs.insert(
@@ -807,7 +809,9 @@ fn collect_rust_inputs(
         // producer corpus never sees OUT_DIR manifests either).
         let mut stack = vec![root_dir.clone()];
         while let Some(dir) = stack.pop() {
-            let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+            let Ok(entries) = std::fs::read_dir(&dir) else {
+                continue;
+            };
             for ent in entries.flatten() {
                 let Ok(ft) = ent.file_type() else { continue };
                 let name = ent.file_name().to_string_lossy().into_owned();
@@ -912,6 +916,19 @@ pub struct StalenessSnapshot {
     /// Current-side identity value (identity mode only; None = legacy —
     /// not computed at all, D8 zero-cost face).
     pub current_identity: Option<String>,
+    /// Base-manifest delta answer (EP CR-10 S2): `None` iff
+    /// `delta_unavailable_reason` is set.
+    pub delta: Option<SourceDelta>,
+    /// D15: degradation reason — set iff `delta` is `None`.
+    pub delta_unavailable_reason: Option<DeltaUnavailable>,
+    /// Identity recomposed from the manifest entries (binding audit
+    /// leg ② evidence); disclosed whenever the sidecar parsed.
+    pub delta_identity: Option<String>,
+    /// Display-only commit anchor (D1 — git is never a diff source).
+    pub base_commit: Option<String>,
+    /// Build-time stamped producer string (D14 — never a query-time
+    /// binary rev).
+    pub producer_version: Option<String>,
 }
 
 impl StalenessSnapshot {
@@ -928,6 +945,80 @@ impl StalenessSnapshot {
                     || self.doc_set_drift == Some(true)
                     || self.corpus_policy_drift == Some(true)))
     }
+}
+
+/// Why the delta face carries no answer (EP CR-10 D15, S2 subset). The
+/// delta fields are ALWAYS present in the JSON face; whenever a reason
+/// is set the members render null — never `[]` masquerading as
+/// no-change. `walk-failed`/`coverage-unknown` exist for contract
+/// completeness; S2's producer paths answer via the exit-2 fail-loud
+/// face (walk Err) and never emit them (`budget-exceeded` and
+/// `graph-generation-mismatch` join in S4/S3 respectively).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeltaUnavailable {
+    LegacyNoManifest,
+    IdentityAlgoUpgrade,
+    ManifestMissing,
+    ManifestDigestMismatch,
+    ManifestBindingAuditFailed,
+    WalkFailed,
+    CoverageUnknown,
+}
+
+impl DeltaUnavailable {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DeltaUnavailable::LegacyNoManifest => "legacy-no-manifest",
+            DeltaUnavailable::IdentityAlgoUpgrade => "identity-algo-upgrade",
+            DeltaUnavailable::ManifestMissing => "manifest-missing",
+            DeltaUnavailable::ManifestDigestMismatch => "manifest-digest-mismatch",
+            DeltaUnavailable::ManifestBindingAuditFailed => "manifest-binding-audit-failed",
+            DeltaUnavailable::WalkFailed => "walk-failed",
+            DeltaUnavailable::CoverageUnknown => "coverage-unknown",
+        }
+    }
+}
+
+/// The hash trust level behind the delta answer (EP CR-10 D4, AM-2
+/// refined criterion): the stat-gate residual (same size + same
+/// mtime-nanos forgery) is inherited, never denied — `full-rehash` means
+/// EVERY entry hash came from a real read this pass; `stat-cache` means
+/// at least one entry was served by the stat gate (a mixed state
+/// discloses conservatively, never as full).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContentVerification {
+    FullRehash,
+    StatCache,
+}
+
+impl ContentVerification {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ContentVerification::FullRehash => "full-rehash",
+            ContentVerification::StatCache => "stat-cache",
+        }
+    }
+}
+
+/// The stale SET (EP CR-10 (b)): manifest-vs-walk delta with explicit
+/// completeness semantics. Path lists are complete here (counts are
+/// `len`); the JSON face bounds them to take-50 unless `--delta-full`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceDelta {
+    pub changed: Vec<String>,
+    pub added: Vec<String>,
+    pub removed: Vec<String>,
+    /// Enumeration-axis completeness (D4): walk success + binding audit
+    /// valid + every governed file hashed without Err.
+    pub delta_complete: bool,
+    pub content_verification: ContentVerification,
+    /// Walked files outside the stamped face scope (+ rust-input rows
+    /// when Rust is not stamped) — detected-only faces never enter the
+    /// delta sets.
+    pub out_of_scope_count: usize,
+    /// Policy/topology/JS-TS-config movement (D4/review F8): surfaces
+    /// as flags, never folded into the file counts.
+    pub policy_drift_flags: BTreeSet<String>,
 }
 
 /// Fingerprint of the JS/TS-relevant exclusion policy: `<none>` sentinel
@@ -1100,6 +1191,8 @@ pub fn evaluate_staleness(
         .and_then(|m| m["identity_algo"].as_str().map(str::to_string));
     let mut identity_drift = None;
     let mut current_identity = None;
+    let mut current_scoped: Option<crate::identity::ScopedIdentity> = None;
+    let mut slot_hash: Option<String> = None;
     // EP DB-100 S2 upgrade pre-check: a Rust-INCLUSIVE slot whose stamped
     // identity is not v2-comparable (v1 algo, partial triple, keyless
     // meta) must never answer fresh — Cargo-only changes are invisible to
@@ -1137,41 +1230,58 @@ pub fn evaluate_staleness(
     // stamped by this tool, so it degrades to legacy rather than
     // computing a detected-scope identity that was never recorded.
     if !identity_algo_upgrade {
-    if let (Some(_stamped), Some(eval), Some(stamped_val)) =
-        (stamped_faces.as_ref(), &eval_faces, &stamped_identity_val)
-    {
-        if stamped_algo.as_deref() == Some(crate::identity::IDENTITY_ALGO)
-            && meta
-                .as_ref()
-                .and_then(|m| m["index_sha256"].as_str())
-                .is_some()
+        if let (Some(_stamped), Some(eval), Some(stamped_val)) =
+            (stamped_faces.as_ref(), &eval_faces, &stamped_identity_val)
         {
-            let policy = crate::identity::resolve_policy(policy);
-            let mut cache = crate::identity::IdentityCache::load(
-                crate::identity::cache_path_for_slot(slot),
-                &root,
-            );
-            let current = crate::identity::compute_identity_scoped(
-                &root,
-                &walk.records(),
-                &walk.rust_inputs,
-                &walk.rust_topology,
-                eval,
-                policy,
-                &mut cache,
-            )?;
-            let bound_index = meta
-                .as_ref()
-                .and_then(|m| m["index_sha256"].as_str())
-                .unwrap();
-            identity_drift = Some(
-                current.value != *stamped_val
-                    || crate::identity::artifact_hash(slot)? != bound_index,
-            );
-            current_identity = Some(current.value);
+            if stamped_algo.as_deref() == Some(crate::identity::IDENTITY_ALGO)
+                && meta
+                    .as_ref()
+                    .and_then(|m| m["index_sha256"].as_str())
+                    .is_some()
+            {
+                let policy = crate::identity::resolve_policy(policy);
+                let mut cache = crate::identity::IdentityCache::load(
+                    crate::identity::cache_path_for_slot(slot),
+                    &root,
+                );
+                let scoped = crate::identity::compute_identity_scoped_full(
+                    &root,
+                    &walk.records(),
+                    &walk.rust_inputs,
+                    &walk.rust_topology,
+                    eval,
+                    policy,
+                    &mut cache,
+                )?;
+                let bound_index = meta
+                    .as_ref()
+                    .and_then(|m| m["index_sha256"].as_str())
+                    .unwrap();
+                let served = crate::identity::artifact_hash(slot)?;
+                slot_hash = Some(served.clone());
+                identity_drift =
+                    Some(scoped.identity.value != *stamped_val || served != bound_index);
+                current_identity = Some(scoped.identity.value.clone());
+                current_scoped = Some(scoped);
+            }
         }
     }
-    }
+    // Delta face (EP CR-10 S2): load + binding-audit the base manifest,
+    // then diff it against the same authenticated pass above. All
+    // failure shapes degrade to a D15 reason — never a substitute
+    // answer; the walk itself already failed loud at fn entry.
+    let (delta, delta_unavailable_reason, delta_identity) = delta_face(
+        &root,
+        slot,
+        meta.as_ref(),
+        stamped_faces.as_ref(),
+        identity_algo_upgrade,
+        identity_drift.is_none(),
+        current_scoped.as_ref(),
+        &walk,
+        corpus_policy_drift,
+        slot_hash.as_deref(),
+    )?;
     Ok(StalenessSnapshot {
         source_newer,
         graph_lags,
@@ -1187,7 +1297,272 @@ pub fn evaluate_staleness(
             None
         },
         current_identity,
+        delta,
+        delta_unavailable_reason,
+        delta_identity,
+        base_commit: meta
+            .as_ref()
+            .and_then(|m| m["head"].as_str())
+            .filter(|h| !h.is_empty())
+            .map(str::to_string),
+        producer_version: meta
+            .as_ref()
+            .and_then(|m| m["producer"].as_str())
+            .filter(|p| !p.is_empty())
+            .map(str::to_string),
     })
+}
+
+/// Binding audit + delta computation for the base manifest (EP CR-10
+/// D2/D4/D15). Audit legs run in frozen order — ① embedded fields vs
+/// current meta, ② entries recompose to the stamped identity (+ the
+/// topology cross-check), ③ sha256(bytes) vs the meta
+/// `base_manifest_digest` pointer, ④ manifest index_sha256 vs the
+/// ACTUAL serving slot bytes — so a naive single-entry tamper is caught
+/// by the recomposition audit, not the digest leg (TC-7 attack 1).
+/// Every failure degrades; only a fully valid manifest yields a delta.
+/// The delta face's answer triple: `(delta, unavailable_reason,
+/// recomposed identity)` — `delta` is `None` iff the reason is set.
+type DeltaFace = (
+    Option<SourceDelta>,
+    Option<DeltaUnavailable>,
+    Option<String>,
+);
+
+#[allow(clippy::too_many_arguments)]
+fn delta_face(
+    root: &Path,
+    slot: &Path,
+    meta: Option<&serde_json::Value>,
+    stamped_faces: Option<&BTreeSet<crate::language::LanguageFace>>,
+    identity_algo_upgrade: bool,
+    legacy: bool,
+    current_scoped: Option<&crate::identity::ScopedIdentity>,
+    walk: &SourceWalk,
+    js_ts_policy_drift: Option<bool>,
+    slot_hash: Option<&str>,
+) -> Result<DeltaFace, String> {
+    let unavailable = |r: DeltaUnavailable| Ok((None, Some(r), None));
+    if identity_algo_upgrade {
+        return unavailable(DeltaUnavailable::IdentityAlgoUpgrade);
+    }
+    if legacy {
+        return unavailable(DeltaUnavailable::LegacyNoManifest);
+    }
+    let (Some(meta), Some(stamped), Some(scoped), Some(slot_hash)) =
+        (meta, stamped_faces, current_scoped, slot_hash)
+    else {
+        return unavailable(DeltaUnavailable::LegacyNoManifest);
+    };
+    let mpath = crate::identity::manifest_path_for_slot(slot);
+    let bytes = match std::fs::read(&mpath) {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // fresh-F2 split: a meta WITHOUT the `base_manifest_digest`
+            // pointer never carried a manifest (keyless / pre-CR-10
+            // generations — TC-16's shape) — that is legacy degradation,
+            // not loss. A pointer-bearing meta whose sidecar vanished IS
+            // a missing manifest.
+            return unavailable(
+                match meta
+                    .get("base_manifest_digest")
+                    .and_then(|v| v.as_str())
+                    .filter(|d| !d.is_empty())
+                {
+                    Some(_) => DeltaUnavailable::ManifestMissing,
+                    None => DeltaUnavailable::LegacyNoManifest,
+                },
+            );
+        }
+        Err(_) => return unavailable(DeltaUnavailable::ManifestBindingAuditFailed),
+    };
+    let manifest: crate::identity::SourceManifest = match serde_json::from_slice(&bytes) {
+        Ok(m) => m,
+        Err(_) => return unavailable(DeltaUnavailable::ManifestBindingAuditFailed),
+    };
+    let delta_identity = Some(crate::identity::recompose_identity(
+        &manifest.entries,
+        stamped,
+        &topology_pairs_of(meta),
+    ));
+    let degrade = |r: DeltaUnavailable| Ok((None, Some(r), delta_identity.clone()));
+    if manifest.schema_version != crate::identity::MANIFEST_SCHEMA_VERSION {
+        return degrade(DeltaUnavailable::ManifestBindingAuditFailed);
+    }
+    // leg ① — the embedded fields equal the current meta
+    let meta_faces: BTreeSet<String> = parse_stamped_faces(meta)
+        .map(|s| s.iter().map(|f| f.meta_name().to_string()).collect())
+        .unwrap_or_default();
+    let field = |key: &str| meta.get(key).and_then(|v| v.as_str()).unwrap_or("");
+    let leg1 = manifest.repo == field("repo")
+        && manifest.selection == field("selection")
+        && manifest.faces.iter().cloned().collect::<BTreeSet<_>>() == meta_faces
+        && manifest.identity_algo == crate::identity::IDENTITY_ALGO
+        && manifest.index_sha256 == field("index_sha256")
+        && manifest.source_identity == field("source_identity");
+    // leg ② — the entries recompose to the stamped identity; the
+    // topology hash must also agree with the meta's topology descriptor
+    let topology = topology_pairs_of(meta);
+    let topology_ok = manifest.topology_hash.is_empty()
+        || manifest.topology_hash == crate::identity::topology_hash_of(&topology);
+    let leg2 = topology_ok
+        && crate::identity::recompose_identity(&manifest.entries, stamped, &topology)
+            == manifest.source_identity;
+    // leg ③ — digest pointer
+    let leg3 = meta.get("base_manifest_digest").and_then(|v| v.as_str())
+        == Some(crate::identity::sha256_hex(&bytes).as_str());
+    // leg ④ — the manifest binds the bytes actually being served
+    let leg4 = manifest.index_sha256 == slot_hash;
+    if !(leg1 && leg2) {
+        return degrade(DeltaUnavailable::ManifestBindingAuditFailed);
+    }
+    if !leg3 {
+        return degrade(DeltaUnavailable::ManifestDigestMismatch);
+    }
+    if !leg4 {
+        return degrade(DeltaUnavailable::ManifestBindingAuditFailed);
+    }
+
+    // ---- delta computation (D4): scope = stamped faces ∪ rust-input
+    // rows; detected-only faces bucket as out_of_scope; policy/topology/
+    // JS-TS-config movement surfaces as flags, not file counts.
+    let profile = crate::profile::load_profile(root)?;
+    let rust_stamped = stamped.contains(&crate::language::LanguageFace::Rust);
+    let face_in_scope = |name: &str| match name {
+        "python" => stamped.contains(&crate::language::LanguageFace::Python),
+        "rust" => stamped.contains(&crate::language::LanguageFace::Rust),
+        "javascript" => stamped.contains(&crate::language::LanguageFace::JavaScript),
+        "typescript" => stamped.contains(&crate::language::LanguageFace::TypeScript),
+        _ => false,
+    };
+    let mut flags: BTreeSet<String> = BTreeSet::new();
+    if js_ts_policy_drift == Some(true) {
+        flags.insert("js-ts-config".to_string());
+    }
+    // Topology movement: only comparable when the stamp carried one
+    // (empty hash = the scope never included the topology domain — an
+    // explicit non-Rust pin ignores rust-root movement, R22 mirror).
+    let topology_flag = !manifest.topology_hash.is_empty()
+        && crate::identity::topology_hash_of(&walk.rust_topology) != manifest.topology_hash;
+    if topology_flag {
+        flags.insert("topology".to_string());
+    }
+    let mut manifest_map: BTreeMap<(String, String), (u64, String)> = BTreeMap::new();
+    for e in &manifest.entries {
+        let in_scope = if e.face == crate::identity::RUST_INPUT_FACE {
+            rust_stamped
+        } else {
+            face_in_scope(&e.face)
+        };
+        if in_scope {
+            manifest_map.insert((e.face.clone(), e.rel.clone()), (e.size, e.hash.clone()));
+        }
+    }
+    let mut current_map: BTreeMap<(String, String), (u64, String)> = BTreeMap::new();
+    for e in &scoped.entries {
+        let in_scope = if e.face == crate::identity::RUST_INPUT_FACE {
+            rust_stamped
+        } else {
+            face_in_scope(&e.face)
+        };
+        if in_scope {
+            current_map.insert((e.face.clone(), e.rel.clone()), (e.size, e.hash.clone()));
+        }
+    }
+    let mut out_of_scope_count = walk
+        .records()
+        .values()
+        .filter(|r| !stamped.contains(&r.face))
+        .count();
+    if !rust_stamped {
+        out_of_scope_count += walk.rust_inputs.len();
+    }
+    let mut changed: Vec<String> = Vec::new();
+    let mut added: Vec<String> = Vec::new();
+    let mut removed: Vec<String> = Vec::new();
+    for ((face, rel), (size, hash)) in &manifest_map {
+        match current_map.get(&(face.clone(), rel.clone())) {
+            Some((csize, chash)) if csize == size && chash == hash => {}
+            Some(_) => changed.push(rel.clone()),
+            None => {
+                // A rust-input row leaving the collection rides the
+                // topology flag; a source file that still exists on disk
+                // but is excluded by the CURRENT profile is a policy
+                // switch, not a removal — both stay out of the counts.
+                // Deliberate over-attribution (fresh-F7): while the flag
+                // is set this arm swallows EVERY absent rust-input row,
+                // not only the one the moved root explains — a rust-input
+                // file's appearance/disappearance IS what the topology
+                // descriptor tracks, so attributing the rest to
+                // `removed` would fold topology movement back into the
+                // file counts the flag exists to keep clean.
+                if face == crate::identity::RUST_INPUT_FACE && topology_flag {
+                    continue;
+                }
+                if root.join(rel).is_file() && crate::profile::is_excluded(rel, profile.as_ref()) {
+                    flags.insert("profile".to_string());
+                } else {
+                    removed.push(rel.clone());
+                }
+            }
+        }
+    }
+    for (face, rel) in current_map.keys() {
+        if manifest_map.contains_key(&(face.clone(), rel.clone())) {
+            continue;
+        }
+        // Newly collected rust-input rows are the topology surface when
+        // the topology moved (a new workspace root's Cargo.toml) — the
+        // flag carries them, the counts stay content-truthful.
+        // Deliberate over-attribution (fresh-F7): the flag-scoped skip
+        // takes ALL new rust-input rows, including any unrelated to the
+        // root that moved — a rust-input file's appearance IS a
+        // topology-descriptor concern, so it must never surface as an
+        // `added` count row.
+        if face == crate::identity::RUST_INPUT_FACE && topology_flag {
+            continue;
+        }
+        added.push(rel.clone());
+    }
+    Ok((
+        Some(SourceDelta {
+            changed,
+            added,
+            removed,
+            delta_complete: true,
+            // AM-2: full-rehash is claimed only when every entry hash
+            // came from a real read; any gate-served entry (mixed state
+            // included) discloses stat-cache.
+            content_verification: if scoped.reads == scoped.entries.len() {
+                ContentVerification::FullRehash
+            } else {
+                ContentVerification::StatCache
+            },
+            out_of_scope_count,
+            policy_drift_flags: flags,
+        }),
+        None,
+        delta_identity,
+    ))
+}
+
+/// `meta.rust_topology` as `(key, value)` pairs (absent/foreign shapes
+/// → empty — the audit then answers via the hash cross-check).
+fn topology_pairs_of(meta: &serde_json::Value) -> Vec<(String, String)> {
+    meta.get("rust_topology")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|p| {
+                    let pair = p.as_array()?;
+                    Some((
+                        pair.first()?.as_str()?.to_string(),
+                        pair.get(1)?.as_str()?.to_string(),
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Doc-set delta between a loaded index and the disk walk. Face-scoped:
@@ -1256,6 +1631,11 @@ pub(crate) struct ProductionIdentity {
     /// equality guards — a root arriving mid-build fails the capture
     /// comparison and the publication is rejected.
     rust_topology: Vec<(String, String)>,
+    /// Per-file manifest rows from the SAME authenticated pass (EP CR-10
+    /// D3) — published as the base manifest sidecar at stamp time.
+    pub(crate) entries: Vec<crate::identity::ManifestEntry>,
+    /// Topology-descriptor hash (empty when the scope excludes Rust).
+    pub(crate) topology_hash: String,
 }
 
 impl ProductionIdentity {
@@ -1270,7 +1650,7 @@ impl ProductionIdentity {
             .map(|r| r.face)
             .filter(|f| producer.is_none_or(|p| f.producer() == p))
             .collect();
-        let identity = crate::identity::compute_identity_scoped(
+        let scoped = crate::identity::compute_identity_scoped_full(
             repo,
             &records,
             &walk.rust_inputs,
@@ -1289,10 +1669,12 @@ impl ProductionIdentity {
             docs: walk.paths_for_faces(&faces),
             fingerprint: walk.fingerprint_for_faces(&faces),
             faces,
-            identity,
+            identity: scoped.identity,
             profile,
             js_ts_profile: js_ts_profile_fingerprint(repo),
             rust_topology: walk.rust_topology,
+            entries: scoped.entries,
+            topology_hash: scoped.topology_hash,
         })
     }
 }
@@ -1395,6 +1777,7 @@ pub(crate) fn stamp_meta_locked(
                 "identity_algo",
                 "index_sha256",
                 "rust_topology",
+                "base_manifest_digest",
             ] {
                 if let Some(v) = m.get(key) {
                     if !v.is_null() {
@@ -1425,6 +1808,40 @@ pub(crate) fn stamp_meta_locked(
             payload["identity_algo"] = serde_json::json!(a.identity.algo);
             payload["index_sha256"] = serde_json::json!(index_hash);
             payload["rust_topology"] = serde_json::json!(a.rust_topology);
+            // EP CR-10 D2: the base manifest sidecar publishes with the
+            // validated stamp — the SAME authenticated pass that produced
+            // the identity (D3). The sidecar bytes land on disk (tmp+
+            // rename) BEFORE the meta pointer, so a crash leaves the old
+            // consistent pair; a dangling pointer degrades to legacy.
+            let manifest = crate::identity::SourceManifest {
+                schema_version: crate::identity::MANIFEST_SCHEMA_VERSION,
+                repo: payload["repo"].as_str().unwrap_or_default().to_string(),
+                selection: selection.clone(),
+                faces: a.faces.iter().map(|f| f.meta_name().to_string()).collect(),
+                identity_algo: a.identity.algo.to_string(),
+                index_sha256: index_hash.clone(),
+                source_identity: a.identity.value.clone(),
+                topology_hash: a.topology_hash.clone(),
+                entries: a.entries.clone(),
+            };
+            let mtext = format!(
+                "{}\n",
+                serde_json::to_string_pretty(&manifest).expect("manifest serializes")
+            );
+            let digest = crate::identity::sha256_hex(mtext.as_bytes());
+            let mpath = crate::identity::manifest_path_for_slot(index_path);
+            let tmp = mpath.with_file_name(format!(
+                ".{}-tmp-{}",
+                crate::identity::MANIFEST_NAME,
+                std::process::id()
+            ));
+            std::fs::write(&tmp, &mtext)
+                .and_then(|_| std::fs::rename(&tmp, &mpath))
+                .map_err(|e| {
+                    let _ = std::fs::remove_file(&tmp);
+                    StampError::Write(format!("manifest 側檔寫入失敗：{e}"))
+                })?;
+            payload["base_manifest_digest"] = serde_json::json!(digest);
         }
     } else {
         preserve_prior_keys(&mut payload);
@@ -1450,7 +1867,7 @@ pub fn load_meta(index_path: &Path) -> (Option<serde_json::Value>, Vec<String>) 
                     "[WARN] index meta 損壞（[SRC] 缺 index 版本）：{}\n",
                     e
                 )],
-            )
+            );
         }
     };
     match serde_json::from_str::<serde_json::Value>(&text) {

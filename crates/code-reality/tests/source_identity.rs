@@ -517,6 +517,12 @@ fn tc7_freshness_json_contract_four_states() {
         "current_source_identity",
         "identity_algo",
         "serves",
+        // EP CR-10 S2 additive tail — legacy keys above keep name/order/value
+        "base_commit",
+        "producer_version",
+        "delta",
+        "delta_identity",
+        "delta_unavailable_reason",
     ];
     assert_eq!(
         v.as_object().unwrap().keys().collect::<Vec<_>>(),

@@ -509,7 +509,11 @@ fn stage_rust_multi(
         }
         if i == 0 {
             std::fs::copy(&raw, &composed).map_err(|e| {
-                BuildError::Core(format!("stage {} → {}: {e}", raw.display(), composed.display()))
+                BuildError::Core(format!(
+                    "stage {} → {}: {e}",
+                    raw.display(),
+                    composed.display()
+                ))
             })?;
         } else {
             concat_scip(&composed, &raw).map_err(BuildError::Env)?;
@@ -545,8 +549,10 @@ fn stage_rust_multi(
     } else {
         version
     };
-    rep.producers
-        .push(format!("rust-analyzer {version_face} [roots: {}]", roots_list.join(", ")));
+    rep.producers.push(format!(
+        "rust-analyzer {version_face} [roots: {}]",
+        roots_list.join(", ")
+    ));
     Ok(RsProduceOutcome::Staged)
 }
 
@@ -564,8 +570,8 @@ fn normalize_scip_paths(part: &Path, root_rel: &str, repo: &Path) -> Result<(), 
         .canonicalize()
         .map_err(|e| format!("repo root canonicalize failed: {e}"))?;
     let bytes = std::fs::read(part).map_err(|e| format!("讀取 {} 失敗：{e}", part.display()))?;
-    let mut index =
-        scip::types::Index::parse_from_bytes(&bytes).map_err(|e| format!("SCIP parse 失敗：{e}"))?;
+    let mut index = scip::types::Index::parse_from_bytes(&bytes)
+        .map_err(|e| format!("SCIP parse 失敗：{e}"))?;
     let prefix = if root_rel == "." {
         String::new()
     } else {
@@ -599,7 +605,9 @@ fn normalize_scip_paths(part: &Path, root_rel: &str, repo: &Path) -> Result<(), 
         }
         d.relative_path = joined;
     }
-    let out = index.write_to_bytes().map_err(|e| format!("SCIP serialize 失敗：{e}"))?;
+    let out = index
+        .write_to_bytes()
+        .map_err(|e| format!("SCIP serialize 失敗：{e}"))?;
     std::fs::write(part, out).map_err(|e| format!("寫入 {} 失敗：{e}", part.display()))
 }
 
@@ -614,12 +622,14 @@ fn normalize_scip_paths(part: &Path, root_rel: &str, repo: &Path) -> Result<(), 
 /// KEPT — the document face still participates in doc-set semantics.
 fn strip_local_occurrences(part: &Path) -> Result<(), String> {
     let bytes = std::fs::read(part).map_err(|e| format!("讀取 {} 失敗：{e}", part.display()))?;
-    let mut index =
-        scip::types::Index::parse_from_bytes(&bytes).map_err(|e| format!("SCIP parse 失敗：{e}"))?;
+    let mut index = scip::types::Index::parse_from_bytes(&bytes)
+        .map_err(|e| format!("SCIP parse 失敗：{e}"))?;
     for d in index.documents.iter_mut() {
         d.occurrences.retain(|o| !o.symbol.starts_with("local "));
     }
-    let out = index.write_to_bytes().map_err(|e| format!("SCIP serialize 失敗：{e}"))?;
+    let out = index
+        .write_to_bytes()
+        .map_err(|e| format!("SCIP serialize 失敗：{e}"))?;
     std::fs::write(part, out).map_err(|e| format!("寫入 {} 失敗：{e}", part.display()))
 }
 
@@ -634,8 +644,8 @@ fn collision_scan_defs(
     defs: &mut HashMap<String, Vec<(String, String)>>,
 ) -> Result<(), String> {
     let bytes = std::fs::read(part).map_err(|e| format!("讀取 {} 失敗：{e}", part.display()))?;
-    let index =
-        scip::types::Index::parse_from_bytes(&bytes).map_err(|e| format!("SCIP parse 失敗：{e}"))?;
+    let index = scip::types::Index::parse_from_bytes(&bytes)
+        .map_err(|e| format!("SCIP parse 失敗：{e}"))?;
     for d in index.documents.iter() {
         for occ in d.occurrences.iter() {
             if occ.symbol_roles & 1 == 0 {
@@ -675,14 +685,10 @@ fn collision_scan_defs(
 /// governed walk: symlink, excluded-dir workspace) is left to the stamp
 /// WARN + read-back diff diagnostics; the single-root exact gate
 /// ([`coverage_gate_exact`]) documents the other half.
-fn coverage_gate(
-    part: &Path,
-    root_rel: &str,
-    governed: &BTreeSet<String>,
-) -> Result<(), String> {
+fn coverage_gate(part: &Path, root_rel: &str, governed: &BTreeSet<String>) -> Result<(), String> {
     let bytes = std::fs::read(part).map_err(|e| format!("讀取 {} 失敗：{e}", part.display()))?;
-    let index =
-        scip::types::Index::parse_from_bytes(&bytes).map_err(|e| format!("SCIP parse 失敗：{e}"))?;
+    let index = scip::types::Index::parse_from_bytes(&bytes)
+        .map_err(|e| format!("SCIP parse 失敗：{e}"))?;
     let docs: BTreeSet<String> = index
         .documents
         .iter()
@@ -1004,7 +1010,7 @@ pub fn build_repo(
                         return Err(e);
                     }
                 }
-            },
+            }
             ProducerFamily::TypeScript => {
                 match crate::ts_producer::stage_typescript_leg(&resolved, &stage_dir, &part, roots)
                 {
@@ -1090,6 +1096,10 @@ pub fn build_repo(
             // self-validate via the stat gate), but the empty terminal
             // state removes the whole data plane — the cache goes too.
             let _ = std::fs::remove_file(crate::identity::cache_path_for_slot(&slot));
+            // EP CR-10 TC-12: the base manifest is slot-bound provenance —
+            // the empty terminal state removes it with the slot (zero
+            // sidecar orphans).
+            let _ = std::fs::remove_file(crate::identity::manifest_path_for_slot(&slot));
             let _ = std::fs::remove_file(&slot);
             let _ = std::fs::remove_file(graph_db::db_path(&resolved));
             rep.face = "empty(profile-excluded)".to_string();
@@ -1201,8 +1211,7 @@ pub fn build_repo(
                 // A failed read-back must not pose as an empty diff — the
                 // "0 筆" faces would claim a converged corpus that was
                 // never compared (fresh F4). Name the failure instead.
-                rep.notes
-                    .push(format!("index 讀回失敗、diff 不可判：{e}"));
+                rep.notes.push(format!("index 讀回失敗、diff 不可判：{e}"));
             }
         }
     }
@@ -1536,7 +1545,9 @@ fn run_heal_locked(
                         write_churn_marker(slot);
                         let mut lines = vec![format!(
                             "[WARN] 偵測與 producer 語料不一致（false-stale：missing={}，extra={}，例：{}）——不迴圈，本次查詢以現存索引作答（cooldown 內後續查詢不再重癒）\n",
-                            d.missing, d.extra, d.examples.join("、")
+                            d.missing,
+                            d.extra,
+                            d.examples.join("、")
                         )];
                         lines.extend(producer_drift_notes(repo, slot, roots));
                         return Ok(HealOutcome::ServeStale(lines));
@@ -1710,7 +1721,11 @@ fn render(rep: Report, json: bool) -> ToolOutput {
         rep.index.display(),
         rep.nodes,
         rep.edges,
-        if rep.graph_rebuilt { "（重建）" } else { "" },
+        if rep.graph_rebuilt {
+            "（重建）"
+        } else {
+            ""
+        },
         rep.indexes_created,
         rep.indexes_skipped,
     );

@@ -67,6 +67,59 @@ pub fn git_init(repo: &Path) {
     }
 }
 
+/// Stage everything and commit (test author identity) — the multi-commit
+/// helper the identity suites used to write inline (EP CR-10 S2: shared
+/// home for git fixtures).
+pub fn git_commit_all(repo: &Path, msg: &str) {
+    let commits = [
+        vec!["add", "-A"],
+        vec![
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-qm",
+            msg,
+        ],
+    ];
+    for args in commits {
+        let st = std::process::Command::new("git")
+            .args(&args)
+            .current_dir(repo)
+            .status()
+            .unwrap();
+        assert!(st.success(), "git {args:?} failed");
+    }
+}
+
+/// Live repo HEAD (`git rev-parse HEAD`), trimmed.
+pub fn git_head(repo: &Path) -> String {
+    let out = std::process::Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(repo)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "git rev-parse HEAD failed");
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+/// `git diff --name-only HEAD` — the worktree-vs-HEAD path list (D1:
+/// the display-only diff the manifest delta is contrasted against).
+pub fn git_worktree_diff(repo: &Path) -> Vec<String> {
+    let out = std::process::Command::new("git")
+        .args(["diff", "--name-only", "HEAD"])
+        .current_dir(repo)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "git diff --name-only HEAD failed");
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
 pub fn slot_of(repo: &Path) -> PathBuf {
     repo.join(".code-reality/scip/index.scip")
 }
@@ -203,5 +256,21 @@ pub fn install_py_deriving_fake(bindir: &Path) {
         bindir,
         "pyrefly-index",
         &format!("#!/bin/sh\nexec '{}' \"$@\"\n", fixture.display()),
+    );
+}
+
+/// Fake rust-analyzer: serves the shared rich.scip fixture for any scip
+/// invocation (identity/staleness tests assert meta and manifest
+/// behavior, not doc content — path shapes live with the rust producer
+/// suites). Same shape the rust_identity_v2 suite carried locally,
+/// homed here as the one place for producer fakes.
+pub fn install_rust_fixture_fake(dir: &Path) {
+    let fixture = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rich.scip");
+    fake_bin(
+        dir,
+        "rust-analyzer",
+        &format!(
+            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'fake-ra 1.96.0-test'; exit 0; fi\nwhile [ $# -gt 0 ]; do case \"$1\" in --output) shift; cp '{fixture}' \"$1\"; exit 0;; esac; shift; done\nexit 1\n"
+        ),
     );
 }
