@@ -70,4 +70,19 @@ S2 段收線（commit 94accbe 進 main）：見 CR-10.1 notes。逐段回報信�
 outbound 台帳續：⑤cr10-s2-report-142833 已受理（ai-guide acceptanceSeq=11，in_reply_to=aiguide-cr-align-cr10-20261014）——S2 段收線回報（③約定第一封；新 thread inform 信走 dutymail send 直呼——reply face 僅及 pending 義務，此用法記錄）。S2 已落地 main：49d023a。
 
 【bridge 更新前 handoff（2026-10-14 15:56，user 要更新 bridge 後開 new session）】S3 中斷點：writer job-mv7smaa9 已乾淨 stop（interrupted），WT code-reality-cr-10.2 保存交付——graph_db.rs +89/-2（D10 五欄 metadata stamp）＋tests/graph_provenance.rs 6 tests 6/6 綠（我機驗過）。剩餘：全量迴歸＋scoped fmt 檢查＋dual review→judge→landing→回報 ai-guide→S4（查詢面標註＋negative gate＋MCP freshness tool——bridge 啟用閘最後碼段）→S5 hand-off。RESUME＝new session 讀本卡＋EP（ai-analysis/execution-plans/2026-10-14-cr-delta-freshness/ep.md）＋.agent-tmp/session-journal.md 尾段；S3 工單＝code-reality-cr-10.2/.agent-tmp/cr10-s3-workorder.md（續派 continuation 或直接進收線——測試已綠可先收線驗證）。授權現值：卡級寄信（6 信/72h，已用 5）＋弧內自主 commit——記錄見本卡前段 notes。
+
+〔S3 收線結算（2026-10-14 17:10，new session 接手收線完成）〕S3 落地
+main bfb6c4e（WT daf30e3 rebased→ff）。review 四腿：本地 fresh
+needs-fix（F1-F5：input-hash TOCTOU fence、lsp-face placeholder 殘留、
+warns 出面、legacy probe、NULL⇒"" 映射）→ 修復批 10 項＋intent accept
+（F1-F7，其中 intent 原判 TOCTOU N/A 被 fresh F1 推翻併案修復）→
+muse approve 零 findings（job-mv7vf3p4-jde3e6，wonder-1.0 xhigh）→
+codex review-fail ×2 顯式降級 bi→single（bridge 3.16.0 codex review
+face thread.started 事件流污染——transport 層非額度牆，待 bridge 側
+修復或 user 手動 codex 補審）。EP AM-3 已落（canonical byte 編碼＋
+NULL⇒"" 映射＋lsp-harvest residual＋出版 drift fence＋S4/S5 對照表
+義務）。驗證：scoped lib 66/66＋6/6、全量 --no-fail-fast 72 suites
+730/0、rust_backend flake 證實併發負載（安靜重跑 4/4）。judge
+converged: accept。CR-10.2 卡結算已寫、Done 翻牌留 user。下一步＝
+S4 開工（cr-10.3）。寄信額度本回報後用罄（第 6 封）。
 <!-- SECTION:NOTES:END -->
