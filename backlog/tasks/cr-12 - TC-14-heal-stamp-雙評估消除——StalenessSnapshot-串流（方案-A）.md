@@ -1,10 +1,10 @@
 ---
 id: CR-12
 title: TC-14 heal/stamp 雙評估消除——StalenessSnapshot 串流（方案 A）
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-15 09:10'
-updated_date: '2026-10-15 09:10'
+updated_date: '2026-10-14 23:17'
 labels: []
 dependencies: []
 references:
