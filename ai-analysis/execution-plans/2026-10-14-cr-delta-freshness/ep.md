@@ -319,6 +319,26 @@ build.rs 六重複塊收斂、touched 檔 fmt 歸 repo 工具鏈（style-edition
 外來風格清除）、TC-14 計時分解記錄（warm 總 330-380ms 為 pre-S2 既有
 成本，S2 delta face ≤10ms 無回歸——閘歸屬＝獨立追蹤項）。
 
+**AM-3（2026-10-14，S3 dual review judge 裁決——fresh F1/F2/F5＋intent
+F3/F4）**：D10 出版面三項顯性化＋一項 fence 補強。①**canonical 編碼**：
+D10 的 `‖` 落地為 domain-prefixed NUL 分隔位元組串
+`sha256("cr-graph-snapshot-v1\0{input_index_sha256}\0{builder_revision}\0{schema_version}\0")`
+（尾端 NUL 在場；任何跨工具重算 id 必須用此 byte format——S5 對照表
+逐字列舉）；`builder_revision` 為 SQL NULL 時 id 內以空字串計（NULL⇒""
+映射，同表義務）。②**lsp-harvest face residual**：該 face 實際消費本體
+為 harvest cache db，`input_index_sha256` 綁定 placeholder index.scip
+bytes——golden-only face 上 generation id 不承載 delta 語義，S4 對
+lsp-face graph 不得宣稱 fresh/delta（build 當下 WARN 已出面）。
+③**出版 drift fence（fresh F1 修復）**：slot artifact 於 face 載入前
+雜湊前釘、出版時重驗，drift 即 Err 拒絕出版（tx rollback 棄 tmp，
+provenance 永不綁定 rows 未消費的 bytes）——residual＝末次驗證後
+rename 前的 mutate（資料面既有 post-check ABA residual，明示不重複
+封閉）。④**S4/S5 對照表義務**：graph db 端六鍵集＋值編碼逐字列舉
+（`graph_snapshot_id`/`input_index_sha256`/`source_manifest_digest`/
+`builder_revision`/`coverage_faces`←meta `source_faces` 緊湊 JSON 文本/
+`selection`←meta `selection` bare string）。authority＝judge（fresh-F2
+指派的 EP 層級 residual＋F1 binding claim 修復；AM-1/AM-2 同源流程）。
+
 ## 段落 S2：(a)+(b) manifest 生產＋freshness delta 輸出
 
 ### Context
