@@ -1909,13 +1909,19 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         if mdata.version.is_none() {
             mdata.version = Some(toml::Value::Integer(1));
         }
-        // A: reconcile the owned family on this run's write — numbered
-        // .tour files + manifest rows under this family that fall
-        // outside the current write set are removed when owned by this
-        // generator (row generator=chain_tour). A foreign-generator row
-        // (or a rowless numbered file) is data this generator does not
-        // own and is never touched; a shrunk write set (shells /
-        // renumbering) must not leave stale tours colliding on ts_key.
+        // A: reconcile the owned family on this run's write — rows under
+        // this family that name a NUMBERED `.tour` outside the current
+        // write set and carry generator=chain_tour are this generator's
+        // product: the row leaves the manifest and the file is deleted.
+        // Anything else — foreign generator, rowless file, non-`.tour`
+        // row (not our format, not ours to police) — is untouched; a
+        // shrunk write set (shells / renumbering) must not leave stale
+        // tours colliding on ts_key. Data-safety order: rows leave the
+        // in-memory manifest and the manifest PERSISTS before any file
+        // is deleted — a dump failure crashes with zero deletions and
+        // on-disk rows intact; a per-file removal failure is only a
+        // WARN (a disclosed rowless orphan file is the tolerated
+        // direction).
         let fam_rel = out_abs
             .strip_prefix(&mroot)
             .map(|p| p.to_string_lossy().replace('\\', "/"))
@@ -1929,7 +1935,6 @@ pub fn run(argv: &[&str]) -> ToolOutput {
             })
             .collect();
         let mut removed: Vec<String> = Vec::new();
-        let mut stale_rows: Vec<String> = Vec::new();
         for (rel, row) in &mdata.tour {
             let Some(row_fam) = ::std::path::Path::new(rel)
                 .parent()
@@ -1937,7 +1942,7 @@ pub fn run(argv: &[&str]) -> ToolOutput {
             else {
                 continue;
             };
-            if row_fam != fam_rel {
+            if row_fam != fam_rel || !rel.ends_with(".tour") {
                 continue;
             }
             let Some(num) = ::std::path::Path::new(rel)
@@ -1951,17 +1956,10 @@ pub fn run(argv: &[&str]) -> ToolOutput {
                 continue;
             }
             if row.get("generator").and_then(|v| v.as_str()) == Some("chain_tour") {
-                let f = mroot.join(rel);
-                if f.exists() {
-                    if let Err(e) = std::fs::remove_file(&f) {
-                        return ToolOutput::crash(format!("{} 對帳移除失敗：{e}", f.display()));
-                    }
-                }
-                stale_rows.push(rel.clone());
                 removed.push(rel.clone());
             }
         }
-        for rel in &stale_rows {
+        for rel in &removed {
             mdata.tour.remove(rel);
         }
         let (commit, _w) = crate::tour_manifest::git_head(&repo);
@@ -1978,16 +1976,30 @@ pub fn run(argv: &[&str]) -> ToolOutput {
                 &commit,
             );
         }
+        // dump BEFORE deletions: a failure here leaves every file in
+        // place and the on-disk rows untouched
         if let Err(e) = crate::tour_manifest::dump(&mpath, &mdata) {
             return ToolOutput::crash(e);
         }
+        for rel in &removed {
+            let f = mroot.join(rel);
+            if f.exists() {
+                if let Err(e) = std::fs::remove_file(&f) {
+                    stderr.push_str(&format!(
+                        "[WARN] 族 {fam_rel} 對帳：{} 刪除失敗（{e}）——row 已移除，殘檔成無 row 孤兒；請手動刪除\n",
+                        f.display()
+                    ));
+                }
+            }
+        }
         if !removed.is_empty() {
-            removed.sort();
+            let mut sorted = removed.clone();
+            sorted.sort();
             stderr.push_str(&format!(
                 "[WARN] 族 {} 重產對帳：移除寫出集外殘留 {} 項（chain_tour 自有）：{}\n",
                 fam_rel,
-                removed.len(),
-                removed.join("、")
+                sorted.len(),
+                sorted.join("、")
             ));
         }
         stdout.push_str(&format!(

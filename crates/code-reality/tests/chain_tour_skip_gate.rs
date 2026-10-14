@@ -530,3 +530,224 @@ fn all_shell_gate_preserves_gated_stdout() {
     );
     assert!(!out_dir.exists());
 }
+
+// ---------- review round 2 (NF1 delete-after-persist / NF2 .tour predicate / mapping gap) ----------
+
+/// NF1(a): dump-before-delete — an unwritable manifest (chmod 0444) must
+/// crash the run with ZERO files deleted and the on-disk rows
+/// byte-identical (deleting files and then failing the dump left a
+/// corpus of dangling rows — the defect). Skips cleanly when the
+/// permission model cannot be enforced (e.g. running as root).
+#[test]
+fn dump_failure_leaves_files_and_rows_intact() {
+    use std::os::unix::fs::PermissionsExt;
+    let md3 = format!("{REAL_A}\n{REAL_B}\n{REAL_C}");
+    let (repo, chain) = repo_fixture("gate-dump-fail", &md3);
+    let out_dir = repo.join(".tours/arch/01-gate");
+    let first = run_out_dir(&repo, &chain);
+    assert_eq!(first.exit_code, 0, "{}{}", first.stdout, first.stderr);
+    let mpath = repo.join(".tours/manifest.toml");
+    let rows_before = std::fs::read_to_string(&mpath).unwrap();
+    // the middle scenario becomes a shell → write set shrinks to 2
+    let md2 = format!("{REAL_A}\n{SHELL_BLOCK}\n{REAL_C}");
+    std::fs::write(&chain, &md2).unwrap();
+    let mut perms = std::fs::metadata(&mpath).unwrap().permissions();
+    perms.set_mode(0o444);
+    std::fs::set_permissions(&mpath, perms).unwrap();
+    if std::fs::OpenOptions::new().write(true).open(&mpath).is_ok() {
+        let mut p = std::fs::metadata(&mpath).unwrap().permissions();
+        p.set_mode(0o644);
+        std::fs::set_permissions(&mpath, p).unwrap();
+        eprintln!("skip: permission model not enforceable in this environment");
+        return;
+    }
+    let out = run_out_dir(&repo, &chain);
+    let mut p = std::fs::metadata(&mpath).unwrap().permissions();
+    p.set_mode(0o644);
+    std::fs::set_permissions(&mpath, p).unwrap();
+    assert_eq!(
+        out.exit_code, 1,
+        "stdout={} stderr={}",
+        out.stdout, out.stderr
+    );
+    // zero deletions: the stale 03.tour survives…
+    assert!(out_dir.join("03.tour").exists());
+    // …and the on-disk rows are byte-identical (dump never landed)
+    assert_eq!(std::fs::read_to_string(&mpath).unwrap(), rows_before);
+}
+
+/// NF1(b): a per-file removal failure is NOT a crash — the run
+/// continues (exit 0 with WARNs), the WARN names the surviving path,
+/// and the already-persisted manifest keeps its consistent row-removed
+/// state (a disclosed rowless orphan file is the tolerated direction).
+/// The enforcement mechanism is the macOS immutable file flag: a
+/// read-only family DIR would crash the earlier write_tours leg (the
+/// same run writes into that dir). Skips when the flag cannot be
+/// enforced (non-macOS / root bypass).
+#[cfg(target_os = "macos")]
+#[test]
+fn file_removal_failure_warns_and_continues() {
+    let md3 = format!("{REAL_A}\n{REAL_B}\n{REAL_C}");
+    let (repo, chain) = repo_fixture("gate-file-fail", &md3);
+    let out_dir = repo.join(".tours/arch/01-gate");
+    let first = run_out_dir(&repo, &chain);
+    assert_eq!(first.exit_code, 0, "{}{}", first.stdout, first.stderr);
+    // enforcement probe: flag a scratch file and try to delete it — a
+    // success means this environment ignores uchg → skip
+    let probe = out_dir.join(".probe-uchg");
+    std::fs::write(&probe, "x").unwrap();
+    let flagged = std::process::Command::new("/usr/bin/chflags")
+        .arg("uchg")
+        .arg(&probe)
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if !flagged {
+        let _ = std::fs::remove_file(&probe);
+        eprintln!("skip: chflags unavailable");
+        return;
+    }
+    if std::fs::remove_file(&probe).is_ok() {
+        let _ = std::fs::remove_file(&out_dir.join(".probe-uchg"));
+        eprintln!("skip: immutable flag not enforced (root?)");
+        return;
+    }
+    let _ = std::process::Command::new("/usr/bin/chflags")
+        .arg("nouchg")
+        .arg(&probe)
+        .status();
+    let _ = std::fs::remove_file(&probe);
+    let stale = out_dir.join("03.tour");
+    assert!(std::process::Command::new("/usr/bin/chflags")
+        .arg("uchg")
+        .arg(&stale)
+        .status()
+        .unwrap()
+        .success());
+    // the middle scenario becomes a shell → write set shrinks to 2
+    let md2 = format!("{REAL_A}\n{SHELL_BLOCK}\n{REAL_C}");
+    std::fs::write(&chain, &md2).unwrap();
+    let out = run_out_dir(&repo, &chain);
+    let stale_exists = stale.exists();
+    let keys = tour_row_keys(&repo);
+    let stdout = out.stdout.clone();
+    let stderr = out.stderr.clone();
+    let code = out.exit_code;
+    // teardown before assertions so a failing assert never leaks the flag
+    let _ = std::process::Command::new("/usr/bin/chflags")
+        .arg("nouchg")
+        .arg(&stale)
+        .status();
+    let _ = std::fs::remove_file(&stale);
+    assert_eq!(code, 0, "stdout={stdout} stderr={stderr}");
+    assert!(stderr.contains("刪除失敗"), "{stderr}");
+    assert!(stderr.contains("03.tour"), "{stderr}");
+    assert!(stale_exists, "the un-deletable file must survive");
+    assert_eq!(
+        keys,
+        vec![
+            "arch/01-gate/01.tour".to_string(),
+            "arch/01-gate/02.tour".to_string(),
+        ],
+        "{keys:?}"
+    );
+    // the run's normal product is intact
+    assert!(stdout.contains("shells-omitted 1"), "{stdout}");
+}
+
+/// NF2: the deletion predicate requires the row to name a `.tour` — a
+/// chain_tour-owned row over a foreign-format name (`03.md`) is not this
+/// generator's product format, is never a deletion candidate, and is
+/// not policed (left untouched, silent).
+#[test]
+fn reconciliation_never_touches_non_tour_rows() {
+    let md3 = format!("{REAL_A}\n{REAL_B}\n{REAL_C}");
+    let (repo, chain) = repo_fixture("gate-non-tour", &md3);
+    let out_dir = repo.join(".tours/arch/01-gate");
+    let first = run_out_dir(&repo, &chain);
+    assert_eq!(first.exit_code, 0, "{}{}", first.stdout, first.stderr);
+    // mis-provenanced row: chain_tour generator over a foreign-format name
+    std::fs::write(out_dir.join("03.md"), "# not a tour\n").unwrap();
+    let mpath = repo.join(".tours/manifest.toml");
+    let mut m = code_reality::tour_manifest::load(&mpath).unwrap();
+    m.tour.insert(
+        "arch/01-gate/03.md".into(),
+        "generator = \"chain_tour\"\nsources = [\"chain.md\"]\nanchored_commit = \"c0\""
+            .parse()
+            .unwrap(),
+    );
+    code_reality::tour_manifest::dump(&mpath, &m).unwrap();
+    // scenario 3 becomes a shell → write set shrinks to 2; row 03 falls
+    // outside the write set and would look deletable without the .tour
+    // requirement (the .md row and the .tour row share the stem "03")
+    let md2 = format!("{REAL_A}\n{SHELL_BLOCK}\n{REAL_C}");
+    std::fs::write(&chain, &md2).unwrap();
+    let out = run_out_dir(&repo, &chain);
+    assert_eq!(
+        out.exit_code, 0,
+        "stdout={} stderr={}",
+        out.stdout, out.stderr
+    );
+    // the .md file and its row survive untouched
+    assert!(out_dir.join("03.md").exists());
+    let mut keys = tour_row_keys(&repo);
+    keys.sort();
+    assert_eq!(
+        keys,
+        vec![
+            "arch/01-gate/01.tour".to_string(),
+            "arch/01-gate/02.tour".to_string(),
+            "arch/01-gate/03.md".to_string(),
+        ],
+        "{keys:?}"
+    );
+    assert!(!out.stderr.contains("03.md"), "{}", out.stderr);
+}
+
+/// Mapping combination (round-2 note): shells at md positions 1 AND 2
+/// with the real scenario at 3 → written 01.tour is md scenario 3;
+/// `--primary 3` marks it and `--primary 1` fails as shell-targeted.
+#[test]
+fn primary_mapping_with_leading_double_shell() {
+    let md = format!("{SHELL_BLOCK}\n{SHELL_BLOCK}\n{REAL_C}");
+    let (repo, chain) = repo_fixture("gate-primary-2shell", &md);
+    let out_dir = repo.join(".tours/arch/01-gate");
+    let fail = code_reality::chain_tour::run(&[
+        "chain_tour",
+        &chain.to_string_lossy(),
+        "--repo",
+        &repo.to_string_lossy(),
+        "--out-dir",
+        &out_dir.to_string_lossy(),
+        "--primary",
+        "1",
+    ]);
+    assert_eq!(
+        fail.exit_code, 1,
+        "stdout={} stderr={}",
+        fail.stdout, fail.stderr
+    );
+    assert!(fail.stderr.contains("殼省略"), "{}", fail.stderr);
+    assert!(!out_dir.exists());
+    let ok = code_reality::chain_tour::run(&[
+        "chain_tour",
+        &chain.to_string_lossy(),
+        "--repo",
+        &repo.to_string_lossy(),
+        "--out-dir",
+        &out_dir.to_string_lossy(),
+        "--primary",
+        "3",
+    ]);
+    assert_eq!(ok.exit_code, 0, "stdout={} stderr={}", ok.stdout, ok.stderr);
+    let t1: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out_dir.join("01.tour")).unwrap()).unwrap();
+    assert_eq!(t1["title"].as_str().unwrap(), "01 - gate｜Real C");
+    assert_eq!(t1["isPrimary"], serde_json::Value::Bool(true), "{t1}");
+    assert!(
+        ok.stdout
+            .contains("[OK] chain tours: 1 場景 / 6 幀 / 2 步 / skipped 4 / shells-omitted 2"),
+        "{}",
+        ok.stdout
+    );
+}

@@ -458,7 +458,10 @@ on any new repo.
   scenario title + frame count + skip-reason distribution), later
   scenarios renumber to the compressed written order, regen
   reconciliation removes chain_tour-owned family files/rows outside the
-  write set (foreign-generator or rowless residue untouched), and the
+  write set (foreign-generator, rowless, or non-`.tour` residue
+  untouched; rows persist before files are deleted, and a file-removal
+  failure only warns — a disclosed rowless orphan is the tolerated
+  direction), and the
   summary gains a `shells-omitted` counter. A fully-shell md fails
   closed — exit 1, zero writes, the existing parse-fail face — with the
   pre-existing family's tours/rows disclosed for manual cleanup.
