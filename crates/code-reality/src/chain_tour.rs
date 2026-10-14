@@ -890,11 +890,52 @@ impl GraphAnchor {
     }
 }
 
+/// CR-11: a scenario whose every frame skipped (zero anchored steps) —
+/// a shell. Collected by build_tours alongside the (unchanged)
+/// per-scenario tour face; run() drops shells from the write set (no
+/// .tour file, no manifest row), warns per scenario, and fails closed
+/// when the whole md is shells.
+#[derive(Clone)]
+pub struct ShellScenario {
+    pub title: String,
+    pub frames: usize,
+    pub skip_reasons: BTreeMap<String, i64>,
+}
+
 pub struct ScenarioTours {
     pub tours: Vec<serde_json::Value>,
     pub frames: usize,
     pub skipped: usize,
     pub g_counts: BTreeMap<String, i64>,
+    /// Shell scenarios (all frames skipped) in doc order — disclosed by
+    /// run() instead of written
+    pub shells_omitted: Vec<ShellScenario>,
+}
+
+impl ScenarioTours {
+    /// CR-11 write-set view: shell scenarios (zero anchored steps)
+    /// dropped from `tours`. build_tours keeps every scenario in `tours`
+    /// (the all-skip description stays the doc-truth record); the run()
+    /// gate decides what lands on disk.
+    fn without_shells(&self) -> ScenarioTours {
+        ScenarioTours {
+            tours: self
+                .tours
+                .iter()
+                .filter(|t| {
+                    t["steps"]
+                        .as_array()
+                        .map(|s| !s.is_empty())
+                        .unwrap_or(false)
+                })
+                .cloned()
+                .collect(),
+            frames: self.frames,
+            skipped: self.skipped,
+            g_counts: self.g_counts.clone(),
+            shells_omitted: self.shells_omitted.clone(),
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)] // frame-field decomposition of the frozen dict walk
@@ -1076,6 +1117,7 @@ pub fn build_tours(
     let mut lines_cache: HashMap<String, Vec<String>> = HashMap::new();
     let (mut frames_total, mut skipped_total) = (0usize, 0usize);
     let mut g_counts: BTreeMap<String, i64> = BTreeMap::new();
+    let mut shells_omitted: Vec<ShellScenario> = Vec::new();
     for (heading, lines) in &blocks {
         let frames = parse_frames(lines);
         let mut steps: Vec<serde_json::Value> = Vec::new();
@@ -1226,6 +1268,16 @@ pub fn build_tours(
                 &mut lines_cache,
             ));
         }
+        if steps.is_empty() {
+            // CR-11: zero anchored frames — a shell scenario. No
+            // frame-count floor: a 1-2-frame real-anchor scenario is
+            // legal; all-skip is the precise shell criterion.
+            shells_omitted.push(ShellScenario {
+                title: heading.clone(),
+                frames: frames.len(),
+                skip_reasons: skip_reasons.clone(),
+            });
+        }
         let dist: Vec<String> = scen_g.iter().map(|(k, v)| format!("{k}:{v}")).collect();
         let reasons = if skip_reasons.is_empty() {
             "無".to_string()
@@ -1269,6 +1321,7 @@ pub fn build_tours(
         frames: frames_total,
         skipped: skipped_total,
         g_counts,
+        shells_omitted,
     })
 }
 
@@ -1495,6 +1548,32 @@ fn manifest_family_label(out_dir: &Path, nn: &str) -> ManifestFamilyLabel {
     ManifestFamilyLabel::Absent
 }
 
+/// CR-11 per-shell-scenario WARN line — 族名＋場景標題＋幀數＋skip 原因
+/// 分佈. Shared by the partial face (stderr WARN, run continues) and the
+/// all-shell face (the WARN lines ride the fail-closed stderr).
+fn shell_warn_lines(fam: &str, shells: &[ShellScenario]) -> Vec<String> {
+    shells
+        .iter()
+        .map(|sh| {
+            let reasons = if sh.skip_reasons.is_empty() {
+                "無".to_string()
+            } else {
+                sh.skip_reasons
+                    .iter()
+                    .map(|(k, v)| format!("{k} {v}"))
+                    .collect::<Vec<_>>()
+                    .join("／")
+            };
+            format!(
+                "[WARN] 族 {fam} 場景「{title}」{n} 幀全 skip（零可解析幀：{reasons}）——殼省略：不寫 .tour、不進 manifest",
+                title = sh.title,
+                n = sh.frames,
+                reasons = reasons
+            )
+        })
+        .collect()
+}
+
 /// Route a `code-reality chain_tour ...` invocation.
 pub fn run(argv: &[&str]) -> ToolOutput {
     let Some((&_sub, toks)) = argv.split_first() else {
@@ -1660,6 +1739,44 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         Ok(s) => s,
         Err(e) => return ToolOutput::crash(e),
     };
+    // CR-11 scenario-level shell gate: a scenario with zero anchored
+    // frames is omitted from the write set. Partial omission → stderr
+    // WARN + shells-omitted summary counter, exit 0 (a corpus fact, not
+    // a tool failure). The whole md shell-shaped → the existing (a)
+    // fail-closed face: exit 1, zero writes — no .tour file, no
+    // manifest row — no third exit state.
+    let fam = out_dir
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| out_dir.to_string_lossy().into_owned());
+    let shell_warns = shell_warn_lines(&fam, &st.shells_omitted);
+    if st.shells_omitted.len() == st.tours.len() {
+        // every scenario a shell (blocks are non-empty, so tours is
+        // non-empty here too)
+        let mut stderr = String::new();
+        for w in &shell_warns {
+            stderr.push_str(w);
+            stderr.push('\n');
+        }
+        stderr.push_str(&crate::msg_line(
+            "FAIL",
+            &format!(
+                "全場景殼形：md 全部 {} 場景皆零可解析幀——fail-closed 零寫入（無 .tour 檔、無 manifest row）；語料事實非工具失敗，md 保留為敘事文檔或補可解析錨（path.py:line）後重產",
+                st.shells_omitted.len()
+            ),
+        ));
+        // WARN-before-crash keeps the gated stdout (consumer_db /
+        // duplicate-family notes) by building the struct directly
+        return ToolOutput {
+            stdout,
+            stderr,
+            exit_code: 1,
+        };
+    }
+    // partial shells: write set drops them; everything downstream
+    // (files, manifest rows, --primary range, summary) sees written
+    // tours only
+    let st = st.without_shells();
     let valid: std::collections::BTreeSet<usize> = (1..=st.tours.len()).collect();
     let out_of_range: Vec<usize> = primary.difference(&valid).copied().collect();
     if !out_of_range.is_empty() {
@@ -1675,7 +1792,7 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         Err(e) => return ToolOutput::crash(e),
     };
     let mut stderr = String::new();
-    for w in &gen_warns {
+    for w in shell_warns.iter().chain(gen_warns.iter()) {
         stderr.push_str(w);
         stderr.push('\n');
     }
@@ -1773,11 +1890,12 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         }
     }
     stdout.push_str(&format!(
-        "[OK] chain tours: {} 場景 / {} 幀 / {} 步 / skipped {}\n",
+        "[OK] chain tours: {} 場景 / {} 幀 / {} 步 / skipped {} / shells-omitted {}\n",
         st.tours.len(),
         st.frames,
         st.frames - st.skipped,
-        st.skipped
+        st.skipped,
+        st.shells_omitted.len()
     ));
     stdout.push_str(&format!("[LOG] graph 重錨分佈: {:?}\n", st.g_counts));
     ToolOutput {
