@@ -319,6 +319,85 @@ fn tc4_stale_closure_empty_frontier_is_typed_refusal_exit1() {
     );
 }
 
+// ---------- CR-13: graph-only torn plane no longer refuses the scip face
+
+/// Torn the data plane WITHOUT touching the sources: rewrite the slot
+/// bytes in place (same content — the binding audit and the stamped
+/// identity stay valid) so the slot mtime passes graph.db's — engine
+/// `graph_lags`, the torn-plane shape (tc13 recipe, source_identity.rs).
+fn bump_slot_mtime_past_graph(lab: &Lab) {
+    let bytes = std::fs::read(lab.slot()).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    std::fs::write(lab.slot(), &bytes).unwrap();
+}
+
+#[test]
+fn cr13_graph_only_torn_plane_scip_serves_exact_explicit_index() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let lab = lab_py();
+    lab.build();
+    bump_slot_mtime_past_graph(&lab);
+    // explicit --index is never healed: the serving slot IS the torn
+    // one — a scip query must answer exact (the scip face does not
+    // consume graph.db), never a D7 refusal over a graph-only lag
+    let out = lab.scip(&["mod_afn1", "--callers"]);
+    assert_eq!(
+        out.exit_code, 0,
+        "graph-only lag is not scip-face stale: {}",
+        out.stdout
+    );
+    let line = cr_verdict_line(&out.stdout).expect("[CR_VERDICT] line present");
+    let f = verdict_fields(line);
+    assert_eq!(f.get("tier").map(String::as_str), Some("exact"));
+    assert_eq!(f.get("exhaustive").map(String::as_str), Some("true"));
+    assert_eq!(f.get("negative_verdict").map(String::as_str), Some("null"));
+    assert!(out.stdout.contains("0 callers"), "{}", out.stdout);
+    // the closure format rides the same per-face base
+    let out = lab.scip(&["mod_afn1", "--closure", "--depth", "2"]);
+    assert_eq!(out.exit_code, 0, "{}", out.stdout);
+    let line = cr_verdict_line(&out.stdout).expect("[CR_VERDICT] line present");
+    assert!(line.contains("tier=exact"), "{line}");
+    // contrast arm: the same torn plane with a DRIFTED source still
+    // refuses — the split moved graph_lags only, never the source base
+    lab.write("mod_a.py", "def fn1():\n    pass_changed\n");
+    let out = lab.scip(&["mod_afn1", "--callers"]);
+    assert_eq!(
+        out.exit_code, 1,
+        "source-stale keeps the D7 gate: {}",
+        out.stdout
+    );
+    assert!(out.stdout.contains("[REFUSED]"), "{}", out.stdout);
+}
+
+#[test]
+fn cr13_graph_only_torn_plane_autoheal_off_serves_exact() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let lab = lab_py();
+    lab.build();
+    bump_slot_mtime_past_graph(&lab);
+    // default-slot face with the heal escaped (AUTOHEAL=off): the scip
+    // query serves exact over the torn plane — the heal obligation
+    // stays with `freshness`/`ensure_fresh`, not the scip answer
+    // SAFETY: single-threaded w.r.t. other env readers via ENV_LOCK
+    std::env::set_var("CODE_REALITY_AUTOHEAL", "off");
+    let out = run(&[
+        "scip_refs",
+        "mod_afn1",
+        "--callers",
+        "--repo",
+        lab.repo.to_str().unwrap(),
+    ]);
+    std::env::remove_var("CODE_REALITY_AUTOHEAL");
+    assert_eq!(
+        out.exit_code, 0,
+        "no refusal under AUTOHEAL=off on a graph-only lag: {}",
+        out.stdout
+    );
+    let line = cr_verdict_line(&out.stdout).expect("[CR_VERDICT] line present");
+    assert!(line.contains("tier=exact"), "{line}");
+    assert!(out.stdout.contains("0 callers"), "{}", out.stdout);
+}
+
 // ---------- TC-5 / TC-15: stale inbound with a baseline hit ----------
 
 #[test]

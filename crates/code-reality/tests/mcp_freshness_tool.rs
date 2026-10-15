@@ -160,6 +160,45 @@ async fn tc4_mcp_callers_refusal_is_error_with_type_in_content() {
     );
 }
 
+// ---------- CR-13: graph-only torn plane no longer folds -------------
+
+#[tokio::test]
+async fn cr13_mcp_graph_only_torn_plane_callers_do_not_fold() {
+    // The tc4 shape on a torn plane with a FRESH source identity
+    // (slot bytes rewritten in place — binding audit and identity stay
+    // valid): the scip answer is source-exact, so the MCP face must NOT
+    // fold it to the `stale-negative-unavailable` refusal error. The
+    // heal obligation stays with the freshness face (which still answers
+    // stale/torn-plane — tc13, source_identity.rs), never the scip
+    // answer.
+    // CR-10.3 R5: AUTOHEAL mutation — ENV_LOCK convention
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let lab = lab_py();
+    lab.build();
+    let bytes = std::fs::read(lab.slot()).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    std::fs::write(lab.slot(), &bytes).unwrap();
+    let server = CodeRealityServer::new();
+    // SAFETY: single-threaded w.r.t. other env readers via ENV_LOCK
+    std::env::set_var("CODE_REALITY_AUTOHEAL", "off");
+    let result = server
+        .callers(Parameters(RefsParams {
+            symbol: "mod_afn1".into(),
+            repo_root: lab.repo.display().to_string(),
+        }))
+        .await
+        .expect("graph-only lag must not fold to an MCP error");
+    std::env::remove_var("CODE_REALITY_AUTOHEAL");
+    let text = content_text(&result);
+    assert_ne!(result.is_error, Some(true), "{text}");
+    assert!(
+        !text.contains("stale-negative-unavailable") && !text.contains("[REFUSED]"),
+        "no refusal envelope over a graph-only lag: {text}"
+    );
+    assert!(text.contains("tier=exact"), "{text}");
+    assert!(text.contains("0 callers"), "{text}");
+}
+
 // ---------- TC-8: the TOCTOU seams (D11) ----------
 
 #[test]

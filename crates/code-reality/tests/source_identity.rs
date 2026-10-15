@@ -359,6 +359,13 @@ fn tc13_torn_plane_guard_survives_identity_mode() {
         snap.needs_rebuild(),
         "graph_lags must be unconditional in identity mode: {snap:?}"
     );
+    // CR-13: the scip-face source base splits OFF graph_lags — the torn
+    // plane keeps forcing the heal and the freshness stale verdict, but
+    // a scip query (which never consumes graph.db) is not staled by it
+    assert!(
+        !snap.needs_source_rebuild(),
+        "graph-only lag is not a source-side rebuild: {snap:?}"
+    );
     // C2 (5.3 judge): the torn-plane reason survives to the CLI face —
     // the verdict JSON must name it, or a mapping typo ships unnoticed.
     let vout = freshness(&l.repo, true);

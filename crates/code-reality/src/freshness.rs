@@ -491,19 +491,22 @@ pub struct ScipVerdict {
 }
 
 /// Resolve the scip face's tier/exhaustive/refusal triple (frozen D6/D7
-/// order; CR-10.3 R3/R4 refined) and render the verdict line.
-/// Resolution order: indeterminate (degraded verdict) → indeterminate
-/// (R4: degraded execution floors here — exact unreachable, and the
-/// gate's empty-result precondition does not verifiably hold) → the
-/// negative gate (stale + edge-empty — R3: bound to `needs_rebuild()`,
-/// the staleness truth, never to the delta's presence; a delta-less
-/// stale keeps the `indeterminate` tier — no possibly-stale summary to
-/// carry — while the refusal face still fires) → indeterminate
+/// order; CR-10.3 R3/R4 refined, CR-13 re-based) and render the verdict
+/// line. Resolution order: indeterminate (degraded verdict) →
+/// indeterminate (R4: degraded execution floors here — exact
+/// unreachable, and the gate's empty-result precondition does not
+/// verifiably hold) → the negative gate (stale + edge-empty — R3: bound
+/// to the staleness truth, never to the delta's presence; CR-13: the
+/// scip-face base is `needs_source_rebuild()` — this face serves the
+/// scip slot only and never consumes graph.db, so a graph-only lag
+/// neither stales the tier nor fires the refusal; a delta-less stale
+/// keeps the `indeterminate` tier — no possibly-stale summary to carry —
+/// while the refusal face still fires) → indeterminate
 /// (legacy/unverifiable delta, non-gate shapes) → no-coverage (defs
 /// empty — orthogonal to stale) → possibly-stale → exact.
 pub fn scip_verdict(stamp: &ServingStamp, result: ScipResult) -> ScipVerdict {
     let snap = stamp.snapshot.as_ref();
-    let stale = snap.is_some_and(|s| s.needs_rebuild());
+    let stale = snap.is_some_and(|s| s.needs_source_rebuild());
     let delta_answered = snap.is_some_and(|s| s.delta.is_some());
     let (tier, negative, refusal) = if snap.is_none() {
         ("indeterminate", None, false)
@@ -652,28 +655,31 @@ pub struct GraphAnnotation {
 /// Resolve the graph face's annotation. Resolution order: degraded
 /// verdict → generation mismatch (SM-10: a query pinned to G1 while the
 /// slot moved to S2 — never patched with the new meta) → the negative
-/// gate (stale + gated-empty — R3: bound to `needs_rebuild()`, the
-/// staleness truth, never to the delta's presence; a delta-less stale
-/// keeps the `indeterminate` tier while the refusal face still fires) →
+/// gate (stale + gated-empty — R3: bound to the staleness truth, never
+/// to the delta's presence; a delta-less stale keeps the
+/// `indeterminate` tier while the refusal face still fires) →
 /// unverifiable generation (R2: a non-legacy graph missing ANY
 /// generation-binding component — `input_index_sha256` or the serving
 /// hash — degrades; D10 legacy db likewise; unverifiable provenance
 /// never supports exact) → legacy/unverifiable delta → possibly-stale →
-/// exact. The symbols bypass (`prov: None`) is semantically a scip-face
-/// query — the serving artifact is the scip slot and the stamp's hash
-/// binding is the generation check, so `graph_snapshot_id: null` renders
-/// N/A and the face resolves on the stale/exact axis. The lsp-harvest
-/// face (AM-3) needs no special case: its meta rewrite leaves no
-/// comparable identity stamp, so the slot answers `delta: None` (the
-/// D15 legacy degradation arm — indeterminate), and a
-/// stamped-but-mismatched generation backstops in the mismatch arm.
+/// exact. The stale base is per-face (CR-13): a true graph-served face
+/// consumes graph.db, so the full `needs_rebuild()` governs it; the
+/// symbols bypass (`prov: None`) is semantically a scip-face query —
+/// the serving artifact is the scip slot and the stamp's hash binding
+/// is the generation check, so `graph_snapshot_id: null` renders N/A
+/// and the face resolves on the source-side base
+/// (`needs_source_rebuild()`, same as scip_verdict — a graph-only lag
+/// never stales it). The lsp-harvest face (AM-3) needs no special case:
+/// its meta rewrite leaves no comparable identity stamp, so the slot
+/// answers `delta: None` (the D15 legacy degradation arm —
+/// indeterminate), and a stamped-but-mismatched generation backstops in
+/// the mismatch arm.
 pub fn graph_annotation(
     stamp: &ServingStamp,
     prov: Option<&GraphProvenance>,
     gated_empty: bool,
 ) -> GraphAnnotation {
     let snap = stamp.snapshot.as_ref();
-    let stale = snap.is_some_and(|s| s.needs_rebuild());
     let delta_answered = snap.is_some_and(|s| s.delta.is_some());
     let mut generation_reason = None;
     // The generation-binding state of the graph face (D10/D11): Bound =
@@ -700,6 +706,14 @@ pub fn graph_annotation(
             (Some(_), Some(_)) => Binding::Mismatch,
             _ => Binding::Partial,
         },
+    };
+    // CR-13 per-face stale base: a true graph-served face consumes
+    // graph.db, so the full rebuild truth (torn-plane included)
+    // governs; the symbols bypass is a scip-face query — a graph-only
+    // lag never stales it (same base as scip_verdict).
+    let stale = match binding {
+        Binding::Bypass => snap.is_some_and(|s| s.needs_source_rebuild()),
+        _ => snap.is_some_and(|s| s.needs_rebuild()),
     };
     let (tier, negative) = if snap.is_none() {
         ("indeterminate", None)
@@ -886,6 +900,56 @@ mod verdict_tests {
         assert_eq!(ann.tier, "indeterminate", "{ann:?}");
         assert_eq!(ann.negative_verdict, Some("unavailable"));
         assert!(!ann.exhaustive);
+    }
+
+    // ---------- CR-13: the scip-face stale base splits off graph-only lag
+
+    #[test]
+    fn cr13_scip_gate_ignores_graph_only_lag() {
+        // The scip face never consumes graph.db (refs/defs/callers read
+        // the SCIP slot; only --audit reads graph.db) — a graph-only lag
+        // (torn plane, source identity fresh) must not stale the scip
+        // verdict: an edge-empty answer stays the authoritative zero,
+        // no D7 refusal.
+        let mut lag_only = stamp_with(Some(delta()), false, Some("h"));
+        lag_only.snapshot.as_mut().unwrap().graph_lags = true;
+        let v = scip_verdict(&lag_only, ScipResult::EdgesEmpty);
+        assert_eq!(v.exit_override, None, "no refusal on graph-only lag: {v:?}");
+        assert!(v.line.contains("tier=exact"), "{v:?}");
+        assert!(v.line.contains("negative_verdict=null"), "{v:?}");
+        // the source-stale side keeps gating — the split moved
+        // graph_lags out of the scip base, nothing else
+        let mut source_stale = stamp_with(Some(delta()), true, Some("h"));
+        source_stale.snapshot.as_mut().unwrap().graph_lags = true;
+        let v = scip_verdict(&source_stale, ScipResult::EdgesEmpty);
+        assert_eq!(v.exit_override, Some(1), "{v:?}");
+        assert!(v.line.contains("negative_verdict=unavailable"), "{v:?}");
+    }
+
+    #[test]
+    fn cr13_symbols_bypass_source_base_graph_face_keeps_full_base() {
+        // One torn-plane snapshot, two faces: the symbols bypass
+        // (prov None — semantically a scip-face query) resolves on the
+        // source-side base and answers exact; the true graph-served
+        // face keeps the full rebuild truth (graph_lags included).
+        let mut lag_only = stamp_with(Some(delta()), false, Some("slot2"));
+        lag_only.snapshot.as_mut().unwrap().graph_lags = true;
+        let ann = graph_annotation(&lag_only, None, false);
+        assert_eq!(
+            ann.tier, "exact",
+            "bypass rides the scip-face base: {ann:?}"
+        );
+        assert_eq!(ann.negative_verdict, None);
+        let g = GraphProvenance {
+            snapshot_id: Some("gid".to_string()),
+            input_index_sha256: Some("slot2".to_string()),
+            builder_revision: Some("rev".to_string()),
+        };
+        let ann = graph_annotation(&lag_only, Some(&g), false);
+        assert_eq!(
+            ann.tier, "possibly-stale",
+            "graph-served keeps needs_rebuild(): {ann:?}"
+        );
     }
 
     // ---------- CR-10.3 R4: degraded execution floors at indeterminate --

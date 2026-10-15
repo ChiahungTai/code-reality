@@ -901,6 +901,9 @@ pub struct StalenessSnapshot {
     /// Raw mtime-newness of the scoped corpus (no graph_lags folding).
     pub source_newer: bool,
     /// Required main graph absent or older than the slot: torn data plane.
+    /// CR-13: fatal for `needs_rebuild` (heal trigger + freshness
+    /// verdict) only — the scip-face base (`needs_source_rebuild`)
+    /// excludes it, the scip faces never consume graph.db.
     pub graph_lags: bool,
     pub doc_set_drift: Option<bool>,
     pub corpus_policy_drift: Option<bool>,
@@ -943,18 +946,32 @@ pub struct StalenessSnapshot {
 }
 
 impl StalenessSnapshot {
-    /// The rebuild decision — identity-authoritative (source identity
-    /// EP): in identity mode a content drift replaces mtime-newness as
-    /// the fatal signal; in legacy mode the baseline trio applies. The
-    /// torn-plane guard fires in BOTH modes, unconditionally.
-    pub fn needs_rebuild(&self) -> bool {
+    /// The scip-face stale base (CR-13): does the serving scip index
+    /// need a source-side rebuild? `graph_lags` is deliberately ABSENT
+    /// — the scip query faces (refs/defs/callers/closure) never consume
+    /// graph.db, so a torn plane (canonical graph missing/lagging) is
+    /// not scip-face staleness; it keeps forcing the rebuild decision
+    /// ([`Self::needs_rebuild`]) and the freshness verdict instead.
+    /// Same axis composition as `needs_rebuild` minus `graph_lags` —
+    /// this is the single typed source (the public stale_reasons
+    /// vocabulary keeps REPORTING every diagnostic reason regardless).
+    pub fn needs_source_rebuild(&self) -> bool {
         self.identity_algo_upgrade
             || self.identity_drift == Some(true)
-            || self.graph_lags
             || (self.identity_drift.is_none()
                 && (self.source_newer
                     || self.doc_set_drift == Some(true)
                     || self.corpus_policy_drift == Some(true)))
+    }
+
+    /// The rebuild decision — identity-authoritative (source identity
+    /// EP): in identity mode a content drift replaces mtime-newness as
+    /// the fatal signal; in legacy mode the baseline trio applies. The
+    /// torn-plane guard fires in BOTH modes, unconditionally — the
+    /// scip-face split ([`Self::needs_source_rebuild`], CR-13) never
+    /// weakens it: the heal must still repair a torn data plane.
+    pub fn needs_rebuild(&self) -> bool {
+        self.needs_source_rebuild() || self.graph_lags
     }
 }
 
