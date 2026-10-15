@@ -71,3 +71,9 @@ predicate 決定）。
 engine.rs（predicate＋needs_rebuild 組合）、freshness.rs（scip_verdict／
 symbols 語義）、contract-fixture v1.1 節；cli.rs 僅 D7 相關；graph_annotation
 graph-served 分支不動。
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-15：WT 開立（code-reality-cr-13，branch cr-13＝main@6044ca8——含 CR-12 已落地地形）；開工 commit；工單已進 WT .agent-tmp/。PENDING 保持：消費端披露信（AIR-330＋DB-120/DB-101）需 user 逐次授權，弧內不寄。
+<!-- SECTION:NOTES:END -->
