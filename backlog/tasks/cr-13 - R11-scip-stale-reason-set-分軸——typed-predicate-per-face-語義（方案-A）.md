@@ -1,10 +1,10 @@
 ---
 id: CR-13
 title: R11 scip stale reason-set 分軸——typed predicate per-face 語義（方案 A）
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-15 09:10'
-updated_date: '2026-10-15 02:06'
+updated_date: '2026-10-15 02:10'
 labels: []
 dependencies: []
 references:
@@ -81,3 +81,24 @@ graph-served 分支不動。
 
 2026-10-15 round 1 裁決：機驗全綠（cargo test exit 0＋rustfmt 5/5＋無 debug 殘留）＋flash fresh-eyes ACCEPT（八軸零 Major）。F1 卡檔 base-skew＝結構性已解（commit 範圍僅 6 scope 檔，rebase 乾淨吸收）；F3 fixture §8 列缺 defs 用詞→fix 輪已派（resume，job-mv8wdgsm-oxd9i9）；F2 env panic 洩漏＝既有 house pattern 非新引入、F4 heal 失敗路徑傳遞性覆蓋與卡落點一致——皆無動作記錄。
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+R11 closed: the scip face (refs/defs/callers/closure + graph_annotation symbols bypass) now resolves its stale base from the typed predicate needs_source_rebuild() — a graph-only torn plane (slot fresh, canonical graph.db missing/lagging) answers source-exact (tier=exact, exit 0) instead of false-refusing (R11 availability loss); needs_rebuild() = needs_source_rebuild() || graph_lags keeps every existing consumer intact — graph-served faces, freshness repo verdict, and the heal/refresh rebuild triggers keep the unconditional torn-plane guard. Public stale_reasons vocabulary unchanged (diagnostic only); cli.rs untouched. contract-fixture-v1.md gained the v1.1 supplemental section: honest semantic-revision disclosure (v1 §2.3 gate binding revised, NOT purely additive — consumer-visible delta table), normative per-face stale-base table, machine-captured both-face outputs on the graph-only torn plane. PENDING (user-gated): consumer disclosure letters (ai-guide AIR-330 + bridge DB-120/DB-101 — scip-face trigger set narrowed; unavailable literal and error handling unchanged). 713-test suite green incl. 5 new + tc13 split assertion; fresh-eyes ACCEPT (8 axes, 0 Major), F3 wording fix landed. Landed 25e738d (linear, ff). Panel degradation recorded: muse quota + codex web 3rd turn-death → in-harness flash fresh-eyes + main-session judge.
+
+終態圖（as-built）：
+
+```mermaid
+flowchart LR
+    S["StalenessSnapshot"] --> P["needs_source_rebuild — source-side base（graph_lags 刻意缺席）"]
+    S --> F["needs_rebuild = source ∥ graph_lags（語義不變）"]
+    P --> SV["scip_verdict — D7 gate 綁 source base"]
+    P --> SB["graph_annotation symbols bypass — 同 scip base"]
+    F --> GA["graph-served faces — 保留完整 base"]
+    F --> RJ["freshness --json repo verdict — 不變"]
+    F --> HL["heal / refresh 觸發 — torn-plane 義務不減"]
+    SV --> OK["graph-only lag → tier=exact exit 0（R11 修復）"]
+    GA --> ST["graph-only lag → stale 照報"]
+```
+<!-- SECTION:FINAL_SUMMARY:END -->
