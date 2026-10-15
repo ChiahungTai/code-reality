@@ -1,10 +1,10 @@
 ---
 id: CR-12
 title: TC-14 heal/stamp 雙評估消除——StalenessSnapshot 串流（方案 A）
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-15 09:10'
-updated_date: '2026-10-14 23:17'
+updated_date: '2026-10-15 01:11'
 labels: []
 dependencies: []
 references:
@@ -61,3 +61,31 @@ evaluate_staleness 本身的成本優化；graph_query 標註路徑提速（若�
 
 cli.rs（heal 塊＋兩查詢入口）、freshness.rs、heal 模組（build.rs）簽名串接；
 graph_engine.rs 僅在快照串接必要處觸碰。契約面（fixture）不在本卡。
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-15 晨：WT 開立（code-reality-cr-12，branch cr-12＝main@aa7ef22）；開工 commit f1ef8ea；工單 wo-cr-12.md 已進 WT .agent-tmp/；writer 已派（bridge glm GLM-5.3-Flash yolo --wt --card CR-12，jobId job-mv8qh48o-b9927m，bridge_waiter 配對 exec_0e53154a）。WT 內 CR index 未建（mcp-supply probe-unavailable skip——writer 直讀源碼不受影響）。回收後流程：機驗（cargo test 全套＋fmt）→ review bi（muse 腿先 probe）→ judge。
+
+2026-10-15 review round 1：機驗全綠（rustfmt 5/5＋cargo test exit 0＋量測四閘過——標註劣化 -0.1%/+0.3% vs 閘 20%、freshness warm 69ms、fresh 恰一次求值、cold 已記）。panel 降級記錄：bi→muse failed-usage（額度）＋codex web turn 失聯 2/2（stream disconnected，relay 6.1.9 健康非暫態）→flash fresh-eyes（in-harness）＋judge 主 session。fresh-eyes ACCEPT：七軸查證過（None≠fresh、無 false-clean、D11 等價）。F1 engine.rs 計數器＝ACCEPT 偏差（AC 求值證據唯一取得點，記錄於此）；F2(a) lock-Err 借出＝disclosed residual 無測試；F3/F4/F5 無動作。F2(b) 半成功 Healed 臂缺 HealCheck-face 斷言→fix 輪已派（resume writer session，job-mv8tsbag-7n1prt）。mail 側：db126 bridge 3.17.0/3.18.0 出貨知會已讀（無需回覆）。
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+TC-14 closed: scip_refs fresh path now runs the full staleness evaluation exactly once per query — HealCheck{outcome, reusable_snapshot} threads the heal check's snapshot into serving_stamp_reusing (None always means recompute, never fresh); per-outcome lending (Fresh/Healed/HealedByPeer lend, ServeStale lends only on untouched-slot short-circuits, Err lends nothing), single-flight lends post-wait only; D11 bounded retry and both binding legs unchanged. Measured (release, A/B/C interleaved n=60, fixed index): scip_refs annotation degradation +60.3% → −0.1% (gate <20%), freshness warm ~69ms (gate ≤200ms), cold recorded; graph_query annotation +440% attributed as inherent single-evaluation cost (A/B identical — separate-card candidate). 713 tests green incl. heal_stamp_snapshot.rs count-assertion suite + t17b half-success assertion; review fresh-eyes ACCEPT (7-axis), F1 counter deviation accepted, F2b fixed. Landed f74dc0d (linear, ff). Panel degradation recorded: muse quota-exhausted + codex web turn-death 2/2 → in-harness flash fresh-eyes + main-session judge.
+
+終態圖（as-built）：
+
+```mermaid
+flowchart LR
+    Q["scip_refs query entry"] --> H["ensure_fresh_check — heal decision（求值 1）"]
+    H -->|"Fresh / Healed / HealedByPeer / untouched ServeStale"| L["reusable_snapshot = Some"]
+    H -->|"Err / heal-off / missing slot / touched slot"| N["None — 一律重算，禁讀作 fresh"]
+    L --> ST["serving_stamp_reusing — 僅 binding 檢查（免求值 2）"]
+    N --> ST
+    ST -->|seed mismatch| RE["D11 bounded recompute — 恰一次"]
+    ST -->|bound| A["[CR_VERDICT] 標註 — exact / possibly-stale"]
+    RE --> A
+```
+<!-- SECTION:FINAL_SUMMARY:END -->
