@@ -4,7 +4,7 @@ title: R11 scip stale reason-set 分軸——typed predicate per-face 語義（�
 status: In Progress
 assignee: []
 created_date: '2026-10-15 09:10'
-updated_date: '2026-10-15 01:13'
+updated_date: '2026-10-15 02:06'
 labels: []
 dependencies: []
 references:
@@ -76,4 +76,8 @@ graph-served 分支不動。
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-15：WT 開立（code-reality-cr-13，branch cr-13＝main@6044ca8——含 CR-12 已落地地形）；開工 commit；工單已進 WT .agent-tmp/。PENDING 保持：消費端披露信（AIR-330＋DB-120/DB-101）需 user 逐次授權，弧內不寄。
+
+2026-10-15 review round 1：writer 交付（typed predicate＋per-face＋fixture v1.1＋四落點 RED→GREEN）。機驗中：全套測試背景跑；judge 親讀——predicate 組合與卡公式逐字吻合、needs_source_rebuild 機械反查恰 4 非測試點（def/組合/scip_verdict/Bypass）、既有 needs_rebuild 消費端（freshness face/ServingStamp::fresh/build.rs heal）全保留 torn-plane、cli.rs 零動、fixture §1-6 純插入機驗＋§7 誠實披露＋§8 表與碼一致。panel 再塌縮：muse failed-usage（窗口未重置）＋codex failed-or-capped（3rd 同形 turn 死）→flash fresh-eyes（在審）＋judge 主 session。
+
+2026-10-15 round 1 裁決：機驗全綠（cargo test exit 0＋rustfmt 5/5＋無 debug 殘留）＋flash fresh-eyes ACCEPT（八軸零 Major）。F1 卡檔 base-skew＝結構性已解（commit 範圍僅 6 scope 檔，rebase 乾淨吸收）；F3 fixture §8 列缺 defs 用詞→fix 輪已派（resume，job-mv8wdgsm-oxd9i9）；F2 env panic 洩漏＝既有 house pattern 非新引入、F4 heal 失敗路徑傳遞性覆蓋與卡落點一致——皆無動作記錄。
 <!-- SECTION:NOTES:END -->
