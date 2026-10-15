@@ -1,15 +1,16 @@
 ---
 id: CR-13
 title: R11 scip stale reason-set 分軸——typed predicate per-face 語義（方案 A）
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-15 09:10'
-updated_date: '2026-10-15 09:10'
+updated_date: '2026-10-15 01:13'
 labels: []
 dependencies: []
 references:
   - ai-analysis/execution-plans/_done/2026-10-14-cr-delta-freshness/ep.md
-  - ai-analysis/execution-plans/_done/2026-10-14-cr-delta-freshness/contract-fixture-v1.md
+  - >-
+    ai-analysis/execution-plans/_done/2026-10-14-cr-delta-freshness/contract-fixture-v1.md
   - .agent-tmp/cr-followup-design-brief.md
 ordinal: 13000
 ---
