@@ -335,36 +335,50 @@ pub fn run(argv: &[&str]) -> ToolOutput {
     // and the umbrella stamps via the lib directly (no cli::run
     // indirection) so re-entry is structurally impossible. Explicit
     // --index paths are never healed (user-owned).
+    //
+    // CR-12 (TC-14): the check's staleness snapshot is lent to the
+    // serving stamp below when the heal outcome permits (see
+    // `build::HealCheck`) — the full evaluation runs once per query.
+    // `None` = the stamp recomputes; it is never read as fresh.
+    let mut heal_snapshot: Option<crate::engine::StalenessSnapshot> = None;
     if default_resolved && args.repo.is_some() {
         let heal_off = std::env::var("CODE_REALITY_AUTOHEAL").ok().as_deref() == Some("off");
         if !heal_off {
             let repo_p = Path::new(args.repo.as_deref().unwrap());
-            match crate::build::ensure_fresh(repo_p, &crate::build::producer_roots()) {
-                Ok(crate::build::HealOutcome::Fresh) => {}
-                Ok(crate::build::HealOutcome::Healed {
-                    secs, nodes, notes, ..
+            match crate::build::ensure_fresh_check(repo_p, &crate::build::producer_roots()) {
+                Ok(crate::build::HealCheck {
+                    outcome,
+                    reusable_snapshot,
                 }) => {
-                    let scope = if nodes > 0 {
-                        format!("{secs:.1}s，{nodes} nodes")
-                    } else {
-                        "半成功——graph 未重建，見下方 WARN".to_string()
-                    };
-                    stderr.push_str(&format!(
-                        "[OK] index healed（{scope}）——查詢以重建後索引作答\n"
-                    ));
-                    for n in notes {
-                        stderr.push_str(&n);
-                    }
-                }
-                Ok(crate::build::HealOutcome::HealedByPeer { .. }) => {
-                    stderr.push_str(
-                        "[OK] index healed（同 slot 併發 heal，等待後重用）——查詢以重建後索引作答\n",
-                    );
-                }
-                Ok(crate::build::HealOutcome::ServeStale(lines)) => {
-                    // payloads self-carry the serve-stale tail
-                    for l in lines {
-                        stderr.push_str(&l);
+                    heal_snapshot = reusable_snapshot;
+                    match outcome {
+                        crate::build::HealOutcome::Fresh => {}
+                        crate::build::HealOutcome::Healed {
+                            secs, nodes, notes, ..
+                        } => {
+                            let scope = if nodes > 0 {
+                                format!("{secs:.1}s，{nodes} nodes")
+                            } else {
+                                "半成功——graph 未重建，見下方 WARN".to_string()
+                            };
+                            stderr.push_str(&format!(
+                                "[OK] index healed（{scope}）——查詢以重建後索引作答\n"
+                            ));
+                            for n in notes {
+                                stderr.push_str(&n);
+                            }
+                        }
+                        crate::build::HealOutcome::HealedByPeer { .. } => {
+                            stderr.push_str(
+                                "[OK] index healed（同 slot 併發 heal，等待後重用）——查詢以重建後索引作答\n",
+                            );
+                        }
+                        crate::build::HealOutcome::ServeStale(lines) => {
+                            // payloads self-carry the serve-stale tail
+                            for l in lines {
+                                stderr.push_str(&l);
+                            }
+                        }
                     }
                 }
                 Err(e) => stderr.push_str(&format!(
@@ -388,8 +402,9 @@ pub fn run(argv: &[&str]) -> ToolOutput {
     // at the query-path entry (post-heal: the healed slot is what
     // serves) and shared by every mode below; per-mode recompute is
     // barred. The audit face above is exempt (S5 unannotated inventory)
-    // and pays nothing for the stamp.
-    let verdict_stamp = crate::freshness::serving_stamp(repo, &index_path);
+    // and pays nothing for the stamp. Seeded with the heal check's
+    // snapshot when lent (CR-12) — the binding legs still verify it.
+    let verdict_stamp = crate::freshness::serving_stamp_reusing(repo, &index_path, heal_snapshot);
 
     let query = args.query.as_deref().unwrap_or("");
 

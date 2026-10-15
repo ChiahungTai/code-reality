@@ -246,7 +246,11 @@ pub fn freshness_with(repo: &Path, json: bool, delta_full: bool) -> ToolOutput {
 // claimed). The check has TWO legs since CR-10.3 R1: stamp-time
 // (`binding_matches`, inside the retry loop) and post-load
 // (`stamp_after_load`, run by each mode after its face bytes are
-// actually read) — together they close the stamp→load window.
+// actually read) — together they close the stamp→load window. On the
+// scip_refs default-slot path the stamp is SEEDED with the pre-query
+// heal check's snapshot (CR-12 / TC-14: the evaluation runs once per
+// query, not once for the heal decision and again for the stamp) —
+// `serving_stamp_reusing`; both binding legs run on the seed unchanged.
 
 /// Wall-clock ceiling for one verdict computation. Overrun discards the
 /// answer and degrades to `indeterminate` + `budget-exceeded` (D15) —
@@ -338,13 +342,36 @@ fn verdict_attempt(
     Ok(None)
 }
 
+/// The first attempt seeded with a lent snapshot (CR-12 ②①): the
+/// evaluation already happened in the heal check, so this leg is the
+/// stamp-time binding check alone — same budget gate, same tri-state
+/// as [`verdict_attempt`] (a mismatch consumes the one retry).
+fn reused_attempt(
+    snapshot: StalenessSnapshot,
+    slot: &Path,
+    started: std::time::Instant,
+    budget: Duration,
+) -> Result<Option<ServingStamp>, crate::engine::DeltaUnavailable> {
+    let bound = binding_matches(&snapshot, slot);
+    if started.elapsed() > budget {
+        return Err(crate::engine::DeltaUnavailable::BudgetExceeded);
+    }
+    if bound {
+        return Ok(Some(ServingStamp {
+            snapshot: Some(snapshot),
+            reason: None,
+        }));
+    }
+    Ok(None)
+}
+
 /// The per-query serving verdict (EP CR-10 S4/D11). `repo: None` (an
 /// explicit `--index` with no source tree) cannot be judged against
 /// anything — `indeterminate` + `coverage-unknown`, never a guess; a
 /// missing slot likewise degrades (the query may still answer from the
 /// graph/cache face — annotate-only, no verdict face here).
 pub fn serving_stamp(repo: Option<&Path>, slot: &Path) -> ServingStamp {
-    serving_stamp_with_budget(repo, slot, verdict_budget())
+    serving_stamp_reusing(repo, slot, None)
 }
 
 /// [`serving_stamp`] with an explicit budget (the cost gate's test/gate
@@ -352,6 +379,31 @@ pub fn serving_stamp(repo: Option<&Path>, slot: &Path) -> ServingStamp {
 pub fn serving_stamp_with_budget(
     repo: Option<&Path>,
     slot: &Path,
+    budget: Duration,
+) -> ServingStamp {
+    serving_stamp_reusing_with_budget(repo, slot, None, budget)
+}
+
+/// [`serving_stamp`] seeded with the pre-query heal check's snapshot
+/// (CR-12 ②①, the scip_refs query path): `Some` stands in for the first
+/// evaluation attempt — the stamp-time binding check still runs on it
+/// and a mismatch consumes the one bounded retry (one full recompute,
+/// then `indeterminate`) exactly as an unseeded stamp. `None` means
+/// recompute, never fresh. The post-load leg ([`stamp_after_load`]) is
+/// unchanged either way.
+pub fn serving_stamp_reusing(
+    repo: Option<&Path>,
+    slot: &Path,
+    reusable: Option<StalenessSnapshot>,
+) -> ServingStamp {
+    serving_stamp_reusing_with_budget(repo, slot, reusable, verdict_budget())
+}
+
+/// [`serving_stamp_reusing`] with an explicit budget.
+pub fn serving_stamp_reusing_with_budget(
+    repo: Option<&Path>,
+    slot: &Path,
+    reusable: Option<StalenessSnapshot>,
     budget: Duration,
 ) -> ServingStamp {
     let Some(repo) = repo else {
@@ -365,20 +417,23 @@ pub fn serving_stamp_with_budget(
     // D11 bounded retry: a binding mismatch re-runs the whole
     // computation once (the swap may have settled); a second mismatch
     // means the serving body cannot be attributed — `indeterminate`.
-    for attempt in 0..2 {
-        match verdict_attempt(&repo, slot, started, budget) {
-            Ok(Some(stamp)) => return stamp,
-            Ok(None) => {
-                if attempt == 1 {
-                    return ServingStamp::degrade(
-                        crate::engine::DeltaUnavailable::ManifestBindingAuditFailed,
-                    );
-                }
-            }
-            Err(reason) => return ServingStamp::degrade(reason),
-        }
+    // A lent snapshot takes the first attempt's place.
+    let first = match reusable {
+        Some(snapshot) => reused_attempt(snapshot, slot, started, budget),
+        None => verdict_attempt(&repo, slot, started, budget),
+    };
+    match first {
+        Ok(Some(stamp)) => return stamp,
+        Ok(None) => {}
+        Err(reason) => return ServingStamp::degrade(reason),
     }
-    unreachable!("retry loop returns on every branch")
+    match verdict_attempt(&repo, slot, started, budget) {
+        Ok(Some(stamp)) => stamp,
+        Ok(None) => {
+            ServingStamp::degrade(crate::engine::DeltaUnavailable::ManifestBindingAuditFailed)
+        }
+        Err(reason) => ServingStamp::degrade(reason),
+    }
 }
 
 /// The post-load leg of the D11 binding window (CR-10.3 R1; muse

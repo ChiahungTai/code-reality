@@ -5,8 +5,8 @@
 mod support;
 
 use code_reality::build::{
-    build_repo, count_sources, ensure_fresh, heal_outcome_after_rebuild_err, BuildError,
-    HealOutcome,
+    build_repo, count_sources, ensure_fresh, heal_check_after_rebuild_err,
+    heal_outcome_after_rebuild_err, BuildError, HealOutcome,
 };
 use code_reality::common::resolve_bin;
 use code_reality::language::ProducerFamily;
@@ -912,6 +912,34 @@ fn t17_half_success_probe() {
         matches!(out2, HealOutcome::ServeStale(ref l) if l[0].contains("graph core boom")),
         "out={out2:?}"
     );
+}
+
+#[test]
+fn t17b_half_success_heal_check_lends_the_post_attempt_snapshot() {
+    // CR-12 ②② at the HealCheck face of the half-success arm: the
+    // post-attempt recompute says the slot is fresh, so that snapshot is
+    // lent to the query's serving stamp (the outcome shape is t17's)
+    let t = tempfile::tempdir().unwrap();
+    let repo = mkrepo(&t, &[("app.py", "def f():\n    return 1\n")]);
+    git_init(&repo);
+    let bindir = tempfile::tempdir().unwrap();
+    fake_pyrefly(bindir.path());
+    let roots = vec![bindir.path().to_path_buf()];
+    build_repo(&repo, None, &roots).expect("build");
+
+    let check =
+        heal_check_after_rebuild_err(&repo, &slot_of(&repo), "graph core boom".into()).unwrap();
+    assert!(
+        matches!(
+            &check.outcome,
+            HealOutcome::Healed { nodes: 0, notes, .. } if notes.iter().any(|n| n.contains("graph 未重建"))
+        ),
+        "{check:?}"
+    );
+    let snap = check
+        .reusable_snapshot
+        .expect("half-success Healed lends its post-attempt snapshot");
+    assert!(!snap.needs_rebuild(), "{snap:?}");
 }
 
 #[test]

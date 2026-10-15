@@ -1285,6 +1285,42 @@ pub enum HealOutcome {
     ServeStale(Vec<String>),
 }
 
+/// The pre-query heal check's full answer (CR-12 ②①): the outcome plus
+/// the staleness snapshot the query's serving stamp may reuse instead
+/// of re-running the evaluation. `None` means the stamp MUST recompute
+/// — it is never a freshness claim (`Fresh` covers slot absence, where
+/// no snapshot exists at all).
+///
+/// Per-outcome rule (②②): a snapshot is lent only when it is the LAST
+/// evaluation of the flow and nothing in the flow touched the slot after
+/// it — `Fresh` (the check itself), `Healed` (the post-build recompute),
+/// `HealedByPeer` (the post-wait recompute, never the pre-wait one —
+/// ②③), and the pre-dispatch `ServeStale` short-circuits (churn
+/// cooldown / lock creation failure: no heal activity happened). A
+/// `ServeStale` reached after our own build attempt or a peer's heal
+/// lends nothing — the stamp recomputes conservatively.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HealCheck {
+    pub outcome: HealOutcome,
+    pub reusable_snapshot: Option<crate::engine::StalenessSnapshot>,
+}
+
+impl HealCheck {
+    fn recompute(outcome: HealOutcome) -> Self {
+        HealCheck {
+            outcome,
+            reusable_snapshot: None,
+        }
+    }
+
+    fn reusing(outcome: HealOutcome, snapshot: crate::engine::StalenessSnapshot) -> Self {
+        HealCheck {
+            outcome,
+            reusable_snapshot: Some(snapshot),
+        }
+    }
+}
+
 /// Single-flight lock beside the slot: one healer at a time across the
 /// query heal and the post-commit refresh. Drop releases.
 struct HealLock {
@@ -1463,21 +1499,37 @@ pub fn heal_outcome_after_rebuild_err(
     slot: &Path,
     err: String,
 ) -> Result<HealOutcome, String> {
+    heal_check_after_rebuild_err(repo, slot, err).map(|c| c.outcome)
+}
+
+/// [`heal_outcome_after_rebuild_err`] with the snapshot face: the
+/// half-success `Healed` lends its post-attempt recompute (the slot is
+/// fresh by that evaluation); the `ServeStale` arm lends nothing (②② —
+/// a build attempt touched the slot and did not converge). Public for
+/// direct testing, same reason as its outcome-face sibling.
+pub fn heal_check_after_rebuild_err(
+    repo: &Path,
+    slot: &Path,
+    err: String,
+) -> Result<HealCheck, String> {
     let snap = crate::engine::evaluate_staleness(
         repo,
         slot,
         crate::identity::IdentityCachePolicy::WriteBack,
     )?;
     if !snap.needs_rebuild() {
-        Ok(HealOutcome::Healed {
-            secs: 0.0,
-            nodes: 0,
-            notes: vec![format!("[WARN] graph 未重建（{err}）——下次顯式 build 補\n")],
-        })
+        Ok(HealCheck::reusing(
+            HealOutcome::Healed {
+                secs: 0.0,
+                nodes: 0,
+                notes: vec![format!("[WARN] graph 未重建（{err}）——下次顯式 build 補\n")],
+            },
+            snap,
+        ))
     } else {
-        Ok(HealOutcome::ServeStale(vec![format!(
-            "[WARN] {err}——本次查詢以現存索引作答\n"
-        )]))
+        Ok(HealCheck::recompute(HealOutcome::ServeStale(vec![
+            format!("[WARN] {err}——本次查詢以現存索引作答\n"),
+        ])))
     }
 }
 
@@ -1487,7 +1539,7 @@ fn run_heal_locked(
     roots: &[PathBuf],
     _lock: HealLock,
     t0: Instant,
-) -> Result<HealOutcome, String> {
+) -> Result<HealCheck, String> {
     match build_repo(repo, None, roots) {
         Err(e) => {
             // A failed rebuild is still a heal that failed to converge
@@ -1497,8 +1549,8 @@ fn run_heal_locked(
             // the single-flight lock; a head drift (commit boundary)
             // overrides the window.
             write_churn_marker(slot);
-            let mut out = heal_outcome_after_rebuild_err(repo, slot, e.msg().to_string())?;
-            if let HealOutcome::ServeStale(lines) = &mut out {
+            let mut out = heal_check_after_rebuild_err(repo, slot, e.msg().to_string())?;
+            if let HealOutcome::ServeStale(lines) = &mut out.outcome {
                 lines.extend(producer_drift_notes(repo, slot, roots));
             }
             Ok(out)
@@ -1508,11 +1560,11 @@ fn run_heal_locked(
             // slot — absence IS the converged state; evaluate_staleness
             // would stat-fail on the missing slot.
             if !slot.exists() {
-                return Ok(HealOutcome::Healed {
+                return Ok(HealCheck::recompute(HealOutcome::Healed {
                     secs: t0.elapsed().as_secs_f64(),
                     nodes: rep.nodes,
                     notes: rep.notes,
-                });
+                }));
             }
             // Loop guard (SM-9): a rebuild that still leaves the slot
             // behind warns once and serves — never loops.
@@ -1550,7 +1602,7 @@ fn run_heal_locked(
                             d.examples.join("、")
                         )];
                         lines.extend(producer_drift_notes(repo, slot, roots));
-                        return Ok(HealOutcome::ServeStale(lines));
+                        return Ok(HealCheck::recompute(HealOutcome::ServeStale(lines)));
                     }
                 }
             }
@@ -1564,7 +1616,7 @@ fn run_heal_locked(
                         .to_string(),
                 ];
                 lines.extend(producer_drift_notes(repo, slot, roots));
-                return Ok(HealOutcome::ServeStale(lines));
+                return Ok(HealCheck::recompute(HealOutcome::ServeStale(lines)));
             }
             // Converged — any churn window is over; re-arm healing.
             let _ = std::fs::remove_file(churn_marker(slot));
@@ -1584,15 +1636,21 @@ fn run_heal_locked(
                         d.examples.join("、")
                     )];
                     lines.extend(producer_drift_notes(repo, slot, roots));
-                    return Ok(HealOutcome::ServeStale(lines));
+                    return Ok(HealCheck::recompute(HealOutcome::ServeStale(lines)));
                 }
             }
             let notes = producer_drift_notes(repo, slot, roots);
-            Ok(HealOutcome::Healed {
-                secs: t0.elapsed().as_secs_f64(),
-                nodes: rep.nodes,
-                notes,
-            })
+            // The post-build recompute above IS the stamp's snapshot:
+            // the slot cannot move under the held lock, and the stamp's
+            // own binding legs still verify it (CR-12 ②②).
+            Ok(HealCheck::reusing(
+                HealOutcome::Healed {
+                    secs: t0.elapsed().as_secs_f64(),
+                    nodes: rep.nodes,
+                    notes,
+                },
+                snap,
+            ))
         }
     }
 }
@@ -1602,7 +1660,7 @@ fn wait_peer_and_reevaluate(
     slot: &Path,
     roots: &[PathBuf],
     t0: Instant,
-) -> Result<HealOutcome, String> {
+) -> Result<HealCheck, String> {
     let lock_path = slot
         .parent()
         .unwrap_or_else(|| Path::new(""))
@@ -1618,12 +1676,17 @@ fn wait_peer_and_reevaluate(
             // heal failed to converge (armed marker) must not be reported
             // as having fixed it (codex P0-4)
             if snap.head_drift != Some(true) && churn_cooldown_active(slot) {
-                return Ok(churn_serve_stale(repo, slot, roots));
+                return Ok(HealCheck::recompute(churn_serve_stale(repo, slot, roots)));
             }
             if !snap.needs_rebuild() {
-                return Ok(HealOutcome::HealedByPeer {
-                    waited_secs: t0.elapsed().as_secs_f64(),
-                });
+                // the POST-wait recompute is the stamp's snapshot (②③:
+                // the pre-wait one described the slot the peer replaced)
+                return Ok(HealCheck::reusing(
+                    HealOutcome::HealedByPeer {
+                        waited_secs: t0.elapsed().as_secs_f64(),
+                    },
+                    snap,
+                ));
             }
             // peer released without fixing it — become the healer
             let slot_dir = slot.parent().unwrap_or_else(|| Path::new("."));
@@ -1633,9 +1696,9 @@ fn wait_peer_and_reevaluate(
                     std::thread::sleep(HEAL_POLL); // raced again; keep polling
                     continue;
                 }
-                Err(e) => Ok(HealOutcome::ServeStale(vec![format!(
-                    "[WARN] {e}——本次查詢以現存索引作答\n"
-                )])),
+                Err(e) => Ok(HealCheck::recompute(HealOutcome::ServeStale(vec![
+                    format!("[WARN] {e}——本次查詢以現存索引作答\n"),
+                ]))),
             };
         }
         if t0.elapsed() > HEAL_WAIT_BUDGET {
@@ -1644,7 +1707,7 @@ fn wait_peer_and_reevaluate(
                     .to_string(),
             ];
             lines.extend(producer_drift_notes(repo, slot, roots));
-            return Ok(HealOutcome::ServeStale(lines));
+            return Ok(HealCheck::recompute(HealOutcome::ServeStale(lines)));
         }
         std::thread::sleep(HEAL_POLL);
     }
@@ -1655,10 +1718,18 @@ fn wait_peer_and_reevaluate(
 /// index. Missing slot → `Fresh` so the caller's own missing-index FAIL
 /// path stays authoritative (SM-11, no bootstrap-on-miss).
 pub fn ensure_fresh(repo: &Path, roots: &[PathBuf]) -> Result<HealOutcome, String> {
+    ensure_fresh_check(repo, roots).map(|c| c.outcome)
+}
+
+/// [`ensure_fresh`] with the snapshot face (CR-12 ②①): the query path's
+/// entry — the returned snapshot (when lent, see [`HealCheck`]) feeds
+/// the serving stamp so a fresh query pays the full staleness
+/// evaluation exactly once.
+pub fn ensure_fresh_check(repo: &Path, roots: &[PathBuf]) -> Result<HealCheck, String> {
     let repo = resolve_repo(repo);
     let slot = default_index_path(&repo)?;
     if !slot.exists() {
-        return Ok(HealOutcome::Fresh);
+        return Ok(HealCheck::recompute(HealOutcome::Fresh));
     }
     let snap = crate::engine::evaluate_staleness(
         &repo,
@@ -1672,10 +1743,15 @@ pub fn ensure_fresh(repo: &Path, roots: &[PathBuf]) -> Result<HealOutcome, Strin
     // exists to remember). A drifted head (commit boundary) overrides:
     // commits are the stable points worth converging on.
     if snap.head_drift != Some(true) && churn_cooldown_active(&slot) {
-        return Ok(churn_serve_stale(&repo, &slot, roots));
+        // pre-dispatch short-circuit: no heal activity touched the slot,
+        // the check's snapshot is exactly what a recompute would answer
+        return Ok(HealCheck::reusing(
+            churn_serve_stale(&repo, &slot, roots),
+            snap,
+        ));
     }
     if !snap.needs_rebuild() {
-        return Ok(HealOutcome::Fresh);
+        return Ok(HealCheck::reusing(HealOutcome::Fresh, snap));
     }
     let t0 = Instant::now();
     let slot_dir = slot
@@ -1688,7 +1764,9 @@ pub fn ensure_fresh(repo: &Path, roots: &[PathBuf]) -> Result<HealOutcome, Strin
         Err(e) => {
             let mut lines = vec![format!("[WARN] {e}——本次查詢以現存索引作答\n")];
             lines.extend(producer_drift_notes(&repo, &slot, roots));
-            Ok(HealOutcome::ServeStale(lines))
+            // the lock could not even be created — nothing was dispatched
+            // and the slot is untouched: the check's snapshot stands
+            Ok(HealCheck::reusing(HealOutcome::ServeStale(lines), snap))
         }
     }
 }

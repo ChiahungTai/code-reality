@@ -1080,6 +1080,17 @@ fn parse_stamped_faces(
     Some(out)
 }
 
+/// Process-wide count of [`evaluate_staleness`] entries (CR-12 TC-14
+/// evidence: a query path's evaluation count is observable from tests
+/// without instrumenting any caller).
+static STALENESS_EVALUATIONS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+/// Number of [`evaluate_staleness`] calls so far in this process.
+pub fn staleness_evaluations() -> usize {
+    STALENESS_EVALUATIONS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Cheap staleness evaluation (Stage A): walk + stats + meta read. Zero
 /// producer spawns (a stamped meta adds one `git rev-parse`) and zero
 /// protobuf parses — the steady-state query cost. With S4 face metadata
@@ -1098,6 +1109,7 @@ pub fn evaluate_staleness(
     slot: &Path,
     policy: crate::identity::IdentityCachePolicy,
 ) -> Result<StalenessSnapshot, String> {
+    STALENESS_EVALUATIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let root = resolve_repo(repo);
     let walk = walk_sources(repo)?;
     let slot_m = slot
