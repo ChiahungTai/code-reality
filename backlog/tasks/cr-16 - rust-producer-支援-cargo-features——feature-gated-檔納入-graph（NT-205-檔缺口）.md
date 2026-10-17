@@ -1,13 +1,15 @@
 ---
 id: CR-16
 title: rust producer 支援 cargo features——feature-gated 檔納入 graph（NT 205 檔缺口）
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-17 10:56'
-updated_date: '2026-10-17 10:56'
+updated_date: '2026-10-17 12:37'
 labels: []
 dependencies:
   - CR-14
+references:
+  - CR-16
 ordinal: 17000
 ---
 
