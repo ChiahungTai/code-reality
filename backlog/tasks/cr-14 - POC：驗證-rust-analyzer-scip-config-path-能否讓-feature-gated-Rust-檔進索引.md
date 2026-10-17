@@ -1,12 +1,14 @@
 ---
 id: CR-14
 title: POC：驗證 rust-analyzer scip --config-path 能否讓 feature-gated Rust 檔進索引
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-17 10:56'
-updated_date: '2026-10-17 10:56'
+updated_date: '2026-10-17 10:57'
 labels: []
 dependencies: []
+references:
+  - CR-14
 ordinal: 15000
 ---
 
