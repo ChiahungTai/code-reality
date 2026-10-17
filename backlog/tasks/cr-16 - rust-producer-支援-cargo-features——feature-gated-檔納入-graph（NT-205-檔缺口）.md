@@ -1,10 +1,10 @@
 ---
 id: CR-16
 title: rust producer 支援 cargo features——feature-gated 檔納入 graph（NT 205 檔缺口）
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-17 10:56'
-updated_date: '2026-10-17 12:37'
+updated_date: '2026-10-17 14:08'
 labels: []
 dependencies:
   - CR-14
@@ -31,14 +31,14 @@ flowchart LR
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 NT 1.99.0 --config-path 啟用指定 feature：SCIP 含 gated 定義、baseline 不含
-- [ ] #2 未設定 features 的 repo：producer 行為與 coverage 結果完全不變
-- [ ] #3 單一與多 workspace 的 feature selection 正確（per-root 映射）
-- [ ] #4 無效 feature／Cargo 失敗／config 解析異常均 fail loud
-- [ ] #5 只改 feature selection（source 不變）freshness 不 false-fresh
-- [ ] #6 index stamp／manifest／graph 與生效 producer 設定一致
-- [ ] #7 NT 移除可恢復 exclusions 後 coverage gate 通過，剩餘 exclusions 有明確理由
-- [ ] #8 不引入 DEF collisions／重複文件／跨配置靜默覆寫
+- [x] #1 NT 1.99.0 --config-path 啟用指定 feature：SCIP 含 gated 定義、baseline 不含
+- [x] #2 未設定 features 的 repo：producer 行為與 coverage 結果完全不變
+- [x] #3 單一與多 workspace 的 feature selection 正確（per-root 映射）
+- [x] #4 無效 feature／Cargo 失敗／config 解析異常均 fail loud
+- [x] #5 只改 feature selection（source 不變）freshness 不 false-fresh
+- [x] #6 index stamp／manifest／graph 與生效 producer 設定一致
+- [x] #7 NT 移除可恢復 exclusions 後 coverage gate 通過，剩餘 exclusions 有明確理由
+- [x] #8 不引入 DEF collisions／重複文件／跨配置靜默覆寫
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -48,3 +48,21 @@ flowchart LR
 〔已決策勿重辯：①方案 (c) scip --config-path 優先（以 cr-14 POC 結論為準）；②shadow worktree＝最後備援、"all" 不作預設（互斥 feature／平台專屬／native deps 風險）；③profile 設定 opt-in（候選 schema [rust] features，未設定＝現行 default-features 行為完全不變）；④多 Cargo workspace 須支援 per-root features 映射（feature 名與相依各 root 不同，沿用 DB-100 root composition 面）；⑤fail loud：未知 feature、非法組合、config 解析異常、Cargo 失敗均不可靜默忽略（上游 config 套用錯誤只走 logging——須驗產物非只看 exit 0）；⑥freshness 契約：producer feature selection 必須納入可驗證 freshness contract（identity 演算法升級或與 index/manifest 綁定的 producer-options fingerprint，優先 additive 相容設計）——只改 features 而 source 不變時禁 false-fresh（現行 identity.rs:34-48／engine.rs:749-760 未涵蓋 feature selection）；⑦index stamp／manifest／graph 與生效 producer 設定一致，不能只在 build report 印 features；⑧落地後 NT 移除可恢復 exclude 重建，coverage gate（ROOT-08/09）須過，剩餘 exclude 有明確理由〕
 範圍：build/stage_rust 接線＋profile 欄位＋identity/freshness＋多 root 映射；不含 JS/TS/Python 面；上游 scip panic #21269 已由 #21270 修復非阻塞（NT 1.99.0 上驗證即可）。
 <!-- SECTION:PLAN:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+flash 實作＋雙審（flash approve＋codex findings 修補）全綠落地（main `61d7293`）：profile [rust] features/features_by_root（互斥 fail loud）、stage_rust --config-path 注入（空 config 位元組不變）、未知 feature 對 cargo metadata universe spawn 前驗證、features 進 identity domain extras（只改 features 也 stale）、report 揭露；真 ra 端到端＋雙 workspace per-root 注入測試全過。
+
+```mermaid
+flowchart LR
+    A[".code-reality.toml [rust]"] --> B{"有 features？"}
+    B -->|否| C["argv/identity 位元組不變"]
+    B -->|是| D["cargo metadata 驗 feature 名"]
+    D -->|未知| E["fail loud（spawn 前）"]
+    D -->|合法| F["暫存 JSON＋--config-path"]
+    F --> G["gated 檔入索引"]
+    A --> H["identity domain extras"]
+    H --> I["只改 features→stale"]
+    G --> J["NT 移除 205 exclude 重建"]
+<!-- SECTION:FINAL_SUMMARY:END -->
