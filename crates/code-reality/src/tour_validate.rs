@@ -263,12 +263,46 @@ fn truncate(s: &str, n: usize) -> String {
 
 /// Anchor three-state check (`tour_validate.py:89-114`): exact → count;
 /// corrected → WARN (player semantics); unverified → FAIL.
+///
+/// CR-15 symbol-aware refinement: a step carrying `x-codeReality.symbol`
+/// resolves against graph.db FIRST — before the recorded file's
+/// existence check — behind the freshness gate
+/// ([`crate::symbol_resolve::SymbolGate`] — `current-tree` only). A
+/// UNIQUE symbol decides even when the recorded file is gone
+/// (relocation, H1): the corrected WARN carries the symbol-derived
+/// coordinates — but only when the recorded pattern also hits the new
+/// address; a pattern miss at the unique new address is an unverified
+/// FAIL (H3 — a proposal the player could not follow is never
+/// "corrected"). The relocation target must actually READ: an
+/// absent/unreadable new address is an unverified FAIL too — an empty
+/// line pool would let a line-1 `^`-shaped anchor false-verify
+/// (round-2 R1). Miss / ambiguous / absent symbol / disabled gate all
+/// fall back to the legacy path INCLUDING the old-file existence check
+/// — a miss is never read as "definition deleted".
 pub fn check_anchors(
     rel: &str,
     tour: &serde_json::Value,
     repo: &Path,
     stdout: &mut String,
 ) -> (Vec<String>, usize, usize) {
+    let (gate, warn) = crate::symbol_resolve::SymbolGate::for_repo(repo);
+    if let Some(w) = warn {
+        stdout.push_str(&w);
+    }
+    check_anchors_gated(rel, tour, repo, &gate, stdout)
+}
+
+/// [`check_anchors`] with the caller-supplied corpus gate — `validate`
+/// computes the freshness verdict once per run and threads it through
+/// every tour (CR-12: one staleness evaluation per query).
+pub fn check_anchors_gated(
+    rel: &str,
+    tour: &serde_json::Value,
+    repo: &Path,
+    gate: &crate::symbol_resolve::SymbolGate,
+    stdout: &mut String,
+) -> (Vec<String>, usize, usize) {
+    use crate::symbol_resolve::SymbolLoc;
     let mut fails = Vec::new();
     let (mut exact, mut corrected) = (0, 0);
     let steps = tour
@@ -287,13 +321,158 @@ pub fn check_anchors(
             continue;
         }
         let p = repo.join(f);
+        let rx = regex::Regex::new(pat).ok();
+        // ---- CR-15 symbol path (gate enabled + x-codeReality.symbol) --
+        // H1: the symbol is consulted BEFORE the recorded file's
+        // existence check — a unique address decides even when the
+        // recorded file is gone
+        let mut symbol_decided = false;
+        if let Some(loc) = gate.locator() {
+            let sym = step
+                .get("x-codeReality")
+                .and_then(|x| x.get("symbol"))
+                .and_then(|s| s.as_str())
+                .filter(|s| !s.is_empty());
+            if let Some(sym) = sym {
+                match loc.locate(sym) {
+                    Err(e) => {
+                        // M4: a db error is never a silent Miss — one
+                        // WARN, then the legacy face
+                        stdout.push_str(&format!(
+                            "[WARN] {rel} 步{} graph.db symbol 查詢失敗——退化 line/pattern: {e}\n",
+                            i + 1
+                        ));
+                    }
+                    Ok(SymbolLoc::Located {
+                        file_path,
+                        line_start,
+                    }) => {
+                        if let Some(sf) = loc.rel_file(&file_path) {
+                            let moved = sf != f;
+                            // when the graph still points at the recorded
+                            // file, that file must exist for anything the
+                            // symbol path could verify — the existence
+                            // check below governs (H1)
+                            if moved || p.exists() {
+                                if !moved && line_start == ln {
+                                    // coordinates already match the graph
+                                    // — the legacy verdict has the final
+                                    // word (exact / nearest-hit corrected /
+                                    // unverified)
+                                } else {
+                                    // unique symbol, stale coordinates —
+                                    // verified against the NEW address's
+                                    // content (H3): the recorded pattern
+                                    // must hit the new line for a
+                                    // corrected WARN; a miss there is an
+                                    // unverified FAIL. The target must
+                                    // actually READ — an absent/unreadable
+                                    // file is an unverified FAIL, never an
+                                    // empty-string pool a line-1
+                                    // `^`-shaped anchor could
+                                    // false-verify against (round-2 R1)
+                                    let target = if moved {
+                                        repo.join(&sf)
+                                    } else {
+                                        p.clone()
+                                    };
+                                    let new_content =
+                                        match std::fs::read_to_string(&target) {
+                                            Ok(c) => c,
+                                            Err(_) => {
+                                                let fail = if moved {
+                                                    format!(
+                                                        "[FAIL] {rel} 步{} symbol 定址（source: SCIP symbol）: {f} -> {sf} L{ln}->L{line_start}；新檔不可讀（unverified）",
+                                                        i + 1
+                                                    )
+                                                } else {
+                                                    format!(
+                                                        "[FAIL] {rel} 步{} symbol 定址（source: SCIP symbol）: {f} L{ln}->L{line_start}；檔案不可讀（unverified）",
+                                                        i + 1
+                                                    )
+                                                };
+                                                fails.push(fail);
+                                                continue;
+                                            }
+                                        };
+                                    let new_lines: Vec<&str> =
+                                        new_content.split('\n').collect();
+                                    let pat_at_new = line_start >= 1
+                                        && ((line_start as usize) <= new_lines.len())
+                                        && rx
+                                            .as_ref()
+                                            .map(|r| {
+                                                r.is_match(new_lines[(line_start - 1) as usize])
+                                            })
+                                            .unwrap_or(false);
+                                    if pat_at_new {
+                                        corrected += 1;
+                                        let msg = if moved {
+                                            format!(
+                                                "[WARN] {rel} 步{} 錨 corrected（source: SCIP symbol）: {f} -> {sf} L{ln}->L{line_start}",
+                                                i + 1
+                                            )
+                                        } else {
+                                            format!(
+                                                "[WARN] {rel} 步{} 錨 corrected（source: SCIP symbol）: {f} L{ln}->L{line_start}",
+                                                i + 1
+                                            )
+                                        };
+                                        stdout.push_str(&msg);
+                                        stdout.push('\n');
+                                    } else {
+                                        let fail = if moved {
+                                            format!(
+                                                "[FAIL] {rel} 步{} symbol 定址（source: SCIP symbol）: {f} -> {sf} L{ln}->L{line_start}；pattern 未命中新座標（unverified）",
+                                                i + 1
+                                            )
+                                        } else {
+                                            format!(
+                                                "[FAIL] {rel} 步{} symbol 定址（source: SCIP symbol）: {f} L{ln}->L{line_start}；pattern 未命中新座標（unverified）",
+                                                i + 1
+                                            )
+                                        };
+                                        fails.push(fail);
+                                    }
+                                    symbol_decided = true;
+                                }
+                            }
+                        }
+                        // rel-ification failed (db from another checkout):
+                        // conservative legacy fallback
+                    }
+                    Ok(SymbolLoc::Ambiguous(rows)) => {
+                        if p.exists() {
+                            stdout.push_str(&format!(
+                                "[WARN] {rel} 步{} symbol 歧義（{} 列同名 symbol）——退化 line/pattern: {f}:{ln}\n",
+                                i + 1,
+                                rows.len()
+                            ));
+                            // fall through to the legacy path
+                        }
+                        // recorded file gone (H1): the existence check
+                        // below governs — a degrade note would announce a
+                        // pattern face that cannot run
+                    }
+                    Ok(SymbolLoc::Miss) => {
+                        // absence of a graph row is never read as
+                        // "definition deleted" — the legacy path,
+                        // including the old-file existence check (H1),
+                        // governs unchanged
+                    }
+                }
+            }
+        }
+        if symbol_decided {
+            continue;
+        }
+        // ---- legacy line/pattern path (frozen player semantics) ------
         if !p.exists() {
             fails.push(format!("[FAIL] {rel} 步{} 錨檔不存在: {f}", i + 1));
             continue;
         }
         let content = std::fs::read_to_string(&p).unwrap_or_default();
         let lines: Vec<&str> = content.split('\n').collect();
-        let rx = regex::Regex::new(pat).ok();
         let anchored = ln >= 1
             && ((ln as usize) <= lines.len())
             && rx
@@ -453,6 +632,13 @@ pub fn validate(repo: &Path, tours_dir: &Path, with_manifest: bool) -> ToolOutpu
     let all_tours = iter_tours(repo, tours_dir, true).unwrap_or_default();
     let idx = key_index(&all_tours);
     let by_rel: BTreeMap<String, serde_json::Value> = tours.iter().cloned().collect();
+    // CR-15: the symbol-coordinate gate is computed ONCE per run —
+    // freshness verdict + graph.db presence decide the whole corpus;
+    // degraded runs print the single WARN and behave exactly as before.
+    let (gate, gate_warn) = crate::symbol_resolve::SymbolGate::for_repo(repo);
+    if let Some(w) = gate_warn {
+        stdout.push_str(&w);
+    }
     let mut fails = Vec::new();
     let (mut n_links, mut n_files) = (0, 0);
     for (rel, tour) in &tours {
@@ -492,7 +678,7 @@ pub fn validate(repo: &Path, tours_dir: &Path, with_manifest: bool) -> ToolOutpu
             }
         }
         fails.extend(check_files(rel, tour, repo));
-        let (af, _, _) = check_anchors(rel, tour, repo, &mut stdout);
+        let (af, _, _) = check_anchors_gated(rel, tour, repo, &gate, &mut stdout);
         fails.extend(af);
     }
     // CR-2 ts_key uniqueness (tiered, over the full index including

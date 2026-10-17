@@ -8,19 +8,19 @@
 use crate::argparse::{parse, FlagSpec, Kind, Outcome, ToolSpec};
 use crate::common::{anchor_pattern, assert_db_unchanged, connect_ro, db_mtime_ns};
 use crate::profile::{is_excluded, load_profile, Profile};
+use crate::symbol_resolve::{same_file_rows, resolve_candidates, FillCandidate, FillOutcome};
 use crate::ToolOutput;
 use rusqlite::Connection;
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
+/// Re-export: the ident extractor moved to the shared resolver module
+/// (`symbol_resolve`) — the `chain_tour::best_ident` path stays valid.
+pub use crate::symbol_resolve::best_ident;
+
 fn ref_re() -> &'static regex::Regex {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     RE.get_or_init(|| regex::Regex::new(r"([\w./\-]+\.(?:py|rs)):(\d+)").unwrap())
-}
-
-fn ident_re() -> &'static regex::Regex {
-    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    RE.get_or_init(|| regex::Regex::new(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]*)*").unwrap())
 }
 
 fn lineless_re() -> &'static regex::Regex {
@@ -137,24 +137,9 @@ pub fn parse_blocks(text: &str) -> Vec<(String, Vec<String>)> {
     blocks
 }
 
-/// Best ident from symbol text: call-position (followed by `(`) first,
-/// then longest. Returns (last segment, full dotted form) — CR-9 R2
-/// needs the winning token's complete dotted shape (`DataPhaseStep.execute`)
-/// for qualified-name alignment; the last-segment face is unchanged.
-pub fn best_ident(symbol: &str) -> (String, String) {
-    let mut cands: Vec<(bool, usize, String)> = Vec::new();
-    for m in ident_re().find_iter(symbol) {
-        let nxt = symbol[m.end()..].chars().next();
-        cands.push((nxt == Some('('), m.as_str().len(), m.as_str().to_string()));
-    }
-    if cands.is_empty() {
-        return (String::new(), String::new());
-    }
-    cands.sort_by_key(|c| (std::cmp::Reverse(c.0), std::cmp::Reverse(c.1)));
-    let full = cands[0].2.clone();
-    let last = full.rsplit('.').next().unwrap_or("").to_string();
-    (last, full)
-}
+/// Best ident from symbol text — moved to [`crate::symbol_resolve`]
+/// (shared with the CR-15 tour reanchor/validate faces); the re-export
+/// above keeps this module's public path.
 
 /// Whole-frame token of a frame's symbol remainder (CR-9 COD-1 gate):
 /// trim, then cut one trailing `(...)` parameter group, so `main()` /
@@ -568,228 +553,12 @@ impl GraphAnchor {
     }
 }
 
-/// One ambiguous same-name candidate surfaced to the doc author (CR-9
-/// R3). `descriptor` is the candidate's descriptor region (scope chain +
-/// def, module already cut). Two shapes stay banned in the rendering:
-/// markdown-link form `[..](..)` — the shape tour_validate's
-/// `file_ref()` actually counts in tour descriptions — and `path.py:NN`
-/// form, which chain_tour's own `ref_re` parse face would read back as
-/// a file:line anchor.
-#[derive(Debug, Clone)]
-pub struct FillCandidate {
-    pub descriptor: String,
-    pub line: i64,
-    pub kind: String,
-}
-
-/// CR-7 line-less fill outcome: a verified unique anchor or a typed
-/// no-anchor reason (machine-readable — the reason feeds the graph
-/// distribution axis, while the skip is stamped `noanchor`). CR-9 R3:
-/// the ambiguous reason carries the same-file same-name candidates for
-/// the tour-description hint line; every other reason carries an empty
-/// vector.
-pub enum FillOutcome {
-    Filled(i64, Option<String>),
-    NoAnchor(String, Vec<FillCandidate>),
-}
-
-/// Descriptor region of a SCIP symbol: everything after the module /
-/// discriminator area. Python faces wrap the module in backticks
-/// (`` `pyrefly python p 1.0 `pkg.mod`/Cls#m(). ``), so the boundary is
-/// the last `` `/ ``; the Rust/scip faces carry a bare package-or-path
-/// prefix (`rust-analyzer cargo p 0.1.0 pkg/impl#[T]m().`), so the
-/// boundary falls back to the last `/` of the discriminator-stripped
-/// tail. Returns None when no boundary exists — R2 and the R3 hint
-/// never guess a chain they could not locate (fail closed).
-fn descriptor_region(symbol: &str) -> Option<&str> {
-    let s = symbol.trim_end();
-    if let Some(i) = s.rfind("`/") {
-        return Some(&s[i + 2..]);
-    }
-    let tail = crate::engine::tail(s);
-    let i = tail.rfind('/')?;
-    Some(&tail[i + 1..])
-}
-
-fn sym_char(c: char) -> bool {
-    c.is_ascii_alphanumeric() || c == '_' || c == '%'
-}
-
-/// Structured scope chain of a descriptor region: every descriptor name
-/// in order (scopes, then the def itself), per the producer grammar —
-/// `name().` function, `name#` class, `name.` variable. A Rust trait
-/// impl head `impl#[T][Trait]m().` contributes its FIRST bracket group
-/// (the inherent type) and skips the trait groups verbatim, so the
-/// chain is `[T, m]`. Every bracket group validates like the first
-/// (non-empty, all `sym_char`); a malformed group (`impl#[Lab][]m().`)
-/// fails the whole chain — the candidate set stays ambiguous instead of
-/// silently reading past unverified text. Returns None for anything
-/// that does not parse
-/// cleanly — a non-ASCII region, an empty segment, or a delimiter
-/// outside the producer grammar (`().`/`#`/`.`; qname-style fixture
-/// rows). `%` is a name character here (escaped-identifier runs ride
-/// through as plain segments), not a rejection trigger. R2 refuses to
-/// resolve over an unparseable candidate set.
-fn descriptor_chain(region: &str) -> Option<Vec<String>> {
-    if !region.is_ascii() {
-        return None;
-    }
-    let mut names: Vec<String> = Vec::new();
-    let mut i = 0;
-    if let Some(rest) = region.strip_prefix("impl#[") {
-        let close = rest.find(']')?;
-        let group = &rest[..close];
-        if group.is_empty() || !group.chars().all(sym_char) {
-            return None;
-        }
-        names.push(group.to_string());
-        i = "impl#[".len() + close + 1;
-        while region[i..].starts_with('[') {
-            let rest = &region[i + 1..];
-            let end = rest.find(']')?;
-            let group = &rest[..end];
-            if group.is_empty() || !group.chars().all(sym_char) {
-                return None;
-            }
-            i += end + 2;
-        }
-    }
-    let b = region.as_bytes();
-    while i < region.len() {
-        let start = i;
-        while i < region.len() && sym_char(b[i] as char) {
-            i += 1;
-        }
-        if i == start {
-            return None;
-        }
-        names.push(region[start..i].to_string());
-        if region[i..].starts_with("().") {
-            i += 3;
-        } else if region[i..].starts_with('#') || region[i..].starts_with('.') {
-            i += 1;
-        } else {
-            return None;
-        }
-    }
-    if names.is_empty() {
-        None
-    } else {
-        Some(names)
-    }
-}
-
-/// Mirror of pyrefly-producer's `pseudo_ctor_symbol` (symbol.rs): the
-/// pseudo-constructor form of a class-shaped symbol swaps the trailing
-/// `#` for `().`. Local copy — the tool layer embeds no producer dep.
-fn pseudo_ctor_symbol(sym: &str) -> Option<String> {
-    sym.strip_suffix('#').map(|head| format!("{head}()."))
-}
-
-type FillRows = [(i64, String, String)];
-
-/// R1 (CR-9): the candidate set is EXACTLY the pseudo-constructor
-/// self-collision — one Type node `` …X# `` plus its minted
-/// constructor-call twin `` …X(). `` (producer B7b pairs one logical
-/// definition into two nodes), equal line_start, no other same-name
-/// rows. Any unmet condition keeps the set ambiguous. The fill stamps
-/// the TYPE symbol — a canonicalization choice, not a claim that the
-/// two SCIP symbols are equivalent.
-fn r1_pseudo_ctor_pair(rows: &FillRows) -> Option<(i64, Option<String>)> {
-    if rows.len() != 2 {
-        return None;
-    }
-    let (a, b) = (&rows[0], &rows[1]);
-    let is_type_ctor = |t: &(i64, String, String), c: &(i64, String, String)| {
-        t.1.ends_with('#') && t.2 == "Type" && c.2 == "Function"
-    };
-    let (t, c) = if is_type_ctor(a, b) {
-        (a, b)
-    } else if is_type_ctor(b, a) {
-        (b, a)
-    } else {
-        return None;
-    };
-    if pseudo_ctor_symbol(&t.1).as_deref() != Some(c.1.as_str()) {
-        return None;
-    }
-    if t.0 != c.0 {
-        return None;
-    }
-    Some((t.0, Some(t.1.clone())))
-}
-
-/// R2 (CR-9): the doc's qualified dotted name uniquely identifies one
-/// candidate by structured scope-chain tail alignment. The doc chain
-/// (segments of the winning ident token, case-sensitive) is compared
-/// against each candidate's descriptor chain with whole-segment
-/// equality — never a substring ends_with. Two tiers: equal-length
-/// full match first; when no tier-1 candidate survives, a strictly
-/// SHORTER doc chain may tail-align into longer candidate chains.
-/// Exactly one survivor in the winning tier fills; zero or multiple
-/// survivors, an unusable doc chain, or ANY unparseable candidate
-/// descriptor keeps the set ambiguous (fail closed).
-fn r2_qualified_unique(rows: &FillRows, doc_full: &str) -> Option<(i64, Option<String>)> {
-    let doc_chain: Vec<&str> = doc_full.split('.').collect();
-    if doc_chain.is_empty() || doc_chain.iter().any(|s| s.is_empty()) {
-        return None;
-    }
-    let chains: Vec<Vec<String>> = rows
-        .iter()
-        .map(|(_, sym, _)| descriptor_chain(descriptor_region(sym)?))
-        .collect::<Option<_>>()?;
-    let segs_eq = |chain: &[String]| {
-        chain.len() == doc_chain.len()
-            && chain.iter().zip(doc_chain.iter()).all(|(a, b)| a == b)
-    };
-    let tier1: Vec<usize> = chains
-        .iter()
-        .enumerate()
-        .filter(|(_, chain)| segs_eq(chain))
-        .map(|(i, _)| i)
-        .collect();
-    let pick = |survivors: Vec<usize>| {
-        if survivors.len() == 1 {
-            let (line, sym, _) = &rows[survivors[0]];
-            Some((*line, Some(sym.clone())))
-        } else {
-            None
-        }
-    };
-    if !tier1.is_empty() {
-        return pick(tier1);
-    }
-    let tier2: Vec<usize> = chains
-        .iter()
-        .enumerate()
-        .filter(|(_, chain)| {
-            chain.len() > doc_chain.len()
-                && chain[chain.len() - doc_chain.len()..]
-                    .iter()
-                    .zip(doc_chain.iter())
-                    .all(|(a, b)| a == b)
-        })
-        .map(|(i, _)| i)
-        .collect();
-    pick(tier2)
-}
-
-/// R3 hint payload: only candidates whose descriptor parses cleanly
-/// render (qname-shaped legacy rows stay out of the hint — the line is
-/// advisory; the ambiguous count itself is unaffected).
-fn fill_candidates(rows: &FillRows) -> Vec<FillCandidate> {
-    rows.iter()
-        .filter_map(|(line, sym, kind)| {
-            let region = descriptor_region(sym)?;
-            descriptor_chain(region)?;
-            Some(FillCandidate {
-                descriptor: region.to_string(),
-                line: *line,
-                kind: kind.clone(),
-            })
-        })
-        .collect()
-}
+// FillCandidate / FillOutcome and the R1/R2/R3 ambiguity core
+// (descriptor_region / descriptor_chain / pseudo_ctor_symbol /
+// r1_pseudo_ctor_pair / r2_qualified_unique / fill_candidates) moved to
+// [`crate::symbol_resolve`] (CR-15 extraction) — chain_tour consumes
+// them via the `use` at the top; behavior is frozen (the existing
+// chain_tour suites are the gate).
 
 impl GraphAnchor {
     /// CR-7 symbol-only backfill: unique same-file anchor by EXACT
@@ -846,47 +615,8 @@ impl GraphAnchor {
             .map(|p| p.to_string_lossy().replace('\\', "/"))
             .unwrap_or_default();
         let exact = format!("{}/{}", self.repo_root.display(), rel);
-        let mut stmt = self
-            .conn
-            .prepare(
-                "SELECT line_start, symbol, kind FROM nodes \
-                 WHERE file_path = ?1 AND name = ?2 \
-                 AND line_start IS NOT NULL AND line_start >= 1 \
-                 ORDER BY line_start, symbol",
-            )
-            .map_err(|e| format!("graph.db fill query failed: {e}"))?;
-        let rows: Vec<(i64, String, String)> = stmt
-            .query_map((&exact, ident), |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-            })
-            .map_err(|e| format!("graph.db fill query failed: {e}"))?
-            .collect::<Result<_, _>>()
-            .map_err(|e| format!("graph.db fill query failed: {e}"))?;
-        match rows.as_slice() {
-            [] => Ok(FillOutcome::NoAnchor("not-in-graph".into(), Vec::new())),
-            [(line, symbol, _)] => Ok(FillOutcome::Filled(*line, Some(symbol.clone()))),
-            many => {
-                // whole-frame gate (COD-1): a prose-wrapped remainder
-                // carries no disambiguation evidence — skip R1/R2 and
-                // stay ambiguous with the R3 hint (fail-visible)
-                if !whole {
-                    return Ok(FillOutcome::NoAnchor(
-                        "ambiguous".into(),
-                        fill_candidates(many),
-                    ));
-                }
-                if let Some(fill) = r1_pseudo_ctor_pair(many) {
-                    return Ok(FillOutcome::Filled(fill.0, fill.1));
-                }
-                if let Some(fill) = r2_qualified_unique(many, ident_full) {
-                    return Ok(FillOutcome::Filled(fill.0, fill.1));
-                }
-                Ok(FillOutcome::NoAnchor(
-                    "ambiguous".into(),
-                    fill_candidates(many),
-                ))
-            }
-        }
+        let rows = same_file_rows(&self.conn, &exact, ident)?;
+        Ok(resolve_candidates(&rows, ident_full, whole))
     }
 }
 

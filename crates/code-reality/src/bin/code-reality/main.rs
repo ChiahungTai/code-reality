@@ -49,6 +49,7 @@ fn route(argv: &[&str]) -> code_reality::ToolOutput {
         Some(&"hook") => code_reality::refresh::run(argv),
         Some(&"tour_validate") => code_reality::tour_validate::run(argv),
         Some(&"tour_upgrade") => code_reality::tour_upgrade::run(argv),
+        Some(&"tour_reanchor") => code_reality::tour_reanchor::run(argv),
         Some(&"--version") | Some(&"-V") => ToolOutput {
             stdout: format!("{}\n", code_reality::version_face()),
             stderr: String::new(),
@@ -70,7 +71,7 @@ fn route(argv: &[&str]) -> code_reality::ToolOutput {
     }
 }
 
-const SUBCOMMANDS: [&str; 21] = [
+const SUBCOMMANDS: [&str; 22] = [
     "scip_refs",
     "snapshot",
     "graph_audit",
@@ -84,6 +85,7 @@ const SUBCOMMANDS: [&str; 21] = [
     "tour_manifest",
     "tour_validate",
     "tour_upgrade",
+    "tour_reanchor",
     "runtime_edges",
     "graph_query",
     "graph_db",

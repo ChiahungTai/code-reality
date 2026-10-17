@@ -489,13 +489,20 @@ data-plane family (build/snapshot/delta_tour/project — write side
 effects, re-adjudicated 2026-08-29). The same binary carries the full
 toolchain: `code-reality <scip_refs|snapshot|graph_audit|
 hub_refs|boundary|boundary_build|build|chain_tour|delta_tour|tour|
-tour_manifest|tour_validate|tour_upgrade|runtime_edges|
+tour_manifest|tour_validate|tour_upgrade|tour_reanchor|runtime_edges|
 graph_query|graph_db|project|refresh|freshness> --repo <root>`. (Diff consumption runs through
 `delta_tour` — the transition CLI retired; snapshot sidecar pairs feed
 delta_tour directly. `tour register|materialize` is the intent-level
 two-phase materialization face: a manifest `[[delta_arc]]` provenance row
 keyed on arcId drives the full recipe — snapshot-pair resolution, stale
-gate, EP claims gate — into `.tours/delta/<arcId>.tour`.)
+gate, EP claims gate — into `.tours/delta/<arcId>.tour`. `tour_reanchor`
+re-anchors tour steps by SCIP symbol identity (`x-codeReality.symbol`
+via graph.db): dry-run by default (per-step proposals + stats),
+`--bootstrap-symbols` backfills symbols onto legacy line/pattern anchors
+only for unique, anchor-consistent same-file candidates, `--apply`
+writes only verified steps and never touches the manifest; symbol
+resolution is freshness-gated — on a stale graph both faces degrade to
+legacy file/line/pattern validation with one WARN.)
 
 ### Projection plans (`project`)
 

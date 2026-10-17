@@ -76,6 +76,29 @@ pub fn run(argv: &[&str]) -> ToolOutput {
     freshness_with(Path::new(&repo), json, delta_full)
 }
 
+/// The `serves` tri-state (`freshness --json`'s `serves` field), the
+/// single source shared with the query faces' symbol-coordinate gates
+/// (CR-15: `tour_validate`/`tour_reanchor` resolve
+/// `x-codeReality.symbol` only when this answers `current-tree`; a
+/// stale/legacy graph degrades to the line/pattern face). Vocabulary is
+/// frozen — never minted here.
+pub(crate) fn serves_state(snap: &StalenessSnapshot) -> &'static str {
+    let fresh = !snap.needs_rebuild();
+    if snap.identity_algo_upgrade {
+        "committed-baseline"
+    } else {
+        match snap.identity_drift {
+            // legacy 判別優先（R19 observation 1）— 不分 fresh/stale
+            None => "legacy-signals",
+            Some(false) if fresh => "current-tree",
+            // stale and torn-with-matching-identity both serve the
+            // committed baseline (graph answers are baseline + live-LSP
+            // delta for the working tree)
+            Some(_) => "committed-baseline",
+        }
+    }
+}
+
 /// The verdict (lib API — returns data, never prints/exits).
 pub fn freshness(repo: &Path, json: bool) -> ToolOutput {
     freshness_with(repo, json, false)
@@ -114,19 +137,7 @@ pub fn freshness_with(repo: &Path, json: bool, delta_full: bool) -> ToolOutput {
     // EP DB-100 S2: a Rust-inclusive upgrade-required slot serves the
     // committed baseline (never legacy-signals/fresh — Cargo-only changes
     // are invisible to its v1 body).
-    let serves = if snap.identity_algo_upgrade {
-        "committed-baseline"
-    } else {
-        match snap.identity_drift {
-            // legacy 判別優先（R19 observation 1）— 不分 fresh/stale
-            None => "legacy-signals",
-            Some(false) if fresh => "current-tree",
-            // stale and torn-with-matching-identity both serve the
-            // committed baseline (graph answers are baseline + live-LSP
-            // delta for the working tree)
-            Some(_) => "committed-baseline",
-        }
-    };
+    let serves = serves_state(&snap);
     // stale_reasons mapping — fixed order (R24); head_drift never enters.
     let mut reasons: Vec<&str> = Vec::new();
     if snap.graph_lags {
@@ -844,6 +855,42 @@ mod verdict_tests {
             out_of_scope_count: 0,
             policy_drift_flags: Default::default(),
         }
+    }
+
+    #[test]
+    fn serves_state_tri_state() {
+        // CR-15 gate vocabulary: current-tree only on fresh + comparable
+        // identity; stale/upgrade → committed-baseline; keyless →
+        // legacy-signals (identity_drift None takes priority)
+        let fresh = stamp_with(Some(delta()), false, Some("h"));
+        assert_eq!(serves_state(fresh.snapshot.as_ref().unwrap()), "current-tree");
+        let stale = stamp_with(Some(delta()), true, Some("h"));
+        assert_eq!(
+            serves_state(stale.snapshot.as_ref().unwrap()),
+            "committed-baseline"
+        );
+        // stamp_with cannot express a keyless slot (it always stamps
+        // identity_drift: Some(_)) — mutate to the legacy shape.
+        let mut legacy = stamp_with(None, true, None);
+        legacy.snapshot.as_mut().unwrap().identity_drift = None;
+        assert_eq!(
+            serves_state(legacy.snapshot.as_ref().unwrap()),
+            "legacy-signals"
+        );
+        // torn-with-matching-identity also serves the baseline
+        let mut torn = stamp_with(Some(delta()), false, Some("h"));
+        torn.snapshot.as_mut().unwrap().graph_lags = true;
+        assert_eq!(
+            serves_state(torn.snapshot.as_ref().unwrap()),
+            "committed-baseline"
+        );
+        // upgrade-required slot never answers current-tree (EP DB-100 S2)
+        let mut upgrade = stamp_with(Some(delta()), false, Some("h"));
+        upgrade.snapshot.as_mut().unwrap().identity_algo_upgrade = true;
+        assert_eq!(
+            serves_state(upgrade.snapshot.as_ref().unwrap()),
+            "committed-baseline"
+        );
     }
 
     #[test]
