@@ -1,12 +1,14 @@
 ---
 id: CR-15
 title: tour 錨點驗證與重錨改用 SCIP symbol——merge 漂移不再靠行號
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-17 10:56'
-updated_date: '2026-10-17 10:56'
+updated_date: '2026-10-17 11:33'
 labels: []
 dependencies: []
+references:
+  - CR-15
 ordinal: 16000
 ---
 
