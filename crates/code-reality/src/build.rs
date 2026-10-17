@@ -371,8 +371,20 @@ fn stage_python(repo: &Path, part: &Path, roots: &[PathBuf]) -> Result<Option<St
 }
 
 /// Rust leg, staged into an explicit partial (unchanged shape from the
-/// pre-S1 two-leg era: `--output` + the empty-index guard).
-fn stage_rust(repo: &Path, part: &Path, roots: &[PathBuf]) -> Result<Option<String>, BuildError> {
+/// pre-S1 two-leg era: `--output` + the empty-index guard). CR-16: a
+/// non-empty `features` slice writes one temp LSP-client-config JSON
+/// per root (`rust-config-<idx>.json` beside the staged partial — the
+/// stage dir cleanup owns it) and injects `--config-path` (the CR-14
+/// POC shape: `{"cargo":{"features":[...],"noDefaultFeatures":false}}`
+/// opens feature-gated files). Empty features keep the argv
+/// byte-identical to today and write no config file.
+fn stage_rust(
+    repo: &Path,
+    part: &Path,
+    roots: &[PathBuf],
+    idx: usize,
+    features: &[String],
+) -> Result<Option<String>, BuildError> {
     let bin = resolve_bin(
         "rust-analyzer",
         roots,
@@ -383,19 +395,25 @@ fn stage_rust(repo: &Path, part: &Path, roots: &[PathBuf]) -> Result<Option<Stri
     // current_dir pins the rustup proxy's toolchain resolution to the
     // repo (cwd-based proxy trap); the repo DIRECTORY (not Cargo.toml)
     // is the verified CLI shape.
-    let out = Command::new(&bin)
-        .arg("scip")
-        .arg(repo)
-        .arg("--output")
-        .arg(part)
-        .current_dir(repo)
-        .output()
-        .map_err(|e| {
-            BuildError::Env(format!(
-                "spawn {} 失敗：{e}——rustup component add rust-analyzer",
-                bin.display()
-            ))
+    let config_path = part.with_file_name(format!("rust-config-{idx}.json"));
+    let mut cmd = Command::new(&bin);
+    cmd.arg("scip").arg(repo);
+    if !features.is_empty() {
+        let json = serde_json::json!({
+            "cargo": {"features": features, "noDefaultFeatures": false}
+        });
+        std::fs::write(&config_path, json.to_string()).map_err(|e| {
+            BuildError::Env(format!("寫 {} 失敗：{e}", config_path.display()))
         })?;
+        cmd.arg("--config-path").arg(&config_path);
+    }
+    cmd.arg("--output").arg(part).current_dir(repo);
+    let out = cmd.output().map_err(|e| {
+        BuildError::Env(format!(
+            "spawn {} 失敗：{e}——rustup component add rust-analyzer",
+            bin.display()
+        ))
+    })?;
     if !out.status.success() {
         return Err(BuildError::Env(format!(
             "rust-analyzer scip 失敗（{}）：\n{}",
@@ -405,6 +423,80 @@ fn stage_rust(repo: &Path, part: &Path, roots: &[PathBuf]) -> Result<Option<Stri
     }
     validate_partial(part)?;
     Ok(version)
+}
+
+/// CR-16 review adoption (HIGH): rust-analyzer silently ignores feature
+/// names outside a workspace's feature universe, and the coverage gates
+/// only surface the resulting missing-gated-doc hole END-OF-BUILD —
+/// after a full scip run — with a message that never mentions the
+/// feature face. This pre-validation runs `cargo metadata --no-deps`
+/// per featured root (same cwd convention as [`stage_rust`]) and
+/// requires every configured name to exist in the workspace universe
+/// (the union of all `packages[].features` keys); an unknown name, a
+/// failed spawn, or unparsable metadata all fail loud (`Env` → CLI
+/// exit 2), naming the root, the unknown names and up to five legal
+/// candidates. Residual (directive semantics): the universe is the
+/// WORKSPACE union — a feature defined on one package does not open
+/// gated files under a sibling package that lacks it.
+fn validate_root_features(
+    root_dir: &Path,
+    root_rel: &str,
+    features: &[String],
+) -> Result<(), BuildError> {
+    if features.is_empty() {
+        return Ok(());
+    }
+    let out = Command::new("cargo")
+        .args(["metadata", "--no-deps", "--format-version", "1"])
+        .current_dir(root_dir)
+        .output()
+        .map_err(|e| {
+            BuildError::Env(format!(
+                "spawn cargo metadata 失敗（root '{root_rel}' features 前驗證）：{e}"
+            ))
+        })?;
+    if !out.status.success() {
+        return Err(BuildError::Env(format!(
+            "cargo metadata 失敗（root '{root_rel}' features 前驗證，{}）：\n{}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr)
+        )));
+    }
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).map_err(|e| {
+        BuildError::Env(format!(
+            "cargo metadata 輸出非合法 JSON（root '{root_rel}' features 前驗證）：{e}"
+        ))
+    })?;
+    let mut universe: BTreeSet<&str> = BTreeSet::new();
+    if let Some(packages) = v.get("packages").and_then(|p| p.as_array()) {
+        for pkg in packages {
+            if let Some(feats) = pkg.get("features").and_then(|f| f.as_object()) {
+                universe.extend(feats.keys().map(|k| k.as_str()));
+            }
+        }
+    }
+    let unknown: Vec<String> = features
+        .iter()
+        .filter(|f| !universe.contains(f.as_str()))
+        .map(|f| format!("'{f}'"))
+        .collect();
+    if unknown.is_empty() {
+        return Ok(());
+    }
+    let candidates: Vec<String> = universe
+        .iter()
+        .take(5)
+        .map(|s| format!("'{s}'"))
+        .collect();
+    let candidate_face = if candidates.is_empty() {
+        "（無）".to_string()
+    } else {
+        candidates.join(", ")
+    };
+    Err(BuildError::Env(format!(
+        "rust features 前驗證失敗：root '{root_rel}' 設定了 workspace 不存在的 feature {}（合法候選：{candidate_face}）——rust-analyzer 會靜默忽略未知名而產出缺 gated 檔的索引",
+        unknown.join(", ")
+    )))
 }
 
 /// Outcome of the Rust producer leg (python/TS-leg mirror).
@@ -453,6 +545,34 @@ fn stage_rust_multi(
         rp.roots
     };
     let gate_fatal = roots_list.len() > 1 || profile.is_some_and(|p| p.rust_projects.is_some());
+    // CR-16: per-root effective cargo features. The by_root table is
+    // authoritative when present (an unlisted root injects nothing — the
+    // multi-workspace "different features per root" face); otherwise the
+    // global list applies to every root. Mutual exclusion is enforced at
+    // profile parse time, so the two faces never mix here. Unknown
+    // feature names fail loud in validate_root_features below, before
+    // any scip spawn (rust-analyzer itself would silently ignore them).
+    let by_root = profile.and_then(|p| p.rust_features_by_root.as_ref());
+    for key in by_root.into_iter().flatten().map(|(k, _)| k) {
+        if !roots_list.iter().any(|r| r == key) {
+            return Err(BuildError::Env(format!(
+                "rust.features_by_root key '{key}' 不屬任何 resolved root（{}）——拼錯 root 會靜默不注入",
+                roots_list.join(", ")
+            )));
+        }
+    }
+    let feats_for = |root: &str| -> Vec<String> {
+        match by_root {
+            Some(map) => map
+                .iter()
+                .find(|(k, _)| k == root)
+                .map(|(_, v)| v.clone())
+                .unwrap_or_default(),
+            None => profile
+                .and_then(|p| p.rust_features.clone())
+                .unwrap_or_default(),
+        }
+    };
     // Governed rust corpus (CR-5): the profile-filtered walk set — the
     // same source+filter the stamp's `ProductionIdentity::capture` sees
     // through `paths_for_faces`, so this IS one side of the set equality
@@ -491,12 +611,22 @@ fn stage_rust_multi(
             }
         }
     }
+    // Review adoption (HIGH): unknown feature names are validated
+    // against each root's real cargo feature universe BEFORE any scip
+    // spawn — a typo surfaces here (naming the root, the unknown names
+    // and legal candidates) instead of after a full producer run as an
+    // opaque coverage-gate diff. Roots with nothing injected never
+    // spawn cargo metadata (the behavior-unchanged face).
+    for root in &roots_list {
+        validate_root_features(&repo.join(root), root, &feats_for(root))?;
+    }
     let composed = stage_dir.join("rust-composed.scip");
     let mut version = String::new();
     let mut defs: HashMap<String, Vec<(String, String)>> = HashMap::new();
     for (i, root) in roots_list.iter().enumerate() {
         let raw = stage_dir.join(format!("{i}-raw.scip"));
-        let ver = stage_rust(&repo.join(root), &raw, roots)?;
+        let features = feats_for(root);
+        let ver = stage_rust(&repo.join(root), &raw, roots, i, &features)?;
         if version.is_empty() {
             version = ver.unwrap_or_default();
         }
@@ -549,6 +679,19 @@ fn stage_rust_multi(
     } else {
         version
     };
+    // F7 disclosure: what was actually injected, per root. Empty config
+    // adds no note — the no-features report face stays byte-identical.
+    let disclosed: Vec<String> = roots_list
+        .iter()
+        .filter_map(|r| {
+            let f = feats_for(r);
+            (!f.is_empty()).then(|| format!("{r}=[{}]", f.join(",")))
+        })
+        .collect();
+    if !disclosed.is_empty() {
+        rep.notes
+            .push(format!("rust features：{}", disclosed.join("、")));
+    }
     rep.producers.push(format!(
         "rust-analyzer {version_face} [roots: {}]",
         roots_list.join(", ")

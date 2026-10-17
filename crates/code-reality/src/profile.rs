@@ -11,12 +11,20 @@
 //! the rules engine); not modeling it would make a Python-legal profile
 //! hit an unknown-key crash on the Rust side.
 
+use std::collections::BTreeSet;
 use std::path::Path;
 
 pub const PROFILE_FILENAME: &str = ".code-reality.toml";
 pub const DEFAULT_EXCLUDE: [&str; 1] = [".venv/"];
 
-const VALID_KEYS: [&str; 5] = ["module", "exclude", "scan_root", "hazard_registry", "rust_projects"];
+const VALID_KEYS: [&str; 6] = [
+    "module",
+    "exclude",
+    "scan_root",
+    "hazard_registry",
+    "rust_projects",
+    "rust",
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModuleRule {
@@ -53,6 +61,17 @@ pub struct Profile {
     /// absent (conservative auto-discovery); `Some(list)` = config mode
     /// (authoritative — an empty list is a resolver error, not auto).
     pub rust_projects: Option<Vec<String>>,
+    /// Global cargo features for the rust producer (CR-16): `Some(list)`
+    /// applies the list to EVERY resolved workspace root. Mutually
+    /// exclusive with `rust_features_by_root` (parse-time error).
+    pub rust_features: Option<Vec<String>>,
+    /// Per-root cargo features (CR-16): `[rust.features_by_root]` — the
+    /// authoritative map when present (a root it does not list injects
+    /// nothing). Vec of `(root_key, features)` pairs carrying the
+    /// parser's table order (deterministic for a given file; the
+    /// identity helper re-sorts), so multi-workspace repos keep one
+    /// profile face. Mutually exclusive with `rust_features`.
+    pub rust_features_by_root: Option<Vec<(String, Vec<String>)>>,
 }
 
 /// Load the profile at repo root; missing file → `Ok(None)` (generic
@@ -78,7 +97,7 @@ pub fn load_profile(repo_root: &Path) -> Result<Option<Profile>, String> {
         let mut sorted = unknown;
         sorted.sort();
         return Err(format!(
-            "{} 含未知鍵 {}——拼錯 section 名會靜默退化 generic fallback（合法鍵：module／exclude／scan_root／hazard_registry／rust_projects）",
+            "{} 含未知鍵 {}——拼錯 section 名會靜默退化 generic fallback（合法鍵：module／exclude／scan_root／hazard_registry／rust_projects／rust）",
             path.display(),
             py_list_repr(&sorted)
         ));
@@ -125,6 +144,87 @@ pub fn load_profile(repo_root: &Path) -> Result<Option<Profile>, String> {
             .collect::<Result<Vec<String>, _>>()?),
         Some(_) => {
             return Err(format!("{} rust_projects 需字串陣列", path.display()));
+        }
+    };
+    // [rust] section (CR-16): cargo features for the rust producer.
+    // `features` (global list) and `features_by_root` (per-root table)
+    // are mutually exclusive — two silent-precedence rules would be
+    // worse than one loud error; unknown keys fail loud per the :81
+    // convention (a typo'd key would otherwise silently inject nothing).
+    let (rust_features, rust_features_by_root) = match table.get("rust") {
+        None => (None, None),
+        Some(toml::Value::Table(t)) => {
+            let unknown: Vec<String> = t
+                .keys()
+                .filter(|k| k.as_str() != "features" && k.as_str() != "features_by_root")
+                .cloned()
+                .collect();
+            if !unknown.is_empty() {
+                let mut sorted = unknown;
+                sorted.sort();
+                return Err(format!(
+                    "{} [rust] 含未知鍵 {}——拼錯鍵會靜默不注入（合法鍵：features／features_by_root）",
+                    path.display(),
+                    py_list_repr(&sorted)
+                ));
+            }
+            let features = match t.get("features") {
+                None => None,
+                Some(toml::Value::Array(a)) => Some(a
+                    .iter()
+                    .map(|v| {
+                        v.as_str().map(|s| s.to_string()).ok_or_else(|| {
+                            format!("{} rust.features 項需字串：{:?}", path.display(), v)
+                        })
+                    })
+                    .collect::<Result<Vec<String>, _>>()?),
+                Some(_) => {
+                    return Err(format!("{} rust.features 需字串陣列", path.display()));
+                }
+            };
+            let by_root = match t.get("features_by_root") {
+                None => None,
+                Some(toml::Value::Table(m)) => Some(m
+                    .iter()
+                    .map(|(k, v)| -> Result<(String, Vec<String>), String> {
+                        let arr = v.as_array().ok_or_else(|| {
+                            format!(
+                                "{} rust.features_by_root['{k}'] 需字串陣列",
+                                path.display()
+                            )
+                        })?;
+                        let feats = arr
+                            .iter()
+                            .map(|f| {
+                                f.as_str().map(|s| s.to_string()).ok_or_else(|| {
+                                    format!(
+                                        "{} rust.features_by_root['{k}'] 項需字串：{:?}",
+                                        path.display(),
+                                        f
+                                    )
+                                })
+                            })
+                            .collect::<Result<Vec<String>, _>>()?;
+                        Ok((k.clone(), feats))
+                    })
+                    .collect::<Result<Vec<(String, Vec<String>)>, _>>()?),
+                Some(_) => {
+                    return Err(format!(
+                        "{} rust.features_by_root 需表（key=root 路徑、value=字串陣列）",
+                        path.display()
+                    ));
+                }
+            };
+            if features.is_some() && by_root.is_some() {
+                return Err(format!(
+                    "{} [rust] features 與 features_by_root 互斥——全域清單或 per-root 表擇一",
+                    path.display()
+                ));
+            }
+            (features, by_root)
+        }
+        Some(_) => {
+            return Err(format!("{} rust 需為表（[rust]）", path.display()));
         }
     };
     let mut modules = Vec::new();
@@ -224,6 +324,8 @@ pub fn load_profile(repo_root: &Path) -> Result<Option<Profile>, String> {
         scan_roots,
         hazard_registries: registries,
         rust_projects,
+        rust_features,
+        rust_features_by_root,
     }))
 }
 
@@ -344,6 +446,41 @@ pub fn effective_excludes(profile: Option<&Profile>) -> Vec<(String, &'static st
     out
 }
 
+/// The cargo features the rust producer runs under (CR-16), as the
+/// identity body's domain-extras pairs: `(root_key, "feat1,feat2")`,
+/// features sorted+deduplicated per pair and pairs sorted by key — a
+/// canonical set encoding shared by the stamp face and the freshness
+/// re-evaluation (one helper, two callers; changing only one side would
+/// open a false-fresh hole). `features_by_root` is authoritative when
+/// present: one pair per LISTED root, an unlisted root injects nothing.
+/// Otherwise the global `features` list applies to every root — the
+/// helper is root-agnostic (resolved roots are a build-face concern),
+/// so the global face is one `"*"`-keyed pair. Empty/absent config →
+/// empty Vec → the identity body stays byte-identical to the pre-CR-16
+/// layout (no header or algo bump).
+pub fn effective_rust_features(profile: Option<&Profile>) -> Vec<(String, String)> {
+    let Some(p) = profile else {
+        return Vec::new();
+    };
+    let canon = |feats: &[String]| -> String {
+        let set: BTreeSet<&str> = feats.iter().map(|s| s.as_str()).collect();
+        set.into_iter().collect::<Vec<_>>().join(",")
+    };
+    if let Some(by_root) = &p.rust_features_by_root {
+        let mut pairs: Vec<(String, String)> = by_root
+            .iter()
+            .filter(|(_, f)| !f.is_empty())
+            .map(|(r, f)| (r.clone(), canon(f)))
+            .collect();
+        pairs.sort();
+        return pairs;
+    }
+    match &p.rust_features {
+        Some(f) if !f.is_empty() => vec![("*".to_string(), canon(f))],
+        _ => Vec::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -432,6 +569,8 @@ mod tests {
             scan_roots: vec![],
             hazard_registries: vec![],
             rust_projects: None,
+            rust_features: None,
+            rust_features_by_root: None,
         };
         assert_eq!(module_of("crates/a/b/c/mod.rs", Some(&p)), "crates/a/b");
         assert_eq!(module_of("crates/lib.rs", Some(&p)), "crates"); // F6 root file
@@ -457,6 +596,8 @@ mod tests {
             scan_roots: vec![],
             hazard_registries: vec![],
             rust_projects: None,
+            rust_features: None,
+            rust_features_by_root: None,
         };
         let re = claims_regex(Some(&p));
         let hits: Vec<&str> = re
@@ -476,6 +617,8 @@ mod tests {
             scan_roots: vec![],
             hazard_registries: vec![],
             rust_projects: None,
+            rust_features: None,
+            rust_features_by_root: None,
         };
         assert!(is_excluded("ai-analysis/ep.md", Some(&p)));
         // Additive (2026-09-11 ruling): a profile widens, never narrows —
@@ -496,6 +639,8 @@ mod tests {
             scan_roots: vec![],
             hazard_registries: vec![],
             rust_projects: None,
+            rust_features: None,
+            rust_features_by_root: None,
         };
         assert_eq!(
             effective_excludes(Some(&p)),

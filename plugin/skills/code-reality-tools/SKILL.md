@@ -313,7 +313,15 @@ not excluded now fails the build loudly (CR-RUST-ROOT-09) instead of
 silently forfeiting the source-identity certification. When the orphan
 shares a directory with indexed python evidence, exclude the exact
 file path (a slashless entry) — a directory entry would drop the
-python face along with it. Upgrade note:
+python face along with it. Feature-gated files rejected by the
+coverage gate have a first-class remediation besides exclude: the
+`[rust]` profile section (`features = [...]` global, or
+`features_by_root` for per-workspace sets, CR-16) passes cargo
+features to the rust-analyzer scip leg via a temp `--config-path`
+JSON — unknown feature names fail loud pre-spawn, the effective
+selection enters the source identity (a features-only change flips
+freshness stale), and an absent/empty `[rust]` section keeps argv and
+identity byte-identical. Upgrade note:
 repos whose exclude table already covers `.rs` paths change identity
 input on first build after upgrading — the first freshness verdict
 answers `identity_drift` once and one rebuild converges it.

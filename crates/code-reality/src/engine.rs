@@ -529,7 +529,10 @@ pub struct SourceWalk {
     /// doc-set face). Collected only when the repo carries a Rust face.
     pub rust_inputs: BTreeMap<String, crate::identity::SourceRecord>,
     /// Workspace topology markers (EP Q4): sorted `(key, value)` pairs —
-    /// discovery mode, canonical roots, present/absent markers.
+    /// discovery mode, canonical roots, present/absent markers. CR-16:
+    /// configured cargo features ride the same domain-extras channel
+    /// (appended in `walk_sources`), so both the stamp face and the
+    /// freshness re-evaluation see them through one path.
     pub rust_topology: Vec<(String, String)>,
     /// Newest across ALL walked faces — the legacy staleness basis for
     /// indexes without stamped face metadata.
@@ -742,6 +745,14 @@ pub fn walk_sources(repo: &Path) -> Result<SourceWalk, String> {
         let (inputs, topology) = collect_rust_inputs(&root, &roots, mode);
         out.rust_inputs = inputs;
         out.rust_topology = topology;
+        // CR-16 (F6): configured cargo features are producer inputs on
+        // the identity's left side — which features were compiled into
+        // the index is invisible to file contents alone. They extend the
+        // same domain-extras vector the topology rides (recompose gates
+        // the block behind the Rust face); empty config extends nothing
+        // and the identity body stays byte-identical.
+        out.rust_topology
+            .extend(crate::profile::effective_rust_features(profile.as_ref()));
     }
     Ok(out)
 }
