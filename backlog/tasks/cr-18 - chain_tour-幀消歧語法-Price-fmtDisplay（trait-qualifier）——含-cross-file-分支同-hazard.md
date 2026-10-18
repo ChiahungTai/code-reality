@@ -4,7 +4,7 @@ title: 'chain_tour 幀消歧語法 Price::fmt[Display]（trait qualifier）—�
 status: In Progress
 assignee: []
 created_date: '2026-10-18 13:38'
-updated_date: '2026-10-18 20:41'
+updated_date: '2026-10-18 21:55'
 labels:
   - chain-tour
   - graph-anchor
@@ -64,3 +64,13 @@ flowchart LR
 
 範圍：chain_tour.rs（frame 剝離/共用 selector/cross-file 守衛/rejected gate）、symbol_resolve.rs（QualifiedMethod parser/三態判定/bracket scanner）、tour_reanchor.rs（bootstrap 防護）、tests/s5_chain_tour.rs（TDD：先釘現況 parse 行為 RED）、plugin/skills/code-reality-tools/SKILL.md（qualifier 語法節）。不動：graph.db schema、producer、R1/R2/R3 與 descriptor_chain 語義。
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+〔checkpoint 2026-10-19 01:30〕實作✅（WT cr-18：6檔+1690/-83；91+34 測試綠；全量798綠；L4 NT qualifier面漂移776→Display@845唯一命中正確錨定＋無qualifier對照組維持CR-17拒絕）→雙審✅（codex job-mvebra33：C1高/C2中；fresh-eyes agent_f7b6daa6：F-1~F-8無🔴；帳本WT .review/cr-18.md canonical）→GLM-5.3 judge in flight。剩：judge裁決→修正→post-build收尾→**commit gate PENDING（user本次授權到實作）**
+
+〔judge verdict 2026-10-19 GLM-5.3 job-mvec8vvr〕✅8/⚠️1/❌1——C1/F-1 裁 codex 變體（qm 閘門限縮+rels==0 終端 no_hit）；C2 WellFormed 解除 <4 長度閘；F-2 line-less cands 接線；F-3 拆半（內容形收緊+census）；F-4/F-5 SKILL；F-6 註解；F-7 四測試；F-8 ❌。批次 1→4。verdict 全文：主樹 .agent-tmp/cr18-judge-verdict.md
+
+〔review ledger converged 2026-10-19 02:0x〕✅8 verified（C1/F-1 閘門限縮+rels==0 no_hit、C2 短名跨檔 bypass、F-2 cands 接線、F-4/F-5/F-6 文檔註解、F-7 四測試）／⚠️1 F-3 拆半收案（letterless 收緊+census 零命中→SKILL 披露）／❌1 F-8 否證。全量 806 綠/clippy 逐target等值/qm=None byte-identical。帳本 WT .review/cr-18.md converged canonical。**commit gate PENDING**——user 本次授權到實作（「codex 討論後ＯＫ就來實做吧」）
+<!-- SECTION:NOTES:END -->
