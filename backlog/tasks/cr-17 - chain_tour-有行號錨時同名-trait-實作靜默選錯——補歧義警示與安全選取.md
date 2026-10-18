@@ -1,10 +1,10 @@
 ---
 id: CR-17
 title: chain_tour 有行號錨時同名 trait 實作靜默選錯——補歧義警示與安全選取
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-18 12:36'
-updated_date: '2026-10-18 16:03'
+updated_date: '2026-10-18 16:22'
 labels:
   - chain-tour
   - graph-anchor
@@ -73,3 +73,22 @@ flowchart LR
 
 〔review ledger converged 2026-10-18 23:59〕[main.md] findings=11 tables=1 decisions ✅=10/❌=1/⚠️=0/unknown=0 (source=決策) status resolved=0/verified=10/closed=1/open=0/unknown=0 未決=0 unparsed=0 ……full=ok——✅10 verified（F1 NT L4 端到端 fails=0 重驗）／❌1 closed（F8）／0 open；legs 三腿 n/a（碼讀審查無 CR 結構查詢）；帳本 .review/main.md converged canonical PASS
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+✅ v0.17.0 已發行（PyPI 三 dist live、tag pushed、marketplace 切片、CC plugin 已更）。根因＝explicit-line anchor nearest-line LIMIT 1 靜默單選（NT 776 錨→Debug@839）；CR-9 fail-closed 只守 line-less fill。落地＝碰撞判定（Rust impl descriptor、泛型 verbatim-to-]）＋安全選取（無碰撞 byte-identical／唯一精確命中保留＋候選揭露／漂移或非唯一精確 fail-closed 不鑄未驗證 SCIP 身分）＋graph-read-error per-frame fail-closed＋explicit_trait_ambiguous 獨立計數＋全形 bracket 顯示（tour_validate markdown-link 誤判修復）。雙審（fresh-eyes F1 block＋codex C1/C2）→GLM-5.3 judge（✅10/❌1）→修正四批→followup 全 verified（NT 真實 corpus 端到端 fails=0）。回信已寄（cr-17-trait-collision-reply-20261019、acceptanceSeq=2）。CR-18 承接 qualifier 語法＋cross-file hazard。
+
+```mermaid
+flowchart LR
+    frame["md 幀 Price::fmt price.rs:776"] --> cand["全候選集查詢"]
+    cand --> coll{"同型別同名 trait 碰撞?"}
+    coll -->|"否"| legacy["nearest 選取（byte-identical）"]
+    coll -->|"是"| mode{"行號精確命中?"}
+    mode -->|"唯一"| keep["保留錨＋候選揭露（全形顯示）"]
+    mode -->|"漂移或非唯一"| refuse["fail-closed 拒絕——零步驟零身分"]
+    cand -->|"讀取錯誤"| rerr["graph-read-error fail-closed"]
+    keep --> count["explicit_trait_ambiguous 計數＋WARN"]
+    refuse --> count
+```
+<!-- SECTION:FINAL_SUMMARY:END -->
