@@ -4,7 +4,7 @@ members = ["crates/*"]
 
 [workspace.package]
 edition = "2021"
-version = "0.17.0"
+version = "0.18.0"
 
 [workspace.dependencies]
 scip = "0.9"
