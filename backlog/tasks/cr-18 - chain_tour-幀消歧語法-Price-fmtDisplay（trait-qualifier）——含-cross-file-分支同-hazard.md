@@ -1,10 +1,10 @@
 ---
 id: CR-18
 title: 'chain_tour 幀消歧語法 Price::fmt[Display]（trait qualifier）——含 cross-file 分支同 hazard'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-18 13:38'
-updated_date: '2026-10-18 21:55'
+updated_date: '2026-10-18 22:43'
 labels:
   - chain-tour
   - graph-anchor
@@ -74,3 +74,24 @@ flowchart LR
 
 〔review ledger converged 2026-10-19 02:0x〕✅8 verified（C1/F-1 閘門限縮+rels==0 no_hit、C2 短名跨檔 bypass、F-2 cands 接線、F-4/F-5/F-6 文檔註解、F-7 四測試）／⚠️1 F-3 拆半收案（letterless 收緊+census 零命中→SKILL 披露）／❌1 F-8 否證。全量 806 綠/clippy 逐target等值/qm=None byte-identical。帳本 WT .review/cr-18.md converged canonical。**commit gate PENDING**——user 本次授權到實作（「codex 討論後ＯＫ就來實做吧」）
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+✅ v0.18.0 已發行（PyPI 三 dist live、tag pushed、marketplace 切片、CC plugin 已更）。trait qualifier 語法 `Price::fmt[Display]` 落地——結構化 {receiver, method, trait} 身分（不走 best_ident——POC 實證雙層陷阱），核心不變式「qualifier 在場時無法證實宣告式身分即拒選（不行號/名稱相似度/R1/R2）」貫穿四路徑（explicit-line/line-less/cross-file/rejected gate）。codex 設計討論腿四規格修訂全吸收（job-mve9wzsm）；實作腿自編排雙審→GLM-5.3 judge（✅8/⚠️1拆半/❌1）→修正四批→followup 全 verified（806 綠、clippy 逐 target 等值、L4 NT：漂移 776→Display@845 唯一命中正確錨定、無 qualifier 對照組維持 CR-17 拒絕）。F6 三態收口（malformed sibling 阻止未證實唯一命中）；cross-file 分支 F7 hazard 設防（完整候選集＋cross_file_trait_ambiguous）；tour_reanchor bootstrap 同 parser 防護。NT 案 2 全兌現，案 3 的結構化 validate 基礎（宣告式身分）就位。
+
+```mermaid
+flowchart LR
+    frame["md 幀 Price::fmt[Display]"] --> parse["qualifier parser→receiver+method+trait"]
+    parse --> sel{"qualified selector 三重比對"}
+    sel -->|"唯一"| hit["選取（繞過碰撞警示）"]
+    sel -->|"零"| nh["qualifier_no_hit fail-loud"]
+    sel -->|"多"| amb["qualifier_ambiguous（不進 R1/R2）"]
+    parse -->|"語法錯"| mf["qualifier_malformed"]
+    nh --> gate["rejected gate：兩面皆 skip＋計數一致"]
+    amb --> gate
+    mf --> gate
+    hit --> stats["計入既有 same/moved/filled 統計"]
+    cross["cross-file 收斂"] --> guard["完整候選集＋同守衛"]
+```
+<!-- SECTION:FINAL_SUMMARY:END -->
