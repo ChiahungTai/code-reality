@@ -9,8 +9,8 @@ use crate::argparse::{parse, FlagSpec, Kind, Outcome, ToolSpec};
 use crate::common::{anchor_pattern, assert_db_unchanged, connect_ro, db_mtime_ns};
 use crate::profile::{is_excluded, load_profile, Profile};
 use crate::symbol_resolve::{
-    explicit_line_candidates, explicit_trait_collision, resolve_candidates, same_file_rows,
-    FillCandidate, FillOutcome,
+    explicit_line_candidates, explicit_trait_collision, parse_qualifier, resolve_candidates,
+    same_file_rows, FillCandidate, FillOutcome, FrameQualifier, QualifiedMethod,
 };
 use crate::ToolOutput;
 use rusqlite::Connection;
@@ -171,6 +171,13 @@ pub struct Frame {
     /// qualified name the doc wrote (`Outer.A.execute`), empty when the
     /// frame carries no ident.
     pub ident_full: String,
+    /// CR-18: the parsed md trait qualifier (`Price::fmt[Display]`).
+    /// `WellFormed` frames query by the declared identity (method =
+    /// name axis; receiver+trait verified by the shared selector) and
+    /// never fall back to best_ident ranking, line proximity, or
+    /// R1/R2; `Malformed` frames skip under `qualifier_malformed`;
+    /// `None` keeps the frozen CR-17/R1/R2/R3 semantics.
+    pub qualifier: FrameQualifier,
     pub path: Option<String>,
     pub line: Option<i64>,
     pub note: String,
@@ -255,13 +262,31 @@ pub fn parse_frames(lines: &[String]) -> Vec<Frame> {
             }
             content2 = rest;
         }
-        let (ident, ident_full) = best_ident(&content2);
+        // CR-18: the trait qualifier (`Price::fmt[Display]`) parses off
+        // the post-strip remainder and REPLACES best_ident for the query
+        // identity — the POC proved best_ident length-ranks the trait
+        // name (`Display`) on the paren-less canonical form and the
+        // receiver on others. A leftover empty `()` from a
+        // `(path:line)` wrapper folds off the kept author text.
+        let qualifier = parse_qualifier(&content2);
+        if matches!(qualifier, FrameQualifier::WellFormed(_)) {
+            if let Some(t) = content2.trim_end().strip_suffix("()") {
+                content2 = t.trim_end().to_string();
+            }
+        }
+        let (ident, ident_full) = match &qualifier {
+            FrameQualifier::WellFormed(qm) => {
+                (qm.method.clone(), format!("{}::{}", qm.receiver, qm.method))
+            }
+            _ => best_ident(&content2),
+        };
         frames.push(Frame {
             depth,
             parent,
             symbol: content2.clone(),
             ident,
             ident_full,
+            qualifier,
             path,
             line: line_no,
             note,
@@ -417,8 +442,11 @@ fn like_escape_chain(part: &str) -> String {
 /// graph.db re-anchoring: same-file nearest line_start (gated by the
 /// CR-17 explicit-line trait-collision safe selection — see
 /// [`GraphAnchor::anchor`]) → cross-file move detection →
-/// not-in-graph. Cross-file gate (POC discipline): ident must be
-/// substring-missing AND length ≥ 4.
+/// not-in-graph. Cross-file gate (POC discipline, legacy face only):
+/// ident must be substring-missing AND length ≥ 4 — a CR-18 declared
+/// identity (`qm`) bypasses both gates (the triple comparison is the
+/// precision) and its zero-rels terminal refuses under
+/// `qualifier_no_hit`.
 pub struct GraphAnchor {
     conn: Connection,
     repo_root: PathBuf,
@@ -444,6 +472,17 @@ pub struct GraphHit {
     /// the fail-closed refusal (`g == "explicit_trait_ambiguous"`,
     /// candidates listed in the skip hint).
     pub g_trait_candidates: Vec<FillCandidate>,
+    /// CR-18: step-description note for a qualifier-selected success
+    /// (declared-identity evidence — the author's
+    /// `Receiver::method[Trait]` picked this anchor, line drift
+    /// notwithstanding).
+    pub g_qualifier_note: Option<String>,
+    /// CR-18: candidate payload for a qualifier refusal
+    /// (`qualifier_no_hit` / `qualifier_ambiguous` /
+    /// `qualifier_unverified` / `cross_file_trait_ambiguous`) — the
+    /// full candidate set of the face that refused, disclosed on the
+    /// description hint and the CLI WARN like the CR-17 payload.
+    pub g_qualifier_candidates: Vec<FillCandidate>,
 }
 
 impl GraphAnchor {
@@ -477,12 +516,36 @@ impl GraphAnchor {
     /// A failed candidate read (prepare/query_map/row decode) returns
     /// `graph-read-error` — the frame degrades to a doc-line step with
     /// no identity rather than guessing from a partial set (C1).
+    ///
+    /// CR-18 qualifier face (`qm` present): the shared qualified
+    /// selector decides over the same full candidate set BEFORE the
+    /// collision gate — a unique declared-identity match selects
+    /// (`same`/`moved`, collision semantics bypassed: the author named
+    /// the identity, no WARN), every refusal returns its own
+    /// `qualifier_*` key with the candidate payload, and nothing ever
+    /// falls back to nearest-line or R1/R2. The substring/length
+    /// cross-file gates apply ONLY to the legacy face (`qm == None`) —
+    /// a qualifier frame with zero same-file candidates falls through
+    /// to the cross-file convergence query (C1/F-1: both faces treat a
+    /// declared identity alike; the zero-rels terminal answers
+    /// `qualifier_no_hit` instead of a silent `not-in-graph` doc-line
+    /// step; C2: a short method ident — `fmt` — is no longer gated,
+    /// the triple comparison is the precision). The cross-file branch
+    /// (F7): single-file convergence now reads the FULL candidate set
+    /// (fail-closed — a read error degrades to `graph-read-error`,
+    /// never a silently partial set) and runs the same determination —
+    /// qualifier selection, else the collision gate (refusing under
+    /// `cross_file_trait_ambiguous` instead of the legacy silent
+    /// lowest-line pick), else the byte-identical legacy pick.
+    /// `rels > 1` keeps `moved-file-ambiguous` — a qualifier never
+    /// selects across files on its own.
     pub fn anchor(
         &self,
         abs_path: &Path,
         line_no: i64,
         ident: &str,
         substring_status: &str,
+        qm: Option<&QualifiedMethod>,
     ) -> GraphHit {
         let rel = abs_path
             .strip_prefix(&self.repo_root)
@@ -518,6 +581,41 @@ impl GraphAnchor {
             }
         };
         if !rows.is_empty() {
+            if let Some(qm) = qm {
+                // CR-18: declared identity decides first — a unique
+                // triple-match selects (counting under the legacy
+                // same/moved keys for distribution comparability);
+                // refusals carry their own keys, never a fallback.
+                return match crate::symbol_resolve::qualified_select(&rows, qm) {
+                    crate::symbol_resolve::QualifiedVerdict::Unique { row } => {
+                        let (g_line, g_symbol, _) = &rows[row];
+                        let delta = g_line - line_no;
+                        GraphHit {
+                            g: if delta == 0 {
+                                "same".into()
+                            } else {
+                                "moved".into()
+                            },
+                            g_line: Some(*g_line),
+                            g_file: None,
+                            g_files: vec![],
+                            g_symbol: Some(g_symbol.clone()),
+                            g_trait_candidates: Vec::new(),
+                            g_qualifier_note: None,
+                            g_qualifier_candidates: Vec::new(),
+                        }
+                    }
+                    crate::symbol_resolve::QualifiedVerdict::Refused { reason, candidates } => {
+                        GraphHit {
+                            g: reason.key().into(),
+                            g_trait_candidates: Vec::new(),
+                            g_qualifier_note: None,
+                            g_qualifier_candidates: candidates,
+                            ..Default::default()
+                        }
+                    }
+                };
+            }
             if explicit_trait_collision(&rows) {
                 let cands = explicit_line_candidates(&rows);
                 let exact: Vec<usize> = rows
@@ -535,6 +633,8 @@ impl GraphAnchor {
                         g_files: vec![],
                         g_symbol: Some(g_symbol.clone()),
                         g_trait_candidates: cands,
+                        g_qualifier_note: None,
+                        g_qualifier_candidates: Vec::new(),
                     };
                 }
                 return GraphHit {
@@ -556,53 +656,134 @@ impl GraphAnchor {
                 g_files: vec![],
                 g_symbol: Some(g_symbol.clone()),
                 g_trait_candidates: Vec::new(),
+                g_qualifier_note: None,
+                g_qualifier_candidates: Vec::new(),
             };
         }
-        if substring_status != "missing" || ident.chars().count() < 4 {
+        // CR-18 review (C1/F-1/C2): the substring/length cross-file
+        // gates are LEGACY-face discipline (POC short-name /
+        // substring-present guard against fuzzy cross-file moves). A
+        // declared identity (`qm`) is precise — the triple comparison
+        // rules candidates in or out on receiver+trait, never on
+        // prose-substring or name length — so a qualifier frame with
+        // zero same-file candidates falls through to the cross-file
+        // convergence query instead of a `not-in-graph` doc-line step
+        // with zero WARN (the line-less face already refused; the two
+        // faces must treat a declared identity alike).
+        if qm.is_none()
+            && (substring_status != "missing" || ident.chars().count() < 4)
+        {
             return GraphHit {
                 g: "not-in-graph".into(),
                 ..Default::default()
             };
         }
         let prefix = like_escape_chain(&format!("{}/", self.repo_root.display()));
-        let rels: Vec<String> = {
-            let Ok(mut stmt) = self.conn.prepare(
-                "SELECT DISTINCT substr(file_path, length(?1)+2) FROM nodes \
-                 WHERE name=?2 AND file_path LIKE ?3 ESCAPE '\\' LIMIT 6",
-            ) else {
-                return GraphHit {
-                    g: "not-in-graph".into(),
-                    ..Default::default()
-                };
-            };
-            let Ok(rows) = stmt.query_map(
+        // CR-18 (F7 read integrity): the cross-file rels read is
+        // fail-closed too — a swallowed row error here would shrink the
+        // rels list and fake a single-file convergence (the CR-17 C1
+        // lesson applied to the sibling query).
+        let rels_res: Result<Vec<String>, rusqlite::Error> = match self.conn.prepare(
+            "SELECT DISTINCT substr(file_path, length(?1)+2) FROM nodes \
+             WHERE name=?2 AND file_path LIKE ?3 ESCAPE '\\' LIMIT 6",
+        ) {
+            Ok(mut stmt) => match stmt.query_map(
                 (
                     self.repo_root.display().to_string(),
                     ident,
                     format!("{prefix}%"),
                 ),
                 |r| r.get::<_, Option<String>>(0),
-            ) else {
+            ) {
+                Ok(rows) => rows
+                    .collect::<Result<Vec<Option<String>>, _>>()
+                    .map(|v| v.into_iter().flatten().collect()),
+                Err(e) => Err(e),
+            },
+            Err(e) => Err(e),
+        };
+        let rels: Vec<String> = match rels_res {
+            Ok(rels) => rels,
+            Err(_) => {
                 return GraphHit {
-                    g: "not-in-graph".into(),
+                    g: "graph-read-error".into(),
                     ..Default::default()
-                };
-            };
-            rows.filter_map(|r| r.ok().flatten()).collect()
+                }
+            }
         };
         if rels.len() == 1 {
-            let hit: Option<(i64, Option<String>)> = self
+            // CR-18 (F7): the converged file's candidate set is read in
+            // FULL (fail-closed — same C1 discipline) before any
+            // selection: qualifier determination first, then the
+            // collision gate, then the byte-identical legacy
+            // lowest-line pick (the old `LIMIT 1` face).
+            let rows_res: Result<Vec<(i64, String, String)>, rusqlite::Error> = match self
                 .conn
-                .query_row(
-                    "SELECT line_start, symbol FROM nodes WHERE name=?1 \
+                .prepare(
+                    "SELECT line_start, symbol, kind FROM nodes WHERE name=?1 \
                      AND file_path LIKE ?2 ESCAPE '\\' \
                      AND line_start IS NOT NULL \
-                     ORDER BY line_start, symbol LIMIT 1",
-                    (ident, format!("{prefix}{}", like_escape_chain(&rels[0]))),
-                    |r| Ok((r.get(0)?, r.get(1)?)),
+                     ORDER BY line_start, symbol",
                 )
-                .ok();
-            let (ln, g_symbol) = hit.map(|(l, s)| (Some(l), s)).unwrap_or((None, None));
+            {
+                Ok(mut stmt) => match stmt.query_map(
+                    (ident, format!("{prefix}{}", like_escape_chain(&rels[0]))),
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                ) {
+                    Ok(rows) => rows.collect::<Result<Vec<_>, _>>(),
+                    Err(e) => Err(e),
+                },
+                Err(e) => Err(e),
+            };
+            let rows: Vec<(i64, String, String)> = match rows_res {
+                Ok(rows) => rows,
+                Err(_) => {
+                    return GraphHit {
+                        g: "graph-read-error".into(),
+                        ..Default::default()
+                    }
+                }
+            };
+            if let Some(qm) = qm {
+                return match crate::symbol_resolve::qualified_select(&rows, qm) {
+                    crate::symbol_resolve::QualifiedVerdict::Unique { row } => GraphHit {
+                        g: "moved-file".into(),
+                        g_line: Some(rows[row].0),
+                        g_file: Some(rels[0].clone()),
+                        g_files: vec![],
+                        g_symbol: Some(rows[row].1.clone()),
+                        g_trait_candidates: Vec::new(),
+                        g_qualifier_note: None,
+                        g_qualifier_candidates: Vec::new(),
+                    },
+                    crate::symbol_resolve::QualifiedVerdict::Refused { reason, candidates } => {
+                        GraphHit {
+                            g: reason.key().into(),
+                            g_file: Some(rels[0].clone()),
+                            g_trait_candidates: Vec::new(),
+                            g_qualifier_note: None,
+                            g_qualifier_candidates: candidates,
+                            ..Default::default()
+                        }
+                    }
+                };
+            }
+            if explicit_trait_collision(&rows) {
+                return GraphHit {
+                    g: "cross_file_trait_ambiguous".into(),
+                    g_file: Some(rels[0].clone()),
+                    g_trait_candidates: Vec::new(),
+                    g_qualifier_note: None,
+                    g_qualifier_candidates: explicit_line_candidates(&rows),
+                    ..Default::default()
+                };
+            }
+            // rows keep the (line_start, symbol) order — rows[0] IS the
+            // legacy `ORDER BY line_start, symbol LIMIT 1` pick
+            let (ln, g_symbol) = rows
+                .first()
+                .map(|(l, s, _)| (Some(*l), Some(s.clone())))
+                .unwrap_or((None, None));
             return GraphHit {
                 g: "moved-file".into(),
                 g_line: ln,
@@ -610,12 +791,27 @@ impl GraphAnchor {
                 g_files: vec![],
                 g_symbol,
                 g_trait_candidates: Vec::new(),
+                g_qualifier_note: None,
+                g_qualifier_candidates: Vec::new(),
             };
         }
         if rels.len() > 1 {
             return GraphHit {
                 g: "moved-file-ambiguous".into(),
                 g_files: rels.into_iter().take(4).collect(),
+                ..Default::default()
+            };
+        }
+        // CR-18 review (C1/F-1): zero rels — the declared identity
+        // exists nowhere in the graph. The legacy face keeps its
+        // `not-in-graph` doc-line step; the qualifier face refuses
+        // fail-loud (`qualifier_no_hit` → skip + WARN pipeline) — a
+        // declared identity is never silently degraded to an unverified
+        // step. (rels==1 convergence and rels>1 moved-file-ambiguous
+        // keep their Plan ⑦ semantics on both faces.)
+        if qm.is_some() {
+            return GraphHit {
+                g: "qualifier_no_hit".into(),
                 ..Default::default()
             };
         }
@@ -679,6 +875,7 @@ impl GraphAnchor {
         ident: &str,
         ident_full: &str,
         whole: bool,
+        qm: Option<&QualifiedMethod>,
     ) -> Result<FillOutcome, String> {
         if ident.is_empty() {
             return Ok(FillOutcome::NoAnchor("no-ident".into(), Vec::new()));
@@ -689,6 +886,20 @@ impl GraphAnchor {
             .unwrap_or_default();
         let exact = format!("{}/{}", self.repo_root.display(), rel);
         let rows = same_file_rows(&self.conn, &exact, ident)?;
+        // CR-18: a declared identity replaces the R1/R2/R3 machinery —
+        // unique triple-match fills, refusals carry their own
+        // `qualifier_*` reasons (never R1/R2 disambiguation, never a
+        // nearest fallback).
+        if let Some(qm) = qm {
+            return Ok(match crate::symbol_resolve::qualified_select(&rows, qm) {
+                crate::symbol_resolve::QualifiedVerdict::Unique { row } => {
+                    FillOutcome::Filled(rows[row].0, Some(rows[row].1.clone()))
+                }
+                crate::symbol_resolve::QualifiedVerdict::Refused { reason, candidates } => {
+                    FillOutcome::NoAnchor(reason.key().to_string(), candidates)
+                }
+            });
+        }
         Ok(resolve_candidates(&rows, ident_full, whole))
     }
 }
@@ -719,6 +930,24 @@ pub struct TraitCollisionEncounter {
     pub candidates: Vec<FillCandidate>,
 }
 
+/// CR-18: one qualifier-refusal encounter — a frame whose declared
+/// identity could not be confirmed (`qualifier_no_hit` /
+/// `qualifier_ambiguous` / `qualifier_unverified` /
+/// `qualifier_malformed`) or whose cross-file single-file convergence
+/// hit an unresolved same-name trait collision
+/// (`cross_file_trait_ambiguous`). `converged_file` names the
+/// relocation target on the cross-file face. Disclosed on the same
+/// three faces as the CR-17 payload: scenario description hint, kept-
+/// step-adjacent skip reason, and one CLI WARN per encounter.
+#[derive(Clone)]
+pub struct QualifierRefusal {
+    pub frame: String,
+    pub doc_anchor: String,
+    pub reason: String,
+    pub converged_file: Option<String>,
+    pub candidates: Vec<FillCandidate>,
+}
+
 pub struct ScenarioTours {
     pub tours: Vec<serde_json::Value>,
     pub frames: usize,
@@ -730,6 +959,8 @@ pub struct ScenarioTours {
     /// CR-17 explicit-line trait-collision encounters in doc order —
     /// disclosed by run() as one stdout WARN per encounter
     pub trait_collisions: Vec<TraitCollisionEncounter>,
+    /// CR-18 qualifier refusals in doc order — same WARN discipline
+    pub qualifier_refusals: Vec<QualifierRefusal>,
 }
 
 impl ScenarioTours {
@@ -755,6 +986,7 @@ impl ScenarioTours {
             g_counts: self.g_counts.clone(),
             shells_omitted: self.shells_omitted.clone(),
             trait_collisions: self.trait_collisions.clone(),
+            qualifier_refusals: self.qualifier_refusals.clone(),
         }
     }
 }
@@ -844,6 +1076,12 @@ fn step_of(
             parts.push(anchor_disp);
         }
         _ => parts.push(anchor_disp),
+    }
+    if let Some(qn) = &g.g_qualifier_note {
+        // CR-18: the anchor was selected by the author's declared
+        // identity — the evidence line for why line drift still kept
+        // this symbol
+        parts.push(qn.clone());
     }
     if !note.is_empty() {
         parts.push(format!("註：{note}"));
@@ -1015,6 +1253,107 @@ fn trait_warn_lines(encounters: &[TraitCollisionEncounter]) -> Vec<String> {
         .collect()
 }
 
+/// CR-18: does this graph-distribution key belong to the qualifier
+/// refusal family — the states that must SKIP in build_tours (even
+/// with an explicit doc line) and disclose on the WARN faces?
+fn is_qualifier_refusal(g: &str) -> bool {
+    matches!(
+        g,
+        "qualifier_no_hit"
+            | "qualifier_ambiguous"
+            | "qualifier_malformed"
+            | "qualifier_unverified"
+            | "cross_file_trait_ambiguous"
+    )
+}
+
+/// CR-18 refusal reason → the human mode description shared by the
+/// WARN line and the description hint (one source, three faces).
+fn qualifier_mode_desc(reason: &str) -> &'static str {
+    match reason {
+        "qualifier_no_hit" => "候選皆不符合宣告身分，拒絕最近猜測",
+        "qualifier_ambiguous" => "多候選符合宣告身分，拒絕猜測",
+        "qualifier_unverified" => "存在無法剖析的 impl 候選，唯一命中未證實",
+        "qualifier_malformed" => "qualifier 語法無法剖析（須 Receiver::method[Trait] 形）",
+        "cross_file_trait_ambiguous" => "跨檔收斂後同名 trait 碰撞未消歧，拒絕最低行猜測",
+        _ => "拒絕錨定",
+    }
+}
+
+/// CR-18: the tour-description qualifier-refusal line — mirrors the
+/// CR-17 trait hint caps (≤3 frames detailed with an explicit fold
+/// count, first 4 candidates each via the shared renderer). An empty
+/// refusal list yields an empty string: tours without qualifier
+/// refusals keep byte-identical descriptions.
+fn qualifier_hint_line(refusals: &[QualifierRefusal]) -> String {
+    if refusals.is_empty() {
+        return String::new();
+    }
+    let mut segs: Vec<String> = Vec::new();
+    for e in refusals.iter().take(3) {
+        let anchor = if e.doc_anchor.is_empty() {
+            String::new()
+        } else {
+            format!("（文檔錨 {}）", e.doc_anchor)
+        };
+        let file = e
+            .converged_file
+            .as_deref()
+            .filter(|f| !f.is_empty())
+            .map(|f| format!("（收斂至 {f}）"))
+            .unwrap_or_default();
+        let cands = if e.candidates.is_empty() {
+            String::new()
+        } else {
+            format!("候選 {}——", trait_cands_inline(&e.candidates))
+        };
+        segs.push(format!(
+            "{}{anchor}{file}：{cands}{}（{}）",
+            e.frame,
+            qualifier_mode_desc(&e.reason),
+            e.reason
+        ));
+    }
+    if refusals.len() > 3 {
+        segs.push(format!("另有 {} 幀（略）", refusals.len() - 3));
+    }
+    format!("qualifier 拒絕：{}", segs.join("；"))
+}
+
+/// CR-18 per-encounter WARN lines — one per qualifier refusal, the
+/// candidate payload identical to the description hint (one renderer).
+/// Rides stdout in the success face and stderr in the all-shell
+/// fail-closed face, like the CR-17 WARNs.
+fn qualifier_warn_lines(refusals: &[QualifierRefusal]) -> Vec<String> {
+    refusals
+        .iter()
+        .map(|e| {
+            let anchor = if e.doc_anchor.is_empty() {
+                String::new()
+            } else {
+                format!("（文檔錨 {}）", e.doc_anchor)
+            };
+            let file = e
+                .converged_file
+                .as_deref()
+                .filter(|f| !f.is_empty())
+                .map(|f| format!("（收斂至 {f}）"))
+                .unwrap_or_default();
+            let cands = if e.candidates.is_empty() {
+                String::new()
+            } else {
+                format!("候選 {}——", trait_cands_inline(&e.candidates))
+            };
+            format!(
+                "[WARN] qualifier 拒絕：{}{anchor}{file}：{cands}{}（{}）",
+                e.frame,
+                qualifier_mode_desc(&e.reason),
+                e.reason
+            )
+        })
+        .collect()
+}
+
 /// chain md → one tour per scenario (`chain_tour.py:331-404`).
 pub fn build_tours(
     chain_md: &Path,
@@ -1045,6 +1384,8 @@ pub fn build_tours(
     // CR-17: explicit-line trait-collision encounters in doc order —
     // the CLI WARN payload
     let mut trait_encounters: Vec<TraitCollisionEncounter> = Vec::new();
+    // CR-18: qualifier refusals in doc order — the CLI WARN payload
+    let mut qualifier_refusals: Vec<QualifierRefusal> = Vec::new();
     for (heading, lines) in &blocks {
         let frames = parse_frames(lines);
         let mut steps: Vec<serde_json::Value> = Vec::new();
@@ -1058,6 +1399,9 @@ pub fn build_tours(
         // CR-17: this scenario's explicit-line trait collisions (doc
         // order) — the description hint payload
         let mut trait_frames: Vec<TraitCollisionEncounter> = Vec::new();
+        // CR-18: this scenario's qualifier refusals (doc order) — the
+        // description hint + CLI WARN payload
+        let mut qualifier_frames: Vec<QualifierRefusal> = Vec::new();
         for f in &frames {
             let mut status = "noref".to_string();
             let mut g = GraphHit {
@@ -1070,6 +1414,38 @@ pub fn build_tours(
             // the anchor token (plus one trailing parameter group) may
             // spend R1/R2 disambiguation — prose stays ambiguous
             let whole = !f.ident_full.is_empty() && whole_frame_token(&f.symbol) == f.ident_full;
+            // CR-18: the declared-identity query triple (None on the
+            // legacy face)
+            let qm: Option<&QualifiedMethod> = match &f.qualifier {
+                FrameQualifier::WellFormed(qm) => Some(qm),
+                _ => None,
+            };
+            if matches!(f.qualifier, FrameQualifier::Malformed) {
+                // CR-18: qualifier-looking syntax that does not parse is
+                // a doc defect — the frame skips before any anchoring
+                // (an explicit line number never rescues it), disclosed
+                // on the same three faces as every other refusal
+                let key = "qualifier_malformed";
+                *g_counts.entry(key.into()).or_insert(0) += 1;
+                *scen_g.entry(key.into()).or_insert(0) += 1;
+                qualifier_frames.push(QualifierRefusal {
+                    frame: f.symbol.chars().take(30).collect(),
+                    doc_anchor: match (&f.path, f.line) {
+                        (Some(p), Some(l)) => format!("{p}:{l}"),
+                        (Some(p), None) => p.clone(),
+                        _ => String::new(),
+                    },
+                    reason: key.into(),
+                    converged_file: None,
+                    candidates: Vec::new(),
+                });
+                skipped += 1;
+                *skip_reasons.entry(key.into()).or_insert(0) += 1;
+                if skip_examples.len() < 3 {
+                    skip_examples.push(f.symbol.chars().take(30).collect());
+                }
+                continue;
+            }
             if let Some(p) = &f.path {
                 let (resolved, kind) = resolver.resolve(p);
                 match resolved {
@@ -1092,7 +1468,7 @@ pub fn build_tours(
                                     };
                                 }
                                 Some(ga) => {
-                                    match ga.fill_anchor(&ap, &f.ident, &f.ident_full, whole)? {
+                                    match ga.fill_anchor(&ap, &f.ident, &f.ident_full, whole, qm)? {
                                         FillOutcome::Filled(line, symbol) => {
                                             // review F1: the fill is only as
                                             // good as its target line — blank,
@@ -1129,6 +1505,8 @@ pub fn build_tours(
                                                     g_files: Vec::new(),
                                                     g_symbol: symbol,
                                                     g_trait_candidates: Vec::new(),
+                                                    g_qualifier_note: None,
+                                                    g_qualifier_candidates: Vec::new(),
                                                 };
                                                 filled_line = Some(line);
                                             } else {
@@ -1144,11 +1522,38 @@ pub fn build_tours(
                                                     f.symbol.chars().take(30).collect(),
                                                     cands,
                                                 ));
+                                                g = GraphHit {
+                                                    g: reason,
+                                                    ..Default::default()
+                                                };
+                                            } else {
+                                                // CR-18 review (F-2): a
+                                                // qualifier-refusal reason
+                                                // must carry its candidate
+                                                // set through to the
+                                                // three-face disclosure —
+                                                // `NoAnchor(reason, cands)`
+                                                // dropping cands left
+                                                // `g_qualifier_candidates`
+                                                // permanently empty on the
+                                                // line-less face (the WARN
+                                                // and description renderers
+                                                // print only non-empty
+                                                // candidate lists). Legacy
+                                                // non-refusal reasons keep
+                                                // the empty payload,
+                                                // byte-identical.
+                                                g = GraphHit {
+                                                    g_qualifier_candidates:
+                                                        if is_qualifier_refusal(&reason) {
+                                                            cands
+                                                        } else {
+                                                            Vec::new()
+                                                        },
+                                                    g: reason,
+                                                    ..Default::default()
+                                                };
                                             }
-                                            g = GraphHit {
-                                                g: reason,
-                                                ..Default::default()
-                                            };
                                         }
                                     }
                                 }
@@ -1157,7 +1562,7 @@ pub fn build_tours(
                             status = check_anchor(&ap, f.line.unwrap_or(0), &f.ident);
                             if let Some(ga) = &ga {
                                 if !f.ident.is_empty() {
-                                    g = ga.anchor(&ap, f.line.unwrap_or(0), &f.ident, &status);
+                                    g = ga.anchor(&ap, f.line.unwrap_or(0), &f.ident, &status, qm);
                                 }
                             }
                         }
@@ -1189,6 +1594,40 @@ pub fn build_tours(
                     exact: g.g == "same",
                     candidates: g.g_trait_candidates.clone(),
                 });
+            }
+            // CR-18: a qualifier-selected success gets its evidence note
+            // (counts under the legacy same/moved/filled/moved-file keys
+            // — Plan ⑨'s comparability)
+            if let Some(qm) = qm {
+                if matches!(g.g.as_str(), "same" | "moved" | "filled" | "moved-file") {
+                    g.g_qualifier_note = Some(format!(
+                        "qualifier 命中 {}::{}［{}］——宣告式身分選取（行號漂移亦選中）",
+                        qm.receiver, qm.method, qm.trait_name
+                    ));
+                }
+            }
+            // CR-18 rejected-outcome gate (Plan ⑨): every refusal state
+            // skips — an explicit doc line never rescues the frame into
+            // step_of — and discloses on the same three faces (g_counts,
+            // skip reasons, WARN) as one payload
+            if is_qualifier_refusal(&g.g) {
+                qualifier_frames.push(QualifierRefusal {
+                    frame: f.symbol.chars().take(30).collect(),
+                    doc_anchor: match (&f.path, f.line) {
+                        (Some(p), Some(l)) => format!("{p}:{l}"),
+                        (Some(p), None) => p.clone(),
+                        _ => String::new(),
+                    },
+                    reason: g.g.clone(),
+                    converged_file: g.g_file.clone(),
+                    candidates: g.g_qualifier_candidates.clone(),
+                });
+                skipped += 1;
+                *skip_reasons.entry(g.g.clone()).or_insert(0) += 1;
+                if skip_examples.len() < 3 {
+                    skip_examples.push(f.symbol.chars().take(30).collect());
+                }
+                continue;
             }
             let Some(ap) = abs_path else {
                 skipped += 1;
@@ -1278,7 +1717,13 @@ pub fn build_tours(
             description.push('\n');
             description.push_str(&thint);
         }
+        let qhint = qualifier_hint_line(&qualifier_frames);
+        if !qhint.is_empty() {
+            description.push('\n');
+            description.push_str(&qhint);
+        }
         trait_encounters.append(&mut trait_frames);
+        qualifier_refusals.append(&mut qualifier_frames);
         tours.push(serde_json::json!({
             "title": heading,
             "description": description,
@@ -1298,6 +1743,7 @@ pub fn build_tours(
         g_counts,
         shells_omitted,
         trait_collisions: trait_encounters,
+        qualifier_refusals,
     })
 }
 
@@ -1741,6 +2187,11 @@ pub fn run(argv: &[&str]) -> ToolOutput {
             stderr.push_str(&w);
             stderr.push('\n');
         }
+        // CR-18: qualifier-refusal WARNs ride the same fail-closed face
+        for w in qualifier_warn_lines(&st.qualifier_refusals) {
+            stderr.push_str(&w);
+            stderr.push('\n');
+        }
         stderr.push_str(&crate::msg_line(
             "FAIL",
             &format!(
@@ -2050,6 +2501,13 @@ pub fn run(argv: &[&str]) -> ToolOutput {
     // the [LOG] distribution right below carries the same
     // explicit_trait_ambiguous count
     for w in trait_warn_lines(&st.trait_collisions) {
+        stdout.push_str(&w);
+        stdout.push('\n');
+    }
+    // CR-18: one stdout WARN per qualifier refusal — the same payload
+    // discipline (candidates + reason key); the [LOG] distribution
+    // right below carries the matching qualifier_* counts
+    for w in qualifier_warn_lines(&st.qualifier_refusals) {
         stdout.push_str(&w);
         stdout.push('\n');
     }

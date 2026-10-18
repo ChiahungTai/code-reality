@@ -1062,3 +1062,98 @@ fn tf2_empty_corpus_fails_loud() {
     assert_eq!(out.exit_code, 1, "{} {}", out.stdout, out.stderr);
     assert!(out.stderr.contains("無 .tour"), "{}", out.stderr);
 }
+
+// ---------- T-Q (CR-18): qualifier titles through the bootstrap ----------
+
+const QFMT_DEBUG: &str = "rust-analyzer cargo demo 0.1.0 pkg/impl#[Price][Debug]fmt().";
+const QFMT_DISPLAY: &str = "rust-analyzer cargo demo 0.1.0 pkg/impl#[Price][Display]fmt().";
+
+/// Same-file same-name `fmt` collision pair in src_mod.py: Display sits
+/// on line 4 (`def alpha():` — the recorded anchor's pattern-hitting
+/// line), Debug on line 8. The bootstrap must consume the title's
+/// qualifier through the SAME parser/selector as chain_tour — the
+/// pre-CR-18 best_ident extraction picked `Display` (the trait name)
+/// off the title and missed the graph entirely.
+fn qualifier_graph_spec(repo: &Path) -> GraphDbSpec {
+    let py = abs(repo, "src_mod.py");
+    let seed = |symbol: &str| NodeSeed {
+        name: "fmt".into(),
+        parent: None,
+        qname: symbol.into(),
+        file_path: py.clone(),
+    };
+    let attr = || NodeAttr {
+        kind: "Function",
+        language: "rust",
+        is_test: 0,
+        community_id: None,
+    };
+    let mut spec = GraphDbSpec {
+        nodes: vec![seed(QFMT_DEBUG), seed(QFMT_DISPLAY)],
+        ..Default::default()
+    };
+    spec.node_attrs = vec![(QFMT_DEBUG.into(), attr()), (QFMT_DISPLAY.into(), attr())];
+    spec.node_lines = vec![(QFMT_DEBUG.into(), 8), (QFMT_DISPLAY.into(), 4)];
+    spec
+}
+
+#[test]
+fn tq1_bootstrap_qualifier_title_backfills_declared_identity() {
+    let lab = fresh_lab("cr18-tq1");
+    lab.install_graph(&qualifier_graph_spec(&lab.repo));
+    write_tour(
+        &lab.repo,
+        ".tours/10-x/01.tour",
+        json!([step("src_mod.py", 4, "Price::fmt[Display]", "def alpha")]),
+    );
+    let out = run_reanchor(&lab.repo, &["--apply", "--bootstrap-symbols"]);
+    assert_eq!(out.exit_code, 0, "{} {}", out.stdout, out.stderr);
+    assert!(out.stdout.contains("補 symbol"), "{}", out.stdout);
+    assert!(out.stdout.contains(QFMT_DISPLAY), "{}", out.stdout);
+    assert!(out.stdout.contains("written 1"), "{}", out.stdout);
+    let after = written_tour(&lab.repo);
+    assert_eq!(
+        after["steps"][0]["x-codeReality"]["symbol"],
+        json!(QFMT_DISPLAY)
+    );
+    // pattern still hits the recorded line — the line never moves
+    assert_eq!(after["steps"][0]["line"], json!(4));
+}
+
+#[test]
+fn tq2_bootstrap_malformed_qualifier_title_refuses_backfill() {
+    let lab = fresh_lab("cr18-tq2");
+    lab.install_graph(&qualifier_graph_spec(&lab.repo));
+    let tour = write_tour(
+        &lab.repo,
+        ".tours/10-x/01.tour",
+        json!([step("src_mod.py", 4, "Price::fmt[Display", "def alpha")]),
+    );
+    let before = read_bytes(&tour);
+    let out = run_reanchor(&lab.repo, &["--apply", "--bootstrap-symbols"]);
+    assert_eq!(out.exit_code, 0, "{} {}", out.stdout, out.stderr);
+    assert!(
+        out.stdout.contains("qualifier 語法錯誤"),
+        "malformed qualifier title must be refused explicitly: {}",
+        out.stdout
+    );
+    assert!(out.stdout.contains("written 0"), "{}", out.stdout);
+    assert_eq!(read_bytes(&tour), before);
+}
+
+#[test]
+fn tq3_bootstrap_qualifier_no_hit_skips_with_reason() {
+    let lab = fresh_lab("cr18-tq3");
+    lab.install_graph(&qualifier_graph_spec(&lab.repo));
+    let tour = write_tour(
+        &lab.repo,
+        ".tours/10-x/01.tour",
+        json!([step("src_mod.py", 4, "Price::fmt[ToString]", "def alpha")]),
+    );
+    let before = read_bytes(&tour);
+    let out = run_reanchor(&lab.repo, &["--apply", "--bootstrap-symbols"]);
+    assert_eq!(out.exit_code, 0, "{} {}", out.stdout, out.stderr);
+    assert!(out.stdout.contains("qualifier_no_hit"), "{}", out.stdout);
+    assert!(out.stdout.contains("written 0"), "{}", out.stdout);
+    assert_eq!(read_bytes(&tour), before);
+}

@@ -3204,6 +3204,1164 @@ fn explicit_line_inherent_vs_trait_impl_counts_as_collision() {
     assert!(st.tours[0]["steps"].as_array().unwrap().is_empty());
 }
 
+// ---------- CR-18: md trait-qualifier disambiguation (Price::fmt[Display]) ----------
+
+/// AC-1 pin (pre-fix baseline, the POC trap): `Price::fmt[Display]` with
+/// no call parens — best_ident length-ranks `Display`(7) over `fmt`(3),
+/// so the frame's query ident is the TRAIT name, not the method. This
+/// test ran against the pre-CR-18 tree asserting `ident == "Display"`
+/// to prove the trap before flipping to the corrected contract.
+#[test]
+fn qualifier_frame_parse_selects_method_ident() {
+    let frames = parse_frames(&["└─ Price::fmt[Display] pkg/price.rs:776".to_string()]);
+    assert_eq!(frames[0].path.as_deref(), Some("pkg/price.rs"));
+    assert_eq!(frames[0].line, Some(776));
+    // the method is the name-axis ident (SQL name=?); the trait lives in
+    // the qualifier, never in the ident
+    assert_eq!(frames[0].ident, "fmt");
+    // author text survives on the frame symbol (CodeTour title keeps
+    // the disambiguation intent)
+    assert_eq!(frames[0].symbol, "Price::fmt[Display]");
+    // the query identity is the parsed QualifiedMethod triple
+    assert_eq!(
+        frames[0].qualifier,
+        code_reality::symbol_resolve::FrameQualifier::WellFormed(
+            code_reality::symbol_resolve::QualifiedMethod {
+                receiver: "Price".into(),
+                method: "fmt".into(),
+                trait_name: "Display".into(),
+            }
+        )
+    );
+}
+
+/// AC-1 grammar battery: canonical / compatible / path-parens wrapper
+/// forms parse to the same triple; non-qualifier shapes stay legacy
+/// (None); qualifier-looking shapes that do not parse are Malformed.
+#[test]
+fn qualifier_syntax_forms_and_malformed_shapes() {
+    use code_reality::symbol_resolve::{
+        parse_qualifier, FrameQualifier, QualifiedMethod,
+    };
+    let wf = |r: &str, m: &str, t: &str| {
+        FrameQualifier::WellFormed(QualifiedMethod {
+            receiver: r.into(),
+            method: m.into(),
+            trait_name: t.into(),
+        })
+    };
+    // canonical
+    assert_eq!(parse_qualifier("Price::fmt[Display]"), wf("Price", "fmt", "Display"));
+    // compatible call-paren form
+    assert_eq!(
+        parse_qualifier("Price::fmt()[Display]"),
+        wf("Price", "fmt", "Display")
+    );
+    // parameter-carrying call form
+    assert_eq!(
+        parse_qualifier("Ctx::execute(ctx)[Display]"),
+        wf("Ctx", "execute", "Display")
+    );
+    // multi-segment receiver chain — the immediate type qualifies
+    assert_eq!(
+        parse_qualifier("model::Price::fmt[Display]"),
+        wf("Price", "fmt", "Display")
+    );
+    // generic trait groups ride through verbatim (bracket depth)
+    assert_eq!(
+        parse_qualifier("Quantity::add[`Add<Self>`]"),
+        wf("Quantity", "add", "`Add<Self>`")
+    );
+    assert_eq!(
+        parse_qualifier("Buf::as_ref[AsRef<[u8]>]"),
+        wf("Buf", "as_ref", "AsRef<[u8]>")
+    );
+    // non-qualifier shapes stay legacy
+    assert_eq!(parse_qualifier("Price::fmt()"), FrameQualifier::None);
+    assert_eq!(parse_qualifier("Price::fmt"), FrameQualifier::None);
+    assert_eq!(parse_qualifier("kernel"), FrameQualifier::None);
+    assert_eq!(parse_qualifier("items[0]"), FrameQualifier::None);
+    assert_eq!(parse_qualifier(""), FrameQualifier::None);
+    // qualifier-looking but broken → Malformed (fail loud, no fallback)
+    assert_eq!(parse_qualifier("Price::fmt[Display"), FrameQualifier::Malformed);
+    assert_eq!(parse_qualifier("Price::fmt[]"), FrameQualifier::Malformed);
+    assert_eq!(parse_qualifier("Price::fmt[Display] junk"), FrameQualifier::Malformed);
+    assert_eq!(parse_qualifier("Price::fmt[Display][Debug]"), FrameQualifier::Malformed);
+    assert_eq!(parse_qualifier("::fmt[Display]"), FrameQualifier::Malformed);
+}
+
+/// AC-1 path-extraction ordering: the `(path:line)` wrapper form — the
+/// path ref strips FIRST, the leftover wrapper `()` folds off the kept
+/// author text, and the qualifier still parses off the remainder.
+#[test]
+fn qualifier_path_parens_wrapper_form() {
+    let frames = parse_frames(&["└─ Price::fmt[Display] (pkg/price.rs:776)".to_string()]);
+    assert_eq!(frames[0].path.as_deref(), Some("pkg/price.rs"));
+    assert_eq!(frames[0].line, Some(776));
+    assert_eq!(frames[0].ident, "fmt");
+    // wrapper residue folded — the title keeps the clean author text
+    assert_eq!(frames[0].symbol, "Price::fmt[Display]");
+    // compatible form with the wrapper
+    let frames = parse_frames(&["└─ Price::fmt()[Display] (pkg/price.rs:776)".to_string()]);
+    assert_eq!(frames[0].path.as_deref(), Some("pkg/price.rs"));
+    assert_eq!(frames[0].line, Some(776));
+    assert_eq!(frames[0].ident, "fmt");
+    assert_eq!(frames[0].symbol, "Price::fmt()[Display]");
+}
+
+/// CR-18 review F-3 (content-shape tightening, judge half-step): a
+/// bracket group whose content carries NO ASCII letter (indexing prose
+/// like `self::items[0]` — the trait slot reads "0") is not a trait
+/// group; the frame stays legacy (None) instead of minting a bogus
+/// triple or skipping as Malformed. Grammar-legal qualifier content
+/// always carries ≥1 letter (trait groups are ident/backtick shapes),
+/// so this costs zero legal coverage. An EMPTY group stays Malformed
+/// (the shape was declared, the trait is missing — pinned at
+/// `qualifier_syntax_forms_and_malformed_shapes`).
+#[test]
+fn qualifier_bracket_content_without_letters_stays_legacy() {
+    use code_reality::symbol_resolve::{parse_qualifier, FrameQualifier, QualifiedMethod};
+    // indexing prose after `::` — None, never WellFormed(trait="0")
+    assert_eq!(parse_qualifier("self::items[0]"), FrameQualifier::None);
+    assert_eq!(parse_qualifier("list::items[42]"), FrameQualifier::None);
+    // a letterless symbol-only group is prose too
+    assert_eq!(parse_qualifier("map::get[$1]"), FrameQualifier::None);
+    // lettered content keeps the qualifier shape (digits ride along)
+    assert_eq!(
+        parse_qualifier("Vec::get[i32]"),
+        FrameQualifier::WellFormed(QualifiedMethod {
+            receiver: "Vec".into(),
+            method: "get".into(),
+            trait_name: "i32".into(),
+        })
+    );
+    // empty group stays Malformed — the pinned neighbor above
+    assert_eq!(parse_qualifier("Price::fmt[]"), FrameQualifier::Malformed);
+}
+
+/// AC-2 unique state + AC-7 NT shape: the doc anchor 776 drifted off
+/// both trait impls, but the qualifier names the declared identity —
+/// the qualified selector picks Display@845 (bypassing the CR-17
+/// collision refusal and its WARN), counts under the legacy `moved`
+/// key, and the step carries the Display SCIP symbol.
+#[test]
+fn qualifier_unique_hit_selects_display_even_on_drift() {
+    let (repo, chain) = repo_fixture_cr9(
+        "cr18-unique",
+        &[("pkg/price.rs", price_rs_fixture())],
+        CHAIN_MD_CR18_QUALIFIER_DRIFT,
+    );
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_price_impls(&mut spec, &abs);
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(st.g_counts.get("moved"), Some(&1), "{:?}", st.g_counts);
+    // declared identity bypasses the collision semantics — no refusal
+    // key, no collision encounter payload
+    assert!(
+        !st.g_counts.contains_key("explicit_trait_ambiguous"),
+        "{:?}",
+        st.g_counts
+    );
+    assert!(st.trait_collisions.is_empty(), "no collision WARN");
+    assert_eq!(st.skipped, 0);
+    let steps = st.tours[0]["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 1);
+    assert_eq!(steps[0]["line"], 845);
+    assert_eq!(
+        steps[0]["x-codeReality"]["symbol"].as_str().unwrap(),
+        rs_sym("impl#[Price][Display]fmt().")
+    );
+    // the step discloses the qualifier evidence (declared identity)
+    let sdesc = steps[0]["description"].as_str().unwrap();
+    assert!(sdesc.contains("qualifier 命中"), "{sdesc}");
+    assert!(sdesc.contains("［Display］"), "{sdesc}");
+}
+
+const CHAIN_MD_CR18_QUALIFIER_DRIFT: &str = r#"# Price qualifier drift
+
+```text
+└─ Price::fmt[Display] pkg/price.rs:776
+```
+"#;
+
+/// AC-2 no_hit state: the named trait has no impl among the same-file
+/// same-name candidates — fail-loud `qualifier_no_hit`, never a nearest
+/// fallback, never R1/R2.
+#[test]
+fn qualifier_no_hit_fails_loud() {
+    const MD: &str = "# No hit\n\n```text\n└─ Price::fmt[ToString] pkg/price.rs:776\n```\n";
+    let (repo, chain) =
+        repo_fixture_cr9("cr18-nohit", &[("pkg/price.rs", price_rs_fixture())], MD);
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_price_impls(&mut spec, &abs);
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(
+        st.g_counts.get("qualifier_no_hit"),
+        Some(&1),
+        "{:?}",
+        st.g_counts
+    );
+    assert!(st.tours[0]["steps"].as_array().unwrap().is_empty());
+    assert_eq!(st.skipped, 1);
+    // single-frame all-skip: shell with the qualifier reason on the
+    // skip axis
+    assert_eq!(st.shells_omitted.len(), 1);
+    assert_eq!(
+        st.shells_omitted[0].skip_reasons.get("qualifier_no_hit"),
+        Some(&1),
+        "{:?}",
+        st.shells_omitted[0].skip_reasons
+    );
+}
+
+/// AC-2 ambiguous state: two rows satisfy the declared triple (fixture
+/// keeps symbols unique via per-row descriptor prefixes) — refuse as
+/// `qualifier_ambiguous`, never entering R1/R2 disambiguation.
+#[test]
+fn qualifier_ambiguous_multiple_matches_refuse() {
+    const MD: &str = "# Ambiguous\n\n```text\n└─ Price::fmt[Display] pkg/price.rs:776\n```\n";
+    let (repo, chain) =
+        repo_fixture_cr9("cr18-ambig", &[("pkg/price.rs", price_rs_fixture())], MD);
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    for (pfx, line) in [("a", 839), ("b", 845)] {
+        seed_sym(
+            &mut spec,
+            &rs_sym(&format!("{pfx}/impl#[Price][Display]fmt().")),
+            "fmt",
+            "pkg/price.rs",
+            line,
+            "Function",
+            "rust",
+            &abs,
+        );
+    }
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(
+        st.g_counts.get("qualifier_ambiguous"),
+        Some(&1),
+        "{:?}",
+        st.g_counts
+    );
+    assert!(st.tours[0]["steps"].as_array().unwrap().is_empty());
+    // both matching candidates disclose on the description hint
+    let desc = st.tours[0]["description"].as_str().unwrap();
+    assert!(desc.contains("qualifier 拒絕"), "{desc}");
+    assert!(desc.contains("impl#［Price］［Display］fmt(). :839（Function）"), "{desc}");
+    assert!(desc.contains("impl#［Price］［Display］fmt(). :845（Function）"), "{desc}");
+}
+
+/// AC-2 malformed state: qualifier-looking syntax that does not parse
+/// (`::` plus an unterminated bracket group) skips the frame with its
+/// own key even though the frame carries an explicit line number.
+#[test]
+fn qualifier_malformed_skips_with_explicit_line() {
+    const MD: &str = "# Malformed\n\n```text\n└─ Price::fmt[Display pkg/price.rs:776\n```\n";
+    let (repo, chain) =
+        repo_fixture_cr9("cr18-malformed", &[("pkg/price.rs", price_rs_fixture())], MD);
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_price_impls(&mut spec, &abs);
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(
+        st.g_counts.get("qualifier_malformed"),
+        Some(&1),
+        "{:?}",
+        st.g_counts
+    );
+    assert!(st.tours[0]["steps"].as_array().unwrap().is_empty());
+    assert_eq!(
+        st.shells_omitted[0].skip_reasons.get("qualifier_malformed"),
+        Some(&1),
+        "{:?}",
+        st.shells_omitted[0].skip_reasons
+    );
+}
+
+/// AC-3 triple identity: trait-only matching would hit both candidates;
+/// the receiver axis must rule the Other-type Display impl out.
+#[test]
+fn qualifier_triple_match_rejects_other_receiver() {
+    const MD: &str = "# Triple\n\n```text\n└─ Price::fmt[Display] pkg/price.rs:776\n```\n";
+    let (repo, chain) =
+        repo_fixture_cr9("cr18-triple", &[("pkg/price.rs", price_rs_fixture())], MD);
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_sym(
+        &mut spec,
+        &rs_sym("impl#[Price][Display]fmt()."),
+        "fmt",
+        "pkg/price.rs",
+        845,
+        "Function",
+        "rust",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &rs_sym("impl#[Other][Display]fmt()."),
+        "fmt",
+        "pkg/price.rs",
+        830,
+        "Function",
+        "rust",
+        &abs,
+    );
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(st.g_counts.get("moved"), Some(&1), "{:?}", st.g_counts);
+    assert!(
+        !st.g_counts.contains_key("qualifier_ambiguous"),
+        "{:?}",
+        st.g_counts
+    );
+    let steps = st.tours[0]["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 1);
+    assert_eq!(steps[0]["line"], 845);
+    assert_eq!(
+        steps[0]["x-codeReality"]["symbol"].as_str().unwrap(),
+        rs_sym("impl#[Price][Display]fmt().")
+    );
+}
+
+/// AC-2 line-less face: the qualifier fills the unique Display impl —
+/// `filled` at 845 with the Display symbol, bypassing R1/R2.
+#[test]
+fn qualifier_lineless_fills_unique_impl() {
+    const MD: &str = "# Lineless\n\n```text\n└─ Price::fmt[Display] pkg/price.rs\n```\n";
+    let (repo, chain) =
+        repo_fixture_cr9("cr18-lineless", &[("pkg/price.rs", price_rs_fixture())], MD);
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_price_impls(&mut spec, &abs);
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(st.g_counts.get("filled"), Some(&1), "{:?}", st.g_counts);
+    let steps = st.tours[0]["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 1);
+    assert_eq!(steps[0]["line"], 845);
+    assert_eq!(
+        steps[0]["x-codeReality"]["symbol"].as_str().unwrap(),
+        rs_sym("impl#[Price][Display]fmt().")
+    );
+    let sdesc = steps[0]["description"].as_str().unwrap();
+    assert!(sdesc.contains("qualifier 命中"), "{sdesc}");
+}
+
+/// AC-2 three-face consistency: the CLI report carries one WARN per
+/// refusal, the [LOG] distribution the same key, and the scenario
+/// description the same skip reason + candidate payload.
+#[test]
+fn qualifier_cli_warn_and_counts_consistent() {
+    const MD: &str = r#"# Mixed qualifier faces
+
+```text
+└─ Price::fmt[Display] pkg/price.rs:776
+└─ Price::fmt[ToString] pkg/price.rs:776
+```
+"#;
+    let (repo, chain) =
+        repo_fixture_cr9("cr18-cli", &[("pkg/price.rs", price_rs_fixture())], MD);
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_price_impls(&mut spec, &abs);
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let out_dir = repo.join(".tours").join("arch").join("05-qualifier");
+    let out = code_reality::chain_tour::run(&[
+        "chain_tour",
+        &chain.to_string_lossy(),
+        "--repo",
+        &repo.to_string_lossy(),
+        "--graph",
+        &db.to_string_lossy(),
+        "--out-dir",
+        &out_dir.to_string_lossy(),
+    ]);
+    assert_eq!(out.exit_code, 0, "stdout:\n{}\nstderr:\n{}", out.stdout, out.stderr);
+    // WARN face names the refusal, the triple, and the key
+    assert!(
+        out.stdout.contains("[WARN] qualifier 拒絕：Price::fmt[ToString]"),
+        "{}",
+        out.stdout
+    );
+    assert!(out.stdout.contains("qualifier_no_hit"), "{}", out.stdout);
+    // [LOG] distribution carries the same independent count
+    assert!(
+        out.stdout.contains("[LOG] graph 重錨分佈") && out.stdout.contains("qualifier_no_hit"),
+        "{}",
+        out.stdout
+    );
+    // written tour description: skip reason + the candidate payload
+    let tour: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out_dir.join("01.tour")).unwrap()).unwrap();
+    let desc = tour["description"].as_str().unwrap();
+    assert!(desc.contains("qualifier_no_hit 1"), "{desc}");
+    assert!(desc.contains("qualifier 拒絕"), "{desc}");
+    assert!(
+        desc.contains("impl#［Price］［Display］fmt(). :845（Function）"),
+        "{desc}"
+    );
+    // the unique-hit frame anchored; the refused frame skipped
+    let steps = tour["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 1);
+    assert_eq!(steps[0]["line"], 845);
+}
+
+/// AC-4 no-qualifier cross-file: single-file convergence over a
+/// trait-colliding set refuses under its own key instead of the legacy
+/// silent lowest-line pick (F7 hazard).
+#[test]
+fn cross_file_single_convergence_collision_refuses() {
+    const MD: &str = "# Cross file\n\n```text\n└─ render() pkg/old.rs:5\n```\n";
+    let old_rs = "// moved out\n// nothing here\n";
+    let (repo, chain) = repo_fixture_cr9(
+        "cr18-xf-col",
+        &[("pkg/old.rs", old_rs.into()), ("pkg/new.rs", price_rs_fixture())],
+        MD,
+    );
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    for (trait_name, line) in [("Debug", 839), ("Display", 845)] {
+        seed_sym(
+            &mut spec,
+            &rs_sym(&format!("impl#[Price][{trait_name}]render().")),
+            "render",
+            "pkg/new.rs",
+            line,
+            "Function",
+            "rust",
+            &abs,
+        );
+    }
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(
+        st.g_counts.get("cross_file_trait_ambiguous"),
+        Some(&1),
+        "{:?}",
+        st.g_counts
+    );
+    assert!(!st.g_counts.contains_key("moved-file"), "{:?}", st.g_counts);
+    assert!(st.tours[0]["steps"].as_array().unwrap().is_empty());
+    let desc = st.tours[0]["description"].as_str().unwrap();
+    assert!(desc.contains("cross_file_trait_ambiguous"), "{desc}");
+    assert!(
+        desc.contains("impl#［Price］［Display］render(). :845（Function）"),
+        "{desc}"
+    );
+}
+
+/// AC-4 no-collision cross-file: the legacy lowest-line pick survives
+/// byte-identically (moved-file + g_symbol).
+#[test]
+fn cross_file_no_collision_keeps_legacy_pick() {
+    const MD: &str = "# Cross file unique\n\n```text\n└─ render() pkg/old.rs:5\n```\n";
+    let old_rs = "// moved out\n";
+    let (repo, chain) = repo_fixture_cr9(
+        "cr18-xf-ok",
+        &[("pkg/old.rs", old_rs.into()), ("pkg/new.rs", price_rs_fixture())],
+        MD,
+    );
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_sym(
+        &mut spec,
+        &rs_sym("impl#[Price][Display]render()."),
+        "render",
+        "pkg/new.rs",
+        845,
+        "Function",
+        "rust",
+        &abs,
+    );
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(st.g_counts.get("moved-file"), Some(&1), "{:?}", st.g_counts);
+    let steps = st.tours[0]["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 1);
+    assert_eq!(steps[0]["line"], 845);
+    assert_eq!(steps[0]["file"], "pkg/new.rs");
+    assert_eq!(
+        steps[0]["x-codeReality"]["symbol"].as_str().unwrap(),
+        rs_sym("impl#[Price][Display]render().")
+    );
+}
+
+/// AC-4 qualifier cross-file: single-file convergence + declared
+/// identity → moved-file with the qualifier-selected symbol.
+#[test]
+fn cross_file_qualifier_unique_hits_moved_file() {
+    const MD: &str =
+        "# Cross qualifier\n\n```text\n└─ Price::render[Display] pkg/old.rs:5\n```\n";
+    let old_rs = "// moved out\n";
+    let (repo, chain) = repo_fixture_cr9(
+        "cr18-xf-qual",
+        &[("pkg/old.rs", old_rs.into()), ("pkg/new.rs", price_rs_fixture())],
+        MD,
+    );
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    for (trait_name, line) in [("Debug", 839), ("Display", 845)] {
+        seed_sym(
+            &mut spec,
+            &rs_sym(&format!("impl#[Price][{trait_name}]render().")),
+            "render",
+            "pkg/new.rs",
+            line,
+            "Function",
+            "rust",
+            &abs,
+        );
+    }
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(st.g_counts.get("moved-file"), Some(&1), "{:?}", st.g_counts);
+    let steps = st.tours[0]["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 1);
+    assert_eq!(steps[0]["line"], 845);
+    assert_eq!(steps[0]["file"], "pkg/new.rs");
+    assert_eq!(
+        steps[0]["x-codeReality"]["symbol"].as_str().unwrap(),
+        rs_sym("impl#[Price][Display]render().")
+    );
+    let sdesc = steps[0]["description"].as_str().unwrap();
+    assert!(sdesc.contains("qualifier 命中"), "{sdesc}");
+}
+
+/// AC-4 rels>1: multiple target files keep moved-file-ambiguous — the
+/// qualifier never selects across files on its own.
+#[test]
+fn cross_file_multi_file_stays_ambiguous_with_qualifier() {
+    const MD: &str =
+        "# Cross multi\n\n```text\n└─ Price::render[Display] pkg/old.rs:5\n```\n";
+    let old_rs = "// moved out\n";
+    let (repo, chain) = repo_fixture_cr9(
+        "cr18-xf-multi",
+        &[
+            ("pkg/old.rs", old_rs.into()),
+            ("pkg/new.rs", price_rs_fixture()),
+            ("pkg/other.rs", price_rs_fixture()),
+        ],
+        MD,
+    );
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    for (pfx, file, line) in [("a", "pkg/new.rs", 839), ("b", "pkg/other.rs", 845)] {
+        seed_sym(
+            &mut spec,
+            &rs_sym(&format!("{pfx}/impl#[Price][Display]render().")),
+            "render",
+            file,
+            line,
+            "Function",
+            "rust",
+            &abs,
+        );
+    }
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(
+        st.g_counts.get("moved-file-ambiguous"),
+        Some(&1),
+        "{:?}",
+        st.g_counts
+    );
+    // legacy face: the doc anchor stands as a step, no identity minted —
+    // the qualifier never selects across files on its own
+    let steps = st.tours[0]["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 1);
+    assert_eq!(steps[0]["line"], 5);
+    let tour_json = serde_json::to_string(&st.tours[0]).unwrap();
+    assert!(
+        !tour_json.contains("x-codeReality"),
+        "multi-file face must mint no identity: {tour_json}"
+    );
+}
+
+/// AC-4 read integrity: a mid-read decode failure in the cross-file
+/// full candidate set degrades explicitly to graph-read-error — never
+/// treated as a complete set for a silent pick.
+#[test]
+fn cross_file_read_error_degrades_explicitly() {
+    const MD: &str = "# Cross read error\n\n```text\n└─ render() pkg/old.rs:5\n```\n";
+    let old_rs = "// moved out\n";
+    let (repo, chain) = repo_fixture_cr9(
+        "cr18-xf-err",
+        &[("pkg/old.rs", old_rs.into()), ("pkg/new.rs", price_rs_fixture())],
+        MD,
+    );
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_sym(
+        &mut spec,
+        &rs_sym("impl#[Price][Display]render()."),
+        "render",
+        "pkg/new.rs",
+        845,
+        "Function",
+        "rust",
+        &abs,
+    );
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    {
+        let c = rusqlite::Connection::open(&db).unwrap();
+        c.execute("UPDATE nodes SET kind=X'00' WHERE name='render'", [])
+            .unwrap();
+    }
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(
+        st.g_counts.get("graph-read-error"),
+        Some(&1),
+        "{:?}",
+        st.g_counts
+    );
+    assert!(!st.g_counts.contains_key("moved-file"), "{:?}", st.g_counts);
+    let tour_json = serde_json::to_string(&st.tours[0]).unwrap();
+    assert!(
+        !tour_json.contains("x-codeReality"),
+        "read-error frame must mint no identity: {tour_json}"
+    );
+}
+
+/// AC-5 no-qualifier F6: a malformed impl sibling (receiver parses as
+/// Price, trait group unterminated) blocks the legacy nearest pick —
+/// the set now carries the collision gate (drifted line refuses).
+#[test]
+fn f6_malformed_sibling_blocks_no_qualifier_nearest() {
+    const MD: &str = "# F6 nearest\n\n```text\n└─ Price::fmt() pkg/price.rs:776\n```\n";
+    let (repo, chain) =
+        repo_fixture_cr9("cr18-f6-nq", &[("pkg/price.rs", price_rs_fixture())], MD);
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_sym(
+        &mut spec,
+        &rs_sym("impl#[Price][Display]fmt()."),
+        "fmt",
+        "pkg/price.rs",
+        845,
+        "Function",
+        "rust",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &rs_sym("m1/impl#[Price][Display"),
+        "fmt",
+        "pkg/price.rs",
+        839,
+        "Function",
+        "rust",
+        &abs,
+    );
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(
+        st.g_counts.get("explicit_trait_ambiguous"),
+        Some(&1),
+        "{:?}",
+        st.g_counts
+    );
+    assert!(!st.g_counts.contains_key("moved"), "{:?}", st.g_counts);
+    assert!(st.tours[0]["steps"].as_array().unwrap().is_empty());
+}
+
+/// AC-5 qualifier F6: the unique ValidImpl triple-match + a malformed
+/// sibling that may share receiver/method → `qualifier_unverified`
+/// (identity not provable, no selection).
+#[test]
+fn f6_malformed_sibling_blocks_qualifier_unique() {
+    const MD: &str = "# F6 qualifier\n\n```text\n└─ Price::fmt[Display] pkg/price.rs:776\n```\n";
+    let (repo, chain) =
+        repo_fixture_cr9("cr18-f6-q", &[("pkg/price.rs", price_rs_fixture())], MD);
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_sym(
+        &mut spec,
+        &rs_sym("impl#[Price][Display]fmt()."),
+        "fmt",
+        "pkg/price.rs",
+        845,
+        "Function",
+        "rust",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &rs_sym("m1/impl#[Price][Display"),
+        "fmt",
+        "pkg/price.rs",
+        839,
+        "Function",
+        "rust",
+        &abs,
+    );
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(
+        st.g_counts.get("qualifier_unverified"),
+        Some(&1),
+        "{:?}",
+        st.g_counts
+    );
+    assert!(st.tours[0]["steps"].as_array().unwrap().is_empty());
+    let desc = st.tours[0]["description"].as_str().unwrap();
+    assert!(desc.contains("qualifier 拒絕"), "{desc}");
+}
+
+/// AC-5 ruling-out: a malformed sibling whose parseable receiver is a
+/// DIFFERENT type cannot be the declared identity — the unique
+/// Price-match still selects.
+#[test]
+fn f6_malformed_other_receiver_ruled_out() {
+    const MD: &str = "# F6 ruled out\n\n```text\n└─ Price::fmt[Display] pkg/price.rs:776\n```\n";
+    let (repo, chain) =
+        repo_fixture_cr9("cr18-f6-out", &[("pkg/price.rs", price_rs_fixture())], MD);
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_sym(
+        &mut spec,
+        &rs_sym("impl#[Price][Display]fmt()."),
+        "fmt",
+        "pkg/price.rs",
+        845,
+        "Function",
+        "rust",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &rs_sym("m1/impl#[Other][Display"),
+        "fmt",
+        "pkg/price.rs",
+        839,
+        "Function",
+        "rust",
+        &abs,
+    );
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(st.g_counts.get("moved"), Some(&1), "{:?}", st.g_counts);
+    assert!(
+        !st.g_counts.contains_key("qualifier_unverified"),
+        "{:?}",
+        st.g_counts
+    );
+    let steps = st.tours[0]["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 1);
+    assert_eq!(steps[0]["line"], 845);
+}
+
+/// AC-5 nested generic brackets: `AsRef<[u8]>` parses with depth
+/// tracking on BOTH the descriptor side and the qualifier side — the
+/// first-`]` truncation would read `AsRef<[u8` and never match.
+#[test]
+fn nested_generic_bracket_depth_qualifier_hit() {
+    const MD: &str = "# Nested\n\n```text\n└─ Buf::as_ref[AsRef<[u8]>] pkg/buf.rs:5\n```\n";
+    let (repo, chain) = repo_fixture_cr9(
+        "cr18-nested",
+        &[("pkg/buf.rs", price_rs_fixture())],
+        MD,
+    );
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_sym(
+        &mut spec,
+        &rs_sym("impl#[Buf][AsRef<[u8]>]as_ref()."),
+        "as_ref",
+        "pkg/buf.rs",
+        839,
+        "Function",
+        "rust",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &rs_sym("impl#[Buf][Display]as_ref()."),
+        "as_ref",
+        "pkg/buf.rs",
+        845,
+        "Function",
+        "rust",
+        &abs,
+    );
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(st.g_counts.get("moved"), Some(&1), "{:?}", st.g_counts);
+    let steps = st.tours[0]["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 1);
+    assert_eq!(steps[0]["line"], 839);
+    assert_eq!(
+        steps[0]["x-codeReality"]["symbol"].as_str().unwrap(),
+        rs_sym("impl#[Buf][AsRef<[u8]>]as_ref().")
+    );
+}
+
+// ---------- CR-18 review fixes (judge verdict batch 1: C1/F-1/C2) ----------
+
+/// Review C1/F-1 (a): explicit-line qualifier frame, ZERO same-file
+/// candidates, and the ident IS substring-present in the doc file
+/// (`drift-far`) — the legacy substring gate used to answer
+/// `not-in-graph` (a doc-line step, zero WARN) while the line-less face
+/// refused under `qualifier_no_hit`. Both faces must treat a declared
+/// identity the same way: fail-loud skip + WARN, never an unverified
+/// step. The graph carries no `fmt` rows anywhere (rels==0).
+#[test]
+fn qualifier_explicit_zero_same_file_skips_with_warn() {
+    const MD: &str = "# Zero same-file\n\n```text\n└─ Price::fmt[Display] pkg/price.rs:5\n```\n";
+    let (repo, chain) =
+        repo_fixture_cr9("cr18-rv-zero", &[("pkg/price.rs", price_rs_fixture())], MD);
+    let db = db_of(&repo);
+    let spec = graph_db_fixture::GraphDbSpec::default();
+    // no fmt rows anywhere: same-file candidates AND cross-file rels are
+    // both empty — only the substring gate differs from test (b)
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(
+        st.g_counts.get("qualifier_no_hit"),
+        Some(&1),
+        "{:?}",
+        st.g_counts
+    );
+    assert!(!st.g_counts.contains_key("not-in-graph"), "{:?}", st.g_counts);
+    assert!(st.tours[0]["steps"].as_array().unwrap().is_empty());
+    assert_eq!(st.skipped, 1);
+    assert_eq!(
+        st.shells_omitted[0].skip_reasons.get("qualifier_no_hit"),
+        Some(&1),
+        "{:?}",
+        st.shells_omitted[0].skip_reasons
+    );
+    // WARN face: single-frame all-skip rides the fail-closed exit-1 face
+    // with the refusal WARN on stderr
+    let out_dir = repo.join(".tours").join("arch").join("06-rv-zero");
+    let out = code_reality::chain_tour::run(&[
+        "chain_tour",
+        &chain.to_string_lossy(),
+        "--repo",
+        &repo.to_string_lossy(),
+        "--graph",
+        &db.to_string_lossy(),
+        "--out-dir",
+        &out_dir.to_string_lossy(),
+    ]);
+    assert_eq!(out.exit_code, 1, "stdout:\n{}\nstderr:\n{}", out.stdout, out.stderr);
+    assert!(
+        out.stderr.contains("[WARN] qualifier 拒絕：Price::fmt[Display]（文檔錨 pkg/price.rs:5）"),
+        "{}",
+        out.stderr
+    );
+    assert!(out.stderr.contains("qualifier_no_hit"), "{}", out.stderr);
+}
+
+/// Review C1/F-1 (b): the zero-rels terminal itself — substring missing
+/// AND length ≥ 4 (the legacy gates PASS), zero graph rows for the ident
+/// anywhere: the qualifier face must answer `qualifier_no_hit`, not the
+/// legacy `not-in-graph` doc-line step.
+#[test]
+fn qualifier_zero_rels_fails_loud() {
+    const MD: &str = "# Zero rels\n\n```text\n└─ Price::render[Display] pkg/old.rs:5\n```\n";
+    let (repo, chain) = repo_fixture_cr9(
+        "cr18-rv-rels0",
+        &[("pkg/old.rs", "// moved out\n".into())],
+        MD,
+    );
+    let db = db_of(&repo);
+    let spec = graph_db_fixture::GraphDbSpec::default();
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(
+        st.g_counts.get("qualifier_no_hit"),
+        Some(&1),
+        "{:?}",
+        st.g_counts
+    );
+    assert!(!st.g_counts.contains_key("not-in-graph"), "{:?}", st.g_counts);
+    assert!(st.tours[0]["steps"].as_array().unwrap().is_empty());
+    assert_eq!(
+        st.shells_omitted[0].skip_reasons.get("qualifier_no_hit"),
+        Some(&1),
+        "{:?}",
+        st.shells_omitted[0].skip_reasons
+    );
+    assert_eq!(st.qualifier_refusals.len(), 1);
+    assert_eq!(st.qualifier_refusals[0].reason, "qualifier_no_hit");
+}
+
+/// Review C2: a SHORT method ident (`fmt`, 3 chars) under the legacy
+/// `chars().count() < 4` cross-file gate — the gate used to answer
+/// `not-in-graph` before the cross-file convergence query, so
+/// `Price::fmt[Display]` relocated to a single new file could never
+/// converge. With the gate qm-scoped, the declared identity drives the
+/// cross-file convergence: moved-file + the qualifier-selected line +
+/// the Display SCIP symbol.
+#[test]
+fn cross_file_qualifier_short_ident_bypasses_length_gate() {
+    const MD: &str = "# Short ident\n\n```text\n└─ Price::fmt[Display] pkg/old.rs:5\n```\n";
+    let (repo, chain) = repo_fixture_cr9(
+        "cr18-rv-short",
+        &[("pkg/old.rs", "// moved out\n".into()), ("pkg/new.rs", price_rs_fixture())],
+        MD,
+    );
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    // the colliding fmt pair lives ONLY in the new file — old file has
+    // zero same-file candidates, exactly the C1 empty-rows shape
+    for (trait_name, line) in [("Debug", 839), ("Display", 845)] {
+        seed_sym(
+            &mut spec,
+            &rs_sym(&format!("impl#[Price][{trait_name}]fmt().")),
+            "fmt",
+            "pkg/new.rs",
+            line,
+            "Function",
+            "rust",
+            &abs,
+        );
+    }
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(st.g_counts.get("moved-file"), Some(&1), "{:?}", st.g_counts);
+    assert!(!st.g_counts.contains_key("not-in-graph"), "{:?}", st.g_counts);
+    let steps = st.tours[0]["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 1);
+    assert_eq!(steps[0]["line"], 845);
+    assert_eq!(steps[0]["file"], "pkg/new.rs");
+    assert_eq!(
+        steps[0]["x-codeReality"]["symbol"].as_str().unwrap(),
+        rs_sym("impl#[Price][Display]fmt().")
+    );
+    let sdesc = steps[0]["description"].as_str().unwrap();
+    assert!(sdesc.contains("qualifier 命中"), "{sdesc}");
+}
+
+// ---------- CR-18 review fixes (judge verdict batch 3: F-7 coverage holes) ----------
+
+/// F-7 hole 1: the selector's `0 matches + shadow` arm — NO ValidImpl
+/// satisfies the declared triple, and the only candidate is a
+/// malformed same-receiver sibling that might BE the identity →
+/// `qualifier_unverified` (identity must be proven, never assumed),
+/// with the candidate disclosed. The existing f6 battery only covered
+/// 1-match + shadow.
+#[test]
+fn f6_zero_valid_matches_with_shadow_unverified() {
+    const MD: &str = "# F6 zero shadow\n\n```text\n└─ Price::fmt[ToString] pkg/price.rs:776\n```\n";
+    let (repo, chain) =
+        repo_fixture_cr9("cr18-f6-0sh", &[("pkg/price.rs", price_rs_fixture())], MD);
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_sym(
+        &mut spec,
+        &rs_sym("m1/impl#[Price][Display"),
+        "fmt",
+        "pkg/price.rs",
+        839,
+        "Function",
+        "rust",
+        &abs,
+    );
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(
+        st.g_counts.get("qualifier_unverified"),
+        Some(&1),
+        "{:?}",
+        st.g_counts
+    );
+    assert!(!st.g_counts.contains_key("qualifier_no_hit"), "{:?}", st.g_counts);
+    assert!(st.tours[0]["steps"].as_array().unwrap().is_empty());
+    // the shadowing sibling is disclosed on the description face
+    let desc = st.tours[0]["description"].as_str().unwrap();
+    assert!(desc.contains("qualifier 拒絕"), "{desc}");
+    assert!(desc.contains("impl#［Price］［Display :839（Function）"), "{desc}");
+}
+
+/// F-7 hole 2: a qualifier unique hit whose selected row sits at delta
+/// zero — counts under the legacy `same` key (the existing
+/// `qualifier_unique_hit_selects_display_even_on_drift` pins only the
+/// drifted `moved` face).
+#[test]
+fn qualifier_exact_line_delta_zero_counts_same() {
+    const MD: &str = "# Same key\n\n```text\n└─ Price::fmt[Display] pkg/price.rs:845\n```\n";
+    let (repo, chain) =
+        repo_fixture_cr9("cr18-same", &[("pkg/price.rs", price_rs_fixture())], MD);
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_price_impls(&mut spec, &abs);
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(st.g_counts.get("same"), Some(&1), "{:?}", st.g_counts);
+    assert!(!st.g_counts.contains_key("moved"), "{:?}", st.g_counts);
+    let steps = st.tours[0]["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 1);
+    assert_eq!(steps[0]["line"], 845);
+    assert_eq!(
+        steps[0]["x-codeReality"]["symbol"].as_str().unwrap(),
+        rs_sym("impl#[Price][Display]fmt().")
+    );
+    let sdesc = steps[0]["description"].as_str().unwrap();
+    assert!(sdesc.contains("qualifier 命中"), "{sdesc}");
+    assert!(sdesc.contains("graph ✓ 行號一致"), "{sdesc}");
+}
+
+/// F-7 hole 3 (F-2 connected): the LINE-LESS F6 sibling — unique
+/// ValidImpl triple-match + a malformed same-receiver sibling →
+/// `qualifier_unverified` via fill_anchor's NoAnchor path. The F-2 fix
+/// carries the candidate set through the line-less refusal: BOTH the
+/// description hint and the CLI WARN must print non-empty candidates
+/// (the judge probe proved payload=0 pre-fix on this exact face).
+#[test]
+fn qualifier_lineless_f6_shadow_discloses_candidates() {
+    const MD: &str = "# F6 lineless\n\n```text\n└─ Price::fmt[Display] pkg/price.rs\n```\n";
+    let (repo, chain) =
+        repo_fixture_cr9("cr18-f6-ll", &[("pkg/price.rs", price_rs_fixture())], MD);
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_sym(
+        &mut spec,
+        &rs_sym("impl#[Price][Display]fmt()."),
+        "fmt",
+        "pkg/price.rs",
+        845,
+        "Function",
+        "rust",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &rs_sym("m1/impl#[Price][Display"),
+        "fmt",
+        "pkg/price.rs",
+        839,
+        "Function",
+        "rust",
+        &abs,
+    );
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(
+        st.g_counts.get("qualifier_unverified"),
+        Some(&1),
+        "{:?}",
+        st.g_counts
+    );
+    assert!(st.tours[0]["steps"].as_array().unwrap().is_empty());
+    assert_eq!(st.qualifier_refusals.len(), 1);
+    // description face: BOTH candidates (valid match + shadow) render
+    let desc = st.tours[0]["description"].as_str().unwrap();
+    assert!(desc.contains("qualifier 拒絕"), "{desc}");
+    assert!(desc.contains("impl#［Price］［Display］fmt(). :845（Function）"), "{desc}");
+    assert!(desc.contains("impl#［Price］［Display :839（Function）"), "{desc}");
+    // WARN face: the same payload rides the all-shell exit-1 stderr
+    let out_dir = repo.join(".tours").join("arch").join("07-rv-f6-ll");
+    let out = code_reality::chain_tour::run(&[
+        "chain_tour",
+        &chain.to_string_lossy(),
+        "--repo",
+        &repo.to_string_lossy(),
+        "--graph",
+        &db.to_string_lossy(),
+        "--out-dir",
+        &out_dir.to_string_lossy(),
+    ]);
+    assert_eq!(out.exit_code, 1, "stdout:\n{}\nstderr:\n{}", out.stdout, out.stderr);
+    assert!(
+        out.stderr.contains("[WARN] qualifier 拒絕：Price::fmt[Display]（文檔錨 pkg/price.rs）"),
+        "{}",
+        out.stderr
+    );
+    assert!(
+        out.stderr.contains("impl#［Price］［Display :839（Function）／impl#［Price］［Display］fmt(). :845（Function）"),
+        "{}",
+        out.stderr
+    );
+    assert!(out.stderr.contains("qualifier_unverified"), "{}", out.stderr);
+}
+
+/// F-7 hole 4: cross-file qualifier REFUSAL over a colliding converged
+/// set — single-file convergence reaches the colliding render pair,
+/// the declared trait (`ToString`) matches neither impl →
+/// `qualifier_no_hit` on the cross-file face (never the legacy
+/// lowest-line pick, never `cross_file_trait_ambiguous` — the
+/// qualifier decides before the collision gate), with the converged
+/// file and the FULL colliding candidate set disclosed.
+#[test]
+fn cross_file_qualifier_refusal_over_colliding_set() {
+    const MD: &str = "# Cross refusal\n\n```text\n└─ Price::render[ToString] pkg/old.rs:5\n```\n";
+    let (repo, chain) = repo_fixture_cr9(
+        "cr18-xf-ref",
+        &[("pkg/old.rs", "// moved out\n".into()), ("pkg/new.rs", price_rs_fixture())],
+        MD,
+    );
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    for (trait_name, line) in [("Debug", 839), ("Display", 845)] {
+        seed_sym(
+            &mut spec,
+            &rs_sym(&format!("impl#[Price][{trait_name}]render().")),
+            "render",
+            "pkg/new.rs",
+            line,
+            "Function",
+            "rust",
+            &abs,
+        );
+    }
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(
+        st.g_counts.get("qualifier_no_hit"),
+        Some(&1),
+        "{:?}",
+        st.g_counts
+    );
+    assert!(!st.g_counts.contains_key("moved-file"), "{:?}", st.g_counts);
+    assert!(
+        !st.g_counts.contains_key("cross_file_trait_ambiguous"),
+        "{:?}",
+        st.g_counts
+    );
+    assert!(st.tours[0]["steps"].as_array().unwrap().is_empty());
+    // the converged file names the relocation target on the refusal
+    assert_eq!(st.qualifier_refusals.len(), 1);
+    assert_eq!(
+        st.qualifier_refusals[0].converged_file.as_deref(),
+        Some("pkg/new.rs")
+    );
+    // both members of the colliding converged set disclose
+    let desc = st.tours[0]["description"].as_str().unwrap();
+    assert!(desc.contains("qualifier 拒絕"), "{desc}");
+    assert!(desc.contains("（收斂至 pkg/new.rs）"), "{desc}");
+    assert!(desc.contains("impl#［Price］［Debug］render(). :839（Function）"), "{desc}");
+    assert!(desc.contains("impl#［Price］［Display］render(). :845（Function）"), "{desc}");
+}
+
 mod graph_db_fixture;
 
 use code_reality::chain_tour::GraphAnchor;
@@ -3282,7 +4440,7 @@ fn anchor_tiebreak_is_deterministic_on_wider_candidate_set() {
     )
     .unwrap();
     let anchor = GraphAnchor::new(&owned_db(&repo), &repo).unwrap();
-    let hit = anchor.anchor(&repo.join("src/a.rs"), 10, "dup", "exact");
+    let hit = anchor.anchor(&repo.join("src/a.rs"), 10, "dup", "exact", None);
     assert_eq!(hit.g_line, Some(8), "tie broken by lower line_start");
 }
 

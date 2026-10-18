@@ -455,10 +455,9 @@ on any new repo.
     per scenario, remainder folded into a count). Unambiguous tours
     keep a byte-identical description; the `ambiguous` distribution
     key is unchanged.
-  Non-goals (separate arcs): Rust `::` frame grammar, Python
-  overloads, and a trait-qualifier syntax (`Price::fmt[Display]`) —
-  the explicit-line face has its own collision guard (next bullet),
-  not a qualifier parser. Prose frames without a path never
+  Non-goals (separate arcs): Rust `::` frame grammar BEYOND the
+  qualifier form (CR-18 bullet below), and Python overloads. Prose
+  frames without a path never
   reach the resolver (`noref`); path-bearing frames whose token misses
   the graph degrade to `not-in-graph` or an ambiguous skip with hints
   — fail-visible both ways.
@@ -468,7 +467,8 @@ on any new repo.
   trait groups (`impl#[Price][Debug]fmt().` vs
   `impl#[Price][Display]fmt().`; inherent-vs-trait counts as
   differing; generic trait groups like `` `Add<Self>` `` are compared
-  verbatim up to the first `]`) is a collision. Safe selection: no
+  verbatim, bracket-depth tracked since CR-18 — CR-17 compared flat
+  text up to the first `]`) is a collision. Safe selection: no
   collision → the legacy
   nearest-line pick, byte-identical; collision + the doc line exactly
   hits one candidate → the anchor is kept (`same`) with the candidate
@@ -490,7 +490,65 @@ on any new repo.
   `graph-read-error` — a doc-line step with NO minted identity, no
   nearest-line fallback, one `[WARN] graph 讀取錯誤` line + the same
   `[LOG]` distribution key. R1 /
-  R2 / R3 line-less behavior is untouched.
+  R2 / R3 line-less behavior is untouched. CR-18 F6 addendum: a
+  malformed impl head in the candidate set trips the collision
+  semantics (exact-hit-or-refuse) instead of being skipped silently,
+  and trait groups parse with bracket-depth tracking
+  (`AsRef<[u8]>` reads whole — CR-17's non-nested `` `Add<Self>` ``
+  groups compare byte-identically as before).
+- `chain_tour` md trait-qualifier syntax (CR-18): a frame whose symbol
+  remainder is `Receiver::method[Trait]` (canonical
+  `Price::fmt[Display]`; compatible `Price::fmt()[Display]`; a
+  `(path:line)` wrapper after the bracket folds off — a trailing `()`
+  after the group is wrapper residue by the tail rule (only the empty
+  tail or `()` may follow the bracket group); generic trait
+  groups verbatim with bracket-depth — `` Quantity::add[`Add<Self>`] ``,
+  `Buf::as_ref[AsRef<[u8]>]`) declares the target's identity. The
+  parser produces the `receiver/method/trait` triple directly — never
+  `best_ident` (which length-ranks the trait name on the paren-less
+  form, the POC-proven trap) — and the shared qualified selector
+  matches it against the candidate set's impl heads on ALL THREE axes
+  (method = the `name=?` query, receiver = the inherent type group,
+  trait = the verbatim trait groups): a trait-only match never selects
+  a different type's same-trait impl. Core invariant: once the author
+  provides a qualifier, nothing unproven may re-select by line number,
+  name similarity, or R1/R2. Four states: exactly one triple-match →
+  SELECTED (counts under the legacy `same`/`moved`/`filled`/
+  `moved-file` keys; collision semantics bypassed — the declared
+  identity is the evidence, no `trait 碰撞` WARN; the step gains a
+  `qualifier 命中` note); zero matches → `qualifier_no_hit`; multiple →
+  `qualifier_ambiguous` (never R1/R2); a malformed sibling impl head
+  that cannot be ruled out (same-or-unparseable receiver) blocks the
+  would-be unique hit → `qualifier_unverified` (F6: identity must be
+  PROVEN — a MalformedImpl whose receiver parsed as a different type
+  is ruled out and does not block). Qualifier-looking syntax that does
+  not parse (`Price::fmt[Display`, empty `[]`, trailing junk) →
+  `qualifier_malformed` — the frame skips even with an explicit line
+  number. A bracket group carrying no ASCII letter (`self::items[0]` —
+  the trait slot reads `0`) is indexing prose, not a qualifier shape,
+  and stays legacy; the `::`-plus-later-`[` trigger stays deliberately
+  wide, so a far-distance prose bracket (`tokio::spawn and items[0]`)
+  parses Malformed and skips fail-loud rather than silently degrading
+  to `best_ident` (corpus census 2026-10-19: NT `.tours/` titles +
+  callstack md carry zero symbol-reachable instances). Every refusal
+  state skips the frame (no step, no minted
+  `x-codeReality.symbol`) and discloses on the same three faces as
+  CR-17 (skip-reason axis, `[LOG]` distribution, one `[WARN]
+  qualifier 拒絕` per frame — stdout on the success face, stderr on
+  the all-shell face — with the full candidate list, full-width
+  brackets). The cross-file moved-file branch (F7) applies the same
+  discipline AFTER single-file convergence: the converged file's FULL
+  candidate set is read fail-closed (a read error degrades to
+  `graph-read-error`, never a silently partial set), the qualifier (or,
+  qualifier-less, the CR-17 collision gate — an unresolved collision
+  now refuses under `cross_file_trait_ambiguous` instead of the legacy
+  silent lowest-line pick; no collision keeps the byte-identical
+  lowest-line pick) decides, and `rels > 1` stays
+  `moved-file-ambiguous` — a qualifier never selects across files.
+  `tour_reanchor --bootstrap-symbols` consumes qualifier titles
+  through the SAME parser/selector (a malformed qualifier title is an
+  explicit backfill refusal) — the maintenance tool cannot reintroduce
+  the ambiguity this syntax removed.
 - `chain_tour` all-skip shell gate (CR-11): a scenario whose every
   frame skipped (zero anchored steps) is a shell — it lands no `.tour`
   file and no manifest row; each shell emits a `[WARN]` (family +

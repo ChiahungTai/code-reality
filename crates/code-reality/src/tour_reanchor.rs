@@ -27,7 +27,8 @@
 
 use crate::argparse::{parse, FlagSpec, Kind, Outcome, ToolSpec};
 use crate::symbol_resolve::{
-    best_ident_filtered, FillCandidate, FillOutcome, SymbolGate, SymbolLoc,
+    best_ident_filtered, parse_qualifier, FillCandidate, FillOutcome, FrameQualifier, SymbolGate,
+    SymbolLoc,
 };
 use crate::ToolOutput;
 use std::path::{Path, PathBuf};
@@ -383,14 +384,37 @@ pub fn reanchor(repo: &Path, tours_dir: &Path, bootstrap: bool, apply: bool) -> 
             if bootstrap {
                 let content = std::fs::read_to_string(&p).unwrap_or_default();
                 let lines: Vec<&str> = content.split('\n').collect();
-                let Some((ident, ident_full)) = bootstrap_ident(step) else {
-                    skipped += 1;
-                    stdout.push_str(&format!(
-                        "{label}跳過（bootstrap 無法抽 ident——title/pattern 皆無）\n"
-                    ));
-                    continue;
+                // CR-18 (⑪): a step title carrying the qualifier grammar
+                // (`Price::fmt[Display]`) must resolve through the SAME
+                // shared parser + qualified selector chain_tour uses —
+                // the pre-CR-18 best_ident extraction ranked the trait
+                // name off the title (the POC trap) and either missed
+                // the graph or would have backfilled a wrong identity.
+                // A malformed qualifier title is an explicit backfill
+                // refusal — the maintenance tool must not reintroduce
+                // the ambiguity CR-18 removed.
+                let title = step.get("title").and_then(|v| v.as_str()).unwrap_or("");
+                let fill: Result<FillOutcome, String> = match parse_qualifier(title) {
+                    FrameQualifier::WellFormed(qm) => loc.same_file_fill_qualified(&f, &qm),
+                    FrameQualifier::Malformed => {
+                        skipped += 1;
+                        stdout.push_str(&format!(
+                            "{label}跳過（qualifier 語法錯誤——拒絕回填；須 Receiver::method[Trait] 形）\n"
+                        ));
+                        continue;
+                    }
+                    FrameQualifier::None => {
+                        let Some((ident, ident_full)) = bootstrap_ident(step) else {
+                            skipped += 1;
+                            stdout.push_str(&format!(
+                                "{label}跳過（bootstrap 無法抽 ident——title/pattern 皆無）\n"
+                            ));
+                            continue;
+                        };
+                        loc.same_file_fill(&f, &ident, &ident_full)
+                    }
                 };
-                match loc.same_file_fill(&f, &ident, &ident_full) {
+                match fill {
                     Err(e) => return ToolOutput::crash(e),
                     Ok(FillOutcome::Filled(node_line, Some(symbol))) => {
                         // defensive uniqueness re-check (decision 7

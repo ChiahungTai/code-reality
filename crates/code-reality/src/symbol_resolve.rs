@@ -169,44 +169,83 @@ fn descriptor_chain(region: &str) -> Option<Vec<String>> {
     }
 }
 
-/// CR-17 explicit-line trait-collision reader: the Rust impl head of a
-/// descriptor region (`impl#[Type][Trait…]def…`) split into the inherent
-/// type group and the trait groups taken VERBATIM up to the first `]`
-/// (no bracket-depth tracking — a nested `[` inside a group ends the
-/// group there, so `` `Add<Self>` `` rides through as an opaque string).
-/// This deliberately does NOT reuse [`descriptor_chain`]'s grammar (which
-/// keeps only the first [Type] group and validates every group as
-/// `sym_char`-only for R2's chain alignment — frozen for the line-less
-/// face): collision detection needs the trait groups, and
-/// generic-bearing groups must still count. A malformed group (empty,
-/// unterminated bracket) fails the whole read — the candidate then
-/// contributes nothing to a collision, which for THIS guard is the
-/// fail-open direction (a malformed sibling could hide a real
-/// collision); the exposure is bounded by the producer machinery
-/// (rust-analyzer mints well-formed bracket groups), and counting
-/// malformed impl rows toward collisions is deferred to the CR-18
-/// qualifier card. Returns None for non-impl shapes; a non-impl region
-/// never contributes to a collision.
-pub(crate) fn impl_trait_groups(region: &str) -> Option<(String, Vec<String>)> {
-    let rest = region.strip_prefix("impl#[")?;
-    let close = rest.find(']')?;
-    let ty = &rest[..close];
-    if ty.is_empty() {
+/// Depth-tracking bracket-group scanner (CR-18): given text starting AT
+/// the open `[`, return the group content and the byte length consumed
+/// (brackets included). Nested bracket pairs ride through — the shared
+/// scanner for BOTH the SCIP impl-head reader and the md qualifier
+/// parser, so `AsRef<[u8]>` reads as one group on each side instead of
+/// truncating at the first `]`. An unterminated or unbalanced run
+/// returns None (fail closed).
+fn scan_bracket_group(text: &str) -> Option<(String, usize)> {
+    let b = text.as_bytes();
+    if b.first() != Some(&b'[') {
         return None;
     }
-    let mut traits: Vec<String> = Vec::new();
-    let mut i = "impl#[".len() + close + 1;
-    while region[i..].starts_with('[') {
-        let group_rest = &region[i + 1..];
-        let end = group_rest.find(']')?;
-        let group = &group_rest[..end];
-        if group.is_empty() {
-            return None;
+    let mut depth = 0usize;
+    for (i, &c) in b.iter().enumerate() {
+        match c {
+            b'[' => depth += 1,
+            b']' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some((text[1..i].to_string(), i + 1));
+                }
+            }
+            _ => {}
         }
-        traits.push(group.to_string());
-        i += end + 2;
     }
-    Some((ty.to_string(), traits))
+    None
+}
+
+/// F6 (CR-18) three-state classification of a descriptor region's Rust
+/// impl head: a fully parsed `impl#[Type][Trait…]…` head, an
+/// impl-shaped head whose groups do not parse (carrying the receiver
+/// group when it did parse — the ruling-out axis), or a non-impl
+/// shape. The Malformed arm is the conservative one: an impl-looking
+/// row that cannot be proven to be a DIFFERENT (receiver, method)
+/// identity may shadow a would-be unique hit.
+enum ImplHead {
+    Valid {
+        receiver: String,
+        traits: Vec<String>,
+    },
+    Malformed {
+        receiver: Option<String>,
+    },
+    NotImpl,
+}
+
+fn impl_head(region: &str) -> ImplHead {
+    const PRE: usize = "impl#".len();
+    if !region.starts_with("impl#[") {
+        return ImplHead::NotImpl;
+    }
+    let Some((recv, c0)) = scan_bracket_group(&region[PRE..]) else {
+        return ImplHead::Malformed { receiver: None };
+    };
+    if recv.is_empty() {
+        return ImplHead::Malformed { receiver: None };
+    }
+    let mut pos = PRE + c0;
+    let mut traits: Vec<String> = Vec::new();
+    while region[pos..].starts_with('[') {
+        match scan_bracket_group(&region[pos..]) {
+            Some((g, c)) => {
+                if g.is_empty() {
+                    return ImplHead::Malformed {
+                        receiver: Some(recv),
+                    };
+                }
+                traits.push(g);
+                pos += c;
+            }
+            None => return ImplHead::Malformed { receiver: Some(recv) },
+        }
+    }
+    ImplHead::Valid {
+        receiver: recv,
+        traits,
+    }
 }
 
 /// CR-17: does the explicit-line same-file same-name candidate set carry
@@ -218,20 +257,34 @@ pub(crate) fn impl_trait_groups(region: &str) -> Option<(String, Vec<String>)> {
 /// An inherent impl (zero trait groups) vs a trait impl counts as
 /// differing — the guarded hazard is the silent nearest-line pick
 /// between semantically distinct same-type same-name impls, the same
-/// pair R2 refuses to resolve on the line-less face.
+/// pair R2 refuses to resolve on the line-less face. The impl heads
+/// parse via [`impl_head`] (CR-18 rebase: bracket-depth tracking reads
+/// nested `AsRef<[u8]>` groups whole; CR-17's non-nested
+/// `` `Add<Self>` `` groups compare byte-identically as before).
+///
+/// CR-18 F6: an impl-shaped head that does not parse (MalformedImpl)
+/// also trips the gate — the row cannot be ruled out as another trait
+/// impl of the same type, so the conservative direction is the
+/// exact-hit-or-refuse semantics instead of the legacy nearest pick.
+/// (The pre-CR-18 face skipped malformed rows silently — the deferred
+/// lesson this arm closes.)
 pub(crate) fn explicit_trait_collision(rows: &[(i64, String, String)]) -> bool {
     let mut by_type: std::collections::BTreeMap<String, std::collections::BTreeSet<Vec<String>>> =
         std::collections::BTreeMap::new();
+    let mut malformed_impl = false;
     for (_, sym, _) in rows {
         let Some(region) = descriptor_region(sym) else {
             continue;
         };
-        let Some((ty, traits)) = impl_trait_groups(region) else {
-            continue;
-        };
-        by_type.entry(ty).or_default().insert(traits);
+        match impl_head(region) {
+            ImplHead::Valid { receiver, traits } => {
+                by_type.entry(receiver).or_default().insert(traits);
+            }
+            ImplHead::Malformed { .. } => malformed_impl = true,
+            ImplHead::NotImpl => {}
+        }
     }
-    by_type.values().any(|sigs| sigs.len() >= 2)
+    malformed_impl || by_type.values().any(|sigs| sigs.len() >= 2)
 }
 
 /// CR-17 WARN/hint payload: every candidate of the full same-file
@@ -253,6 +306,209 @@ pub(crate) fn explicit_line_candidates(rows: &[(i64, String, String)]) -> Vec<Fi
             kind: kind.clone(),
         })
         .collect()
+}
+
+// ---------- CR-18: md trait-qualifier disambiguation ----------
+
+/// The parsed md qualifier triple `Receiver::method[Trait]` — the
+/// author's DECLARED identity for a trait-impl method frame. The
+/// receiver compares against the impl head's inherent type group, the
+/// method against the graph `name` axis (the SQL `name=?` query), and
+/// the trait against the verbatim trait groups. All three must hold —
+/// a trait-only match would misselect a different type's same-trait
+/// impl (AC-3).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QualifiedMethod {
+    pub receiver: String,
+    pub method: String,
+    pub trait_name: String,
+}
+
+/// Qualifier parse state of a frame's symbol remainder: absent
+/// (legacy CR-17/R1/R2/R3 semantics govern), well-formed (the triple
+/// above), or qualifier-looking syntax that does not parse (the frame
+/// skips under `qualifier_malformed` — never a best_ident fallback).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FrameQualifier {
+    None,
+    WellFormed(QualifiedMethod),
+    Malformed,
+}
+
+/// Parse the md qualifier grammar off a frame symbol remainder (path
+/// already stripped): `Receiver::method[Trait]` canonical,
+/// `Receiver::method()[Trait]` compatible, an optional `(...)` parameter
+/// group between method and bracket, and a leftover empty `()` from a
+/// `(path:line)` wrapper after the bracket. The trait group scans with
+/// the shared depth-tracking bracket scanner (`AsRef<[u8]>` rides
+/// through whole). Trigger discipline: `::` present AND a `[` after it
+/// makes the symbol qualifier-looking — anything qualifier-looking must
+/// parse fully or is Malformed (fail loud, never best_ident); `::`
+/// without a bracket stays legacy (R2 territory); a bracket without
+/// `::` stays legacy (`items[0]` prose).
+pub fn parse_qualifier(symbol: &str) -> FrameQualifier {
+    let s = symbol.trim();
+    let Some(first_dd) = s.find("::") else {
+        return FrameQualifier::None;
+    };
+    if !s[first_dd..].contains('[') {
+        return FrameQualifier::None;
+    }
+    let b = s.as_bytes();
+    let is_ident_start = |c: u8| c.is_ascii_alphabetic() || c == b'_';
+    let is_ident_char = |c: u8| c.is_ascii_alphanumeric() || c == b'_';
+    let mut pos = 0usize;
+    let mut segments: Vec<String> = Vec::new();
+    loop {
+        let start = pos;
+        if pos >= b.len() || !is_ident_start(b[pos]) {
+            break;
+        }
+        while pos < b.len() && is_ident_char(b[pos]) {
+            pos += 1;
+        }
+        segments.push(s[start..pos].to_string());
+        if s[pos..].starts_with("::") {
+            pos += 2;
+        } else {
+            break;
+        }
+    }
+    if segments.len() < 2 {
+        return FrameQualifier::Malformed;
+    }
+    let receiver = segments[segments.len() - 2].clone();
+    let method = segments[segments.len() - 1].clone();
+    if s[pos..].starts_with('(') {
+        let Some(close) = s[pos..].find(')') else {
+            return FrameQualifier::Malformed;
+        };
+        pos += close + 1;
+    }
+    if !s[pos..].starts_with('[') {
+        return FrameQualifier::Malformed;
+    }
+    let Some((trait_name, consumed)) = scan_bracket_group(&s[pos..]) else {
+        return FrameQualifier::Malformed;
+    };
+    if trait_name.is_empty() {
+        return FrameQualifier::Malformed;
+    }
+    // CR-18 review F-3 (content-shape tightening): grammar-legal trait
+    // groups are ident/backtick shapes — they always carry at least one
+    // ASCII letter. A letterless group (`self::items[0]` — the trait
+    // slot reads "0") is indexing prose that merely looks
+    // qualifier-shaped: the frame stays legacy (None), never a bogus
+    // WellFormed triple. An EMPTY group stays Malformed above (the
+    // shape was declared, the trait is missing — fail loud).
+    if !trait_name.bytes().any(|c| c.is_ascii_alphabetic()) {
+        return FrameQualifier::None;
+    }
+    pos += consumed;
+    let tail = s[pos..].trim();
+    if !(tail.is_empty() || tail == "()") {
+        return FrameQualifier::Malformed;
+    }
+    FrameQualifier::WellFormed(QualifiedMethod {
+        receiver,
+        method,
+        trait_name,
+    })
+}
+
+/// The refusal half of the qualified selector's verdict, with the
+/// graph-distribution key each state counts under (AC-2 / Plan ⑩).
+#[derive(Debug, Clone)]
+pub enum QualifiedRefusal {
+    NoHit,
+    Ambiguous,
+    Unverified,
+}
+
+impl QualifiedRefusal {
+    pub fn key(&self) -> &'static str {
+        match self {
+            QualifiedRefusal::NoHit => "qualifier_no_hit",
+            QualifiedRefusal::Ambiguous => "qualifier_ambiguous",
+            QualifiedRefusal::Unverified => "qualifier_unverified",
+        }
+    }
+}
+
+/// Shared qualified-selector verdict over a same-file same-name
+/// candidate set (Plan ⑤): `Unique` carries the selected row index;
+/// every refusal carries the full candidate set for the three-face
+/// disclosure. Ambiguous never falls through to R1/R2; NoHit never
+/// falls back to nearest-line.
+#[derive(Debug, Clone)]
+pub enum QualifiedVerdict {
+    Unique { row: usize },
+    Refused {
+        reason: QualifiedRefusal,
+        candidates: Vec<FillCandidate>,
+    },
+}
+
+/// The shared qualified selector (Plan ⑤/⑥): method+receiver+triple
+/// comparison over [`ImplHead`] classification. A ValidImpl head
+/// matches iff receiver AND trait both equal the declared triple — a
+/// valid but different identity is RULED OUT (never a match, never a
+/// shadow). A Malformed head whose receiver parsed as a DIFFERENT type
+/// is likewise ruled out; one whose receiver matches (or did not parse
+/// at all) could be the declared identity and shadows any would-be
+/// unique hit → `qualifier_unverified` (F6, conservative direction:
+/// identity must be PROVEN, never assumed).
+pub(crate) fn qualified_select(rows: &FillRows, qm: &QualifiedMethod) -> QualifiedVerdict {
+    let mut matches: Vec<usize> = Vec::new();
+    let mut shadow = false;
+    for (i, (_, sym, _)) in rows.iter().enumerate() {
+        // CR-18 review F-6 (equivalence note): a region-None symbol
+        // (not impl-SHAPED at all — free fns, types, pseudo-ctors)
+        // classifying as NotImpl without shadowing is the deliberate
+        // complement of Malformed's conservative shadow: NotImpl is
+        // POSITIVE exclusion evidence (the symbol cannot be an impl
+        // head, so it cannot be the declared identity), while
+        // Malformed is an UNKNOWN (impl-shaped but unparseable — it
+        // might be the identity, so it shadows). Same evidence class,
+        // opposite signs — neither arm guesses.
+        let class = match descriptor_region(sym) {
+            Some(region) => impl_head(region),
+            None => ImplHead::NotImpl,
+        };
+        match class {
+            ImplHead::Valid { receiver, traits } => {
+                if receiver == qm.receiver && traits.contains(&qm.trait_name) {
+                    matches.push(i);
+                }
+            }
+            ImplHead::Malformed { receiver: Some(r) } => {
+                if r == qm.receiver {
+                    shadow = true;
+                }
+            }
+            ImplHead::Malformed { receiver: None } => shadow = true,
+            ImplHead::NotImpl => {}
+        }
+    }
+    match matches.len() {
+        1 if !shadow => QualifiedVerdict::Unique { row: matches[0] },
+        1 => QualifiedVerdict::Refused {
+            reason: QualifiedRefusal::Unverified,
+            candidates: explicit_line_candidates(rows),
+        },
+        0 if shadow => QualifiedVerdict::Refused {
+            reason: QualifiedRefusal::Unverified,
+            candidates: explicit_line_candidates(rows),
+        },
+        0 => QualifiedVerdict::Refused {
+            reason: QualifiedRefusal::NoHit,
+            candidates: explicit_line_candidates(rows),
+        },
+        _ => QualifiedVerdict::Refused {
+            reason: QualifiedRefusal::Ambiguous,
+            candidates: explicit_line_candidates(rows),
+        },
+    }
 }
 
 /// Mirror of pyrefly-producer's `pseudo_ctor_symbol` (symbol.rs): the
@@ -509,6 +765,29 @@ impl SymbolLocator {
         let exact = format!("{}/{}", self.repo_root.display(), rel_file);
         let rows = same_file_rows(&self.conn, &exact, ident)?;
         Ok(resolve_candidates(&rows, ident_full, true))
+    }
+
+    /// The qualified same-file fill face for bootstrap (CR-18 ⑪): a
+    /// step title carrying `Receiver::method[Trait]` must resolve
+    /// through the SAME shared qualified selector chain_tour uses —
+    /// the pre-CR-18 best_ident extraction picked the trait name off
+    /// the title and missed the graph. Refusals surface as
+    /// `NoAnchor(qualifier_* key)` and skip (never R1/R2 backfill).
+    pub fn same_file_fill_qualified(
+        &self,
+        rel_file: &str,
+        qm: &QualifiedMethod,
+    ) -> Result<FillOutcome, String> {
+        let exact = format!("{}/{}", self.repo_root.display(), rel_file);
+        let rows = same_file_rows(&self.conn, &exact, &qm.method)?;
+        Ok(match qualified_select(&rows, qm) {
+            QualifiedVerdict::Unique { row } => {
+                FillOutcome::Filled(rows[row].0, Some(rows[row].1.clone()))
+            }
+            QualifiedVerdict::Refused { reason, candidates } => {
+                FillOutcome::NoAnchor(reason.key().to_string(), candidates)
+            }
+        })
     }
 }
 
