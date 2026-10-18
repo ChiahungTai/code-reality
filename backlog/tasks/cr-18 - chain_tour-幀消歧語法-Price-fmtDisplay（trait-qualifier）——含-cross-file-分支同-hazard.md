@@ -1,15 +1,17 @@
 ---
 id: CR-18
 title: 'chain_tour 幀消歧語法 Price::fmt[Display]（trait qualifier）——含 cross-file 分支同 hazard'
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-18 13:38'
-updated_date: '2026-10-18 13:38'
+updated_date: '2026-10-18 20:41'
 labels:
   - chain-tour
   - graph-anchor
 dependencies:
   - CR-17
+references:
+  - CR-18
 ordinal: 19000
 ---
 
@@ -31,10 +33,34 @@ flowchart LR
 ```
 <!-- SECTION:DESCRIPTION:END -->
 
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [ ] #1 AC-1 語法兩形＋path 包裝形解析正確（QualifiedMethod 三元組）；剝離後 symbol/ident 行為釘住（不經 best_ident 陷阱）
+- [ ] #2 AC-2 四態語義：唯一命中選取（無碰撞警示）；零命中 fail-loud；多命中 ambiguous 不進 R1/R2；語法錯 malformed——全部拒絕態在 build_tours skip（含 explicit-line），skip reasons/g_counts/CLI WARN 一致
+- [ ] #3 AC-3 三重身分比對：異型別同 trait 候選不被誤選（fixture：impl#[Price][Display]+impl#[Other][Display]）
+- [ ] #4 AC-4 cross-file：單檔收斂後完整候選集＋碰撞判定，唯一才寫 g_symbol；讀取錯誤顯式退化（不當完整集）；rels>1 維持 moved-file-ambiguous
+- [ ] #5 AC-5 F6 三態：malformed impl sibling（可能同 receiver/method）阻止唯一命中——無 qualifier 與有 qualifier 路徑都適用；巢狀泛型 bracket-depth 解析（AsRef<[u8]> 測試）
+- [ ] #6 AC-6 tour_reanchor bootstrap 對 qualifier title 用同 parser 或拒絕回填；tour_validate 輸出契約（全形 bracket）遵守
+- [ ] #7 AC-7 既有零回歸：CR-17 全測試（含泛型 collision）、R1/R2/R3、line-less 無 qualifier 路徑 byte-identical；L4 NT 真實 graph.db：Price::fmt[Display] 錨 776（漂移）→ qualifier 唯一命中 Display 正確錨定（不再拒絕）
+<!-- AC:END -->
+
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-〔baseline：code-reality 2f76918（v0.16.0）＋CR-17 修正後樹〕
+〔baseline：code-reality 7e4cb71（v0.17.0＋CR-17 落地後 main）〕
 
-〔已決策勿重辯：①來源＝NT work-order nt-chain-tour-fmt-ambiguity-20261018 建議案 2；codex 確認腿裁定獨立卡（須處理 SCIP descriptor grammar 含泛型，不與 CR-17 耦合）；GLM-5.3 judge job-mvduzfrk 確認歸屬。②消歧規則（codex 建議）：qualifier 唯一命中→選取；無命中→明確失敗；多命中→ambiguous；qualifier 在場時禁退回 nearest-line。③適用 line-less 與 explicit-line 兩路徑。④F7（CR-17 審查）：cross-file moved-file 分支（chain_tour.rs:574-594）LIMIT 1 取最低行＋寫 g_symbol 無碰撞檢查——本卡一併涵蓋。⑤F6 行為變更（malformed impl-shaped row 保守納入碰撞）歸本卡 grammar parser。〕
+〔已決策勿重辯：
+①來源鏈＝NT 案2＋CR-17 審查 F7/F6＋codex 設計討論腿 job-mve9wzsm-cucmfe（2026-10-19，「A1 三落點架構保留＋四規格修訂」）＋主 session illustrate 結構判讀＋POC 讀碼證據。
+②**核心不變式（最高優先）**：一旦作者提供 qualifier，任何無法證實該宣告式身分的情況，都不得以行號、名稱相似度或 R1/R2 重新選出另一個 symbol。
+③語法：`Price::fmt[Display]` 正典＋`Price::fmt()[Display]` 相容＋path 括號包裝 `(pkg/price.rs:845)` 形支援——語法解析與 path extraction 順序列測試。
+④qualifier parser 直接產 `QualifiedMethod{receiver, method, trait_name}`——**不走 best_ident**（POC 實證二次陷阱：剝離後 `Price::fmt` 無括號時 best_ident 長度擇優選 Price(5)>fmt(3)；原場景 Display(7) 勝——兩層都錨）；Frame.symbol 保留作者原文（CodeTour title 保留消歧意圖），查詢身分另存。
+⑤共用 qualified selector：method（SQL name=?）＋receiver＋trait 三重比對（impl_trait_groups 的型別+trait 簽名群）——只比 trait 會錯選異型別同 trait；四態：0→qualifier_no_hit（fail-loud 不退 nearest）、1→選取（繞過碰撞語義——宣告式身分）、>1→qualifier_ambiguous（**不進 R1/R2 消解**）、語法錯→qualifier_malformed；qualifier 缺席→既有 CR-17/R1/R2/R3 語義不動。
+⑥F6 收口三態：ValidImpl／MalformedImpl／NonImpl——malformed impl candidate 可能同 receiver/method 時阻止未證實的唯一命中（保守向），qualifier 路徑同樣適用。
+⑦cross-file（F7）：rels.len()==1 單檔收斂後**取完整候選集**（讀取完整性——filter_map flatten 吞錯是 CR-17 C1 同型課）→ qualifier/碰撞判定 → 唯一確認才寫 g_symbol；rels>1 維持既有 moved-file-ambiguous（qualifier 不擅自跨檔選取）。
+⑧grammar 兩責任分離：SCIP impl descriptor parser 與 md qualifier parser 共用 bracket scanner（depth tracking——修巢狀 `AsRef<[u8]>` 於第一個 ] 截斷）；**不動 descriptor_chain 的 R2 歷史行為**；CR-17 泛型 collision 測試維持通過＋新增巢狀測試。
+⑨rejected outcome gate（codex 點名必要 AC）：qualifier_no_hit/ambiguous/malformed 在 build_tours 正確 skip（explicit-line 帶行號也不得落到 step_of）——g_counts、scenario skip reasons、CLI WARN 狀態分類一致；成功選取計入既有 same/moved/filled/moved-file（統計可比性），qualifier 成功率可另計。
+⑩計數鍵：qualifier_no_hit／qualifier_ambiguous／qualifier_malformed／qualifier_unverified／cross_file_trait_ambiguous（moved-file 單檔未消歧碰撞）；explicit_trait_ambiguous 保留 CR-17 語義。
+⑪消費端：tour_reanchor bootstrap（tour_reanchor.rs:114 best_ident_filtered）對含 qualifier 的 step title 必須用同 parser 或明確拒絕回填——不得讓維護工具重新引入 CR-18 已消除的錯誤；tour_validate 輸出契約（候選顯示全形 bracket）新 WARN/hint 同樣遵守。〕
+
+範圍：chain_tour.rs（frame 剝離/共用 selector/cross-file 守衛/rejected gate）、symbol_resolve.rs（QualifiedMethod parser/三態判定/bracket scanner）、tour_reanchor.rs（bootstrap 防護）、tests/s5_chain_tour.rs（TDD：先釘現況 parse 行為 RED）、plugin/skills/code-reality-tools/SKILL.md（qualifier 語法節）。不動：graph.db schema、producer、R1/R2/R3 與 descriptor_chain 語義。
 <!-- SECTION:PLAN:END -->
