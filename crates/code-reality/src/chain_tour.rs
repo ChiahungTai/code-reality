@@ -8,7 +8,10 @@
 use crate::argparse::{parse, FlagSpec, Kind, Outcome, ToolSpec};
 use crate::common::{anchor_pattern, assert_db_unchanged, connect_ro, db_mtime_ns};
 use crate::profile::{is_excluded, load_profile, Profile};
-use crate::symbol_resolve::{same_file_rows, resolve_candidates, FillCandidate, FillOutcome};
+use crate::symbol_resolve::{
+    explicit_line_candidates, explicit_trait_collision, resolve_candidates, same_file_rows,
+    FillCandidate, FillOutcome,
+};
 use crate::ToolOutput;
 use rusqlite::Connection;
 use std::collections::{BTreeMap, HashMap};
@@ -411,9 +414,11 @@ fn like_escape_chain(part: &str) -> String {
         .replace('_', "\\_")
 }
 
-/// graph.db re-anchoring: same-file nearest line_start → cross-file move
-/// detection → not-in-graph. Cross-file gate (POC discipline): ident
-/// must be substring-missing AND length ≥ 4.
+/// graph.db re-anchoring: same-file nearest line_start (gated by the
+/// CR-17 explicit-line trait-collision safe selection — see
+/// [`GraphAnchor::anchor`]) → cross-file move detection →
+/// not-in-graph. Cross-file gate (POC discipline): ident must be
+/// substring-missing AND length ≥ 4.
 pub struct GraphAnchor {
     conn: Connection,
     repo_root: PathBuf,
@@ -429,6 +434,16 @@ pub struct GraphHit {
     /// identity for CR reanchor maintenance — file+name+nearest-line is a
     /// lookup key, not a complete identity.
     pub g_symbol: Option<String>,
+    /// CR-17 explicit-line trait-collision payload: the full same-file
+    /// same-name candidate set (superset of the colliding group — a
+    /// same-name free fn is a sibling the legacy nearest-line SQL
+    /// picked from, so it stays disclosed), present when the candidates
+    /// include ≥2 impl-shaped symbols with the same inherent type and
+    /// differing trait groups. Non-empty on BOTH resolution modes — the
+    /// exact-hit kept anchor (`g == "same"`, disclosed on the step) and
+    /// the fail-closed refusal (`g == "explicit_trait_ambiguous"`,
+    /// candidates listed in the skip hint).
+    pub g_trait_candidates: Vec<FillCandidate>,
 }
 
 impl GraphAnchor {
@@ -449,6 +464,19 @@ impl GraphAnchor {
         })
     }
 
+    /// CR-17 explicit-line safe selection: the same-file same-name
+    /// candidate set is read in full (ordering stays `ABS(distance),
+    /// line_start, symbol`, so the no-collision pick is byte-identical
+    /// to the legacy `LIMIT 1` nearest face). When the set carries a
+    /// trait collision (≥2 impl-shaped symbols, same inherent type,
+    /// differing trait groups — the NT `Price::fmt` shape): a doc line
+    /// that exactly hits ONE candidate keeps that anchor (`same`, the
+    /// exact line is real evidence) with the collision disclosed;
+    /// anything else (drifted line, or a non-unique exact hit) refuses
+    /// the nearest-line guess — `explicit_trait_ambiguous`, no anchor.
+    /// A failed candidate read (prepare/query_map/row decode) returns
+    /// `graph-read-error` — the frame degrades to a doc-line step with
+    /// no identity rather than guessing from a partial set (C1).
     pub fn anchor(
         &self,
         abs_path: &Path,
@@ -461,18 +489,61 @@ impl GraphAnchor {
             .map(|p| p.to_string_lossy().replace('\\', "/"))
             .unwrap_or_default();
         let like = format!("%/{}", like_escape_chain(&rel));
-        let hit: Option<(i64, Option<String>)> = self
-            .conn
-            .query_row(
-                "SELECT line_start, symbol FROM nodes \
+        // C1 (review): fail-closed candidate read — prepare/query_map/row
+        // decode errors return a `graph-read-error` hit instead of an
+        // empty set (an empty set falls through to not-in-graph /
+        // cross-file nearest, and a partially-read set could silently
+        // drop a collision member and mint an unverified identity).
+        let rows_res: Result<Vec<(i64, String, String)>, rusqlite::Error> =
+            match self.conn.prepare(
+                "SELECT line_start, symbol, kind FROM nodes \
                  WHERE file_path LIKE ?1 ESCAPE '\\' AND name=?2 \
                  AND line_start IS NOT NULL \
-                 ORDER BY ABS(line_start-?3), line_start, symbol LIMIT 1",
-                (&like, ident, line_no),
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .ok();
-        if let Some((g_line, g_symbol)) = hit {
+                 ORDER BY ABS(line_start-?3), line_start, symbol",
+            ) {
+                Ok(mut stmt) => stmt
+                    .query_map((&like, ident, line_no), |r| {
+                        Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                    })
+                    .and_then(|mapped| mapped.collect::<Result<Vec<_>, _>>()),
+                Err(e) => Err(e),
+            };
+        let rows: Vec<(i64, String, String)> = match rows_res {
+            Ok(rows) => rows,
+            Err(_) => {
+                return GraphHit {
+                    g: "graph-read-error".into(),
+                    ..Default::default()
+                }
+            }
+        };
+        if !rows.is_empty() {
+            if explicit_trait_collision(&rows) {
+                let cands = explicit_line_candidates(&rows);
+                let exact: Vec<usize> = rows
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, (l, _, _))| *l == line_no)
+                    .map(|(i, _)| i)
+                    .collect();
+                if exact.len() == 1 {
+                    let (g_line, g_symbol, _) = &rows[exact[0]];
+                    return GraphHit {
+                        g: "same".into(),
+                        g_line: Some(*g_line),
+                        g_file: None,
+                        g_files: vec![],
+                        g_symbol: Some(g_symbol.clone()),
+                        g_trait_candidates: cands,
+                    };
+                }
+                return GraphHit {
+                    g: "explicit_trait_ambiguous".into(),
+                    g_trait_candidates: cands,
+                    ..Default::default()
+                };
+            }
+            let (g_line, g_symbol, _) = &rows[0];
             let delta = g_line - line_no;
             return GraphHit {
                 g: if delta == 0 {
@@ -480,10 +551,11 @@ impl GraphAnchor {
                 } else {
                     "moved".into()
                 },
-                g_line: Some(g_line),
+                g_line: Some(*g_line),
                 g_file: None,
                 g_files: vec![],
-                g_symbol,
+                g_symbol: Some(g_symbol.clone()),
+                g_trait_candidates: Vec::new(),
             };
         }
         if substring_status != "missing" || ident.chars().count() < 4 {
@@ -537,6 +609,7 @@ impl GraphAnchor {
                 g_file: Some(rels[0].clone()),
                 g_files: vec![],
                 g_symbol,
+                g_trait_candidates: Vec::new(),
             };
         }
         if rels.len() > 1 {
@@ -632,6 +705,20 @@ pub struct ShellScenario {
     pub skip_reasons: BTreeMap<String, i64>,
 }
 
+/// CR-17: one explicit-line trait-collision encounter — the frame's
+/// same-file same-name candidate set carried ≥2 impl-shaped symbols
+/// with the same inherent type and differing trait groups. `exact`
+/// marks the resolution mode: the doc anchor line exactly hit one
+/// candidate (anchor kept, collision disclosed on the step) vs no
+/// unique exact hit (nearest-line guessing refused, frame skipped).
+#[derive(Clone)]
+pub struct TraitCollisionEncounter {
+    pub frame: String,
+    pub doc_anchor: String,
+    pub exact: bool,
+    pub candidates: Vec<FillCandidate>,
+}
+
 pub struct ScenarioTours {
     pub tours: Vec<serde_json::Value>,
     pub frames: usize,
@@ -640,6 +727,9 @@ pub struct ScenarioTours {
     /// Shell scenarios (all frames skipped) in doc order — disclosed by
     /// run() instead of written
     pub shells_omitted: Vec<ShellScenario>,
+    /// CR-17 explicit-line trait-collision encounters in doc order —
+    /// disclosed by run() as one stdout WARN per encounter
+    pub trait_collisions: Vec<TraitCollisionEncounter>,
 }
 
 impl ScenarioTours {
@@ -664,6 +754,7 @@ impl ScenarioTours {
             skipped: self.skipped,
             g_counts: self.g_counts.clone(),
             shells_omitted: self.shells_omitted.clone(),
+            trait_collisions: self.trait_collisions.clone(),
         }
     }
 }
@@ -722,12 +813,30 @@ fn step_of(
         "same" => {
             parts.push("graph ✓ 行號一致".into());
             parts.push(anchor_disp);
+            if !g.g_trait_candidates.is_empty() {
+                // CR-17: the anchor survived on exact-line evidence —
+                // keep the colliding siblings visible on the step for
+                // human review (tour_reanchor would otherwise carry the
+                // picked identity as maintenance truth)
+                parts.push(format!(
+                    "trait 碰撞：候選 {}——行號精確命中，保留此錨；請人工確認 trait 語意",
+                    trait_cands_inline(&g.g_trait_candidates)
+                ));
+            }
         }
         "moved-file-ambiguous" => {
             parts.push(format!(
                 "同名多檔無法自動判定：{}",
                 py_list_inline(&g.g_files)
             ));
+            parts.push(anchor_disp);
+        }
+        "graph-read-error" => {
+            // C1 (review): the candidate read failed mid-way — no
+            // identity, no nearest guess; the doc anchor itself stays
+            // the step coordinate (the same availability stance as
+            // not-in-graph frames, with the degradation named)
+            parts.push("graph 讀取錯誤——fail-closed 不錨定（僅文檔錨）".into());
             parts.push(anchor_disp);
         }
         _ if matches!(status, "drift" | "drift-far" | "missing") => {
@@ -821,6 +930,91 @@ fn ambig_hint_line(frames: &[(String, Vec<FillCandidate>)]) -> String {
     format!("歧義候選：{}", segs.join("；"))
 }
 
+/// CR-17 candidate list rendering (`descriptor :line（kind）`, first 4
+/// shown + an explicit omitted count when truncated — the R3 segment
+/// shape) — shared by the kept-step note, the tour-description hint
+/// line and the CLI WARN so every face shows the identical list.
+/// Descriptor brackets render full-width (`[`→`［`, `]`→`］`): ASCII
+/// brackets in a step description parse back as a markdown reference
+/// link (`[Debug][Price]` shape) and FAIL tour_validate's check_links —
+/// the escaped form is link-inert while `x-codeReality.symbol` keeps
+/// the raw SCIP symbol untouched.
+fn trait_cands_inline(cands: &[FillCandidate]) -> String {
+    let mut parts: Vec<String> = cands
+        .iter()
+        .take(4)
+        .map(|c| {
+            format!(
+                "{} :{}（{}）",
+                c.descriptor.replace('[', "［").replace(']', "］"),
+                c.line,
+                c.kind
+            )
+        })
+        .collect();
+    if cands.len() > 4 {
+        parts.push(format!("…（另有 {} 候選）", cands.len() - 4));
+    }
+    parts.join("／")
+}
+
+/// CR-17: the tour-description trait-collision line — mirrors the R3
+/// hint caps (≤3 frames detailed with an explicit fold count, first 4
+/// candidates each with an explicit omitted count) while keeping the
+/// explicit-line specifics: the doc
+/// anchor and the resolution mode per frame. Same shape bans as the R3
+/// rendering (no markdown-link / `path:NN` forms — the candidates are
+/// descriptor+line, the anchor is already a parsed doc coordinate). An
+/// empty encounter list yields an empty string: tours without
+/// collisions keep byte-identical descriptions.
+fn trait_hint_line(encounters: &[TraitCollisionEncounter]) -> String {
+    if encounters.is_empty() {
+        return String::new();
+    }
+    let mut segs: Vec<String> = Vec::new();
+    for e in encounters.iter().take(3) {
+        let mode = if e.exact {
+            "行號精確命中，保留該錨"
+        } else {
+            "行號未精確命中，拒絕最近猜測"
+        };
+        segs.push(format!(
+            "{}（文檔錨 {}）→ {}（{mode}）",
+            e.frame,
+            e.doc_anchor,
+            trait_cands_inline(&e.candidates)
+        ));
+    }
+    if encounters.len() > 3 {
+        segs.push(format!("另有 {} 幀（略）", encounters.len() - 3));
+    }
+    format!("trait 碰撞候選：{}", segs.join("；"))
+}
+
+/// CR-17 per-encounter WARN lines — one per explicit-line trait
+/// collision: the candidates plus the resolution mode. Rides stdout in
+/// the success face (the [OK]/[LOG] report section) and stderr in the
+/// all-shell fail-closed face.
+fn trait_warn_lines(encounters: &[TraitCollisionEncounter]) -> Vec<String> {
+    encounters
+        .iter()
+        .map(|e| {
+            let cands = trait_cands_inline(&e.candidates);
+            if e.exact {
+                format!(
+                    "[WARN] trait 碰撞：{}（文檔錨 {}）候選 {cands}——文檔錨行號精確命中，保留該錨；請人工確認 trait 語意（explicit_trait_ambiguous）",
+                    e.frame, e.doc_anchor
+                )
+            } else {
+                format!(
+                    "[WARN] trait 碰撞：{}（文檔錨 {}）候選 {cands}——行號已漂移（未精確命中），拒絕最近行號猜測，該幀不產生錨定（explicit_trait_ambiguous）",
+                    e.frame, e.doc_anchor
+                )
+            }
+        })
+        .collect()
+}
+
 /// chain md → one tour per scenario (`chain_tour.py:331-404`).
 pub fn build_tours(
     chain_md: &Path,
@@ -848,6 +1042,9 @@ pub fn build_tours(
     let (mut frames_total, mut skipped_total) = (0usize, 0usize);
     let mut g_counts: BTreeMap<String, i64> = BTreeMap::new();
     let mut shells_omitted: Vec<ShellScenario> = Vec::new();
+    // CR-17: explicit-line trait-collision encounters in doc order —
+    // the CLI WARN payload
+    let mut trait_encounters: Vec<TraitCollisionEncounter> = Vec::new();
     for (heading, lines) in &blocks {
         let frames = parse_frames(lines);
         let mut steps: Vec<serde_json::Value> = Vec::new();
@@ -858,6 +1055,9 @@ pub fn build_tours(
         // CR-9 R3: frames that stayed ambiguous after R1/R2, with their
         // renderable candidates, in doc-frame order
         let mut ambig_frames: Vec<(String, Vec<FillCandidate>)> = Vec::new();
+        // CR-17: this scenario's explicit-line trait collisions (doc
+        // order) — the description hint payload
+        let mut trait_frames: Vec<TraitCollisionEncounter> = Vec::new();
         for f in &frames {
             let mut status = "noref".to_string();
             let mut g = GraphHit {
@@ -928,6 +1128,7 @@ pub fn build_tours(
                                                     g_file: None,
                                                     g_files: Vec::new(),
                                                     g_symbol: symbol,
+                                                    g_trait_candidates: Vec::new(),
                                                 };
                                                 filled_line = Some(line);
                                             } else {
@@ -966,6 +1167,29 @@ pub fn build_tours(
             }
             *g_counts.entry(g.g.clone()).or_insert(0) += 1;
             *scen_g.entry(g.g.clone()).or_insert(0) += 1;
+            if !g.g_trait_candidates.is_empty() {
+                // CR-17: record the encounter for the description hint
+                // and the CLI WARN. An anchor kept on exact-line
+                // evidence additionally bumps the independent collision
+                // counter (the distribution shows it alongside `same`);
+                // refused frames already carry it as their g key.
+                if g.g == "same" {
+                    *g_counts
+                        .entry("explicit_trait_ambiguous".into())
+                        .or_insert(0) += 1;
+                    *scen_g.entry("explicit_trait_ambiguous".into()).or_insert(0) += 1;
+                }
+                trait_frames.push(TraitCollisionEncounter {
+                    frame: f.symbol.chars().take(30).collect(),
+                    doc_anchor: format!(
+                        "{}:{}",
+                        f.path.clone().unwrap_or_default(),
+                        f.line.unwrap_or(0)
+                    ),
+                    exact: g.g == "same",
+                    candidates: g.g_trait_candidates.clone(),
+                });
+            }
             let Some(ap) = abs_path else {
                 skipped += 1;
                 *skip_reasons.entry(status.clone()).or_insert(0) += 1;
@@ -974,6 +1198,21 @@ pub fn build_tours(
                 }
                 continue;
             };
+            if g.g == "explicit_trait_ambiguous" {
+                // CR-17 fail-closed: the doc line has drifted off every
+                // candidate of a trait-colliding set — a nearest-line
+                // pick would mint an unverified SCIP identity. No step;
+                // the reason rides the skip axis, the candidates ride
+                // the description hint + CLI WARN.
+                skipped += 1;
+                *skip_reasons
+                    .entry("explicit_trait_ambiguous".into())
+                    .or_insert(0) += 1;
+                if skip_examples.len() < 3 {
+                    skip_examples.push(f.symbol.chars().take(30).collect());
+                }
+                continue;
+            }
             if f.line.is_none() && status != "filled" {
                 // CR-7: path resolved but no verified fill — typed skip
                 // (the reason lives on the graph-distribution axis), no
@@ -1034,6 +1273,12 @@ pub fn build_tours(
             description.push('\n');
             description.push_str(&hint);
         }
+        let thint = trait_hint_line(&trait_frames);
+        if !thint.is_empty() {
+            description.push('\n');
+            description.push_str(&thint);
+        }
+        trait_encounters.append(&mut trait_frames);
         tours.push(serde_json::json!({
             "title": heading,
             "description": description,
@@ -1052,6 +1297,7 @@ pub fn build_tours(
         skipped: skipped_total,
         g_counts,
         shells_omitted,
+        trait_collisions: trait_encounters,
     })
 }
 
@@ -1488,6 +1734,13 @@ pub fn run(argv: &[&str]) -> ToolOutput {
             stderr.push_str(w);
             stderr.push('\n');
         }
+        // CR-17: trait-collision WARNs ride the fail-closed face too —
+        // a shell caused by refused anchors must still name the
+        // candidates (the tours are not written on this face)
+        for w in trait_warn_lines(&st.trait_collisions) {
+            stderr.push_str(&w);
+            stderr.push('\n');
+        }
         stderr.push_str(&crate::msg_line(
             "FAIL",
             &format!(
@@ -1792,6 +2045,22 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         st.skipped,
         st.shells_omitted.len()
     ));
+    // CR-17: one stdout WARN per explicit-line trait collision — the
+    // candidate lists match the scenario descriptions (same payload),
+    // the [LOG] distribution right below carries the same
+    // explicit_trait_ambiguous count
+    for w in trait_warn_lines(&st.trait_collisions) {
+        stdout.push_str(&w);
+        stdout.push('\n');
+    }
+    // C1 (review): fail-closed graph-read frames — disclosed like the
+    // trait collisions (the [LOG] distribution right below carries the
+    // graph-read-error count)
+    if let Some(n) = st.g_counts.get("graph-read-error").filter(|n| **n > 0) {
+        stdout.push_str(&format!(
+            "[WARN] graph 讀取錯誤 {n} 幀——fail-closed 不錨定\n"
+        ));
+    }
     stdout.push_str(&format!("[LOG] graph 重錨分佈: {:?}\n", st.g_counts));
     ToolOutput {
         stdout,

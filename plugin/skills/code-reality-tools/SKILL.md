@@ -455,11 +455,42 @@ on any new repo.
     per scenario, remainder folded into a count). Unambiguous tours
     keep a byte-identical description; the `ambiguous` distribution
     key is unchanged.
-  Non-goals (separate arcs): the explicit-line anchor face, Rust `::`
-  frame grammar, Python overloads. Prose frames without a path never
+  Non-goals (separate arcs): Rust `::` frame grammar, Python
+  overloads, and a trait-qualifier syntax (`Price::fmt[Display]`) —
+  the explicit-line face has its own collision guard (next bullet),
+  not a qualifier parser. Prose frames without a path never
   reach the resolver (`noref`); path-bearing frames whose token misses
   the graph degrade to `not-in-graph` or an ambiguous skip with hints
   — fail-visible both ways.
+- `chain_tour` explicit-line trait collision (CR-17): a frame WITH a
+  line number whose same-file same-name candidate set contains ≥2
+  Rust impl-shaped symbols sharing one inherent type with differing
+  trait groups (`impl#[Price][Debug]fmt().` vs
+  `impl#[Price][Display]fmt().`; inherent-vs-trait counts as
+  differing; generic trait groups like `` `Add<Self>` `` are compared
+  verbatim up to the first `]`) is a collision. Safe selection: no
+  collision → the legacy
+  nearest-line pick, byte-identical; collision + the doc line exactly
+  hits one candidate → the anchor is kept (`same`) with the candidate
+  list attached to the step description for human review; collision +
+  drifted line OR no *unique* exact hit (two candidates sharing the
+  doc line) → fail-closed, the frame produces NO
+  step — nearest-line guessing is refused because it would mint an
+  unverified `x-codeReality.symbol` identity that tour_reanchor then
+  maintains as truth. Both modes emit one `[WARN] trait 碰撞`
+  line per frame — on stdout in the success face; the all-shell
+  fail-closed face (exit 1, zero tours written) carries them on
+  stderr — listing the first four candidates plus the omitted
+  count when truncated (candidate brackets render full-width so the
+  lists stay link-inert for tour_validate), add a
+  `trait 碰撞候選：` line to the scenario description, and count under
+  the independent `explicit_trait_ambiguous` distribution key (never
+  folded into `ambiguous`, which keeps its line-less semantics). A
+  failed candidate read (prepare/query_map/row decode) fails closed as
+  `graph-read-error` — a doc-line step with NO minted identity, no
+  nearest-line fallback, one `[WARN] graph 讀取錯誤` line + the same
+  `[LOG]` distribution key. R1 /
+  R2 / R3 line-less behavior is untouched.
 - `chain_tour` all-skip shell gate (CR-11): a scenario whose every
   frame skipped (zero anchored steps) is a shell — it lands no `.tour`
   file and no manifest row; each shell emits a `[WARN]` (family +

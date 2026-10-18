@@ -2414,6 +2414,796 @@ kernel (pkg/clean.py:1)
         .contains("文檔錨 pkg/clean.py:1"));
 }
 
+// ---------- CR-17: explicit-line trait collision (ambiguity disclosure + safe selection) ----------
+
+/// NT-shaped price.rs: filler lines with a real `fn fmt` head at 839
+/// (Debug) and 845 (Display) so an exact-hit kept anchor reads a
+/// non-blank pattern line.
+fn price_rs_fixture() -> String {
+    let mut lines: Vec<String> = (1..=850).map(|i| format!("// filler {i}")).collect();
+    lines[838] = "    fn fmt(&self, f: &mut Formatter) -> Result {".into(); // line 839
+    lines[844] = "    fn fmt(&self, f: &mut Formatter) -> Result {".into(); // line 845
+    lines.join("\n")
+}
+
+fn seed_price_impls(spec: &mut graph_db_fixture::GraphDbSpec, abs: &dyn Fn(&str) -> String) {
+    for (trait_name, line) in [("Debug", 839), ("Display", 845)] {
+        seed_sym(
+            spec,
+            &rs_sym(&format!("impl#[Price][{trait_name}]fmt().")),
+            "fmt",
+            "pkg/price.rs",
+            line,
+            "Function",
+            "rust",
+            abs,
+        );
+    }
+}
+
+const CHAIN_MD_CR17_DRIFT: &str = r#"# Price formatting drift
+
+```text
+└─ Price::fmt() pkg/price.rs:776
+```
+"#;
+
+/// AC-1 (NT original repro): doc anchor 776 vs the same-file same-name
+/// trait-impl pair (839 [Debug] / 845 [Display], same inherent type
+/// [Price]) — |839-776|=63 < |845-776|=69, so the legacy nearest-line
+/// SQL silently minted the Debug SCIP identity as a `moved` anchor. The
+/// explicit-line collision gate must refuse the nearest guess
+/// (fail-closed, no step), disclose every candidate, and count the
+/// frame under its own `explicit_trait_ambiguous` bucket — never under
+/// `ambiguous` (line-less semantics) and never as a silent moved step.
+#[test]
+fn explicit_line_trait_collision_drift_refuses_nearest() {
+    let (repo, chain) = repo_fixture_cr9(
+        "cr17-drift",
+        &[("pkg/price.rs", price_rs_fixture())],
+        CHAIN_MD_CR17_DRIFT,
+    );
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_price_impls(&mut spec, &abs);
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(
+        st.g_counts.get("explicit_trait_ambiguous"),
+        Some(&1),
+        "{:?}",
+        st.g_counts
+    );
+    // the silent nearest pick is gone: no moved step, no Debug identity
+    assert!(!st.g_counts.contains_key("moved"), "{:?}", st.g_counts);
+    assert!(
+        !st.g_counts.contains_key("ambiguous"),
+        "{:?}",
+        st.g_counts
+    );
+    let t = st.tours[0].as_object().unwrap();
+    assert!(t["steps"].as_array().unwrap().is_empty());
+    assert_eq!(st.skipped, 1);
+    let tour_json = serde_json::to_string(t).unwrap();
+    assert!(
+        !tour_json.contains("x-codeReality"),
+        "refused frame must mint no SCIP identity: {tour_json}"
+    );
+    // single-frame all-skip scenario is a CR-11 shell: disclosed, not
+    // written — the skip reason carries the collision key
+    assert_eq!(st.shells_omitted.len(), 1);
+    assert_eq!(
+        st.shells_omitted[0]
+            .skip_reasons
+            .get("explicit_trait_ambiguous"),
+        Some(&1),
+        "{:?}",
+        st.shells_omitted[0].skip_reasons
+    );
+    // the description discloses the full candidate set + the refusal
+    let desc = t["description"].as_str().unwrap();
+    assert!(
+        desc.contains(
+            "trait 碰撞候選：Price::fmt()（文檔錨 pkg/price.rs:776）→ impl#［Price］［Debug］fmt(). :839（Function）／impl#［Price］［Display］fmt(). :845（Function）（行號未精確命中，拒絕最近猜測）"
+        ),
+        "{desc}"
+    );
+    assert!(desc.contains("explicit_trait_ambiguous 1"), "{desc}");
+    assert!(desc.contains("explicit_trait_ambiguous:1"), "{desc}");
+}
+
+const CHAIN_MD_CR17_EXACT: &str = r#"# Price formatting exact
+
+```text
+└─ Price::fmt() pkg/price.rs:845
+```
+"#;
+
+/// AC-2: the doc anchor line exactly hits one candidate (845 Display) —
+/// the exact line is real evidence, so the anchor stays (`same`), the
+/// step carries the Display SCIP symbol, and the collision payload
+/// stays attached on both the step description and the scenario
+/// description for human identification.
+#[test]
+fn explicit_line_trait_collision_exact_hit_keeps_anchor() {
+    let (repo, chain) = repo_fixture_cr9(
+        "cr17-exact",
+        &[("pkg/price.rs", price_rs_fixture())],
+        CHAIN_MD_CR17_EXACT,
+    );
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_price_impls(&mut spec, &abs);
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(st.g_counts.get("same"), Some(&1), "{:?}", st.g_counts);
+    assert_eq!(
+        st.g_counts.get("explicit_trait_ambiguous"),
+        Some(&1),
+        "{:?}",
+        st.g_counts
+    );
+    assert_eq!(st.skipped, 0);
+    let steps = st.tours[0]["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 1);
+    assert_eq!(steps[0]["line"], 845);
+    assert_eq!(
+        steps[0]["x-codeReality"]["symbol"].as_str().unwrap(),
+        rs_sym("impl#[Price][Display]fmt().")
+    );
+    // the kept step discloses the colliding siblings for human review
+    let sdesc = steps[0]["description"].as_str().unwrap();
+    assert!(sdesc.contains("trait 碰撞"), "{sdesc}");
+    assert!(
+        sdesc.contains("impl#［Price］［Debug］fmt(). :839（Function）"),
+        "{sdesc}"
+    );
+    assert!(
+        sdesc.contains("impl#［Price］［Display］fmt(). :845（Function）"),
+        "{sdesc}"
+    );
+    assert!(sdesc.contains("行號精確命中"), "{sdesc}");
+    // the scenario description hint marks the kept mode
+    let desc = st.tours[0]["description"].as_str().unwrap();
+    assert!(desc.contains("（文檔錨 pkg/price.rs:845）"), "{desc}");
+    assert!(desc.contains("（行號精確命中，保留該錨）"), "{desc}");
+    assert!(desc.contains("explicit_trait_ambiguous:1"), "{desc}");
+}
+
+/// F1 round-trip (review): the kept-step candidate note must survive
+/// tour_validate's link scan — ASCII brackets in a descriptor
+/// (`impl#[Price][Debug]fmt().`) parse back as a markdown reference
+/// link and FAIL check_links on an empty tour index. The renderer
+/// escapes them full-width (the note is display text;
+/// `x-codeReality.symbol` keeps the raw SCIP symbol).
+#[test]
+fn explicit_line_trait_collision_step_note_survives_check_links() {
+    let (repo, chain) = repo_fixture_cr9(
+        "cr17-f1-roundtrip",
+        &[("pkg/price.rs", price_rs_fixture())],
+        CHAIN_MD_CR17_EXACT,
+    );
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_price_impls(&mut spec, &abs);
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    let mut stdout = String::new();
+    let (fails, _) = code_reality::tour_validate::check_links(
+        "01.tour",
+        &st.tours[0],
+        &std::collections::BTreeMap::new(),
+        &std::collections::BTreeMap::new(),
+        &mut stdout,
+    );
+    assert!(fails.is_empty(), "check_links fails: {fails:?}\n{stdout}");
+}
+
+/// C2 (review): five same-file same-type impls with differing trait
+/// groups — a ≥5 candidate set truncates at 4 with an explicit omitted
+/// count, identical on all three faces (kept-step note, scenario
+/// description hint, CLI WARN) because one renderer builds them. The
+/// doc anchor exactly hits the 4th candidate (845), so the kept-anchor
+/// note face is live too.
+fn price_rs_five_impls_fixture() -> String {
+    let mut lines: Vec<String> = (1..=860).map(|i| format!("// filler {i}")).collect();
+    for line in [830usize, 835, 840, 845, 850] {
+        lines[line - 1] = "    fn fmt(&self, f: &mut Formatter) -> Result {".into();
+    }
+    lines.join("\n")
+}
+
+const CHAIN_MD_CR17_FIVE: &str = r#"# Price five-way collision
+
+```text
+└─ Price::fmt() pkg/price.rs:845
+```
+"#;
+
+#[test]
+fn explicit_line_trait_collision_five_candidates_truncation_counts_all_faces() {
+    let (repo, chain) = repo_fixture_cr9(
+        "cr17-five",
+        &[("pkg/price.rs", price_rs_five_impls_fixture())],
+        CHAIN_MD_CR17_FIVE,
+    );
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    for (trait_name, line) in [
+        ("Debug", 830),
+        ("Display", 835),
+        ("LowerExp", 840),
+        ("UpperExp", 845),
+        ("Binary", 850),
+    ] {
+        seed_sym(
+            &mut spec,
+            &rs_sym(&format!("impl#[Price][{trait_name}]fmt().")),
+            "fmt",
+            "pkg/price.rs",
+            line,
+            "Function",
+            "rust",
+            &abs,
+        );
+    }
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let out_dir = repo.join(".tours").join("arch").join("02-five");
+    let out = code_reality::chain_tour::run(&[
+        "chain_tour",
+        &chain.to_string_lossy(),
+        "--repo",
+        &repo.to_string_lossy(),
+        "--graph",
+        &db.to_string_lossy(),
+        "--out-dir",
+        &out_dir.to_string_lossy(),
+    ]);
+    assert_eq!(out.exit_code, 0, "{}{}", out.stdout, out.stderr);
+    // CLI WARN face: first four candidates + the explicit omitted count
+    assert!(
+        out.stdout.contains(
+            "候選 impl#［Price］［Debug］fmt(). :830（Function）／impl#［Price］［Display］fmt(). :835（Function）／impl#［Price］［LowerExp］fmt(). :840（Function）／impl#［Price］［UpperExp］fmt(). :845（Function）／…（另有 1 候選）"
+        ),
+        "{}",
+        out.stdout
+    );
+    // the omitted candidate never renders
+    assert!(!out.stdout.contains("［Binary］"), "{}", out.stdout);
+    // written tour: scenario description hint face + kept-step note face
+    let tour: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out_dir.join("01.tour")).unwrap()).unwrap();
+    let desc = tour["description"].as_str().unwrap();
+    assert!(desc.contains("trait 碰撞候選："), "{desc}");
+    assert!(desc.contains("…（另有 1 候選）"), "{desc}");
+    let steps = tour["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 1);
+    let sdesc = steps[0]["description"].as_str().unwrap();
+    assert!(sdesc.contains("trait 碰撞：候選"), "{sdesc}");
+    assert!(sdesc.contains("…（另有 1 候選）"), "{sdesc}");
+    // the kept anchor is the exact-hit candidate (UpperExp @ 845)
+    assert_eq!(steps[0]["line"], 845);
+    assert_eq!(
+        steps[0]["x-codeReality"]["symbol"].as_str().unwrap(),
+        rs_sym("impl#[Price][UpperExp]fmt().")
+    );
+}
+
+/// C1 (review): a mid-read failure in the explicit-line candidate set
+/// (per-row decode error — BLOB kind here; the schema probe and prepare
+/// still pass) must fail closed: `graph-read-error`, a doc-line step
+/// with NO minted identity, and no nearest-line fallback — the old
+/// filter_map would silently drop the row, empty the set, and route the
+/// frame to not-in-graph / cross-file moved-file. The [LOG]
+/// distribution and one WARN disclose the frames.
+#[test]
+fn explicit_line_graph_read_error_fails_closed() {
+    let (repo, chain) = repo_fixture_cr9(
+        "cr17-read-error",
+        &[("pkg/price.rs", price_rs_fixture())],
+        CHAIN_MD_CR17_DRIFT,
+    );
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_sym(
+        &mut spec,
+        &rs_sym("impl#[Price][Debug]fmt()."),
+        "fmt",
+        "pkg/price.rs",
+        839,
+        "Function",
+        "rust",
+        &abs,
+    );
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    {
+        let c = rusqlite::Connection::open(&db).unwrap();
+        c.execute("UPDATE nodes SET kind=X'00' WHERE name='fmt'", [])
+            .unwrap();
+    }
+    let out_dir = repo.join(".tours").join("arch").join("03-read-error");
+    let out = code_reality::chain_tour::run(&[
+        "chain_tour",
+        &chain.to_string_lossy(),
+        "--repo",
+        &repo.to_string_lossy(),
+        "--graph",
+        &db.to_string_lossy(),
+        "--out-dir",
+        &out_dir.to_string_lossy(),
+    ]);
+    // the doc line itself is still author evidence — a step exists, the
+    // run succeeds; the frame is NOT a skip (not a shell)
+    assert_eq!(out.exit_code, 0, "{}{}", out.stdout, out.stderr);
+    assert!(
+        out.stdout
+            .contains("[WARN] graph 讀取錯誤 1 幀——fail-closed 不錨定"),
+        "{}",
+        out.stdout
+    );
+    // [LOG] distribution carries the new key
+    assert!(out.stdout.contains("graph-read-error"), "{}", out.stdout);
+    let tour: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out_dir.join("01.tour")).unwrap()).unwrap();
+    let tour_json = serde_json::to_string(&tour).unwrap();
+    assert!(
+        !tour_json.contains("x-codeReality"),
+        "read-error frame must mint no SCIP identity: {tour_json}"
+    );
+    let steps = tour["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 1);
+    // the step sits at the doc anchor line with no re-anchored coordinate
+    assert_eq!(steps[0]["line"], 776);
+    let sdesc = steps[0]["description"].as_str().unwrap();
+    assert!(sdesc.contains("graph 讀取錯誤"), "{sdesc}");
+    assert!(sdesc.contains("文檔錨 pkg/price.rs:776"), "{sdesc}");
+    // no nearest-line / cross-file pick ever happened
+    assert!(!out.stdout.contains("moved-file"), "{}", out.stdout);
+}
+
+/// F2 (review): the all-shell fail-closed face at run() level — a
+/// single-frame corpus whose only frame is a refused collision anchor
+/// exits 1 with the trait WARNs on STDERR (the stdout WARN section
+/// belongs to the success face) and zero writes: no .tour file.
+#[test]
+fn run_all_shell_trait_refusal_face_is_stderr_fail_closed() {
+    let (repo, chain) = repo_fixture_cr9(
+        "cr17-f2-shell",
+        &[("pkg/price.rs", price_rs_fixture())],
+        CHAIN_MD_CR17_DRIFT,
+    );
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_price_impls(&mut spec, &abs);
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let out_dir = repo.join(".tours").join("arch").join("04-shell");
+    let out = code_reality::chain_tour::run(&[
+        "chain_tour",
+        &chain.to_string_lossy(),
+        "--repo",
+        &repo.to_string_lossy(),
+        "--graph",
+        &db.to_string_lossy(),
+        "--out-dir",
+        &out_dir.to_string_lossy(),
+    ]);
+    assert_eq!(out.exit_code, 1, "stdout:\n{}\nstderr:\n{}", out.stdout, out.stderr);
+    assert!(out.stderr.contains("[WARN] trait 碰撞"), "{}", out.stderr);
+    assert!(out.stderr.contains("全場景殼形"), "{}", out.stderr);
+    // the success-face stdout WARN section is not reached on this face
+    assert!(
+        !out.stdout.contains("[WARN] trait 碰撞"),
+        "{}",
+        out.stdout
+    );
+    // zero writes: no .tour file lands under out_dir
+    let tour_count = match std::fs::read_dir(&out_dir) {
+        Ok(entries) => entries
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().is_some_and(|x| x == "tour"))
+            .count(),
+        Err(_) => 0,
+    };
+    assert_eq!(tour_count, 0, "fail-closed face must write zero tours");
+}
+
+/// F3(a) (review): two impl rows sharing the doc anchor LINE — a
+/// non-unique exact hit is still a refusal (only `exact.len() == 1`
+/// keeps the anchor); both candidates disclose on the description.
+#[test]
+fn explicit_line_non_unique_exact_hit_refuses() {
+    const MD: &str = "# Same-line pair\n\n```text\n└─ Price::fmt() pkg/price.rs:845\n```\n";
+    let (repo, chain) =
+        repo_fixture_cr9("cr17-f3a", &[("pkg/price.rs", price_rs_fixture())], MD);
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    for trait_name in ["Debug", "Display"] {
+        seed_sym(
+            &mut spec,
+            &rs_sym(&format!("impl#[Price][{trait_name}]fmt().")),
+            "fmt",
+            "pkg/price.rs",
+            845,
+            "Function",
+            "rust",
+            &abs,
+        );
+    }
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(
+        st.g_counts.get("explicit_trait_ambiguous"),
+        Some(&1),
+        "{:?}",
+        st.g_counts
+    );
+    assert!(st.tours[0]["steps"].as_array().unwrap().is_empty());
+    assert_eq!(st.shells_omitted.len(), 1);
+    let desc = st.tours[0]["description"].as_str().unwrap();
+    assert!(
+        desc.contains(
+            "impl#［Price］［Debug］fmt(). :845（Function）／impl#［Price］［Display］fmt(). :845（Function）"
+        ),
+        "{desc}"
+    );
+}
+
+/// F3(b) (review): a mixed candidate set (impl collision pair + a
+/// same-name free function) — the free fn does not trigger the
+/// collision guard (non-impl shape) but IS a sibling the legacy
+/// nearest-line SQL picked from, so the refusal discloses the FULL
+/// same-file same-name set (superset of the colliding pair).
+#[test]
+fn explicit_line_mixed_set_refusal_lists_full_superset() {
+    const MD: &str = "# Mixed set\n\n```text\n└─ Price::fmt() pkg/price.rs:776\n```\n";
+    let (repo, chain) =
+        repo_fixture_cr9("cr17-f3b", &[("pkg/price.rs", price_rs_fixture())], MD);
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_sym(
+        &mut spec,
+        &rs_sym("fmt()."),
+        "fmt",
+        "pkg/price.rs",
+        830,
+        "Function",
+        "rust",
+        &abs,
+    );
+    seed_price_impls(&mut spec, &abs);
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(
+        st.g_counts.get("explicit_trait_ambiguous"),
+        Some(&1),
+        "{:?}",
+        st.g_counts
+    );
+    assert!(st.tours[0]["steps"].as_array().unwrap().is_empty());
+    let desc = st.tours[0]["description"].as_str().unwrap();
+    // the full superset renders in (line, symbol) order: free fn first,
+    // then the colliding pair — nothing dropped
+    assert!(desc.contains("fmt(). :830（Function）"), "{desc}");
+    assert!(
+        desc.contains("impl#［Price］［Debug］fmt(). :839（Function）"),
+        "{desc}"
+    );
+    assert!(
+        desc.contains("impl#［Price］［Display］fmt(). :845（Function）"),
+        "{desc}"
+    );
+}
+
+/// F3(c) (review): more than three trait-collision encounters in one
+/// scenario — the description hint details the first three frames and
+/// folds the rest into an explicit count (`另有 N 幀（略）`), mirroring
+/// the R3 frame-fold idiom.
+#[test]
+fn explicit_line_fourth_encounter_folds_in_description() {
+    const MD: &str = r#"# Four collisions
+
+```text
+└─ Price::fmt() pkg/p1.rs:776
+└─ Price::fmt() pkg/p2.rs:776
+└─ Price::fmt() pkg/p3.rs:776
+└─ Price::fmt() pkg/p4.rs:776
+```
+"#;
+    let files: Vec<(String, String)> = ["p1", "p2", "p3", "p4"]
+        .iter()
+        .map(|p| (format!("pkg/{p}.rs"), price_rs_fixture()))
+        .collect();
+    let refs: Vec<(&str, String)> = files
+        .iter()
+        .map(|(rel, content)| (rel.as_str(), content.clone()))
+        .collect();
+    let (repo, chain) = repo_fixture_cr9("cr17-f3c", &refs, MD);
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    // per-file descriptor prefixes: `rs_sym` folds the descriptor into
+    // ONE symbol namespace (`pkg/{descriptor}`), so four files sharing a
+    // bare `impl#[Price][…]fmt().` descriptor would collide on the
+    // `nodes.symbol` UNIQUE key. Prefixing the file stem keeps each
+    // symbol unique while `descriptor_region` (last-`/` boundary) still
+    // reads `impl#[Price][…]fmt().` — the resolver face is unchanged.
+    for p in ["p1", "p2", "p3", "p4"] {
+        for (trait_name, line) in [("Debug", 839), ("Display", 845)] {
+            seed_sym(
+                &mut spec,
+                &rs_sym(&format!("{p}/impl#[Price][{trait_name}]fmt().")),
+                "fmt",
+                &format!("pkg/{p}.rs"),
+                line,
+                "Function",
+                "rust",
+                &abs,
+            );
+        }
+    }
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(
+        st.g_counts.get("explicit_trait_ambiguous"),
+        Some(&4),
+        "{:?}",
+        st.g_counts
+    );
+    assert_eq!(st.shells_omitted.len(), 1);
+    let desc = st.tours[0]["description"].as_str().unwrap();
+    assert!(desc.contains("trait 碰撞候選："), "{desc}");
+    assert!(desc.contains("另有 1 幀（略）"), "{desc}");
+    assert!(desc.contains("explicit_trait_ambiguous 4"), "{desc}");
+}
+
+const CHAIN_MD_CR17_BOTH: &str = r#"# Price formatting both modes
+
+```text
+Price::fmt() pkg/price.rs:776
+└─ Price::fmt() pkg/price.rs:845
+```
+"#;
+
+/// AC-5: the CLI report and the scenario description agree — one stdout
+/// WARN per encounter (refusal + exact-hit faces, same candidate
+/// lists), the [LOG] distribution carries the same
+/// explicit_trait_ambiguous count as the description, and the written
+/// tour embeds the same candidate payloads.
+#[test]
+fn explicit_line_trait_collision_cli_and_description_consistent() {
+    let (repo, chain) = repo_fixture_cr9(
+        "cr17-cli",
+        &[("pkg/price.rs", price_rs_fixture())],
+        CHAIN_MD_CR17_BOTH,
+    );
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_price_impls(&mut spec, &abs);
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let out_dir = repo.join(".tours").join("arch").join("01-trait");
+    let out = code_reality::chain_tour::run(&[
+        "chain_tour",
+        &chain.to_string_lossy(),
+        "--repo",
+        &repo.to_string_lossy(),
+        "--graph",
+        &db.to_string_lossy(),
+        "--out-dir",
+        &out_dir.to_string_lossy(),
+    ]);
+    assert_eq!(out.exit_code, 0, "{}{}", out.stdout, out.stderr);
+    // one WARN per encounter, refusal first (doc order), same candidates
+    assert!(
+        out.stdout.contains(
+            "[WARN] trait 碰撞：Price::fmt()（文檔錨 pkg/price.rs:776）候選 impl#［Price］［Debug］fmt(). :839（Function）／impl#［Price］［Display］fmt(). :845（Function）——行號已漂移（未精確命中），拒絕最近行號猜測，該幀不產生錨定（explicit_trait_ambiguous）"
+        ),
+        "{}",
+        out.stdout
+    );
+    assert!(
+        out.stdout.contains(
+            "[WARN] trait 碰撞：Price::fmt()（文檔錨 pkg/price.rs:845）候選 impl#［Price］［Debug］fmt(). :839（Function）／impl#［Price］［Display］fmt(). :845（Function）——文檔錨行號精確命中，保留該錨；請人工確認 trait 語意（explicit_trait_ambiguous）"
+        ),
+        "{}",
+        out.stdout
+    );
+    // the [LOG] distribution carries the same independent count
+    assert!(
+        out.stdout.contains("[LOG] graph 重錨分佈"),
+        "{}",
+        out.stdout
+    );
+    assert!(
+        out.stdout.contains("explicit_trait_ambiguous"),
+        "{}",
+        out.stdout
+    );
+    // the written tour description embeds the same candidate payloads
+    // and the same count as the CLI face
+    let tour: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out_dir.join("01.tour")).unwrap()).unwrap();
+    let desc = tour["description"].as_str().unwrap();
+    assert!(desc.contains("trait 碰撞候選："), "{desc}");
+    assert!(
+        desc.contains("impl#［Price］［Debug］fmt(). :839（Function）"),
+        "{desc}"
+    );
+    assert!(
+        desc.contains("impl#［Price］［Display］fmt(). :845（Function）"),
+        "{desc}"
+    );
+    assert!(desc.contains("explicit_trait_ambiguous:2"), "{desc}");
+    // 2 frames -> 1 step (refused frame skipped), kept step is Display
+    assert!(desc.contains("2 幀 → 1 步；1 幀跳過"), "{desc}");
+    let steps = tour["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 1);
+    assert_eq!(steps[0]["line"], 845);
+    assert_eq!(
+        steps[0]["x-codeReality"]["symbol"].as_str().unwrap(),
+        rs_sym("impl#[Price][Display]fmt().")
+    );
+}
+
+/// AC-4: no trait collision (same-file same-name methods scoped under
+/// DIFFERENT types, non-impl descriptors) — the drifted explicit-line
+/// anchor keeps the legacy nearest-line selection byte-identically.
+#[test]
+fn explicit_line_no_collision_drift_keeps_nearest() {
+    const MD: &str = "# Nearest kept\n\n```text\n└─ m() (pkg/mv.py:5)\n```\n";
+    let src =
+        "class A:\n    def m(self):\n        pass\n\n\nclass B:\n    def m(self):\n        pass\n";
+    let (repo, chain) = repo_fixture_cr9("cr17-nearest", &[("pkg/mv.py", src.into())], MD);
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.mv", "A#m()."),
+        "m",
+        "pkg/mv.py",
+        2,
+        "Function",
+        "python",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &py_sym("pkg.mv", "B#m()."),
+        "m",
+        "pkg/mv.py",
+        7,
+        "Function",
+        "python",
+        &abs,
+    );
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(st.g_counts.get("moved"), Some(&1), "{:?}", st.g_counts);
+    assert!(
+        !st.g_counts.contains_key("explicit_trait_ambiguous"),
+        "{:?}",
+        st.g_counts
+    );
+    let steps = st.tours[0]["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 1);
+    // |5-7|=2 < |5-2|=3 — the nearest pick, unchanged
+    assert_eq!(steps[0]["line"], 7);
+    assert_eq!(
+        steps[0]["x-codeReality"]["symbol"].as_str().unwrap(),
+        py_sym("pkg.mv", "B#m().")
+    );
+    let desc = st.tours[0]["description"].as_str().unwrap();
+    assert!(!desc.contains("trait 碰撞候選"), "{desc}");
+}
+
+/// Adversarial (SCIP grammar): generic-bearing trait groups
+/// (`Add<Self>` / `Sub<Self>`) are unparseable by `descriptor_chain`
+/// (R2 refuses them) — the CR-17 collision reader takes bracket groups
+/// verbatim, so a drifted anchor over the same-type generic-trait pair
+/// still refuses to guess.
+#[test]
+fn explicit_line_generic_trait_groups_still_collide() {
+    const MD: &str = "# Generic traits\n\n```text\n└─ Quantity::add() (pkg/qty.rs:10)\n```\n";
+    let (repo, chain) = repo_fixture_cr9(
+        "cr17-generics",
+        &[("pkg/qty.rs", "struct Quantity;\n".into())],
+        MD,
+    );
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    for (trait_group, line) in [("`Add<Self>`", 20), ("`Sub<Self>`", 30)] {
+        seed_sym(
+            &mut spec,
+            &rs_sym(&format!("impl#[Quantity][{trait_group}]add().")),
+            "add",
+            "pkg/qty.rs",
+            line,
+            "Function",
+            "rust",
+            &abs,
+        );
+    }
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    assert_eq!(
+        st.g_counts.get("explicit_trait_ambiguous"),
+        Some(&1),
+        "{:?}",
+        st.g_counts
+    );
+    assert!(!st.g_counts.contains_key("moved"), "{:?}", st.g_counts);
+    let t = st.tours[0].as_object().unwrap();
+    assert!(t["steps"].as_array().unwrap().is_empty());
+    let desc = t["description"].as_str().unwrap();
+    assert!(
+        desc.contains("impl#［Quantity］［`Add<Self>`］add(). :20（Function）"),
+        "{desc}"
+    );
+    assert!(
+        desc.contains("impl#［Quantity］［`Sub<Self>`］add(). :30（Function）"),
+        "{desc}"
+    );
+}
+
+/// Adjudication pin: an inherent impl (zero trait groups) and a trait
+/// impl of the same method on the same type also count as a collision —
+/// the hazard (silent nearest-line pick between semantically distinct
+/// same-type same-name impls) is the same one R2 already refuses to
+/// resolve on the line-less face (the r2_unresolvable fixture shape).
+#[test]
+fn explicit_line_inherent_vs_trait_impl_counts_as_collision() {
+    const MD: &str = "# Inherent vs trait\n\n```text\n└─ Base.run() (pkg/base.rs:7)\n```\n";
+    let (repo, chain) = repo_fixture_cr9(
+        "cr17-inherent",
+        &[("pkg/base.rs", "struct Base;\n".into())],
+        MD,
+    );
+    let db = db_of(&repo);
+    let abs = |rel: &str| repo.join(rel).to_string_lossy().into_owned();
+    let mut spec = graph_db_fixture::GraphDbSpec::default();
+    seed_sym(
+        &mut spec,
+        &rs_sym("impl#[Base]run()."),
+        "run",
+        "pkg/base.rs",
+        6,
+        "Function",
+        "rust",
+        &abs,
+    );
+    seed_sym(
+        &mut spec,
+        &rs_sym("impl#[Base][WsLab]run()."),
+        "run",
+        "pkg/base.rs",
+        9,
+        "Function",
+        "rust",
+        &abs,
+    );
+    graph_db_fixture::make_graph_db(&db, &spec).unwrap();
+    let st = build_tours(&chain, &repo, Some(&db)).unwrap();
+    // |7-6|=1 would have silently picked the inherent impl
+    assert_eq!(
+        st.g_counts.get("explicit_trait_ambiguous"),
+        Some(&1),
+        "{:?}",
+        st.g_counts
+    );
+    assert!(!st.g_counts.contains_key("moved"), "{:?}", st.g_counts);
+    assert!(st.tours[0]["steps"].as_array().unwrap().is_empty());
+}
+
 mod graph_db_fixture;
 
 use code_reality::chain_tour::GraphAnchor;

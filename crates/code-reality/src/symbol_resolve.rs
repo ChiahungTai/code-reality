@@ -169,6 +169,92 @@ fn descriptor_chain(region: &str) -> Option<Vec<String>> {
     }
 }
 
+/// CR-17 explicit-line trait-collision reader: the Rust impl head of a
+/// descriptor region (`impl#[Type][Trait…]def…`) split into the inherent
+/// type group and the trait groups taken VERBATIM up to the first `]`
+/// (no bracket-depth tracking — a nested `[` inside a group ends the
+/// group there, so `` `Add<Self>` `` rides through as an opaque string).
+/// This deliberately does NOT reuse [`descriptor_chain`]'s grammar (which
+/// keeps only the first [Type] group and validates every group as
+/// `sym_char`-only for R2's chain alignment — frozen for the line-less
+/// face): collision detection needs the trait groups, and
+/// generic-bearing groups must still count. A malformed group (empty,
+/// unterminated bracket) fails the whole read — the candidate then
+/// contributes nothing to a collision, which for THIS guard is the
+/// fail-open direction (a malformed sibling could hide a real
+/// collision); the exposure is bounded by the producer machinery
+/// (rust-analyzer mints well-formed bracket groups), and counting
+/// malformed impl rows toward collisions is deferred to the CR-18
+/// qualifier card. Returns None for non-impl shapes; a non-impl region
+/// never contributes to a collision.
+pub(crate) fn impl_trait_groups(region: &str) -> Option<(String, Vec<String>)> {
+    let rest = region.strip_prefix("impl#[")?;
+    let close = rest.find(']')?;
+    let ty = &rest[..close];
+    if ty.is_empty() {
+        return None;
+    }
+    let mut traits: Vec<String> = Vec::new();
+    let mut i = "impl#[".len() + close + 1;
+    while region[i..].starts_with('[') {
+        let group_rest = &region[i + 1..];
+        let end = group_rest.find(']')?;
+        let group = &group_rest[..end];
+        if group.is_empty() {
+            return None;
+        }
+        traits.push(group.to_string());
+        i += end + 2;
+    }
+    Some((ty.to_string(), traits))
+}
+
+/// CR-17: does the explicit-line same-file same-name candidate set carry
+/// a trait collision — at least two impl-shaped candidates sharing one
+/// inherent type group whose trait-group signatures differ? The name
+/// axis is already pinned by the caller's `name=?` query, so
+/// (same type, same name, differing trait groups) is exactly the NT
+/// shape `impl#[Price][Debug]fmt().` vs `impl#[Price][Display]fmt().`.
+/// An inherent impl (zero trait groups) vs a trait impl counts as
+/// differing — the guarded hazard is the silent nearest-line pick
+/// between semantically distinct same-type same-name impls, the same
+/// pair R2 refuses to resolve on the line-less face.
+pub(crate) fn explicit_trait_collision(rows: &[(i64, String, String)]) -> bool {
+    let mut by_type: std::collections::BTreeMap<String, std::collections::BTreeSet<Vec<String>>> =
+        std::collections::BTreeMap::new();
+    for (_, sym, _) in rows {
+        let Some(region) = descriptor_region(sym) else {
+            continue;
+        };
+        let Some((ty, traits)) = impl_trait_groups(region) else {
+            continue;
+        };
+        by_type.entry(ty).or_default().insert(traits);
+    }
+    by_type.values().any(|sigs| sigs.len() >= 2)
+}
+
+/// CR-17 WARN/hint payload: every candidate of the full same-file
+/// same-name candidate set (superset of the colliding group) with its
+/// descriptor (region, raw-symbol fallback), line and kind, ordered
+/// by (line_start, symbol) — the fill query's stable order, so the list
+/// reads identically no matter which anchor line triggered it. Unlike
+/// R3's [`fill_candidates`] nothing is dropped: parseability filters are
+/// line-less-face concepts; the explicit-line face must disclose every
+/// sibling the legacy nearest-line SQL silently picked from.
+pub(crate) fn explicit_line_candidates(rows: &[(i64, String, String)]) -> Vec<FillCandidate> {
+    let mut ordered: Vec<&(i64, String, String)> = rows.iter().collect();
+    ordered.sort_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));
+    ordered
+        .into_iter()
+        .map(|(line, sym, kind)| FillCandidate {
+            descriptor: descriptor_region(sym).unwrap_or(sym).to_string(),
+            line: *line,
+            kind: kind.clone(),
+        })
+        .collect()
+}
+
 /// Mirror of pyrefly-producer's `pseudo_ctor_symbol` (symbol.rs): the
 /// pseudo-constructor form of a class-shaped symbol swaps the trailing
 /// `#` for `().`. Local copy — the tool layer embeds no producer dep.

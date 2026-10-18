@@ -4,7 +4,7 @@ title: chain_tour 有行號錨時同名 trait 實作靜默選錯——補歧義�
 status: In Progress
 assignee: []
 created_date: '2026-10-18 12:36'
-updated_date: '2026-10-18 12:38'
+updated_date: '2026-10-18 16:03'
 labels:
   - chain-tour
   - graph-anchor
@@ -63,3 +63,13 @@ flowchart LR
 
 範圍：上述四檔。descriptor_chain 既有語義（保留第一個 [Type]、忽略其餘 Trait bracket）不改——碰撞辨識走新的 descriptor 判讀，不動 R2。
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+〔checkpoint 2026-10-18 21:00〕deep-work 接手。進度：實作✅（4檔+730/-20，全量769綠，L4 NT真corpus雙場景PASS）→雙審✅（fresh-eyes F1 block八項＋codex C1/C2，帳本 .review/main.md canonical PASS）→GLM-5.3 judge in flight（job-mvduzfrk-yuc0l5）。剩：judge裁決→修正迴圈(F1 bracket跳脫為block必修)→docs鏈(SKILL.md+Capabilities)→收尾receipt→commit(AUTH鏈式)→release v0.17.0→回信NT(AUTH「修好要回信」)→結案。23:45 /at 檢查點已授權（沒做完接續做）
+
+〔judge verdict 2026-10-18 21:40 GLM-5.3 job-mvduzfrk-yuc0l5〕✅10/❌1/⚠️0——F1 block：trait_cands_inline bracket→全形［］（三面單點）＋往返測試；C1：fail-closed graph-read-error（棄 Result 化）＋BLOB 回歸；C2 省略計數＋SKILL 對齊；F2/F3 補測試；F4/F5/F6 措辭（F6 行為變更歸 qualifier 卡）；F7 記下一卡；F8 ❌（check_links 不掃 tour-level desc，否證成立）；F9 kind 尾綴。Apply 批次 A(renderer)/B(fail-closed)/C(測試)/D(文檔)。全程 jsonl：.delegate-bridge/jobs/job-mvduzfrk-yuc0l5.jsonl
+
+〔review ledger converged 2026-10-18 23:59〕[main.md] findings=11 tables=1 decisions ✅=10/❌=1/⚠️=0/unknown=0 (source=決策) status resolved=0/verified=10/closed=1/open=0/unknown=0 未決=0 unparsed=0 ……full=ok——✅10 verified（F1 NT L4 端到端 fails=0 重驗）／❌1 closed（F8）／0 open；legs 三腿 n/a（碼讀審查無 CR 結構查詢）；帳本 .review/main.md converged canonical PASS
+<!-- SECTION:NOTES:END -->
