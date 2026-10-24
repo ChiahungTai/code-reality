@@ -1,10 +1,10 @@
 ---
 id: CR-19
 title: Rust workspace root 自動偵測支援 crates/<name>/ 深層佈局（build 失敗修復）
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-24 15:28'
-updated_date: '2026-10-24 22:00'
+updated_date: '2026-10-25 06:39'
 labels:
   - rust
   - build
@@ -79,3 +79,22 @@ Re-review round 1（codex job-mvmxay4r fresh session；resume 蹬 context 超窗
 
 2026-10-25 終局：R7 修補＋re-review round 2 ACCEPT（job-mvmxv80n）——審查鏈收斂（雙審→judge→R1-R6→re-review 1 抓 R7→R7 修→re-review 2 ACCEPT）。Gates：全量 831 綠、fmt 觸碰面淨、clippy delta=0、F7 深掃增量噪訊內（mosaic 實樹唯讀）。實作面完成；等 user 授權 feature commit→merge→release→回信→Done flip。
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+mosaic_alpha fix-request 全鏈終結：rust workspace root 深層佈局偵測＋無 root 自診斷已落地 v0.19.0（PyPI 三 dist＋tag，feature commit 84e5a65、release a7b3efa）；三請求＝案1/案2 落地、案3（--producer 多腿）defer。審查鏈：雙審→judge→修補 R1-R7→re-review ACCEPT→post-build 終審 LAND（十檔 byte 一致）；全量 831 測試綠；F7 實樹量測深掃增量在噪訊內。回信 mosaic 已寄。
+
+```mermaid
+flowchart LR
+    A["build rust 腿"] --> B{"root 有 Cargo.toml?"}
+    B -->|yes| C["單 root . 行為不變"]
+    B -->|no| D["一層子目錄掃描"]
+    D -->|"有候選"| E["既有行為 byte 不變"]
+    D -->|"0 候選"| F["有界深掃 depth<=3<br/>excluded 子樹遍歷剪枝"]
+    F --> G["workspace=root<br/>獨立 package=root 候選<br/>workspace 祖先下=member"]
+    G -->|"歧義或重疊"| H["06/03 fail-loud"]
+    G -->|"掃描空且 rust 語料在"| I["清楚錯誤 declare rust_projects"]
+    G -->|"roots 收斂"| J["多 root staging 加 08/09 閘"]
+```
+<!-- SECTION:FINAL_SUMMARY:END -->
