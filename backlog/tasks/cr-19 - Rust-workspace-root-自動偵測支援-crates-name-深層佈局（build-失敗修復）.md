@@ -4,7 +4,7 @@ title: Rust workspace root 自動偵測支援 crates/<name>/ 深層佈局（buil
 status: In Progress
 assignee: []
 created_date: '2026-10-24 15:28'
-updated_date: '2026-10-24 23:31'
+updated_date: '2026-10-24 22:00'
 labels:
   - rust
   - build
@@ -65,3 +65,17 @@ flowchart LR
 - 文檔：plugin/skills/code-reality-tools/SKILL.md 發現規則與 remediation 同步。
 - 驗收：fixture e2e（完整 staging＋publication＋freshness verdict＋coverage）；mosaic_alpha 實樹 dogfood 留給對方升級後跑（跨 repo 主權——我方不動其 .code-reality）。
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-24 開工：mosaic fix-request 收信→診斷驗證→codex 設計討論（job-mvmjk64o，分類規則修正凍結進 Plan）→實作腿 agent_90129b86 派出（WT cr-19、TDD、attempt cr19-impl-1）。收線後：機械複驗→雙審→judge→post-build。
+
+2026-10-25 審查鏈：實作腿 8 檔+744/−103（scoped 12+14+43 綠、全量 55 binary/exit 0 主 session 獨立複跑）。雙審 NEEDS-FIX：fresh-eyes 8 findings（F1 windows(2) String sort 漏抓非相鄰重疊＝🟡、F2 depth-1 回歸釘缺、F3 AGENTS.md 過時、F4-F8 minor/nit）＋codex（F1 🔴 同根因但誤稱 from_config 同型、F2 🟡 掃描列舉失敗靜默 skip、F3 chmod 測試 root 依賴、五測試建議）。Judge 裁決：F1 採 fresh-eyes（rustc 實驗＋component-wise 序相鄰性質證明 from_config 無缺陷——只修 deep_discover sort，codex from_config 共修建議拒絕）；F2 改 Result 傳遞列舉錯誤（內容讀取失敗維持 skip）；R1-R6 修補批次已派（resume 原 impl 腿 attempt cr19-impl-2）；F7 40ms 量測＝修補後以 WT binary 對 mosaic 實樹（identity-cache off 唯讀）。codex review job-mvmlgdsu（WT ledger）；fresh-eyes agent_0c75aa26。
+
+2026-10-25 F7 量測（mosaic 實樹、identity-cache off 唯讀）：baseline v0.18.0 0.26/0.31/0.27s vs CR-19 WT binary 穩態 0.27-0.30s——深掃 delta 在噪訊內（冷路徑被 corpus 全量 hash 主導）；深層佈局真實樹上無可歸因 freshness 成本。附帶：CR-19 binary 對 mosaic freshness 正確判 stale（content-drift+doc-set-drift、無假 fresh）、深掃實際觸發（root/depth-1 零 manifest）。修補腿複驗：scoped 122 綠（主 session 獨立重跑）＋release build exit 0。
+
+Re-review round 1（codex job-mvmxay4r fresh session；resume 蹬 context 超窗修因重派）：F1/F2 RESOLVED、from_config 裁決覆核同意、六測試+三文件同步確認。新 🟡：排除子樹未在遍歷階段剪枝——exclude=[poc/] 下不可讀子目錄會炸整個掃描（治理外失敗）。R7 修補 round 2 已派（resume 續跑腿：遍歷前剪枝＋契約測試①②③＋SKILL 補句）。verdict NEEDS-FIX 待 R7 收斂。
+
+2026-10-25 終局：R7 修補＋re-review round 2 ACCEPT（job-mvmxv80n）——審查鏈收斂（雙審→judge→R1-R6→re-review 1 抓 R7→R7 修→re-review 2 ACCEPT）。Gates：全量 831 綠、fmt 觸碰面淨、clippy delta=0、F7 深掃增量噪訊內（mosaic 實樹唯讀）。實作面完成；等 user 授權 feature commit→merge→release→回信→Done flip。
+<!-- SECTION:NOTES:END -->
