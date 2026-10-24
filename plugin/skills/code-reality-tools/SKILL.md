@@ -56,10 +56,36 @@ overlay, diagnostic version/time and quiescence checks still apply.
 - Multi-root Cargo workspaces: `code-reality build --producer rust`
   resolves one root set (`rust_projects` in `.code-reality.toml` is
   authoritative; absence auto-discovers immediate-child `[workspace]`
-  manifests, ambiguity fails loud CR-RUST-ROOT-06/07), stages one
+  manifests — deep layouts since CR-19, see the next bullet — with
+  ambiguity failing loud CR-RUST-ROOT-06/07), stages one
   rust-analyzer scip per root with git-root-relative path
   normalization, pre-concats the partials into one Rust partial, and
   rejects cross-root DEF symbol collisions before the family merge
+- Root auto-discovery range (CR-19): when the repo root carries no
+  Cargo.toml AND no immediate child does, a bounded recursive scan
+  (depth ≤ 3, so `crates/<name>/` and `apps/<x>/src-tauri` layouts are
+  found) classifies manifests by pure TOML — `[workspace]` ⇒ root;
+  bare `[package]` under a `[workspace]` ancestor ⇒ member; bare
+  `[package]` with no ancestor ⇒ standalone root (workspace roots and
+  standalone packages may mix — real repos do). The scan skips
+  dot-dirs/`target`/`node_modules` and honors the profile `exclude`
+  table (excluded paths contribute no candidates — also for the
+  config-mode CR-RUST-ROOT-07 inventory gate, which scans the same
+  range; the repo-ROOT `[workspace]` included: a config that lists
+  other roots while a root workspace exists trips 07 naming the root
+  as `.`). Exclude entries are prefix matches, not globs — `poc/`
+  rules out the entire subtree under it; excluded subtrees are pruned
+  from the scan traversal (an unreadable excluded directory cannot
+  abort the scan — out of governance, out of the walk). Fail-loud
+  faces: invalid TOML ⇒ CR-RUST-ROOT-04; bare
+  package under only non-workspace manifests (no `[workspace]` can own
+  it) ⇒ CR-RUST-ROOT-06; nested `[workspace]` roots ⇒ CR-RUST-ROOT-03
+  overlap; a 4th-level manifest is out of range and never a candidate.
+  If discovery resolves NO root while the governed Rust corpus is
+  non-empty, the build fails before any rust-analyzer spawn (exit 2)
+  naming the file count and the `.code-reality.toml` `rust_projects`
+  remediation — instead of the legacy opaque rust-analyzer
+  "no projects" error from feeding the repo root to the producer
 - Regenerate by invoking the repo-pinned rust-analyzer binary by its
   full path. The `rust-analyzer` name on PATH is a rustup proxy that
   resolves the toolchain from the current working directory — calling

@@ -5,6 +5,15 @@
 //! `rust_projects::validate_authoritative` (cargo-metadata workspace-root
 //! check, build staging only). Error codes CR-RUST-ROOT-01..08 are a
 //! frozen contract (EP TC-8 mapping table).
+//!
+//! CR-19 extends the auto face with bounded deep-layout discovery
+//! (crates/<name>/, apps/<x>/src-tauri): when the repo root carries no
+//! Cargo.toml AND the immediate-child scan finds zero candidates, a
+//! depth <= 3 recursive scan classifies manifests — `[workspace]` =>
+//! root, bare `[package]` under a workspace ancestor => member, bare
+//! `[package]` with no ancestor => standalone root (the mosaic_alpha
+//! oracle mixes both kinds). Depth-1 candidate behavior is
+//! byte-unchanged.
 
 use code_reality::profile::{load_profile, PROFILE_FILENAME};
 use code_reality::rust_projects::resolve_structural;
@@ -312,7 +321,11 @@ fn auto_vs_config_mode_differs() {
     write(tmp.path(), "rust/Cargo.toml", workspace_manifest());
     write(tmp.path(), "dutymail/Cargo.toml", workspace_manifest());
     let auto = resolve_structural(tmp.path(), None).unwrap();
-    write(tmp.path(), PROFILE_FILENAME, &profile_toml(&["rust", "dutymail"]));
+    write(
+        tmp.path(),
+        PROFILE_FILENAME,
+        &profile_toml(&["rust", "dutymail"]),
+    );
     let profile = load_profile(tmp.path()).unwrap().unwrap();
     let config = resolve_structural(tmp.path(), Some(&profile)).unwrap();
     assert_eq!(auto.roots, config.roots, "same fixture ⇒ same roots");
@@ -355,8 +368,358 @@ fn validate_authoritative_rejects_member_as_root_05() {
         roots: vec!["parent/child".to_string()],
         mode: "config",
     };
-    let err = code_reality::rust_projects::validate_authoritative(tmp.path(), &projects)
-        .unwrap_err();
+    let err =
+        code_reality::rust_projects::validate_authoritative(tmp.path(), &projects).unwrap_err();
     assert!(err.contains("CR-RUST-ROOT-05"), "{err}");
     assert!(err.contains("workspace_root="), "{err}");
+}
+
+// --- CR-19: bounded deep-layout auto discovery ---
+
+#[test]
+fn auto_deep_two_level_workspace_layout_multi_root() {
+    // crates/<name>/ (cargo book convention, no repo-root manifest): every
+    // deep [workspace] manifest is a root — the mosaic_alpha shape that
+    // used to fall through to the "." fallback and die in rust-analyzer
+    // with "no projects".
+    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "crates/beta/Cargo.toml", workspace_manifest());
+    write(tmp.path(), "crates/alpha/Cargo.toml", workspace_manifest());
+    let roots = resolve_auto(tmp.path()).unwrap();
+    assert_eq!(
+        roots,
+        vec!["crates/alpha".to_string(), "crates/beta".to_string()]
+    );
+}
+
+#[test]
+fn auto_deep_third_level_workspace_discovered() {
+    // apps/<x>/src-tauri = depth 3 — inside the cap.
+    let tmp = tempfile::tempdir().unwrap();
+    write(
+        tmp.path(),
+        "apps/shell/src-tauri/Cargo.toml",
+        workspace_manifest(),
+    );
+    let roots = resolve_auto(tmp.path()).unwrap();
+    assert_eq!(roots, vec!["apps/shell/src-tauri".to_string()]);
+}
+
+#[test]
+fn auto_deep_mixed_kinds_accepted() {
+    // The mosaic oracle shape: [workspace] roots AND standalone
+    // [package] roots in one discovery run — the strict depth-1 "mixed
+    // candidates" 06 would deadlock real consumers, so the deep face
+    // accepts mixed root kinds (crates/mosaic-strategy-kc and
+    // apps/shell_tauri/src-tauri carry no [workspace]).
+    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "crates/ws/Cargo.toml", workspace_manifest());
+    write(tmp.path(), "crates/pkg/Cargo.toml", package_manifest());
+    write(
+        tmp.path(),
+        "apps/shell/src-tauri/Cargo.toml",
+        package_manifest(),
+    );
+    let roots = resolve_auto(tmp.path()).unwrap();
+    assert_eq!(
+        roots,
+        vec![
+            "apps/shell/src-tauri".to_string(),
+            "crates/pkg".to_string(),
+            "crates/ws".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn auto_deep_package_under_workspace_is_member_not_root() {
+    let tmp = tempfile::tempdir().unwrap();
+    write(
+        tmp.path(),
+        "crates/ws/Cargo.toml",
+        "[workspace]\nmembers = [\"inner\"]\n",
+    );
+    write(tmp.path(), "crates/ws/inner/Cargo.toml", package_manifest());
+    let roots = resolve_auto(tmp.path()).unwrap();
+    assert_eq!(roots, vec!["crates/ws".to_string()]);
+}
+
+#[test]
+fn auto_deep_package_under_bare_package_ambiguous_06() {
+    // A bare [package] whose ancestor chain holds ONLY non-workspace
+    // manifests: no [workspace] can own it as a member (a bare package
+    // owns nothing), while treating it as a root would overlap its
+    // package ancestor — ownership is ambiguous, fail loud 06 instead of
+    // silently classifying it as a member nobody covers.
+    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "a/pkg/Cargo.toml", package_manifest());
+    write(tmp.path(), "a/pkg/sub/Cargo.toml", package_manifest());
+    let err = resolve_auto(tmp.path()).unwrap_err();
+    assert!(err.contains("CR-RUST-ROOT-06"), "{err}");
+    assert!(err.contains("a/pkg/sub"), "{err}");
+}
+
+#[test]
+fn auto_deep_nested_workspaces_overlap_03() {
+    // [workspace] ⇒ root unconditionally: a workspace nested inside
+    // another workspace yields two ancestor/descendant roots — the
+    // overlap the 03 gate exists for.
+    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "crates/outer/Cargo.toml", workspace_manifest());
+    write(
+        tmp.path(),
+        "crates/outer/nested/Cargo.toml",
+        workspace_manifest(),
+    );
+    let err = resolve_auto(tmp.path()).unwrap_err();
+    assert!(err.contains("CR-RUST-ROOT-03"), "{err}");
+    assert!(err.contains("crates/outer"), "{err}");
+}
+
+#[test]
+fn auto_deep_invalid_toml_fails_loud_04() {
+    // Depth-1 semantics carried into the deep scan: a readable but
+    // invalid manifest is a hard 04 — a scan failure must never fold
+    // into a silent zero-candidate answer.
+    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "crates/good/Cargo.toml", workspace_manifest());
+    write(tmp.path(), "crates/bad/Cargo.toml", "not [valid toml");
+    let err = resolve_auto(tmp.path()).unwrap_err();
+    assert!(err.contains("CR-RUST-ROOT-04"), "{err}");
+    assert!(err.contains("crates/bad"), "{err}");
+}
+
+#[test]
+fn auto_deep_profile_excluded_manifest_not_candidate() {
+    // Profile exclude constrains the discovery range: a deep workspace
+    // under an excluded path contributes no candidate (poc/ trees stay
+    // out of governance without any global vendor hardcoding).
+    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "crates/ws/Cargo.toml", workspace_manifest());
+    write(tmp.path(), "poc/deep/Cargo.toml", workspace_manifest());
+    write(tmp.path(), PROFILE_FILENAME, "exclude = [\"poc/\"]\n");
+    let profile = load_profile(tmp.path()).unwrap().unwrap();
+    let roots = resolve_structural(tmp.path(), Some(&profile))
+        .unwrap()
+        .roots;
+    assert_eq!(roots, vec!["crates/ws".to_string()]);
+}
+
+#[test]
+fn auto_deep_skips_target_node_modules_and_dot_dirs() {
+    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "target/pkg/Cargo.toml", workspace_manifest());
+    write(
+        tmp.path(),
+        "node_modules/x/Cargo.toml",
+        workspace_manifest(),
+    );
+    write(tmp.path(), ".hidden/y/Cargo.toml", workspace_manifest());
+    let roots = resolve_auto(tmp.path()).unwrap();
+    assert!(roots.is_empty(), "skip list: {roots:?}");
+}
+
+#[test]
+fn auto_deep_fourth_level_manifest_not_collected() {
+    // Depth cap 3: a/b/c/d is the 4th level — out of range, never a
+    // candidate (paired with auto_deep_third_level_workspace_discovered
+    // above, which pins the inclusive boundary).
+    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "a/b/c/d/Cargo.toml", workspace_manifest());
+    let roots = resolve_auto(tmp.path()).unwrap();
+    assert!(roots.is_empty(), "depth cap: {roots:?}");
+}
+
+#[test]
+fn auto_deep_unreadable_manifest_skipped() {
+    // Frozen deep-scan rule: a manifest that cannot be READ is skipped
+    // (only readable-but-invalid TOML is a fatal 04) — unlike the
+    // depth-1 face, where a candidate manifest's read error is fatal.
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "crates/ws/Cargo.toml", workspace_manifest());
+    write(tmp.path(), "crates/locked/Cargo.toml", workspace_manifest());
+    let locked = tmp.path().join("crates/locked/Cargo.toml");
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+    // Guard the fixture itself: a privileged runner (root) reads
+    // through 0o000 and the test would pin nothing.
+    if std::fs::read_to_string(&locked).is_ok() {
+        eprintln!("skip: privileged runner (chmod 000 still readable)");
+        return;
+    }
+    let roots = resolve_auto(tmp.path()).unwrap();
+    assert_eq!(roots, vec!["crates/ws".to_string()]);
+    let _ = std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o644));
+}
+
+// --- CR-19: config face over deep layouts (07 inventory alignment) ---
+
+#[test]
+fn config_deep_roots_resolve() {
+    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "crates/alpha/Cargo.toml", workspace_manifest());
+    let roots = resolve_with_profile(tmp.path(), &["crates/alpha"]).unwrap();
+    assert_eq!(roots, vec!["crates/alpha".to_string()]);
+}
+
+#[test]
+fn config_unlisted_deep_workspace_rejected_07() {
+    // The 07 inventory gate scans the SAME deep range as the auto face:
+    // a deep sibling [workspace] missing from rust_projects is a
+    // coverage hole, not silently ignored.
+    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "crates/alpha/Cargo.toml", workspace_manifest());
+    write(tmp.path(), "crates/beta/Cargo.toml", workspace_manifest());
+    let err = resolve_with_profile(tmp.path(), &["crates/alpha"]).unwrap_err();
+    assert!(err.contains("CR-RUST-ROOT-07"), "{err}");
+    assert!(err.contains("crates/beta"), "{err}");
+}
+
+#[test]
+fn config_deep_members_do_not_trip_07() {
+    // The 07 gate keys on the [workspace] table — bare member manifests
+    // under a CONFIGURED deep root are expected layout, not holes.
+    let tmp = tempfile::tempdir().unwrap();
+    write(
+        tmp.path(),
+        "crates/ws/Cargo.toml",
+        "[workspace]\nmembers = [\"inner\"]\n",
+    );
+    write(tmp.path(), "crates/ws/inner/Cargo.toml", package_manifest());
+    let roots = resolve_with_profile(tmp.path(), &["crates/ws"]).unwrap();
+    assert_eq!(roots, vec!["crates/ws".to_string()]);
+}
+
+// --- CR-19 review batch: overlap-gate completeness, scan fail-loud, pins ---
+
+#[test]
+fn auto_deep_overlap_gate_non_adjacent_pair_caught_03() {
+    // String byte order puts "crates/a-c" ('-' = 0x2D) BETWEEN the
+    // ancestor "crates/a" and the descendant "crates/a/sub" ('/' =
+    // 0x2F), so a windows(2) gate over byte-sorted roots never pairs
+    // them — the overlap must be caught under component-wise Path
+    // order, where an ancestor is always adjacent to its minimal
+    // descendant.
+    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "crates/a/Cargo.toml", workspace_manifest());
+    write(tmp.path(), "crates/a-b/Cargo.toml", workspace_manifest());
+    write(tmp.path(), "crates/a/sub/Cargo.toml", workspace_manifest());
+    let err = resolve_auto(tmp.path()).unwrap_err();
+    assert!(err.contains("CR-RUST-ROOT-03"), "{err}");
+    assert!(err.contains("crates/a"), "{err}");
+}
+
+#[test]
+fn auto_deep_prefix_similar_disjoint_roots_accepted() {
+    // The flip side of the overlap gate: "crates/a-b" shares a string
+    // prefix with "crates/a" but is NOT a path descendant — both
+    // standalone roots must survive (the Path-order gate must not
+    // over-reject prefix-similar names).
+    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "crates/a/Cargo.toml", package_manifest());
+    write(tmp.path(), "crates/a-b/Cargo.toml", package_manifest());
+    let roots = resolve_auto(tmp.path()).unwrap();
+    assert_eq!(
+        roots,
+        vec!["crates/a".to_string(), "crates/a-b".to_string()]
+    );
+}
+
+#[test]
+fn auto_deep_unreadable_directory_fails_loud() {
+    // Enumeration failure is NOT the frozen "unreadable manifest" skip:
+    // a directory the scan cannot LIST means discovery is broken, not
+    // empty — fail loud with the path instead of silently returning
+    // zero candidates (the exact silent-zero shape the review banned).
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "crates/ws/Cargo.toml", workspace_manifest());
+    write(tmp.path(), "crates/locked/Cargo.toml", workspace_manifest());
+    let locked = tmp.path().join("crates/locked");
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+    // Guard the fixture: a privileged runner (root) lists 0o000 dirs
+    // and the test would pin nothing.
+    if std::fs::read_dir(&locked).is_ok() {
+        eprintln!("skip: privileged runner (chmod 000 dir still listable)");
+        return;
+    }
+    let err = resolve_auto(tmp.path()).unwrap_err();
+    assert!(err.contains("crates/locked"), "path context: {err}");
+    let _ = std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755));
+}
+
+#[test]
+fn auto_deep_excluded_unreadable_subtree_pruned_not_fatal() {
+    // Exclusion = out of governance: a profile-excluded subtree the
+    // scan could not LIST anyway (permission denied) must not abort
+    // discovery — the traversal prunes excluded directories before
+    // descending, so an ungoverned subtree's permission errors never
+    // reach the fail-loud enumeration path. The mirror of
+    // auto_deep_unreadable_directory_fails_loud above, which pins the
+    // NOT-excluded direction.
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "crates/ws/Cargo.toml", workspace_manifest());
+    write(tmp.path(), "poc/private/Cargo.toml", workspace_manifest());
+    let locked = tmp.path().join("poc");
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+    // Guard the fixture: a privileged runner (root) lists 0o000 dirs
+    // and the test would pin nothing.
+    if std::fs::read_dir(&locked).is_ok() {
+        eprintln!("skip: privileged runner (chmod 000 dir still listable)");
+        return;
+    }
+    write(tmp.path(), PROFILE_FILENAME, "exclude = [\"poc/\"]\n");
+    let profile = load_profile(tmp.path()).unwrap().unwrap();
+    let roots = resolve_structural(tmp.path(), Some(&profile))
+        .unwrap()
+        .roots;
+    assert_eq!(roots, vec!["crates/ws".to_string()]);
+    let _ = std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755));
+}
+
+#[test]
+fn auto_depth1_candidate_wins_over_deep_workspaces() {
+    // Trigger-pin: the deep scan only runs when the immediate-child
+    // scan finds ZERO candidates — a depth-1 candidate keeps the
+    // depth-1 face byte-unchanged and the deep [workspace] never
+    // participates (deep dead routes route to ROOT-09 remediation at
+    // the build face, per the frozen compatibility strategy).
+    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "only/Cargo.toml", package_manifest());
+    write(tmp.path(), "crates/deep/Cargo.toml", workspace_manifest());
+    let roots = resolve_auto(tmp.path()).unwrap();
+    assert_eq!(roots, vec!["only".to_string()]);
+}
+
+#[test]
+fn config_unlisted_root_workspace_rejected_07() {
+    // The deep-aligned 07 inventory scan also sees the repo-ROOT
+    // [workspace] manifest: a config that lists something else while a
+    // root workspace exists is a coverage hole (the message names the
+    // root as '.').
+    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "Cargo.toml", workspace_manifest());
+    write(tmp.path(), "sub/Cargo.toml", workspace_manifest());
+    let err = resolve_with_profile(tmp.path(), &["sub"]).unwrap_err();
+    assert!(err.contains("CR-RUST-ROOT-07"), "{err}");
+    assert!(err.contains("'.'"), "root named as '.': {err}");
+}
+
+#[test]
+fn config_excluded_deep_workspace_not_07() {
+    // Profile exclude constrains the 07 inventory to the same range as
+    // the auto face: a [workspace] under an excluded path is out of
+    // governance and must not trip the gate.
+    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "sub/Cargo.toml", workspace_manifest());
+    write(tmp.path(), "poc/deep/Cargo.toml", workspace_manifest());
+    write(
+        tmp.path(),
+        PROFILE_FILENAME,
+        "exclude = [\"poc/\"]\nrust_projects = [\"sub\"]\n",
+    );
+    let profile = load_profile(tmp.path()).unwrap().unwrap();
+    let roots = resolve_structural(tmp.path(), Some(&profile)).unwrap();
+    assert_eq!(roots.roots, vec!["sub".to_string()]);
 }

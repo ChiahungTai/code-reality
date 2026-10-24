@@ -284,8 +284,17 @@ tests are the sole gate face.
   face → spawn pyrefly-index / `rust-analyzer scip` (sibling bins,
   separate dists) → in-process graph_db build + ensure_indexes; the
   Rust leg resolves Cargo-workspace roots (`rust_projects` config
-  authoritative, conservative auto-discovery of immediate-child
-  `[workspace]` manifests, ambiguity fails loud CR-RUST-ROOT-06/07),
+  authoritative; auto-discovery otherwise — immediate-child
+  `[workspace]` manifests first, and when neither the repo root nor an
+  immediate child carries a manifest, a bounded deep scan: depth ≤ 3,
+  dot-dirs/`target`/`node_modules` skipped, profile `exclude`
+  constraining the range; `[workspace]` ⇒ root, standalone `[package]`
+  with no manifest ancestor ⇒ root candidate, `[package]` under a
+  `[workspace]` ancestor ⇒ member; CR-RUST-ROOT-06 ambiguity / 03
+  nested-root overlap fail loud, the CR-RUST-ROOT-07 inventory gate
+  scans the same deep range, and zero auto-discovered roots with a
+  non-empty governed rust corpus fails before any rust-analyzer spawn
+  with the `rust_projects` remediation),
   stages one partial per root with git-root-relative path
   normalization, pre-concats into one Rust partial, and gates
   cross-root DEF collisions (frozen TC-3) plus multi-root/config-mode

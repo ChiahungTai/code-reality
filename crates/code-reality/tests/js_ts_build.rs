@@ -316,7 +316,10 @@ fn s1_three_family_merge_is_ordered_and_deterministic() {
             ("src/a.mjs", "export const a = 1;\n"),
             // rich.scip's docs must exist on disk (normalize disk check);
             // CR-5: exactly those — the legacy src/lib.rs was an unindexed
-            // orphan that trips CR-RUST-ROOT-09 now.
+            // orphan that trips CR-RUST-ROOT-09 now. CR-19: the root
+            // workspace manifest keeps the rust leg off the A-guard
+            // error (governed rust with no discoverable root).
+            ("Cargo.toml", "[workspace]\nmembers = []\n"),
             ("crates/a.rs", "x"),
             ("crates/b.rs", "x"),
         ],

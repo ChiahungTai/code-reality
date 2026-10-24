@@ -94,8 +94,7 @@ impl Lab {
     fn downgrade_meta_algo_to_v1(&self) {
         let p = meta_path(&code_reality::engine::default_index_path(&self.repo).unwrap());
         let text = std::fs::read_to_string(&p).unwrap();
-        let v: serde_json::Value =
-            text.parse().expect("meta json");
+        let v: serde_json::Value = text.parse().expect("meta json");
         let mut v = v;
         v["identity_algo"] = serde_json::json!("sha256-v1");
         std::fs::write(&p, serde_json::to_string_pretty(&v).unwrap()).unwrap();
@@ -104,7 +103,12 @@ impl Lab {
         let p = meta_path(&code_reality::engine::default_index_path(&self.repo).unwrap());
         let text = std::fs::read_to_string(&p).unwrap();
         let mut v: serde_json::Value = text.parse().expect("meta json");
-        for k in ["source_identity", "identity_algo", "source_faces", "index_sha256"] {
+        for k in [
+            "source_identity",
+            "identity_algo",
+            "source_faces",
+            "index_sha256",
+        ] {
             v.as_object_mut().unwrap().remove(k);
         }
         std::fs::write(&p, serde_json::to_string_pretty(&v).unwrap()).unwrap();
@@ -135,7 +139,11 @@ fn tc4_cargo_lock_only_change_is_stale() {
         reasons.iter().any(|r| r == "content-drift"),
         "TC4-c: content-drift in {reasons:?}"
     );
-    assert_eq!(v["serves"], serde_json::json!("committed-baseline"), "TC4-c");
+    assert_eq!(
+        v["serves"],
+        serde_json::json!("committed-baseline"),
+        "TC4-c"
+    );
 }
 
 // --- TC-5: v2 content-addressing (same construction ⇒ same identity) ---
@@ -160,7 +168,11 @@ fn tc5_same_content_two_checkouts_same_identity() {
         id1["source_identity"], id2["source_identity"],
         "TC5-a: same content+topology in different checkouts ⇒ same identity"
     );
-    assert_eq!(id1["identity_algo"], serde_json::json!("sha256-v2"), "TC5-c: v2 algo stamped");
+    assert_eq!(
+        id1["identity_algo"],
+        serde_json::json!("sha256-v2"),
+        "TC5-c: v2 algo stamped"
+    );
 }
 
 #[test]
@@ -169,11 +181,7 @@ fn tc5d_config_cosmetic_edit_stays_fresh() {
     l.build();
     // Cosmetic-only config edit: roots/mode unchanged ⇒ identity must not
     // move (the topology descriptor carries the EFFECT of the config).
-    std::fs::write(
-        l.repo.join(".code-reality.toml"),
-        "# a cosmetic comment\n",
-    )
-    .unwrap();
+    std::fs::write(l.repo.join(".code-reality.toml"), "# a cosmetic comment\n").unwrap();
     let (code, v) = l.verdict();
     assert_eq!(code, 0, "TC5-d: cosmetic config edit stays fresh: {v:?}");
 }
@@ -280,9 +288,19 @@ fn tc10_cargo_without_rs_no_rust_face_and_no_identity_scope() {
         "TC10-a: no rust face without .rs sources: {faces:?}"
     );
     // Cargo edit does not move a rust-less repo's verdict.
-    std::fs::write(repo.join("Cargo.toml"), "[workspace]\nmembers = []\n# edit\n").unwrap();
-    let (code, v2) = (freshness(&repo, true).exit_code, verdict_json(&freshness(&repo, true)));
-    assert_eq!(code, 0, "TC10-c: cargo edit keeps a rust-less repo fresh: {v2:?}");
+    std::fs::write(
+        repo.join("Cargo.toml"),
+        "[workspace]\nmembers = []\n# edit\n",
+    )
+    .unwrap();
+    let (code, v2) = (
+        freshness(&repo, true).exit_code,
+        verdict_json(&freshness(&repo, true)),
+    );
+    assert_eq!(
+        code, 0,
+        "TC10-c: cargo edit keeps a rust-less repo fresh: {v2:?}"
+    );
 }
 
 // ================= EP DB-100 5.3 judge fixes =================
@@ -425,8 +443,7 @@ fn p1a_explicit_python_identity_equals_pure_python_scope() {
     let bindir_b = tempfile::tempdir().unwrap();
     support::install_ts_deriving_fake(bindir_b.path());
     support::install_py_deriving_fake(bindir_b.path());
-    build_repo(&repo_b, None, &[bindir_b.path().to_path_buf()])
-        .expect("pure python build");
+    build_repo(&repo_b, None, &[bindir_b.path().to_path_buf()]).expect("pure python build");
     let meta_b: serde_json::Value = std::fs::read_to_string(meta_path(
         &code_reality::engine::default_index_path(&repo_b).unwrap(),
     ))
@@ -450,7 +467,10 @@ fn scip_one(rel: &str, symbol: &str) -> Vec<u8> {
     let mut tool = ToolInfo::new();
     tool.name = "rust-analyzer".to_string();
     tool.version = "1.96.0-test".to_string();
-    tool.arguments = vec!["scip".to_string(), "file:///test-workspace-root".to_string()];
+    tool.arguments = vec![
+        "scip".to_string(),
+        "file:///test-workspace-root".to_string(),
+    ];
     let mut meta = Metadata::new();
     meta.tool_info = protobuf::MessageField::some(tool);
     meta.project_root = "file:///test-workspace-root".to_string();
@@ -488,7 +508,11 @@ fn ws_lab(root_names: [&str; 2]) -> WsLab {
         let p = repo.join(name);
         std::fs::create_dir_all(p.join("crates")).unwrap();
         std::fs::write(p.join("Cargo.toml"), manifest).unwrap();
-        let body = if i == 0 { "pub fn wx() {}\n" } else { "pub fn wy() {}\n" };
+        let body = if i == 0 {
+            "pub fn wx() {}\n"
+        } else {
+            "pub fn wy() {}\n"
+        };
         std::fs::write(p.join("crates/w.rs"), body).unwrap();
     }
     support::git_init(&repo);
@@ -498,8 +522,16 @@ fn ws_lab(root_names: [&str; 2]) -> WsLab {
     let scipdir = tempfile::tempdir().unwrap();
     let x = scipdir.path().join("x.scip");
     let y = scipdir.path().join("y.scip");
-    std::fs::write(&x, scip_one("crates/w.rs", "rust-analyzer cargo w/1.0.0 wx().")).unwrap();
-    std::fs::write(&y, scip_one("crates/w.rs", "rust-analyzer cargo w/1.0.0 wy().")).unwrap();
+    std::fs::write(
+        &x,
+        scip_one("crates/w.rs", "rust-analyzer cargo w/1.0.0 wx()."),
+    )
+    .unwrap();
+    std::fs::write(
+        &y,
+        scip_one("crates/w.rs", "rust-analyzer cargo w/1.0.0 wy()."),
+    )
+    .unwrap();
     let script = format!(
         "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'fake-ra 1.96.0-test'; exit 0; fi\ndir=\"$2\"\nout=''; prev=''; for a in \"$@\"; do if [ \"$prev\" = \"--output\" ]; then out=\"$a\"; fi; prev=\"$a\"; done\ncase \"$dir\" in\n  */{n0}) cp '{xp}' \"$out\" ;;\n  */{n1}) cp '{yp}' \"$out\" ;;\n  *) exit 1 ;;\nesac\n",
         n0 = root_names[0],
@@ -603,20 +635,94 @@ fn p3e_comma_root_names_keep_distinct_topologies() {
     // indexed keys under the stable sorted-root order
     let t1 = topo1.as_array().unwrap();
     assert!(
-        t1.iter().any(|kv| kv == &serde_json::json!(["root[0]", "a,b"])),
+        t1.iter()
+            .any(|kv| kv == &serde_json::json!(["root[0]", "a,b"])),
         "{topo1}"
     );
     assert!(
-        t1.iter().any(|kv| kv == &serde_json::json!(["root[1]", "c"])),
+        t1.iter()
+            .any(|kv| kv == &serde_json::json!(["root[1]", "c"])),
         "{topo1}"
     );
     let t2 = topo2.as_array().unwrap();
     assert!(
-        t2.iter().any(|kv| kv == &serde_json::json!(["root[0]", "a"])),
+        t2.iter()
+            .any(|kv| kv == &serde_json::json!(["root[0]", "a"])),
         "{topo2}"
     );
     assert!(
-        t2.iter().any(|kv| kv == &serde_json::json!(["root[1]", "b,c"])),
+        t2.iter()
+            .any(|kv| kv == &serde_json::json!(["root[1]", "b,c"])),
         "{topo2}"
+    );
+}
+
+/// CR-19: deep-layout roots (crates/<n>/, apps/<x>/src-tauri — the
+/// mosaic_alpha shape) enter the topology descriptor through the same
+/// resolver the stamp face uses, and a deep workspace APPEARING after
+/// the stamp flips the verdict stale (identity v2 carries the topology:
+/// deep root add/remove must never read fresh).
+#[test]
+fn cr19_deep_roots_stamp_topology_and_appearance_stales() {
+    let l = ws_lab(["crates/x", "apps/shell/src-tauri"]);
+    l.build();
+    let topo = l.meta()["rust_topology"].clone();
+    let t = topo.as_array().unwrap();
+    assert!(
+        t.iter()
+            .any(|kv| kv == &serde_json::json!(["root[0]", "apps/shell/src-tauri"])),
+        "deep root[0] (resolver-sorted): {topo}"
+    );
+    assert!(
+        t.iter()
+            .any(|kv| kv == &serde_json::json!(["root[1]", "crates/x"])),
+        "deep root[1]: {topo}"
+    );
+    assert!(
+        t.iter()
+            .any(|kv| kv == &serde_json::json!(["mode", "auto"])),
+        "auto mode truth: {topo}"
+    );
+    let (code, v) = l.verdict();
+    assert_eq!(code, 0, "fresh after deep-layout build: {v:?}");
+
+    // A NEW deep [workspace] (empty members, no .rs): the doc sets are
+    // unchanged — only the root set / rust inputs move. The topology
+    // change must still stale the slot.
+    std::fs::create_dir_all(l.repo.join("crates/z")).unwrap();
+    std::fs::write(
+        l.repo.join("crates/z/Cargo.toml"),
+        "[workspace]\nmembers = []\n",
+    )
+    .unwrap();
+    let (code, v) = l.verdict();
+    assert_eq!(code, 1, "new deep root must stale the slot: {v:?}");
+    let reasons = v["stale_reasons"].as_array().unwrap();
+    assert!(
+        reasons.iter().any(|r| r == "content-drift"),
+        "identity/topology drift surfaces as content-drift: {reasons:?}"
+    );
+}
+
+/// CR-19 review batch: the REMOVAL direction — a deep workspace root
+/// disappearing after the stamp (manifest + sources gone) must flip the
+/// verdict stale too; the topology descriptor may never silently absorb
+/// a vanished root.
+#[test]
+fn cr19_deep_root_removal_flips_stale() {
+    let l = ws_lab(["crates/x", "apps/shell/src-tauri"]);
+    l.build();
+    let (code, v) = l.verdict();
+    assert_eq!(code, 0, "fresh after deep-layout build: {v:?}");
+
+    std::fs::remove_dir_all(l.repo.join("crates/x")).unwrap();
+    let (code, v) = l.verdict();
+    assert_eq!(code, 1, "removed deep root must stale the slot: {v:?}");
+    let reasons = v["stale_reasons"].as_array().unwrap();
+    assert!(
+        reasons
+            .iter()
+            .any(|r| r == "content-drift" || r == "doc-set-drift"),
+        "vanished root moves identity and/or doc sets: {reasons:?}"
     );
 }

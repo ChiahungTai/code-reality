@@ -402,9 +402,8 @@ fn stage_rust(
         let json = serde_json::json!({
             "cargo": {"features": features, "noDefaultFeatures": false}
         });
-        std::fs::write(&config_path, json.to_string()).map_err(|e| {
-            BuildError::Env(format!("寫 {} 失敗：{e}", config_path.display()))
-        })?;
+        std::fs::write(&config_path, json.to_string())
+            .map_err(|e| BuildError::Env(format!("寫 {} 失敗：{e}", config_path.display())))?;
         cmd.arg("--config-path").arg(&config_path);
     }
     cmd.arg("--output").arg(part).current_dir(repo);
@@ -483,11 +482,7 @@ fn validate_root_features(
     if unknown.is_empty() {
         return Ok(());
     }
-    let candidates: Vec<String> = universe
-        .iter()
-        .take(5)
-        .map(|s| format!("'{s}'"))
-        .collect();
+    let candidates: Vec<String> = universe.iter().take(5).map(|s| format!("'{s}'")).collect();
     let candidate_face = if candidates.is_empty() {
         "（無）".to_string()
     } else {
@@ -537,9 +532,13 @@ fn stage_rust_multi(
         .map_err(|e| BuildError::Env(format!("stage dir 建立失敗：{e}")))?;
     let rp = crate::rust_projects::resolve_structural(repo, profile).map_err(BuildError::Env)?;
     crate::rust_projects::validate_authoritative(repo, &rp).map_err(BuildError::Env)?;
-    let roots_list: Vec<String> = if rp.roots.is_empty() {
-        // Frozen Q6 legacy-parity fallback: no manifest anywhere ⇒ the
-        // whole repo is the single "." root (current behavior byte-shape).
+    let roots_empty = rp.roots.is_empty();
+    let roots_list: Vec<String> = if roots_empty {
+        // Frozen Q6 legacy-parity fallback: no candidate manifest within
+        // the discovery range (CR-19: root manifest + depth-1 + bounded
+        // deep scan all empty) ⇒ the whole repo is the single "." root.
+        // The CR-19 A guard below vetoes the non-empty-governed corner
+        // before any rust-analyzer spawn.
         vec![".".to_string()]
     } else {
         rp.roots
@@ -593,6 +592,21 @@ fn stage_rust_multi(
     // operator.
     if governed.is_empty() {
         return Ok(RsProduceOutcome::SkippedByProfile);
+    }
+    // CR-19 A guard: empty auto-discovered roots with a NON-empty
+    // governed corpus would fall back to the Q6 "." root and feed the
+    // repo ROOT itself to rust-analyzer — which dies on manifest-less
+    // roots with the opaque "no projects" (exit 2). Fail loud with the
+    // corpus size and the rust_projects remediation BEFORE any
+    // rust-analyzer spawn. A root manifest cannot coexist with empty
+    // roots (the resolver's root-manifest branch answers ["."]), so the
+    // explicit absence check below is defense-in-depth against future
+    // resolver changes, not a reachable branch today.
+    if roots_empty && !repo.join("Cargo.toml").is_file() {
+        return Err(BuildError::Env(format!(
+            "rust workspace root 解析為空：governed Rust 語料存在（{} 檔）但自動偵測（repo 根目錄無 Cargo.toml、深度 ≤3 掃描略過 dot 目錄／target／node_modules、受 profile exclude 約束）找不到任何 workspace root——legacy fallback 會把 repo 根目錄餵給 rust-analyzer，得到不可理解的 no projects 失敗。修法：在 .code-reality.toml 加入 rust_projects = [\"<repo 相對目錄>\", ...] 明確宣告各 workspace root，或將 workspace manifest 移入掃描範圍",
+            governed.len()
+        )));
     }
     // Orphan coverage (EP 5.3 P1-C): in the fatal-gate modes a governed
     // `.rs` that falls under NO resolved root would silently escape both

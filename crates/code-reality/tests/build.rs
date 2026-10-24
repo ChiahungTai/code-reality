@@ -315,7 +315,16 @@ fn t4_python_leg_e2e_and_idempotent_rerun() {
 #[test]
 fn t5_rust_empty_index_guard() {
     let t = tempfile::tempdir().unwrap();
-    let repo = mkrepo(&t, &[("src/lib.rs", "pub fn f() {}\n")]);
+    // CR-19: the fixture carries a root workspace manifest — a governed
+    // rust corpus with NO discoverable root is now the A-guard error,
+    // not the legacy "." fallback this test used to ride.
+    let repo = mkrepo(
+        &t,
+        &[
+            ("Cargo.toml", "[workspace]\nmembers = []\n"),
+            ("src/lib.rs", "pub fn f() {}\n"),
+        ],
+    );
     let bindir = tempfile::tempdir().unwrap();
     fake_rust_analyzer(bindir.path(), true);
     let roots = vec![bindir.path().to_path_buf()];
@@ -336,10 +345,12 @@ fn t6_rust_leg_e2e() {
     // — normalize resolves every document to a real repo file and the
     // exact-equality gate sees a matched corpus. (The legacy src/lib.rs
     // was an unindexed orphan that only the pre-CR-5 gateless build
-    // tolerated.)
+    // tolerated.) CR-19: the root workspace manifest keeps the fixture
+    // off the A-guard error (governed rust with no discoverable root).
     let repo = mkrepo(
         &t,
         &[
+            ("Cargo.toml", "[workspace]\nmembers = []\n"),
             ("crates/a.rs", "x"),
             ("crates/b.rs", "x"),
         ],
@@ -376,6 +387,9 @@ fn t7_mixed_repo_unified_graph_concat() {
             // rich.scip's docs must exist on disk (normalize disk check);
             // CR-5: exactly those — an extra unindexed .rs would trip
             // CR-RUST-ROOT-09 (the legacy src/lib.rs was such an orphan).
+            // CR-19: the root workspace manifest keeps the rust leg off
+            // the A-guard error.
+            ("Cargo.toml", "[workspace]\nmembers = []\n"),
             ("crates/a.rs", "x"),
             ("crates/b.rs", "x"),
         ],
@@ -432,9 +446,17 @@ fn t9_child_failure_maps_env_with_stderr_and_rust_hint() {
         matches!(err, BuildError::Env(ref m) if m.contains("boom-child-stderr")),
         "{err:?}"
     );
-    // rust leg: bin missing → hint mentions rustup (SM-14)
+    // rust leg: bin missing → hint mentions rustup (SM-14). CR-19: the
+    // root workspace manifest keeps this on the missing-bin path — a
+    // governed corpus with no discoverable root hits the A guard first.
     let t2 = tempfile::tempdir().unwrap();
-    let repo2 = mkrepo(&t2, &[("src/lib.rs", "pub fn f() {}\n")]);
+    let repo2 = mkrepo(
+        &t2,
+        &[
+            ("Cargo.toml", "[workspace]\nmembers = []\n"),
+            ("src/lib.rs", "pub fn f() {}\n"),
+        ],
+    );
     let err2 = build_repo(&repo2, None, &roots).unwrap_err();
     assert!(
         matches!(err2, BuildError::Env(ref m) if m.contains("rustup component add rust-analyzer")),
@@ -947,9 +969,17 @@ fn t18_false_stale_warns_once_no_loop() {
     // Disk-vs-index alignment per the EP fixture spec: rich.scip's docs
     // are crates/a.rs + crates/b.rs, so the repo carries exactly those
     // plus one extra disk file the fake never indexes → persistent
-    // missing=1 (the false-stale shape).
+    // missing=1 (the false-stale shape). CR-19: the root workspace
+    // manifest keeps the fixture off the A-guard error.
     let t = tempfile::tempdir().unwrap();
-    let repo = mkrepo(&t, &[("crates/a.rs", "x"), ("crates/b.rs", "x")]);
+    let repo = mkrepo(
+        &t,
+        &[
+            ("Cargo.toml", "[workspace]\nmembers = []\n"),
+            ("crates/a.rs", "x"),
+            ("crates/b.rs", "x"),
+        ],
+    );
     git_init(&repo);
     let bindir = tempfile::tempdir().unwrap();
     let counter = bindir.path().join("calls");

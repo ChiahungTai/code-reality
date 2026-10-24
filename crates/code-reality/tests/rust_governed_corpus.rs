@@ -38,7 +38,10 @@ fn scip_bytes(docs: &[(&str, &str)]) -> Vec<u8> {
     let mut tool = ToolInfo::new();
     tool.name = "rust-analyzer".to_string();
     tool.version = "1.96.0-test".to_string();
-    tool.arguments = vec!["scip".to_string(), "file:///test-workspace-root".to_string()];
+    tool.arguments = vec![
+        "scip".to_string(),
+        "file:///test-workspace-root".to_string(),
+    ];
     let mut meta = Metadata::new();
     meta.tool_info = protobuf::MessageField::some(tool);
     meta.project_root = "file:///test-workspace-root".to_string();
@@ -325,6 +328,65 @@ fn s5_rust_corpus_fully_excluded_skips_leg_converges_empty() {
     );
 }
 
+// ---------- CR-19: empty auto roots + non-empty governed rust ----------
+
+/// CR-19 A guard: deep auto discovery resolved NO workspace root while
+/// the governed rust corpus is non-empty — the Q6 fallback would feed
+/// the repo ROOT to rust-analyzer, which dies with the opaque "no
+/// projects" (exit 2). The guard fails loud BEFORE any rust-analyzer
+/// spawn with the governed file count and the rust_projects
+/// remediation.
+#[test]
+fn cr19_a_guard_empty_roots_governed_rust_fails_loud() {
+    let t = tempfile::tempdir().unwrap();
+    let repo = t.path().join("repo");
+    // A mosaic-like tree with every manifest stripped: governed .rs
+    // exist, no Cargo.toml anywhere in the discovery range (root,
+    // depth-1 and depth <= 3 all empty).
+    write(&repo, "crates/x/src/lib.rs", "pub fn x() {}\n");
+    write(&repo, "apps/y/src/main.rs", "fn main() {}\n");
+    write(&repo, "app.py", "x = 1\n");
+    support::git_init(&repo);
+    let bindir = tempfile::tempdir().unwrap();
+    support::install_ts_deriving_fake(bindir.path());
+    support::install_py_deriving_fake(bindir.path());
+    // Would emit rich.scip if spawned — the guard must fire first.
+    install_rust_rich_fake(bindir.path());
+    let roots = vec![bindir.path().to_path_buf()];
+    match build_repo(&repo, None, &roots) {
+        Ok(rep) => panic!(
+            "no-root governed rust must fail, not build: {:?}",
+            rep.notes
+        ),
+        Err(BuildError::Env(m)) => {
+            assert!(m.contains("rust_projects"), "remediation: {m}");
+            assert!(m.contains("workspace root"), "cause: {m}");
+            assert!(m.contains("2 檔"), "governed rust count: {m}");
+            assert!(m.contains(".code-reality.toml"), "config path: {m}");
+        }
+        Err(e) => panic!("unexpected error family: {e:?}"),
+    }
+}
+
+/// CR-19 ordering pin: the governed-empty skip fires BEFORE the A guard
+/// — a manifest-less deep layout whose rust corpus is entirely excluded
+/// keeps the SkippedByProfile terminal (frozen Q6/empty-convergence),
+/// never the A-guard error.
+#[test]
+fn cr19_governed_empty_deep_layout_keeps_skip() {
+    let t = tempfile::tempdir().unwrap();
+    let repo = t.path().join("repo");
+    write(&repo, "crates/x/src/lib.rs", "pub fn x() {}\n");
+    write(&repo, ".code-reality.toml", "exclude = [\"crates/\"]\n");
+    support::git_init(&repo);
+    let bindir = tempfile::tempdir().unwrap();
+    install_rust_rich_fake(bindir.path());
+    let roots = vec![bindir.path().to_path_buf()];
+    let rep = build_repo(&repo, None, &roots)
+        .expect("empty governed corpus skips the rust leg, no A guard");
+    assert_eq!(rep.face, "empty(profile-excluded)", "{:?}", rep.notes);
+}
+
 // ---------- S3: stamp-certification failure carries the doc diff ----------
 
 /// Python-only lab whose fake pyrefly-index misses one governed file —
@@ -346,8 +408,11 @@ fn s3_stamp_failure_reports_doc_diff_notes() {
     support::install_py_deriving_fake(bindir.path());
     let scipdir = tempfile::tempdir().unwrap();
     let partial = scipdir.path().join("partial.scip");
-    std::fs::write(&partial, scip_bytes(&[("app.py", "pyrefly python proj 0.1.0 `m`/app")]))
-        .unwrap();
+    std::fs::write(
+        &partial,
+        scip_bytes(&[("app.py", "pyrefly python proj 0.1.0 `m`/app")]),
+    )
+    .unwrap();
     // static pyrefly-index fake: emits ONLY app.py (helper.py missed)
     support::fake_bin(
         bindir.path(),
@@ -381,9 +446,7 @@ fn s3_stamp_failure_reports_doc_diff_notes() {
         rep.notes
     );
     assert!(
-        rep.notes
-            .iter()
-            .any(|n| n.contains("index−walk：0 筆")),
+        rep.notes.iter().any(|n| n.contains("index−walk：0 筆")),
         "index−walk is empty: {:?}",
         rep.notes
     );
