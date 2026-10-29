@@ -3,10 +3,10 @@ id: CR-21
 title: >-
   rust Type DEF 進 graph——ingest/query 雙軸分離（AIR-33 窄修正）＋cache schema bump（mosaic
   67 族 struct 幀收編前提，C 腿）
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-29 13:52'
-updated_date: '2026-10-29 21:53'
+updated_date: '2026-10-29 17:37'
 labels:
   - graph
   - rust
