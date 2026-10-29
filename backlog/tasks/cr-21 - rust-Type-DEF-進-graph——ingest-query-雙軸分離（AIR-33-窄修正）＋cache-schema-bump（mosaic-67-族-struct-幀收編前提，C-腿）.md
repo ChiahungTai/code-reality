@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-29 13:52'
-updated_date: '2026-10-29 17:37'
+updated_date: '2026-10-29 17:39'
 labels:
   - graph
   - rust
@@ -79,3 +79,9 @@ flowchart LR
 
 〔範圍〕engine.rs／cache.rs／graph_db.rs（predicate 拆分＋schema bump）＋js_ts_graph.rs 測試拆分＋新增 rust Type ingest 測試（含同名 Type/Function 同檔歧義）＋文檔四處同步＋mosaic 端 rebuild 後 67 場景 D struct 幀 filled oracle（對方動作，我方不動其 repo）。
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-30 01:55 弧 checkpoint（CR-20 姊妹弧同 session 接續）：CR-20 已收（main 444b02c：feat 20f07fe＋v0.20.0 release 6bb5299；雙審 6 修補輪 re-review APPROVE job-mvttkn9i；回信 mosaic 已送 acceptanceSeq=20 envelope southchariot-mos565-cr20-settled-20261030）。CR-21 impl 腿已派 job-mvttuiuw-r1hiap（glm flash，WT code-reality-cr-21，base 444b02c）。剩餘：impl 收取→複驗→雙審→judge→修補→量測 gate 五項→wt-close→release 0.21.0→Done flip＋C 落地通知信。夜間台帳：southchariot .agent-tmp/night-ledger-cr20.md。
+<!-- SECTION:NOTES:END -->
