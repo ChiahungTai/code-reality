@@ -3,10 +3,10 @@ id: CR-20
 title: >-
   chain_tour 幀文法支援 JS/TS 副檔名＋PathResolver repo 段救援（mosaic mos-565
   fix-request；DRAFT-68 與 rust external 誤判雙根因，A+B 腿）
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-29 13:52'
-updated_date: '2026-10-29 14:00'
+updated_date: '2026-10-29 17:36'
 labels:
   - chain-tour
   - resolver
@@ -94,3 +94,23 @@ flowchart LR
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-29 22:00 弧 checkpoint（deep-work 自主弧，user 授權原話：「收信，好好處理…討論ＯＫ就做，不用問我」＋「at 01:10 如果還沒做完就接續做」）：mosaic mos-565 來信→查證三缺口（regex 本有 rs／resolver module-scope 誤判 external／rust Type 節點 ingest 丟棄）→雙顧問收斂（muse job-mvtkvmsn＋codex job-mvtkvmvy；全文 .agent-tmp/cr20-consult-*-answer.md）→CR-20/CR-21 建卡（main 5bea46f）→wt-open cr-20→impl 腿已派 job-mvtlz228-oakl98（glm flash --write-mode edit --yolo，WT code-reality-cr-20）。剩餘：impl 收線→主 session 機械複驗→post-build 雙審（codex+muse）→judge→修補→gates（全量 test＋mosaic 唯讀試產 AC6＋corpus 單向 AC5）→wt-close→release 0.20.0 commit（tag/push 恆 user）→回信 mosaic（三層承諾：更正根因/0.20.0 承諾含 C2′ 過渡橋/C 緩辦需 rebuild）→清 pending-reply→Done flip。姊妹卡 CR-21（C 腿）To Do。夜間台帳：southchariot .agent-tmp/night-ledger-cr20.md。
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+CR-20 Done：chain_tour 幀文法 JS/TS 副檔名（language.rs JS_TS_EXTS 單一源動態組裝、長副檔名先行）＋PathResolver repo 段救援（module 段凍結→repo-relative exact→module heuristic→索引化 pool；查詢路徑詞法正規化 gate 前置、incomplete 索引拒絕、唯一勝出）落地 main 6bb5299＝v0.20.0（feat 32a95e5→rebase 後 6bb5299 線）。雙審（muse job-mvtoy8i2＋codex-astra webgpt×2 capacity 改 native astra 六輪）→judge→6 修補輪→re-review APPROVE（job-mvttkn9i）；全量 cargo test 每輪主 session 獨立複跑綠。mosaic oracle（唯讀試產）：kchart-web-overlays filled 5→28、noref 33→1、場景 1/4→4/4、repo-direct 救援 37 幀；67 族 rust block 1/4 函式幀成步（:850 graph 補行號）、3 struct 幀誠實 not-in-graph（CR-21 範圍）。struct 幀過渡橋（補行號 explicit）已回信 mosaic。姊妹卡 CR-21（C 腿）To Do 待下弧。
+
+```mermaid
+flowchart LR
+    A["frame"] --> B["grammar 8 exts longest-first"]
+    B --> C["module segment frozen"]
+    C -->|"resolved"| S["step unchanged"]
+    C -->|"none"| G["lexical normalize + gate"]
+    G -->|"excluded or escape"| X["external label frozen"]
+    G --> D["repo-direct exact"]
+    D -->|"hit"| R["step repo-direct"]
+    D -->|"miss"| P["indexed pool unique winner"]
+    P -->|"unique"| R2["step repo-suffix"]
+    P -->|"tie or incomplete"| X
+```
+<!-- SECTION:FINAL_SUMMARY:END -->
