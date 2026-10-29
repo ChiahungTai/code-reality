@@ -27,7 +27,7 @@ use crate::argparse::{parse, FlagSpec, Kind, Outcome, ToolSpec};
 use crate::cache::{self, Face};
 use crate::callers;
 use crate::common::{resolve, to_json_indent1};
-use crate::engine::{fn_tail_name, is_test_path, ln, queryable_symbol, QueryableKind};
+use crate::engine::{fn_tail_name, ingest_symbol, is_test_path, ln, IngestKind};
 use crate::fndefs;
 use crate::js_ts_calls;
 use crate::py_calls;
@@ -310,19 +310,19 @@ struct ScanRows {
     /// same name must not ride a real call's mark); Python keeps the
     /// frozen line+name grain.
     ref_cols: BTreeMap<(String, String, i64), std::collections::BTreeSet<i64>>,
-    /// Queryable kind per def symbol ("Function"/"Type") — carried from
+    /// Ingest kind per def symbol ("Function"/"Type") — carried from
     /// the scan gate so node insertion never re-infers kind from name
     /// strings (S3).
     def_kinds: BTreeMap<String, &'static str>,
-    /// occurrences skipped by the queryable gate (protobuf arm parity —
-    /// counted, never silently dropped)
+    /// occurrences skipped by the ingest-symbol gate (protobuf arm
+    /// parity — counted, never silently dropped)
     non_fn_skipped: usize,
 }
 
-fn kind_str(kind: QueryableKind) -> &'static str {
+fn kind_str(kind: IngestKind) -> &'static str {
     match kind {
-        QueryableKind::Function => "Function",
-        QueryableKind::Type => "Type",
+        IngestKind::Function => "Function",
+        IngestKind::Type => "Type",
     }
 }
 
@@ -352,7 +352,7 @@ fn scan(face: &Face) -> Result<ScanRows, String> {
                 .map_err(|e| format!("graph_db 掃描失敗：{e}"))?;
             for row in it {
                 let (s, f, l, d, col) = row.map_err(|e| format!("graph_db 讀取失敗：{e}"))?;
-                let Some(qs) = queryable_symbol(&s, &f) else {
+                let Some(qs) = ingest_symbol(&s, &f) else {
                     rows.non_fn_skipped += 1; // symmetric with the protobuf arm
                     continue;
                 };
@@ -379,7 +379,7 @@ fn scan(face: &Face) -> Result<ScanRows, String> {
             };
             for d in &index.documents {
                 for occ in &d.occurrences {
-                    let Some(qs) = queryable_symbol(&occ.symbol, &d.relative_path) else {
+                    let Some(qs) = ingest_symbol(&occ.symbol, &d.relative_path) else {
                         rows.non_fn_skipped += 1;
                         continue;
                     };
@@ -903,12 +903,13 @@ pub(crate) fn build_from_cache_locked(
         let mut ordered: Vec<&(String, String, i64)> = rows.defs.iter().collect();
         ordered.sort_by(|a, b| (&a.1, &a.2).cmp(&(&b.1, &b.2)));
         for (symbol, rel, line) in ordered {
-            let Some(qs) = queryable_symbol(symbol, rel) else {
+            let Some(qs) = ingest_symbol(symbol, rel) else {
                 continue;
             };
             // Kind rides from the scan gate (S3): never re-inferred from
             // name strings here. Unknown symbols default to Function —
-            // the pre-S3 shape — but scan fills every def it emits.
+            // the pre-S3 shape — but scan fills every def it emits
+            // (rust `Type#` defs included since CR-21).
             let kind = rows
                 .def_kinds
                 .get(symbol.as_str())

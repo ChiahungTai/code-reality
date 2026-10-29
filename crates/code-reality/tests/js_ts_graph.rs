@@ -7,10 +7,9 @@
 
 mod support;
 
-use code_reality::engine::{find_defs, is_test_path, queryable_symbol, Query};
+use code_reality::engine::{find_defs, ingest_symbol, is_test_path, Query};
 use protobuf::Message;
 use scip::types::{Document, Index};
-use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use support::{doc, mkrepo, occ, occ_at_token};
 
@@ -333,27 +332,33 @@ fn s3_test_file_classification_shared() {
 }
 
 #[test]
-fn s3_queryable_policy_and_bare_class_query() {
-    // unit: queryable_symbol document-awareness
+fn s3_ingest_policy_and_bare_class_query() {
+    // unit: ingest_symbol document-awareness (the MATERIALIZATION axis;
+    // bare-name queryability is matches_query's axis and stays frozen)
     let js_class = "scip-typescript npm . . /r/src/`a.js`/Named#";
     let ts_class = "scip-typescript npm . . /r/src/`a.ts`/Named#";
     let py_class = "pyrefly python p 0.1 `m`/Named#";
     let rs_class = "rust-analyzer cargo x 0.1 k/Named#";
     assert_eq!(
-        queryable_symbol(js_class, "src/a.js").map(|q| q.name.to_string()),
+        ingest_symbol(js_class, "src/a.js").map(|q| q.name.to_string()),
         Some("Named".to_string())
     );
     assert_eq!(
-        queryable_symbol(ts_class, "src/a.ts").map(|q| q.name.to_string()),
+        ingest_symbol(ts_class, "src/a.ts").map(|q| q.name.to_string()),
         Some("Named".to_string())
     );
     assert_eq!(
-        queryable_symbol(py_class, "m/a.py").map(|q| q.name.to_string()),
+        ingest_symbol(py_class, "m/a.py").map(|q| q.name.to_string()),
         Some("Named".to_string())
     );
-    assert!(queryable_symbol(rs_class, "k/named.rs").is_none());
-    // same rust-shaped symbol on a JS document IS queryable (doc authority)
-    assert!(queryable_symbol(rs_class, "src/named.js").is_some());
+    // CR-21: rust `Type#` DEFs on Rust documents now ingest (document
+    // authority — `LanguageFace::from_path == Rust`, not a symbol prefix)
+    assert_eq!(
+        ingest_symbol(rs_class, "k/named.rs").map(|q| q.name.to_string()),
+        Some("Named".to_string())
+    );
+    // same rust-shaped symbol on a JS document still ingests (doc authority)
+    assert!(ingest_symbol(rs_class, "src/named.js").is_some());
 
     // integration: bare class query resolves through the protobuf face
     let mut index = Index::new();
@@ -400,17 +405,161 @@ fn s3_coverage_denominators_recorded() {
     assert_eq!(rep2.fn_def_spanned, 3);
 }
 
+/// CR-21 ingest axis (split from the former
+/// `s3_rust_regression_types_stay_filtered_and_untestable`): a rust
+/// `Type#` DEF materializes as a kind=Type node, exact path+name
+/// addressable — the chain_tour line-less fill contract
+/// (`same_file_rows`: `file_path = ? AND name = ?`) resolves it.
 #[test]
-fn s3_rust_regression_types_stay_filtered_and_untestable() {
+fn s3_rust_types_materialize_for_exact_anchoring() {
+    let rs_type = "rust-analyzer cargo cr-fix 0.1.0 src/lib.rs/MarketGate#";
+    assert!(
+        ingest_symbol(rs_type, "src/lib.rs").is_some(),
+        "rust Type DEF must pass the ingest gate"
+    );
+    const RS_SRC: &str = "pub struct MarketGate;\n";
+    let t = tempfile::tempdir().unwrap();
+    let repo = support::mkrepo(&t, &[("src/lib.rs", RS_SRC)]);
+    let mut index = Index::new();
+    let mut d = Document::new();
+    d.relative_path = "src/lib.rs".to_string();
+    d.occurrences = vec![occ(rs_type, 1, vec![0, 11, 21], Some(vec![0, 0, 1, 1]))];
+    index.documents = vec![d];
+    let slot_dir = repo.join(".code-reality/scip");
+    std::fs::create_dir_all(&slot_dir).unwrap();
+    let slot = slot_dir.join("index.scip");
+    std::fs::write(&slot, index.write_to_bytes().unwrap()).unwrap();
+    let rep = code_reality::graph_db::build_from_cache_at(&repo, &slot).unwrap();
+    assert_eq!(rep.nodes, 1, "exactly the Type node: nodes={}", rep.nodes);
+
+    let kinds = query_rows(
+        &repo,
+        "SELECT kind, CAST(line_start AS TEXT) FROM nodes WHERE name = 'MarketGate'",
+    );
+    assert_eq!(
+        kinds,
+        vec![("Type".to_string(), "1".to_string())],
+        "rust Type DEF lands as kind=Type"
+    );
+
+    // exact path+name anchoring — the production fill face
+    let db = repo.join(".code-reality/graph.db");
+    let locator = code_reality::symbol_resolve::SymbolLocator::open(&db, &repo).unwrap();
+    match locator
+        .same_file_fill("src/lib.rs", "MarketGate", "MarketGate")
+        .unwrap()
+    {
+        code_reality::symbol_resolve::FillOutcome::Filled(line, sym) => {
+            assert_eq!(line, 1);
+            assert_eq!(sym.as_deref(), Some(rs_type));
+        }
+        code_reality::symbol_resolve::FillOutcome::NoAnchor(reason, _) => {
+            panic!("exact path+name fill must resolve the Type node, got NoAnchor({reason})")
+        }
+    }
+}
+
+/// CR-21 keeps the AIR-33 query axis byte-frozen (the other half of the
+/// former `s3_rust_regression_types_stay_filtered_and_untestable`): a
+/// rust `Type#` DEF is materialized but NOT bare-name queryable — both
+/// faces answer empty. The sqlite face now actually exercises the
+/// predicate filter: the ingested Type reaches `symbol_tails` (the SQL
+/// pre-narrow returns it) and `matches_query` must still deny it.
+#[test]
+fn s3_rust_bare_name_query_stays_denied() {
     let rs_type = "rust-analyzer cargo code-reality 0.6.3 build/BuildError#";
-    assert!(queryable_symbol(rs_type, "build.rs").is_none());
     let mut index = Index::new();
     let mut d = Document::new();
     d.relative_path = "build.rs".to_string();
     d.occurrences = vec![occ(rs_type, 1, vec![0, 0, 5], Some(vec![0, 0, 3, 1]))];
     index.documents = vec![d];
     assert!(find_defs(&index, &Query::parse("BuildError")).is_empty());
-    let mut set = BTreeSet::new();
-    set.insert(rs_type.to_string());
-    let _ = set;
+
+    // and through the derived cache (sqlite face)
+    let tmp = tempfile::tempdir().unwrap();
+    let slot = tmp.path().join("index.scip");
+    std::fs::write(&slot, index.write_to_bytes().unwrap()).unwrap();
+    let db = tmp.path().join("index.scip.db");
+    let stats = code_reality::cache::build_db(&index, &db, "").unwrap();
+    assert_eq!(stats.symbols, 1, "the Type symbol ingests");
+    let conn = code_reality::common::connect_ro(&db).unwrap();
+    assert!(
+        code_reality::cache::sqlite_defs(&conn, &Query::parse("BuildError"))
+            .unwrap()
+            .is_empty(),
+        "bare-name query stays denied on the sqlite face (AIR-33)"
+    );
+}
+
+/// CR-21 same-name same-file: a rust Type DEF and a rust fn DEF sharing
+/// the bare name ingest as TWO nodes (kinds differ); the line-less fill
+/// decision core sees two candidates and stays fail-closed ambiguous —
+/// behavior over pre-existing materialization sets is unchanged.
+#[test]
+fn s3_rust_same_name_type_and_function_ingest_both_fill_stays_closed() {
+    let rs_type = "rust-analyzer cargo cr-fix 0.1.0 src/lib.rs/Widget#";
+    let rs_fn = "rust-analyzer cargo cr-fix 0.1.0 src/lib.rs/Widget().";
+    const RS_SRC: &str = "\
+pub struct Widget;
+
+impl Widget {
+    pub fn widget() -> Widget {
+        Widget
+    }
+}
+";
+    let t = tempfile::tempdir().unwrap();
+    let repo = support::mkrepo(&t, &[("src/lib.rs", RS_SRC)]);
+    let mut index = Index::new();
+    let mut d = Document::new();
+    d.relative_path = "src/lib.rs".to_string();
+    d.occurrences = vec![
+        occ(rs_type, 1, vec![0, 11, 17], Some(vec![0, 0, 1, 1])),
+        occ(rs_fn, 1, vec![3, 15, 21], Some(vec![3, 4, 6, 5])),
+        // one Type ref — ingested-symbol refs ride the rows like python
+        occ(rs_type, 0, vec![5, 8, 14], None),
+    ];
+    index.documents = vec![d];
+    let slot_dir = repo.join(".code-reality/scip");
+    std::fs::create_dir_all(&slot_dir).unwrap();
+    let slot = slot_dir.join("index.scip");
+    std::fs::write(&slot, index.write_to_bytes().unwrap()).unwrap();
+    let rep = code_reality::graph_db::build_from_cache_at(&repo, &slot).unwrap();
+    assert_eq!(rep.nodes, 2, "both same-name defs materialize");
+
+    let mut kinds = query_rows(
+        &repo,
+        "SELECT kind, CAST(line_start AS TEXT) FROM nodes \
+         WHERE name = 'Widget' AND file_path LIKE '%/src/lib.rs' ORDER BY kind",
+    );
+    kinds.sort();
+    assert_eq!(
+        kinds,
+        vec![
+            ("Function".to_string(), "4".to_string()),
+            ("Type".to_string(), "1".to_string()),
+        ],
+        "kind=Type and kind=Function coexist for one bare name in one file"
+    );
+
+    // the fill decision core is unchanged: two same-name candidates with
+    // different lines → no R1 pair (lines differ), no unique R2 →
+    // ambiguous with both candidates disclosed (fail-closed)
+    let db = repo.join(".code-reality/graph.db");
+    let locator = code_reality::symbol_resolve::SymbolLocator::open(&db, &repo).unwrap();
+    match locator
+        .same_file_fill("src/lib.rs", "Widget", "Widget")
+        .unwrap()
+    {
+        code_reality::symbol_resolve::FillOutcome::NoAnchor(reason, candidates) => {
+            assert_eq!(reason, "ambiguous");
+            assert_eq!(candidates.len(), 2, "both candidates disclosed");
+            let mut lines: Vec<i64> = candidates.iter().map(|c| c.line).collect();
+            lines.sort();
+            assert_eq!(lines, vec![1, 4]);
+        }
+        code_reality::symbol_resolve::FillOutcome::Filled(line, _) => {
+            panic!("two same-name candidates must stay ambiguous, got Filled({line})")
+        }
+    }
 }

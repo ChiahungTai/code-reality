@@ -9,7 +9,7 @@
 //! ("derived face is an accelerator, not a dependency" — scip_refs.py:459).
 
 use crate::engine::{
-    self, fn_tail_name, load_index, loc_line, matches_query, queryable_symbol, stamped_head, tail,
+    self, fn_tail_name, ingest_symbol, load_index, loc_line, matches_query, stamped_head, tail,
     Query,
 };
 use rusqlite::{Connection, OpenFlags};
@@ -17,13 +17,15 @@ use scip::types::Index;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
-/// Ingest-semantics version: bumped when the set of queryable symbols or
+/// Ingest-semantics version: bumped when the set of ingested symbols or
 /// the occurrence rows change, so existing dbs auto-rebuild through the
-/// stale_reason path ("4" — S3/S4 follow-up: occurrences carry the start
-/// COLUMN (occ.range[1]) — the JS/TS CALLS identity is column-grained;
-/// "3" was the document-aware queryable gate; "2" the AIR-33 python
-/// class expansion).
-pub const SCHEMA_VERSION: &str = "4";
+/// stale_reason path ("5" — CR-21: the ingest gate admits Rust `Type#`
+/// DEFs on Rust documents (document authority); bare-name queryability
+/// unchanged — the two-axis split); "4" — S3/S4 follow-up: occurrences
+/// carry the start COLUMN (occ.range[1]) — the JS/TS CALLS identity is
+/// column-grained; "3" was the document-aware queryable gate; "2" the
+/// AIR-33 python class expansion).
+pub const SCHEMA_VERSION: &str = "5";
 
 pub const SCHEMA_SQL: &str = "
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -70,17 +72,20 @@ pub fn sqlite_path(index_path: &Path) -> PathBuf {
 }
 
 /// Core build — single transaction, atomic swap via tmp file + rename
-/// (scip_refs.py:350). Occurrences ingest only queryable symbols (fn
-/// tail `name().` or class tail `name#` on the python faces).
+/// (scip_refs.py:350). Occurrences ingest only [`ingest_symbol`] shapes
+/// (fn tail `name().` always; class tail `name#` on the python faces,
+/// JS/TS and Rust documents).
 pub fn build_db(index: &Index, db_path: &Path, sidecar_head: &str) -> Result<Stats, String> {
     let mut tails: BTreeMap<String, (String, String)> = BTreeMap::new();
     for d in &index.documents {
         for occ in &d.occurrences {
-            // Queryable-symbol gate (S3, document-aware): fn tail
-            // `name().` always; class tail `name#` on the python faces
-            // (AIR-33) and on JS/TS documents (scip-typescript `#` defs).
-            // Variables and rust `Type#` symbols stay non-queryable.
-            if let Some(qs) = queryable_symbol(&occ.symbol, &d.relative_path) {
+            // Ingest-symbol gate (S3, document-aware; CR-21 two-axis
+            // split): fn tail `name().` always; class tail `name#` on
+            // the python faces (AIR-33), on JS/TS documents
+            // (scip-typescript `#` defs) and on Rust documents. Rust
+            // `Type#` rows ride along here, but stay denied on the
+            // bare-name query axis (matches_query — AIR-33).
+            if let Some(qs) = ingest_symbol(&occ.symbol, &d.relative_path) {
                 tails.insert(
                     occ.symbol.clone(),
                     (tail(&occ.symbol).to_string(), qs.name.to_string()),

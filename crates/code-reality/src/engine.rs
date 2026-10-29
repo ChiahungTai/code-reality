@@ -73,51 +73,61 @@ impl Query {
     }
 }
 
-/// Queryable-symbol kinds (S3): `#`-tailed class/type-like symbols are
-/// queryable as `Type` nodes on the Python faces (AIR-33) and the JS/TS
-/// faces (scip-typescript emits real `Name#` defs); Rust `Type#` stays
-/// non-queryable by bare name.
+/// Ingest-node kinds (S3): fn-shaped symbols materialize as `Function`
+/// nodes; `#`-tailed class/type-like symbols as `Type` nodes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum QueryableKind {
+pub enum IngestKind {
     Function,
     Type,
 }
 
-pub struct QueryableSymbol<'a> {
+pub struct IngestSymbol<'a> {
     pub name: &'a str,
-    pub kind: QueryableKind,
+    pub kind: IngestKind,
 }
 
-/// Single ingest/query gate for queryable symbol shapes, document-aware
-/// (S3): fn-shaped symbols are always queryable functions; `#`-tailed
-/// symbols are queryable types only on the Python faces (symbol prefix)
-/// or when the DEFINING document is JS/TS (scip-typescript carries no
-/// language discriminator in the symbol — AD-3 derives it from the
-/// document extension). This one predicate drives both the scip_refs
-/// cache ingest and graph materialization — duplicating the gate per
-/// path is how JS/TS class definitions used to disappear.
-pub fn queryable_symbol<'a>(symbol: &'a str, rel_path: &str) -> Option<QueryableSymbol<'a>> {
+/// Ingest-axis gate for symbol MATERIALIZATION, document-aware (S3):
+/// fn-shaped symbols always; `#`-tailed symbols as types when the
+/// defining document carries class authority — the Python faces (symbol
+/// prefix), a JS/TS document (scip-typescript carries no language
+/// discriminator in the symbol — AD-3 derives it from the document
+/// extension), or a Rust document (CR-21: `LanguageFace::from_path ==
+/// Rust` — document authority, never a symbol prefix; multi-`#` tails
+/// ingest whole, tail-anchored like python nested classes). This one
+/// predicate drives BOTH the scip_refs cache ingest and graph
+/// materialization — duplicating the gate per path is how JS/TS class
+/// definitions used to disappear. Bare-name QUERYABILITY is the other
+/// axis: [`matches_query`] governs it and still denies rust `Type#`
+/// (AIR-33) — materialization presence (exact path+name anchoring for
+/// chain_tour fill, tour_reanchor, semantic_search) is not queryability.
+pub fn ingest_symbol<'a>(symbol: &'a str, rel_path: &str) -> Option<IngestSymbol<'a>> {
     if let Some(name) = fn_tail_name(symbol) {
-        return Some(QueryableSymbol {
+        return Some(IngestSymbol {
             name,
-            kind: QueryableKind::Function,
+            kind: IngestKind::Function,
         });
     }
     let type_name = class_tail_name(symbol)?;
-    let js_ts = matches!(
+    let type_doc = matches!(
         crate::language::LanguageFace::from_path(Path::new(rel_path)),
-        Some(crate::language::LanguageFace::JavaScript)
-            | Some(crate::language::LanguageFace::TypeScript)
+        Some(
+            crate::language::LanguageFace::JavaScript
+                | crate::language::LanguageFace::TypeScript
+                | crate::language::LanguageFace::Rust
+        )
     );
-    (python_face(symbol) || js_ts).then_some(QueryableSymbol {
+    (python_face(symbol) || type_doc).then_some(IngestSymbol {
         name: type_name,
-        kind: QueryableKind::Type,
+        kind: IngestKind::Type,
     })
 }
 
-/// Class-arm membership for query matching: Python faces by symbol
-/// prefix, JS/TS by defining document. `rel_path: None` = no document
-/// context (legacy call sites — python-prefix rule only).
+/// Class-arm membership for BARE-NAME QUERY matching — the queryability
+/// axis (AIR-33): Python faces by symbol prefix, JS/TS by defining
+/// document. Rust `Type#` symbols fail every arm here even though
+/// [`ingest_symbol`] now materializes them (the CR-21 two-axis split);
+/// `rel_path: None` = no document context (legacy call sites —
+/// python-prefix rule only).
 fn class_arm_matches(symbol: &str, rel_path: Option<&str>) -> bool {
     if python_face(symbol) {
         return true;
@@ -153,10 +163,10 @@ pub fn matches_query(symbol: &str, rel_path: Option<&str>, query: &Query) -> boo
 
 /// Python-face discriminator: the symbol's second space-separated token
 /// is `python` (`pyrefly python …`, `scip-python python …`). Gates the
-/// bare-class query arm — AIR-33 adjudicated Python classes; rust
+/// bare-class QUERY arm — AIR-33 adjudicated Python classes; rust
 /// `Type#` DEF symbols (same tail shape, e.g. `build/BuildError#`)
-/// stay non-queryable by bare name, preserving the documented rust-face
-/// contract (probe-confirmed on this repo's own index).
+/// stay denied on this bare-name axis (probe-confirmed on this repo's
+/// own index) while materializing at ingest since CR-21.
 pub fn python_face(symbol: &str) -> bool {
     symbol.split(' ').nth(1) == Some("python")
 }

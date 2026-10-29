@@ -448,8 +448,12 @@ on any new repo.
   a nested class matches by its own name only, `Outer` never matches
   `Outer#Inner#`). `Class.method` dot form matches methods; the
   `Class#method()` hash form is the DISPLAY format, not a query key.
-  Rust struct/trait/type names are still not resolvable query keys —
-  query one of their methods instead; module variables (`NAME.` form)
+  Rust struct/trait/type names are still not resolvable bare-name query
+  keys (AIR-33) — query one of their methods instead; they DO
+  materialize as `kind=Type` graph nodes since CR-21 (ingest/query
+  two-axis split), so exact file+name anchoring works: chain_tour
+  line-less struct frames, `tour_reanchor`'s symbol face, and
+  `semantic_search` all see them. Module variables (`NAME.` form)
   remain non-queryable. Dataclass-style classes (constructor call with
   no corpus `__init__`) additionally mint a pseudo-constructor DEF
   (`Class().`), so a bare query then returns both groups (B7b).
@@ -494,8 +498,9 @@ on any new repo.
     {Type `X#`, its minted constructor `X().`} with equal `line_start`
     → fills the class line; the step's `x-codeReality.symbol` carries
     the Type symbol (a canonicalization, not an equivalence claim over
-    the two SCIP symbols). Python/JS-TS faces only — Rust `Type#`
-    nodes never reach the queryable set.
+    the two SCIP symbols). The minted `X().` twin is only ever produced
+    by the Python/JS-TS B7b face; Rust `Type#` nodes materialize since
+    CR-21 and resolve through the same R1/R2 core.
   - **R2 qualified-name alignment** — the frame's dotted token must
     tail-align a candidate's structured descriptor chain
     segment-by-segment (whole-segment equality, case-sensitive):

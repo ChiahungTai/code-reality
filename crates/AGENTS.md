@@ -147,9 +147,14 @@ tests are the sole gate face.
   `--` separator, `-h`; all graph-family CLIs grow from here) / `engine`
   (domain/use case — SCIP parsing via the `scip` crate [rust-protobuf
   form, types at `scip::types::*`], symbol predicates [hand-rolled — the
-  `regex` crate has no look-around; `queryable_symbol` is the single
-  document-aware ingest/query gate — fn-shaped symbols always,
-  `#`-tailed class symbols on Python faces and JS/TS documents], scan,
+  `regex` crate has no look-around; the two-axis gate split (CR-21):
+  `ingest_symbol` is the single document-aware INGEST gate driving both
+  the scip_refs cache and graph materialization — fn-shaped symbols
+  always, `#`-tailed class symbols on Python faces and JS/TS + Rust
+  documents (document authority; multi-`#` tails ingest whole) — while
+  bare-name QUERYABILITY is the separate `matches_query` axis (AIR-33
+  still denies rust `Type#` by bare name; materialization presence ≠
+  queryability)], scan,
   `[SRC]` assembly, structured caller-edge accessors [`FnSpan`/
   `fn_spans` from DEF `enclosing_range`, flat `refs_rows`];
   `is_test_path` is the shared test-file policy for graph insertion and

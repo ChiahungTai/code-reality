@@ -109,7 +109,7 @@ fn stale_guards_all_four_signals() {
     tamper(&db, "UPDATE meta SET value = '9' WHERE key = 'schema'");
     let reason = stale_reason(&idx, &db).unwrap();
     assert!(
-        reason.contains("schema 版本不符（9 ≠ 4）"),
+        reason.contains("schema 版本不符（9 ≠ 5）"),
         "got: {}",
         reason
     );
@@ -234,6 +234,41 @@ fn docs_fully_filtered_counter_is_loud() {
     let stats = build_db(&index, &db, "headsha").unwrap();
     assert_eq!(stats.docs_fully_filtered, 1, "var_only.py only");
     assert_eq!(stats.occurrences, 2, "fn + class both kept");
+}
+
+#[test]
+fn schema_bump_stales_previous_version_cache_and_rebuilds() {
+    // CR-21 bump face (the "3"→"4" precedent): a cache stamped with the
+    // PREVIOUS ingest-semantics version must answer stale
+    // (schema 版本不符（4 ≠ 5）) and auto-rebuild through open_face —
+    // a policy change without the bump would keep feeding the old
+    // filtered cache as fresh, silently voiding the fix.
+    let tmp = tempfile::tempdir().unwrap();
+    let idx = fixture_copy(&tmp);
+    let loaded = load_index(&idx).unwrap();
+    let db = sqlite_path(&idx);
+    std::fs::write(
+        code_reality::engine::meta_path(&idx),
+        r#"{"repo": "/x", "head": "headsha", "stamped_at": "2026-10-30T00:00:00+00:00", "tool": "code_reality.scip_refs"}"#,
+    )
+    .unwrap();
+    build_db(&loaded.index, &db, "headsha").unwrap();
+    tamper(&db, "UPDATE meta SET value = '4' WHERE key = 'schema'");
+    let reason = stale_reason(&idx, &db).unwrap();
+    assert!(
+        reason.contains("schema 版本不符（4 ≠ 5）"),
+        "previous-version cache must be stale, got: {}",
+        reason
+    );
+    // and open_face converts the staleness into a rebuild + sqlite serve
+    let (face, stderr) = open_face(&idx).unwrap();
+    assert!(matches!(face, Face::Sqlite(_)));
+    let joined: String = stderr.concat();
+    assert!(
+        joined.contains("衍生 db 過期（schema 版本不符（4 ≠ 5））——自動重建"),
+        "got: {joined}"
+    );
+    assert!(joined.contains("[OK] 衍生 db 重建完成"));
 }
 
 #[test]
