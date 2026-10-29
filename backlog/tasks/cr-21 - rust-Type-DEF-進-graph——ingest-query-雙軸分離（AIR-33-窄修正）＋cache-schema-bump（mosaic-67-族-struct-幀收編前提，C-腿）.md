@@ -3,10 +3,10 @@ id: CR-21
 title: >-
   rust Type DEF 進 graph——ingest/query 雙軸分離（AIR-33 窄修正）＋cache schema bump（mosaic
   67 族 struct 幀收編前提，C 腿）
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-29 13:52'
-updated_date: '2026-10-29 17:39'
+updated_date: '2026-10-29 18:23'
 labels:
   - graph
   - rust
@@ -85,3 +85,20 @@ flowchart LR
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-30 01:55 弧 checkpoint（CR-20 姊妹弧同 session 接續）：CR-20 已收（main 444b02c：feat 20f07fe＋v0.20.0 release 6bb5299；雙審 6 修補輪 re-review APPROVE job-mvttkn9i；回信 mosaic 已送 acceptanceSeq=20 envelope southchariot-mos565-cr20-settled-20261030）。CR-21 impl 腿已派 job-mvttuiuw-r1hiap（glm flash，WT code-reality-cr-21，base 444b02c）。剩餘：impl 收取→複驗→雙審→judge→修補→量測 gate 五項→wt-close→release 0.21.0→Done flip＋C 落地通知信。夜間台帳：southchariot .agent-tmp/night-ledger-cr20.md。
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+CR-21 Done：rust Type DEF 進 graph——ingest/query 雙軸分離落地 main 2b56a77＝v0.21.0（feat 50255e5→rebase 2b56a77）。engine::ingest_symbol（原 queryable_symbol）以 document authority 收 rust Type# 成 kind=Type 節點（multi-# 全收、旋鈕未拉）；matches_query 位元級不變（AIR-33 bare-name 拒絕雙面釘測）；cache SCHEMA_VERSION 4→5（舊 cache stale-and-rebuild）。雙審首輪同 APPROVE（muse job-mvtv5cb6＋codex-astra job-mvtv4733-jydgum）零修補輪。量測 gate：own-repo rebuild Type 7→336（+329 rust）、Function 2198 不變、edges 7325→10451、hub top-20 健康（ToolOutput 354 度居首＝真實使用）、build 19.3s；e2e oracle＝line-less struct 幀（PathResolver）graph 補行號 :342 成錨（filled:2）。生效前提＝裝 binary＋全量 rebuild（已回信 mosaic）。
+
+```mermaid
+flowchart LR
+    A["SCIP symbol"] --> B{"shape"}
+    B -->|"fn tail"| C["Function node"]
+    B -->|"Type# tail"| D["ingest_symbol gate"]
+    D -->|"python face / JS-TS doc / Rust doc"| E["kind=Type node"]
+    D -->|"other"| F["dropped"]
+    E --> G["exact path+name anchor: chain_tour fill, tour_reanchor, semantic_search"]
+    E --> H["bare-name query still denied AIR-33"]
+```
+<!-- SECTION:FINAL_SUMMARY:END -->
