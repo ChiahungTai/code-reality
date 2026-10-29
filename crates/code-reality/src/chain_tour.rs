@@ -21,19 +21,47 @@ use std::path::{Path, PathBuf};
 /// (`symbol_resolve`) — the `chain_tour::best_ident` path stays valid.
 pub use crate::symbol_resolve::best_ident;
 
+/// CR-20 Leg A: the frame-grammar extension alternation — the `py`/`rs`
+/// literals plus the JS/TS set from [`crate::language::JS_TS_EXTS`] (the
+/// single extension source; the grammar carries no second list, so a
+/// language added to the producer corpus cannot silently miss the frame
+/// face again). Sorted longest-first: `any_path_re` has no trailing
+/// anchor, so a short-first alternation would stop at `foo.ts` inside
+/// `foo.tsx` and let `stray_path_token` read the trailing `x` as a word
+/// character — `ref_re`/`lineless_re` are anchor-insensitive, one
+/// deterministic order serves all three.
+fn frame_ext_alternation() -> String {
+    let mut exts: Vec<&str> = Vec::with_capacity(crate::language::JS_TS_EXTS.len() + 2);
+    exts.push("py");
+    exts.push("rs");
+    exts.extend(crate::language::JS_TS_EXTS);
+    exts.sort_by(|a, b| b.len().cmp(&a.len()).then(a.cmp(b)));
+    exts.iter()
+        .map(|e| regex::escape(e))
+        .collect::<Vec<_>>()
+        .join("|")
+}
+
+fn frame_ext_alt() -> &'static String {
+    static ALT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    ALT.get_or_init(frame_ext_alternation)
+}
+
 fn ref_re() -> &'static regex::Regex {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    RE.get_or_init(|| regex::Regex::new(r"([\w./\-]+\.(?:py|rs)):(\d+)").unwrap())
+    RE.get_or_init(|| {
+        regex::Regex::new(&format!(r"([\w./\-]+\.(?:{})):(\d+)", frame_ext_alt())).unwrap()
+    })
 }
 
 fn lineless_re() -> &'static regex::Regex {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    RE.get_or_init(|| regex::Regex::new(r"[\w./\-]+\.(?:py|rs)$").unwrap())
+    RE.get_or_init(|| regex::Regex::new(&format!(r"[\w./\-]+\.(?:{})$", frame_ext_alt())).unwrap())
 }
 
 fn any_path_re() -> &'static regex::Regex {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    RE.get_or_init(|| regex::Regex::new(r"[\w./\-]+\.(?:py|rs)").unwrap())
+    RE.get_or_init(|| regex::Regex::new(&format!(r"[\w./\-]+\.(?:{})", frame_ext_alt())).unwrap())
 }
 
 /// CR-7 line-less anchor extraction: bounded tail-position grammar. After
@@ -76,11 +104,12 @@ fn lineless_tail(content: &str) -> Option<(String, String)> {
 }
 
 /// Second-path-token detector for the line-less symbol remainder (CR-7
-/// review F6): a `.py`/`.rs` occurrence only counts as an independent
-/// path token when the extension is not buried inside a longer word —
-/// `client.py_helper` is one identifier, `a.py extra` is two tokens.
-/// Conservative direction: a false positive rejects the anchor to noref
-/// (fail-closed), never fabricates one.
+/// review F6): a governed-extension occurrence (the CR-20 assembled
+/// alternation) only counts as an independent path token when the
+/// extension is not buried inside a longer word — `client.py_helper` is
+/// one identifier, `a.py extra` is two tokens. Conservative direction: a
+/// false positive rejects the anchor to noref (fail-closed), never
+/// fabricates one.
 fn stray_path_token(text: &str) -> bool {
     for m in any_path_re().find_iter(text) {
         match text[m.end()..].chars().next() {
@@ -297,14 +326,52 @@ pub fn parse_frames(lines: &[String]) -> Vec<Frame> {
     frames
 }
 
-/// Package-relative path → absolute (direct → suffix → ctx majority →
-/// ambiguous). Generic fallback (no profile) scans the whole repo —
-/// same-name files under exclusion prefixes stay out of the pool.
+/// Frame path → absolute file, four stages (CR-20 Leg B):
+/// module-exact direct → repo-relative exact direct → module heuristic
+/// (suffix pool → basename pool → ctx majority) → repo filename pool.
+/// The repo segment runs only on the module segment's `(None, "none")` —
+/// a module-segment ambiguity is terminal (fail-closed over a
+/// double-referent guess). Repo-segment hits carry the distinct
+/// `repo-direct`/`repo-suffix` kinds so rescue volume is measurable, are
+/// exclusion-checked on every arm (corpus rescue — corpus includes the
+/// exclusion layer; the module segment's direct-arm asymmetry is a
+/// frozen face), and return canonical paths (fill_anchor composes
+/// `{repo_root}/{rel}` against the graph's canonical entries). Without a
+/// profile `pkg_roots` is `[repo_root]` — stage 1 already covers its
+/// direct face, so the repo segment stays consistent there.
 pub struct PathResolver {
     repo_root: PathBuf,
     profile: Option<Profile>,
     pkg_roots: Vec<PathBuf>,
     ctx_dirs: HashMap<String, i64>,
+    /// Lazily built repo-wide filename index (basename → sorted
+    /// repo-relative paths), populated on the first frame the module
+    /// segment cannot resolve. Single-pass walk pruning dot-dirs,
+    /// [`crate::engine::SKIP_DIRS`], and `target` (the engine constants
+    /// are borrowed — no second skip list); only
+    /// [`crate::language::LanguageFace`]-governed files enter, so the
+    /// pool equals the graph-anchorable corpus; profile exclusions apply
+    /// at collection time. Never a bare `glob("**/{fname}")` against the
+    /// repo root (unpruned walks and node_modules decoys) and never
+    /// `engine::walk_sources` (rust_projects coupling would fail loud
+    /// python-only tour generation on broken rust config). Carries an
+    /// incompleteness flag — a partial scan is never served as whole
+    /// (see [`RepoIndex`]).
+    repo_pool: Option<RepoIndex>,
+}
+
+/// The lazily built repo filename index plus its completeness flag
+/// (R3, repair round 2). ANY traversal error — an unreadable directory
+/// (`read_dir`), a dropped directory entry, or a `file_type` failure —
+/// marks the index INCOMPLETE and it is cached that way: a partial
+/// pool is never trusted as whole, because the unreadable subtree may
+/// hold the candidate that would change the verdict (ambiguity eaten
+/// by a partial scan = a wrong unique hit, not a missed rescue). The
+/// pool arms of `repo_pool_hit` refuse while the flag is set;
+/// `repo_direct` runs on exact-path evidence and ignores completeness.
+struct RepoIndex {
+    by_name: BTreeMap<String, Vec<String>>,
+    incomplete: bool,
 }
 
 impl PathResolver {
@@ -326,6 +393,7 @@ impl PathResolver {
             profile,
             pkg_roots,
             ctx_dirs: HashMap::new(),
+            repo_pool: None,
         })
     }
 
@@ -337,14 +405,121 @@ impl PathResolver {
         *self.ctx_dirs.entry(d).or_insert(0) += 1;
     }
 
-    pub fn resolve(&mut self, path: &str) -> (Option<PathBuf>, &'static str) {
-        for pkg in &self.pkg_roots {
-            let direct = pkg.join(path);
-            if direct.exists() {
-                self.bump_dir(&direct);
-                return (Some(direct), "direct");
+    /// Canonicalize a pool/direct candidate and record its directory for
+    /// ctx continuity — every repo-segment hit funnels through here.
+    fn canonical_hit(&mut self, rel: &str) -> PathBuf {
+        let p = crate::common::resolve(&self.repo_root.join(rel));
+        self.bump_dir(&p);
+        p
+    }
+
+    /// Canonical repo-relative rel of a frame path that names an
+    /// existing file inside the repo, with the resolved absolute path;
+    /// None when the path is not a file or escapes the repo
+    /// (containment on the canonical path, R2). Shared by the
+    /// repo-direct arm and the segment-level exclusion gate (R4) — one
+    /// spelling decision, two consumers.
+    fn canonical_rel(&self, path: &str) -> Option<(PathBuf, String)> {
+        let cand = self.repo_root.join(path);
+        if !cand.is_file() {
+            return None;
+        }
+        let resolved = crate::common::resolve(&cand);
+        let rel = resolved.strip_prefix(&self.repo_root).ok()?;
+        let rel = rel.to_string_lossy().replace('\\', "/");
+        Some((resolved, rel))
+    }
+
+    /// R8 (repair round 6): lexically normalize a repo-relative query
+    /// path for GATE evaluation only — fold `.` and empty segments,
+    /// resolve `..` against the segment stack as pure text (no FS).
+    /// Returns None when the spelling escapes the repo root (`..` past
+    /// the first segment) or is not UTF-8 — both refusal conditions at
+    /// the lexical stage. Resolution (repo-direct / canonical_hit)
+    /// keeps using the original path and canonicalizes through
+    /// `common::resolve`; this function feeds the query-path gate
+    /// exclusively.
+    fn lexically_normalized(path: &str) -> Option<String> {
+        let unified = path.replace('\\', "/");
+        let mut out: Vec<&str> = Vec::new();
+        for comp in Path::new(&unified).components() {
+            match comp {
+                std::path::Component::CurDir => {}
+                std::path::Component::Normal(seg) => out.push(seg.to_str()?),
+                std::path::Component::ParentDir => {
+                    // the fold walking past the first segment means the
+                    // spelling escapes the root — containment, knowable
+                    // lexically (`?` yields None = refusal)
+                    out.pop()?;
+                }
+                // a repo-relative frame never carries these
+                // (regex-bounded `[\w./\-]+`), but refuse rather than
+                // misjudge
+                _ => return None,
             }
         }
+        Some(out.join("/"))
+    }
+
+    /// R4+R6+R7+R8 (repair rounds 3-6): query-path-level refusal gates
+    /// the whole repo segment from its FRONT (evaluate before
+    /// repo-direct). Refusal conditions, ONE evaluation point:
+    ///
+    /// - EXCLUDED: the LEXICALLY NORMALIZED spelling or the canonical
+    ///   rel sits under an excluded prefix — normalized spelling is the
+    ///   author-intent face (an excluded-region path refuses wherever a
+    ///   symlink lands, whatever equivalent spelling it is written
+    ///   with), the canonical rel the membership face (a symlink frame
+    ///   inherits its target's exclusion);
+    /// - CONTAINMENT FAILURE: lexical `..` escape (R8), or the path
+    ///   names an existing file whose canonical location escapes the
+    ///   repo root (R6).
+    ///
+    /// A path that names no existing file gates nothing on the
+    /// canonical arm (there is no location to refuse; the pool's
+    /// basename fallback exists exactly for those). `repo-direct`
+    /// retains its internal canonical-form exclusion check — either
+    /// spelling hit refuses, belt and suspenders. Module-exact direct
+    /// (stage 1) stays upstream of the gate as the frozen face.
+    fn repo_segment_refused(&self, path: &str) -> bool {
+        let Some(normalized) = Self::lexically_normalized(path) else {
+            // lexical escape (or non-UTF-8 spelling) — containment,
+            // refused without touching the FS
+            return true;
+        };
+        if is_excluded(&normalized, self.profile.as_ref()) {
+            return true;
+        }
+        let cand = self.repo_root.join(path);
+        if !cand.is_file() {
+            return false;
+        }
+        match self.canonical_rel(path) {
+            Some((_, rel)) => is_excluded(&rel, self.profile.as_ref()),
+            // canonical escape = containment refusal (R6)
+            None => true,
+        }
+    }
+
+    /// Stage 2 — repo-relative exact direct: a frame path read as
+    /// repo-root-relative. Guarded: regular file (a directory is not an
+    /// anchor), repo containment on the canonical path (a `../` escape
+    /// never wins), exclusion (checked on the canonical rel, so a
+    /// symlink inherits its target's corpus membership).
+    fn repo_direct(&mut self, path: &str) -> Option<(PathBuf, &'static str)> {
+        let (resolved, rel) = self.canonical_rel(path)?;
+        if is_excluded(&rel, self.profile.as_ref()) {
+            return None;
+        }
+        self.bump_dir(&resolved);
+        Some((resolved, "repo-direct"))
+    }
+
+    /// Stage 3 — the frozen module heuristic: glob the module roots into
+    /// a name pool, suffix-filter, fall back to the whole pool when the
+    /// suffix set is empty (POC semantics), unique → `suffix`, else ctx
+    /// majority → `ctx` / `ambiguous` / `none`.
+    fn module_pool(&mut self, path: &str) -> (Option<PathBuf>, &'static str) {
         let mut name_matches: BTreeMap<String, PathBuf> = BTreeMap::new();
         let fname = Path::new(path)
             .file_name()
@@ -405,6 +580,210 @@ impl PathResolver {
             return (Some(best), "ctx");
         }
         (None, "ambiguous")
+    }
+
+    /// Build the lazy repo index (basename → sorted repo-relative
+    /// paths) once, on the first frame that needs the repo pool. Any
+    /// traversal error (unreadable directory, dropped entry, file_type
+    /// failure) marks the index incomplete; the walk continues so
+    /// whatever is readable is collected, but the partial result is
+    /// cached WITH the flag — never as complete (R3).
+    fn ensure_repo_index(&mut self) {
+        if self.repo_pool.is_some() {
+            return;
+        }
+        let mut by_name: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        let mut incomplete = false;
+        let mut stack = vec![self.repo_root.clone()];
+        while let Some(dir) = stack.pop() {
+            let mut entries = match std::fs::read_dir(&dir) {
+                Ok(e) => e,
+                Err(_) => {
+                    incomplete = true;
+                    continue;
+                }
+            };
+            loop {
+                let ent = match entries.next() {
+                    Some(Ok(ent)) => ent,
+                    Some(Err(_)) => {
+                        incomplete = true;
+                        break;
+                    }
+                    None => break,
+                };
+                let ft = match ent.file_type() {
+                    Ok(ft) => ft,
+                    Err(_) => {
+                        incomplete = true;
+                        continue;
+                    }
+                };
+                let name = ent.file_name().to_string_lossy().into_owned();
+                if ft.is_dir() {
+                    // same pruning family as the engine walk (dot-dirs
+                    // + SKIP_DIRS) plus `target` — corpus rescue never
+                    // indexes build output
+                    if name.starts_with('.')
+                        || crate::engine::SKIP_DIRS.contains(&name.as_str())
+                        || name == "target"
+                    {
+                        continue;
+                    }
+                    // R5 (repair round 3): prune excluded subtrees BEFORE
+                    // descending — their contents never enter the pool
+                    // (the per-file exclusion filter below would drop
+                    // them either way), so an unreadable excluded
+                    // directory is corpus-external noise and must not
+                    // trip the incomplete flag, which would disable ALL
+                    // pool rescue. Traversal errors recorded as
+                    // incomplete are therefore always errors of the
+                    // governed corpus proper.
+                    let ent_path = ent.path();
+                    let excluded_dir = ent_path
+                        .strip_prefix(&self.repo_root)
+                        .map(|rel| {
+                            let rel = format!("{}/", rel.to_string_lossy().replace('\\', "/"));
+                            is_excluded(&rel, self.profile.as_ref())
+                        })
+                        .unwrap_or(false);
+                    if excluded_dir {
+                        continue;
+                    }
+                    stack.push(ent_path);
+                } else if ft.is_file() {
+                    if crate::language::LanguageFace::from_path(Path::new(&name)).is_none() {
+                        continue;
+                    }
+                    let ent_path = ent.path();
+                    let Ok(rel) = ent_path.strip_prefix(&self.repo_root) else {
+                        continue;
+                    };
+                    let rel = rel.to_string_lossy().replace('\\', "/");
+                    if is_excluded(&rel, self.profile.as_ref()) {
+                        continue;
+                    }
+                    let fname = match rel.rsplit('/').next() {
+                        Some(f) => f.to_string(),
+                        None => continue,
+                    };
+                    by_name.entry(fname).or_default().push(rel);
+                }
+            }
+        }
+        for rels in by_name.values_mut() {
+            rels.sort();
+        }
+        self.repo_pool = Some(RepoIndex {
+            by_name,
+            incomplete,
+        });
+    }
+
+    /// Stage 4 — the repo filename pool, reached only on the module
+    /// segment's `(None, "none")`. Mirrors the module pool's decision
+    /// shape (suffix filter → whole-pool fallback → unique or ctx
+    /// majority) with one hardened difference: a ctx win must be UNIQUE
+    /// (a tie refuses — the module segment's lexicographic-first tie
+    /// behavior is frozen and untouched here).
+    fn repo_pool_hit(&mut self, path: &str) -> (Option<PathBuf>, &'static str) {
+        let fname = Path::new(path)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        self.ensure_repo_index();
+        let index = self.repo_pool.as_ref().unwrap();
+        // R3 (repair round 2): an incomplete index cannot prove
+        // uniqueness — EVERY pool arm refuses, the absent-name case
+        // included: the missing candidate may be sitting in the
+        // unreadable subtree. `ambiguous` because "cannot prove
+        // uniqueness" is the same class as a candidate tie (maps to the
+        // `unresolved` skip, never `external`); this is a CONSERVATIVE
+        // refusal, not a precise attribution of which directory failed.
+        // The repo-direct arm (exact-path evidence) is unaffected.
+        if index.incomplete {
+            return (None, "ambiguous");
+        }
+        let rels: Vec<String> = match index.by_name.get(&fname) {
+            Some(v) => v.clone(),
+            None => return (None, "none"),
+        };
+        // suffix match needs a / boundary, same as the module pool
+        let suffix: Vec<String> = rels
+            .iter()
+            .filter(|r| r.as_str() == path || r.ends_with(&format!("/{path}")))
+            .cloned()
+            .collect();
+        let pool = if suffix.is_empty() { rels } else { suffix };
+        if pool.is_empty() {
+            return (None, "none");
+        }
+        if pool.len() == 1 {
+            let p = self.canonical_hit(&pool[0]);
+            return (Some(p), "repo-suffix");
+        }
+        let mut scored: Vec<(i64, String)> = pool
+            .iter()
+            .map(|rel| {
+                let dir = self
+                    .repo_root
+                    .join(rel.as_str())
+                    .parent()
+                    .map(|x| x.to_string_lossy().replace('\\', "/"))
+                    .unwrap_or_default();
+                (-self.ctx_dirs.get(&dir).copied().unwrap_or(0), rel.clone())
+            })
+            .collect();
+        scored.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+        // unique-winner check BEFORE any removal: `swap_remove(0)`
+        // relocates the TAIL element into slot 0, so a post-removal
+        // comparison would weigh best against worst and let a top-two
+        // tie through (R1). `pool.len() >= 2` is guaranteed here (the
+        // single-candidate arm returned above), so `scored[1]` exists.
+        let unique_win = scored[1].0 != scored[0].0;
+        let (best_score, best_rel) = scored.swap_remove(0);
+        if best_score < 0 && unique_win {
+            let p = self.canonical_hit(&best_rel);
+            return (Some(p), "repo-suffix");
+        }
+        (None, "ambiguous")
+    }
+
+    pub fn resolve(&mut self, path: &str) -> (Option<PathBuf>, &'static str) {
+        // stage 1 — module-exact direct (frozen face: exists() only, no
+        // exclusion check — the module/direct asymmetry is a frozen
+        // surface, not extended to the repo segment)
+        for pkg in &self.pkg_roots {
+            let direct = pkg.join(path);
+            if direct.exists() {
+                self.bump_dir(&direct);
+                return (Some(direct), "direct");
+            }
+        }
+        // R4+R6+R7+R8 (repair rounds 3-6): query-path-level refusal
+        // gates the whole repo segment from its FRONT — a normalized
+        // spelling under an excluded prefix refuses regardless of
+        // equivalent-spelling games or where a symlink's canonical
+        // target landed, and containment escapes (lexical or canonical)
+        // refuse alike; direct and pool arms never run for it.
+        // repo-direct's internal canonical-form exclusion check stays
+        // (either spelling hit refuses).
+        if self.repo_segment_refused(path) {
+            return (None, "none");
+        }
+        // stage 2 — repo-relative exact direct (rescues full-path frames
+        // naming files outside every module root)
+        if let Some((p, kind)) = self.repo_direct(path) {
+            return (Some(p), kind);
+        }
+        // stage 3 — the frozen module heuristic
+        let (resolved, kind) = self.module_pool(path);
+        if resolved.is_some() || kind != "none" {
+            return (resolved, kind);
+        }
+        // stage 4 — repo filename pool (module ambiguity never reaches
+        // here; module `none` does)
+        self.repo_pool_hit(path)
     }
 }
 
@@ -953,6 +1332,10 @@ pub struct ScenarioTours {
     pub frames: usize,
     pub skipped: usize,
     pub g_counts: BTreeMap<String, i64>,
+    /// CR-20: repo-segment rescue counts by resolver kind
+    /// (`repo-direct`/`repo-suffix`) — the measurable delta of the Leg B
+    /// rescue face, surfaced by run() as its own `[LOG]` line.
+    pub repo_rescues: BTreeMap<String, i64>,
     /// Shell scenarios (all frames skipped) in doc order — disclosed by
     /// run() instead of written
     pub shells_omitted: Vec<ShellScenario>,
@@ -984,6 +1367,7 @@ impl ScenarioTours {
             frames: self.frames,
             skipped: self.skipped,
             g_counts: self.g_counts.clone(),
+            repo_rescues: self.repo_rescues.clone(),
             shells_omitted: self.shells_omitted.clone(),
             trait_collisions: self.trait_collisions.clone(),
             qualifier_refusals: self.qualifier_refusals.clone(),
@@ -1380,6 +1764,9 @@ pub fn build_tours(
     let mut lines_cache: HashMap<String, Vec<String>> = HashMap::new();
     let (mut frames_total, mut skipped_total) = (0usize, 0usize);
     let mut g_counts: BTreeMap<String, i64> = BTreeMap::new();
+    // CR-20: repo-segment rescue counts by kind — the rescue face's
+    // measurable delta
+    let mut repo_rescues: BTreeMap<String, i64> = BTreeMap::new();
     let mut shells_omitted: Vec<ShellScenario> = Vec::new();
     // CR-17: explicit-line trait-collision encounters in doc order —
     // the CLI WARN payload
@@ -1448,6 +1835,9 @@ pub fn build_tours(
             }
             if let Some(p) = &f.path {
                 let (resolved, kind) = resolver.resolve(p);
+                if matches!(kind, "repo-direct" | "repo-suffix") {
+                    *repo_rescues.entry(kind.to_string()).or_insert(0) += 1;
+                }
                 match resolved {
                     None => {
                         status = if kind == "none" {
@@ -1741,6 +2131,7 @@ pub fn build_tours(
         frames: frames_total,
         skipped: skipped_total,
         g_counts,
+        repo_rescues,
         shells_omitted,
         trait_collisions: trait_encounters,
         qualifier_refusals,
@@ -2520,6 +2911,12 @@ pub fn run(argv: &[&str]) -> ToolOutput {
         ));
     }
     stdout.push_str(&format!("[LOG] graph 重錨分佈: {:?}\n", st.g_counts));
+    if !st.repo_rescues.is_empty() {
+        // CR-20: the rescue face's measurable delta — per-kind counts of
+        // frames the repo segment rescued after the module segment
+        // answered none
+        stdout.push_str(&format!("[LOG] repo 段救援: {:?}\n", st.repo_rescues));
+    }
     ToolOutput {
         stdout,
         stderr,

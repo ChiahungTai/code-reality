@@ -988,3 +988,41 @@ fn dump_temp_creation_is_exclusive_and_never_follows_symlinks() {
         "{temps:?}"
     );
 }
+
+/// CR-20: a frame whose file lives outside every module prefix now
+/// resolves through the repo segment (`repo-direct`) and produces a
+/// step — the external bucket shrinks to genuinely-unfindable paths.
+/// The shell-gate assertions above stay byte-identical: `ghost.py`
+/// exists nowhere (still external), `deploy.sh` is still unparseable
+/// (noref).
+#[test]
+fn repo_rescue_turns_module_outside_frames_into_steps() {
+    let md =
+        "# Ops\n\n```text\ndeploy_step() (pkg/a.py:1)\n└─ restart() (scripts/deploy.py:3)\n```\n"
+            .to_string();
+    let (repo, chain) = repo_fixture("skip-gate-repo-rescue", &md);
+    // the module-outside file the second frame names
+    std::fs::create_dir_all(repo.join("scripts")).unwrap();
+    std::fs::write(
+        repo.join("scripts/deploy.py"),
+        "#!/usr/bin/env python3\ndef restart():\n    pass\n",
+    )
+    .unwrap();
+    let out_dir = repo.join(".tours/arch/01-gate");
+    let out = run_chain_tour(&repo, &chain);
+    assert_eq!(
+        out.exit_code, 0,
+        "stdout={} stderr={}",
+        out.stdout, out.stderr
+    );
+    let t: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out_dir.join("01.tour")).unwrap()).unwrap();
+    let steps = t["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 2, "{}", out.stdout);
+    assert_eq!(steps[1]["file"], "scripts/deploy.py");
+    // the rescue is counted on the new observable line
+    assert!(out.stdout.contains("[LOG] repo 段救援"), "{}", out.stdout);
+    assert!(out.stdout.contains("repo-direct"), "{}", out.stdout);
+    // and nothing landed in the external bucket
+    assert!(!out.stdout.contains("external"), "{}", out.stdout);
+}

@@ -4,7 +4,8 @@
 use code_reality::chain_tour::{
     best_ident, build_tours, parse_blocks, parse_frames, prefix_len, write_tours,
 };
-use std::path::PathBuf;
+use code_reality::language::{LanguageFace, JS_TS_EXTS};
+use std::path::{Path, PathBuf};
 
 const CHAIN_MD: &str = r#"# Boot scenario
 
@@ -4465,4 +4466,83 @@ fn graph_anchor_rejects_legacy_schema_loudly() {
         err.contains("非自有格式"),
         "legacy-schema --graph must fail loud, got: {err}"
     );
+}
+
+// --- CR-20 Leg A: the frame grammar covers all eight governed extensions ---
+
+/// The frame-grammar extension table, enumerated INDEPENDENTLY of
+/// `language::JS_TS_EXTS` (a constant omission must turn the cross-check
+/// below red, never silently shrink these cases). `py`/`rs` are
+/// frame-grammar literals on the assembly side; the six JS/TS entries
+/// mirror language.rs's frozen set.
+const FRAME_TABLE_EXTS: [&str; 8] = ["py", "rs", "js", "jsx", "mjs", "cjs", "ts", "tsx"];
+
+#[test]
+fn frame_grammar_eight_extensions_explicit_lineless_and_stray() {
+    for ext in FRAME_TABLE_EXTS {
+        // Cross-face pin: every frame-grammar extension must be a
+        // governed LanguageFace — a grammar entry without a graph face
+        // would mint steps the graph can never verify.
+        assert!(
+            LanguageFace::from_path(Path::new(&format!("f.{ext}"))).is_some(),
+            "{ext}: frame-grammar ext must be a governed LanguageFace"
+        );
+        let path = format!("pkg/a.{ext}");
+        // explicit `path:line`
+        let frames = parse_frames(&[format!("└─ boot() ({path}:5)")]);
+        assert_eq!(
+            frames[0].path.as_deref(),
+            Some(path.as_str()),
+            "{ext} explicit path"
+        );
+        assert_eq!(frames[0].line, Some(5), "{ext} explicit line");
+        // line-less tail: grammar accepts, line stays None
+        let frames = parse_frames(&[format!("└─ boot() ({path})")]);
+        assert_eq!(
+            frames[0].path.as_deref(),
+            Some(path.as_str()),
+            "{ext} lineless path"
+        );
+        assert_eq!(frames[0].line, None, "{ext} lineless line");
+        // stray second path token in the symbol remainder → no anchor
+        // (noref): `see foo.{ext} bar.py` is prose, not an anchor
+        let frames = parse_frames(&[format!("└─ see foo.{ext} bar.py")]);
+        assert_eq!(frames[0].path, None, "{ext} stray");
+        assert_eq!(frames[0].line, None, "{ext} stray");
+        // suffix junk rejects the line-less tail (extension must be the
+        // token's true end)
+        let frames = parse_frames(&[format!("└─ x ({path}.bak)")]);
+        assert_eq!(frames[0].path, None, "{ext} .bak");
+    }
+}
+
+#[test]
+fn frame_grammar_long_extension_first_pin() {
+    // `any_path_re` has no trailing anchor: a short-first alternation
+    // would let `foo.tsx` match as `foo.ts` and `stray_path_token` would
+    // then read the trailing `x` as a word character — the frame would
+    // mint a line-less anchor off the trailing `bar.py`. Both long-ext
+    // remainders must stay stray → noref (tsx/jsx pinned first).
+    for frame in ["└─ see foo.tsx bar.py", "└─ see foo.jsx bar.js"] {
+        let frames = parse_frames(&[frame.to_string()]);
+        assert_eq!(frames[0].path, None, "{frame}");
+        assert_eq!(frames[0].line, None, "{frame}");
+    }
+}
+
+#[test]
+fn frame_grammar_table_covers_every_js_ts_ext() {
+    // Drift guard (muse Q1 cross-check): when language.rs grows the
+    // JS/TS face set, this goes red until the frame-grammar table (and
+    // thus the assembled alternation) explicitly reckons with the
+    // newcomer. The cases above stay independently enumerated — the
+    // constant is only the completeness oracle here.
+    for ext in JS_TS_EXTS {
+        assert!(
+            FRAME_TABLE_EXTS.contains(&ext),
+            "JS/TS ext {ext} missing from the frame-grammar table"
+        );
+    }
+    assert!(FRAME_TABLE_EXTS.contains(&"py"), "py stays a frame literal");
+    assert!(FRAME_TABLE_EXTS.contains(&"rs"), "rs stays a frame literal");
 }

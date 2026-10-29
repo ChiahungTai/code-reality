@@ -362,10 +362,16 @@ Authoring procedure for a new repo (four fixed steps):
    `[[module]]` blocks (ordered, first match wins). Rule of thumb: the
    granularity you want module-level comparisons reported at is the
    module layer. Prefixes must end with a slash (profile-load assert).
-   Prefix coverage also decides chain_tour frame
-   survival — frames whose paths fall under no prefix resolve-fail
-   into the external-skip bucket, so cover every layer callstacks pass
-   through, including declaration layers (`.pyi` stubs) and examples.
+   Prefix coverage still shapes chain_tour frame
+   survival — frames under a module prefix resolve through the
+   module segment (exact direct, then suffix/basename/ctx pools);
+   frames outside every prefix now fall through to the repo segment
+   (repo-relative direct, then a lazily indexed repo-wide filename
+   pool), so a missing prefix no longer sends them wholesale into the
+   external bucket — but keep covering every layer callstacks pass
+   through, including declaration layers (`.pyi` stubs) and examples:
+   the repo pool only adopts basename-unique or ctx-majority files, and
+   module-pool resolution stays the precise face.
 2. **Decide exclude.** List every non-code directory (docs, research
    artifacts, fixtures, stubs, generated `dist`/`node_modules`).
    Directory entries keep the trailing slash: `"docs/"`, not `"docs"`
@@ -452,6 +458,33 @@ on any new repo.
   the tours land in the caller's `.tours/delta/`. The MCP
   `delta_tour` tool has no cwd trap: omitted `out_dir` defaults to
   `<repo_root>/.tours/delta`.
+- `chain_tour` frame grammar + repo-segment path rescue (CR-20): the
+  three frame path regexes assemble their extension alternation
+  dynamically from `language::JS_TS_EXTS` plus the `py`/`rs` literals
+  (single source — no second extension list), longest-first so
+  `foo.tsx` never reads as `foo.ts` in the un-anchored any-path scan;
+  all eight governed extensions (py/rs/js/jsx/mjs/cjs/ts/tsx) parse in
+  the explicit `path:line`, line-less, and stray-second-token shapes,
+  and a prose remainder like `see foo.tsx bar.py` stays stray →
+  `noref`. Resolution is four-stage: module-exact direct (frozen) →
+  repo-relative exact direct (`repo-direct` — a full path like
+  `crates/x/src/lib.rs` names the repo file directly, checked
+  regular-file + repo containment + exclusion, canonicalized so the
+  graph's stored abs path matches) → the frozen module heuristic →
+  a lazily built repo-wide filename pool (`repo-suffix` — single-pass
+  walk pruning dot-dirs/`node_modules`/`__pycache__`/`venv`/`target`,
+  governed-extension files only, profile exclusions applied; suffix
+  filter, then basename pool, then ctx majority with a UNIQUE winner —
+  a tie refuses as `ambiguous`). A module-segment ambiguity is
+  terminal (the repo pool never second-guesses it); `(None, "none")`
+  after both segments still reads `external` (the label is unchanged
+  this card). Rescues are measurable: `ScenarioTours.repo_rescues` and
+  a trailing `[LOG] repo 段救援: {"repo-direct": N, "repo-suffix": M}`
+  line in run output. Known residual (honest limits, not fixes): the
+  explicit `path:line` scan still has no token-boundary check (a
+  `path.ts:12` inside a URL/query matches, the old risk extended to
+  the new extensions), and prose frames citing a `.ts` file now
+  fail-closed to noref where the py/rs-only grammar let them through.
 - `chain_tour` line-less frames (path + symbol, no line number) resolve
   against `graph.db` by exact file + bare name. Multiple same-file
   same-name nodes used to fail closed as an `ambiguous` skip; the
