@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-29 13:52'
-updated_date: '2026-10-29 13:54'
+updated_date: '2026-10-29 14:00'
 labels:
   - chain-tour
   - resolver
@@ -88,3 +88,9 @@ flowchart LR
 
 **Final Summary 預告（Mockup 三件套）**：①終態圖＝desc 圖 as-built 對照；②user-visible surface＝CLI `code-reality chain_tour` 輸出（skip/step 計數與 g 重錨分佈——TS 與 repo 外幀從 skip 變 step；無新 flag 無新介面）；③樣張＝kchart-web-overlays.md 試產 before/after 摘要行（before：filled 5/noref 33/場景 1-4 全 skip；after 實數記卡 notes，trivial surface 以 AC 內 expected output 取代正式樣張）。
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-29 22:00 弧 checkpoint（deep-work 自主弧，user 授權原話：「收信，好好處理…討論ＯＫ就做，不用問我」＋「at 01:10 如果還沒做完就接續做」）：mosaic mos-565 來信→查證三缺口（regex 本有 rs／resolver module-scope 誤判 external／rust Type 節點 ingest 丟棄）→雙顧問收斂（muse job-mvtkvmsn＋codex job-mvtkvmvy；全文 .agent-tmp/cr20-consult-*-answer.md）→CR-20/CR-21 建卡（main 5bea46f）→wt-open cr-20→impl 腿已派 job-mvtlz228-oakl98（glm flash --write-mode edit --yolo，WT code-reality-cr-20）。剩餘：impl 收線→主 session 機械複驗→post-build 雙審（codex+muse）→judge→修補→gates（全量 test＋mosaic 唯讀試產 AC6＋corpus 單向 AC5）→wt-close→release 0.20.0 commit（tag/push 恆 user）→回信 mosaic（三層承諾：更正根因/0.20.0 承諾含 C2′ 過渡橋/C 緩辦需 rebuild）→清 pending-reply→Done flip。姊妹卡 CR-21（C 腿）To Do。夜間台帳：southchariot .agent-tmp/night-ledger-cr20.md。
+<!-- SECTION:NOTES:END -->
